@@ -1,0 +1,7 @@
+max_width = 99
+use_small_heuristics = "Max"
+unstable_features = true
+error_on_line_overflow = true
+error_on_unformatted = true
+format_strings = true
+wrap_comments = true

@@ -1,0 +1,26 @@
+# NOTE user your own path
+vms-dir = "/home/user/vms/vml"
+
+[default]
+memory = "2G"
+
+# display = "none"
+
+nproc = 2
+
+# ssh-options = ["StrictHostKeyChecking=no", "UserKnownHostsFile=/dev/null"]
+
+# NOTE ssh-port-user must be specified to use ssh commands with user network
+ssh-port-user-network = "random"
+
+# NOTE ssh-port must be specified to use ssh commands with tap network
+# ssh-port = 22
+
+# ssh-user = "root"
+
+# NOTE user your own path
+# cloud-init-image = "/home/user/my-seed.img"
+
+user-network = true
+
+minimum-disk-size = "30G"
