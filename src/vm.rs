@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use rand::Rng;
+use tera::{Context, Tera};
 
 use crate::cache::Cache;
 use crate::config::Config;
@@ -292,6 +293,7 @@ impl VM {
         ssh_cmd.arg(self_ssh.user_host(&user));
 
         if let Some(cmd) = cmd {
+            let cmd = self.tera_renders(cmd, "ssh commands")?;
             ssh_cmd.args(cmd);
         }
 
@@ -300,6 +302,25 @@ impl VM {
         ssh_cmd.spawn()?.wait()?;
 
         Ok(())
+    }
+
+    fn tera_render(&self, template: &str, place: &str) -> Result<String> {
+        let mut context = Context::new();
+        context.insert("name", &self.name);
+        context.insert("address", &self.address);
+        context.insert("user_network", &self.user_network);
+        Tera::one_off(template, &context, false)
+            .map_err(|e| Error::template(place, &e.to_string()))
+    }
+
+    fn tera_renders(&self, templates: &[&str], place: &str) -> Result<Vec<String>> {
+        let mut strings = Vec::with_capacity(templates.len());
+
+        for template in templates {
+            strings.push(self.tera_render(template, place)?);
+        }
+
+        Ok(strings)
     }
 
     fn rsync_to_from(
@@ -311,6 +332,8 @@ impl VM {
         destination: &Option<&str>,
     ) -> Result<()> {
         let mut ssh_cmd = vec!["ssh"];
+
+        let sources = self.tera_renders(sources, "rsync sources")?;
 
         let self_ssh =
             self.ssh.as_ref().ok_or_else(|| Error::VMHasNoSSH(self.name.to_string()))?;
@@ -330,12 +353,14 @@ impl VM {
         if to {
             rsync.args(sources);
             if let Some(destination) = destination {
+                let destination = self.tera_render(destination, "rsync destination")?;
                 rsync.arg(&format!("{}:{}", user_host, destination));
             }
         } else {
             let sources = sources.join(" ");
             rsync.arg(&format!("{}:{}", user_host, sources));
             if let Some(destination) = destination {
+                let destination = self.tera_render(destination, "rsync destination")?;
                 rsync.arg(destination);
             }
         }

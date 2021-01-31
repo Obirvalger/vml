@@ -7,6 +7,7 @@ pub enum Error {
     VMHasNoPid(String),
     VMHasNoSSH(String),
     ParseConfig(String),
+    Template { place: String, error: String },
     ParseVMConfig { config_path: String, error: String },
     ParseVMConfigField { vm_name: String, field: String },
     DiskDoesNotExists { disk_path: String, vm_name: String },
@@ -30,6 +31,12 @@ impl Error {
         let config_path = config_path.to_string();
         let error = error.to_string();
         Error::ParseVMConfig { config_path, error }
+    }
+
+    pub fn template(place: &str, error: &str) -> Error {
+        let place = place.to_string();
+        let error = error.to_string();
+        Error::Template { place, error }
     }
 
     pub fn other(place: &str, error: &str) -> Error {
