@@ -392,8 +392,6 @@ fn image_size(image: &PathBuf) -> Result<u128> {
 
     let parsed = json::parse(&out).map_err(|e| Error::other("json", &e.to_string()))?;
 
-    println!("{:?}", parsed);
-
     if let Some(size) = parsed["virtual-size"].as_u64() {
         return Ok(size.into());
     }
