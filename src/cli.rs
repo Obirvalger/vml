@@ -95,8 +95,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple(true)
                         .required(true),
                 )
-                .group(ArgGroup::new("action").args(&["destination", "list"]))
-                .group(ArgGroup::new("all_running").args(&["all", "running"])),
+                .group(ArgGroup::new("action").args(&["destination", "list"])),
         )
         .subcommand(
             App::new("rsync-from")
@@ -130,8 +129,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple(true)
                         .required(true),
                 )
-                .group(ArgGroup::new("action").args(&["destination", "list"]))
-                .group(ArgGroup::new("all_running").args(&["all", "running"])),
+                .group(ArgGroup::new("action").args(&["destination", "list"])),
         )
         .subcommand(
             App::new("show")
