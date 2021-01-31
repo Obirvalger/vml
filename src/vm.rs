@@ -57,7 +57,6 @@ mod ssh_mod {
             let options =
                 if let Some(options) = options { options.to_owned() } else { Vec::new() };
 
-            let port = port.to_owned();
             let user = user.to_owned();
 
             Some(SSH { host, options, port, user })
@@ -399,7 +398,7 @@ fn image_size(image: &PathBuf) -> Result<u128> {
         return Ok(size.into());
     }
 
-    return Err(Error::other("parse qemu-img out", "can't read virtual-size as u128"))
+    Err(Error::other("parse qemu-img out", "can't read virtual-size as u128"))
 }
 
 fn try_resize(image: &PathBuf, size: u128) -> Result<()> {
