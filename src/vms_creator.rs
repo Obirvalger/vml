@@ -15,6 +15,7 @@ pub enum WithPid {
     Option,
     Error,
     Filter,
+    Without,
 }
 
 #[derive(Clone, Debug)]
@@ -134,6 +135,7 @@ impl<'a> VMsCreator<'a> {
                         Ok(vms.values().cloned().collect())
                     }
                 }
+                WithPid::Without => Ok(vms.values().filter(|v| !v.has_pid()).cloned().collect()),
             }
         } else {
             Ok(vms.values().cloned().collect())

@@ -34,6 +34,8 @@ fn main() -> Result<()> {
 
             let cloud_init = start_matches.is_present("cloud-init");
 
+            vmc.with_pid(WithPid::Without);
+
             for vm in vmc.create()? {
                 vm.start(cloud_init)?;
             }
