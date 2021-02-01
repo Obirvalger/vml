@@ -35,6 +35,7 @@ fn main() -> Result<()> {
             let cloud_init = start_matches.is_present("cloud-init");
 
             vmc.with_pid(WithPid::Without);
+            vmc.error_on_empty();
 
             for vm in vmc.create()? {
                 vm.start(cloud_init)?;
@@ -65,6 +66,7 @@ fn main() -> Result<()> {
             let force = stop_matches.is_present("force");
 
             vmc.with_pid(WithPid::Filter);
+            vmc.error_on_empty();
 
             for vm in vmc.create()? {
                 if force || vm.ssh(&Some("root"), &[], &Some(vec!["poweroff"])).is_err() {
@@ -102,6 +104,7 @@ fn main() -> Result<()> {
             let cmd: Option<Vec<&str>> = ssh_matches.values_of("cmd").map(|v| v.collect());
 
             vmc.with_pid(WithPid::Error);
+            vmc.error_on_empty();
             for vm in vmc.create()? {
                 vm.ssh(&user, &ssh_options, &cmd)?;
             }
@@ -142,6 +145,7 @@ fn main() -> Result<()> {
             };
 
             vmc.with_pid(WithPid::Error);
+            vmc.error_on_empty();
             for vm in vmc.create()? {
                 vm.rsync_to(&user, &rsync_options, &sources, &destination)?;
             }
@@ -185,6 +189,7 @@ fn main() -> Result<()> {
             };
 
             vmc.with_pid(WithPid::Error);
+            vmc.error_on_empty();
             for vm in vmc.create()? {
                 vm.rsync_from(&user, &rsync_options, &sources, &destination)?;
             }
@@ -214,6 +219,7 @@ fn main() -> Result<()> {
             } else {
                 vmc.with_pid(WithPid::Option);
             }
+            vmc.error_on_empty();
 
             for vm in vmc.create()? {
                 println!("{:#?}", vm);

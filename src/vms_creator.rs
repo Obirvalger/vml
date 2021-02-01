@@ -22,6 +22,7 @@ pub enum WithPid {
 pub struct VMsCreator<'a> {
     all: bool,
     config: &'a Config,
+    error_on_empty: bool,
     names: HashSet<String>,
     parents: HashSet<String>,
     tags: HashSet<String>,
@@ -31,11 +32,12 @@ pub struct VMsCreator<'a> {
 impl<'a> VMsCreator<'a> {
     pub fn new(config: &'a Config) -> VMsCreator {
         let all = false;
+        let error_on_empty = false;
         let names = HashSet::new();
         let parents = HashSet::new();
         let tags = HashSet::new();
         let with_pid = None;
-        VMsCreator { all, config, names, parents, tags, with_pid }
+        VMsCreator { all, config, error_on_empty, names, parents, tags, with_pid }
     }
 
     pub fn all(&mut self) {
@@ -43,6 +45,10 @@ impl<'a> VMsCreator<'a> {
         self.names = HashSet::new();
         self.parents = HashSet::new();
         self.tags = HashSet::new();
+    }
+
+    pub fn error_on_empty(&mut self) {
+        self.error_on_empty = true;
     }
 
     pub fn name(&mut self, name: &str) {
@@ -104,7 +110,7 @@ impl<'a> VMsCreator<'a> {
             }
         }
 
-        if let Some(with_pid) = &self.with_pid {
+        let result_vms: Result<Vec<VM>> = if let Some(with_pid) = &self.with_pid {
             let mut with_pid_vms: HashSet<String> = HashSet::new();
             for proc in process::all_processes()
                 .map_err(|e| Error::Other("process:".to_string(), e.to_string()))?
@@ -139,6 +145,14 @@ impl<'a> VMsCreator<'a> {
             }
         } else {
             Ok(vms.values().cloned().collect())
+        };
+
+        if let Ok(result_vms) = &result_vms {
+            if self.error_on_empty && result_vms.is_empty() {
+                return Err(Error::EmptyVMsList);
+            }
         }
+
+        result_vms
     }
 }

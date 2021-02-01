@@ -2,6 +2,7 @@ use std::io;
 
 #[derive(Debug, Clone)]
 pub enum Error {
+    EmptyVMsList,
     VMHasNoPid(String),
     VMHasNoSSH(String),
     ParseConfig(String),
