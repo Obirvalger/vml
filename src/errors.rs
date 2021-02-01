@@ -2,8 +2,6 @@ use std::io;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    CmdFailed(String),
-    SubtaskNotFound,
     VMHasNoPid(String),
     VMHasNoSSH(String),
     ParseConfig(String),
