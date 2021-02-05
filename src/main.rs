@@ -253,6 +253,9 @@ fn main() -> Result<()> {
                 println!("{}", vm.name);
             }
         }
+        Some(("completion", completion_matches)) => {
+            cli::completion(completion_matches.value_of("SHELL").unwrap())
+        }
         _ => println!("Unexpected command"),
     }
 

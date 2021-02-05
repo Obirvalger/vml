@@ -1,4 +1,23 @@
-use clap::{App, AppSettings, Arg, ArgGroup};
+use clap::{App, AppSettings, Arg, ArgGroup, ValueHint};
+use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
+use clap_generate::{generate, Generator};
+use std::io;
+
+fn print_completions<G: Generator>(app: &mut App) {
+    generate::<G, _>(app, app.get_name().to_string(), &mut io::stdout());
+}
+
+pub fn completion(shell: &str) {
+    let mut app = build_cli();
+    match shell {
+        "bash" => print_completions::<Bash>(&mut app),
+        "elvish" => print_completions::<Elvish>(&mut app),
+        "fish" => print_completions::<Fish>(&mut app),
+        "powershell" => print_completions::<PowerShell>(&mut app),
+        "zsh" => print_completions::<Zsh>(&mut app),
+        _ => panic!("Unknown generator"),
+    }
+}
 
 pub fn build_cli() -> clap::App<'static> {
     App::new("vml")
@@ -51,7 +70,14 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple(true),
                 )
                 .arg(Arg::new("NAMES").takes_value(true).multiple(true))
-                .arg(Arg::new("cmd").long("cmd").short('c').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("cmd")
+                        .long("cmd")
+                        .short('c')
+                        .takes_value(true)
+                        .multiple(true)
+                        .value_hint(ValueHint::CommandString),
+                )
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
@@ -60,7 +86,13 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .multiple(true),
                 )
-                .arg(Arg::new("user").long("user").short('u').takes_value(true))
+                .arg(
+                    Arg::new("user")
+                        .long("user")
+                        .short('u')
+                        .takes_value(true)
+                        .value_hint(ValueHint::Username),
+                )
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
         )
         .subcommand(
@@ -83,14 +115,27 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .multiple(true),
                 )
-                .arg(Arg::new("user").long("user").short('u').takes_value(true))
+                .arg(
+                    Arg::new("user")
+                        .long("user")
+                        .short('u')
+                        .takes_value(true)
+                        .value_hint(ValueHint::Username),
+                )
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
-                .arg(Arg::new("destination").long("destination").takes_value(true).short('d'))
+                .arg(
+                    Arg::new("destination")
+                        .long("destination")
+                        .takes_value(true)
+                        .short('d')
+                        .value_hint(ValueHint::AnyPath),
+                )
                 .arg(Arg::new("list").long("list").short('l'))
                 .arg(
                     Arg::new("sources")
                         .long("sources")
                         .short('s')
+                        .value_hint(ValueHint::AnyPath)
                         .takes_value(true)
                         .multiple(true)
                         .required(true),
@@ -117,14 +162,27 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .multiple(true),
                 )
-                .arg(Arg::new("user").long("user").short('u').takes_value(true))
+                .arg(
+                    Arg::new("user")
+                        .long("user")
+                        .short('u')
+                        .takes_value(true)
+                        .value_hint(ValueHint::Username),
+                )
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
-                .arg(Arg::new("destination").long("destination").takes_value(true).short('d'))
+                .arg(
+                    Arg::new("destination")
+                        .long("destination")
+                        .takes_value(true)
+                        .short('d')
+                        .value_hint(ValueHint::AnyPath),
+                )
                 .arg(Arg::new("list").long("list").short('l'))
                 .arg(
                     Arg::new("sources")
                         .long("sources")
                         .short('s')
+                        .value_hint(ValueHint::AnyPath)
                         .takes_value(true)
                         .multiple(true)
                         .required(true),
@@ -165,4 +223,13 @@ pub fn build_cli() -> clap::App<'static> {
                 .group(ArgGroup::new("all_running").args(&["all", "running"]))
                 .group(ArgGroup::new("vms").args(&["NAMES", "all", "parents", "tags"])),
         )
+        .subcommand(App::new("completion").arg(
+            Arg::new("SHELL").about("generate completions").required(true).possible_values(&[
+                "bash",
+                "elvish",
+                "fish",
+                "powershell",
+                "zsh",
+            ]),
+        ))
 }
