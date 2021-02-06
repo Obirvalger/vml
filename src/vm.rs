@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use rand::Rng;
@@ -390,6 +390,17 @@ impl VM {
         destination: &Option<&str>,
     ) -> Result<()> {
         self.rsync_to_from(false, user, rsync_options, sources, destination)
+    }
+
+    pub fn ancestor(&self) -> String {
+        let ancestors: Vec<&Path> = self.name_path.ancestors().collect();
+        let len = ancestors.len();
+        if len > 2 {
+            let ancestor = ancestors[len - 2];
+            format!("{}/", ancestor.to_string_lossy())
+        } else {
+            self.name.to_owned()
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 
 use vml::cli;
@@ -249,8 +250,24 @@ fn main() -> Result<()> {
                 vmc.with_pid(WithPid::Filter);
             }
 
+            let fold = if config.list_fold {
+                list_matches.is_present("fold") || !list_matches.is_present("unfold")
+            } else {
+                list_matches.is_present("fold") && !list_matches.is_present("unfold")
+            };
+
+            let mut names: HashSet<String> = HashSet::new();
+
             for vm in vmc.create()? {
-                println!("{}", vm.name);
+                if fold {
+                    names.insert(vm.ancestor());
+                } else {
+                    names.insert(vm.name.to_owned());
+                }
+            }
+
+            for name in names {
+                println!("{}", name);
             }
         }
         Some(("completion", completion_matches)) => {

@@ -210,6 +210,8 @@ pub fn build_cli() -> clap::App<'static> {
                 .about("list virtual machines")
                 .alias("ls")
                 .arg(Arg::new("NAMES").takes_value(true).multiple(true))
+                .arg(Arg::new("fold").long("fold").short('f'))
+                .arg(Arg::new("unfold").long("unfold").short('u'))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(Arg::new("running").long("running").short('r'))
                 .arg(
@@ -221,6 +223,7 @@ pub fn build_cli() -> clap::App<'static> {
                 )
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
                 .group(ArgGroup::new("all_running").args(&["all", "running"]))
+                .group(ArgGroup::new("fold_group").args(&["fold", "unfold"]))
                 .group(ArgGroup::new("vms").args(&["NAMES", "all", "parents", "tags"])),
         )
         .subcommand(App::new("completion").arg(

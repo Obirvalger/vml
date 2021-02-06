@@ -27,6 +27,7 @@ pub struct VMsDefault {
 #[serde(rename_all = "kebab-case")]
 pub struct Config {
     pub vms_dir: PathBuf,
+    pub list_fold: bool,
     pub default: VMsDefault,
 }
 

@@ -1,6 +1,8 @@
 # NOTE user your own path
 vms-dir = "/home/user/vms/vml"
 
+list-fold = false
+
 [default]
 memory = "2G"
 
