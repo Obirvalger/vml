@@ -403,14 +403,30 @@ impl VM {
         self.rsync_to_from(false, user, rsync_options, sources, destination)
     }
 
-    pub fn ancestor(&self) -> String {
-        let ancestors: Vec<&Path> = self.name_path.ancestors().collect();
-        let len = ancestors.len();
-        if len > 2 {
-            let ancestor = ancestors[len - 2];
-            format!("{}/", ancestor.to_string_lossy())
-        } else {
-            self.name.to_owned()
+    pub fn folded_name(&self) -> String {
+        match &self.specified_by {
+            SpecifiedBy::All | SpecifiedBy::Tag => {
+                let ancestors: Vec<&Path> = self.name_path.ancestors().collect();
+                let len = ancestors.len();
+                if len > 2 {
+                    let ancestor = ancestors[len - 2];
+                    format!("{}/", ancestor.to_string_lossy())
+                } else {
+                    self.name.to_owned()
+                }
+            }
+            SpecifiedBy::Parent(parent) => {
+                let name_path = self.name_path.strip_prefix(parent).expect("Parent in not prefix");
+                let ancestors: Vec<&Path> = name_path.ancestors().collect();
+                let len = ancestors.len();
+                if len > 2 {
+                    let ancestor = ancestors[len - 2];
+                    format!("{}/{}/", parent, ancestor.to_string_lossy())
+                } else {
+                    self.name.to_owned()
+                }
+            }
+            SpecifiedBy::Name => self.name.to_owned(),
         }
     }
 }

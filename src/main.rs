@@ -260,7 +260,7 @@ fn main() -> Result<()> {
 
             for vm in vmc.create()? {
                 if fold {
-                    names.insert(vm.ancestor());
+                    names.insert(vm.folded_name());
                 } else {
                     names.insert(vm.name.to_owned());
                 }
