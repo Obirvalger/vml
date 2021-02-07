@@ -2,6 +2,7 @@ mod cache;
 pub mod cli;
 pub mod config;
 mod errors;
+mod specified_by;
 mod string_like;
 mod vm;
 mod vm_config;

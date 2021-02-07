@@ -9,6 +9,7 @@ use tera::{Context, Tera};
 
 use crate::cache::Cache;
 use crate::config::Config;
+use crate::specified_by::SpecifiedBy;
 use crate::vm_config::VMConfig;
 use crate::{Error, Result};
 
@@ -103,6 +104,7 @@ pub struct VM {
     pub name: String,
     name_path: PathBuf,
     nproc: String,
+    specified_by: SpecifiedBy,
     ssh: Option<SSH>,
     pid: Option<i32>,
     tags: HashSet<String>,
@@ -118,6 +120,8 @@ impl VM {
         let vm_config = VMConfig::new(&config_path)?;
         let name = vm_config.name.unwrap_or_else(|| name.to_string());
         let name_path = PathBuf::from(&name);
+
+        let specified_by = SpecifiedBy::All;
 
         let tap = vm_config.tap;
         let user_network =
@@ -169,6 +173,7 @@ impl VM {
             name_path,
             pid: None,
             nproc,
+            specified_by,
             ssh,
             tags,
             tap,
@@ -198,6 +203,12 @@ impl VM {
 
     pub fn has_common_tags(&self, tags: &HashSet<String>) -> bool {
         self.tags.intersection(tags).any(|_| true)
+    }
+
+    pub fn specify(&mut self, specified_by: SpecifiedBy) {
+        if self.specified_by < specified_by {
+            self.specified_by = specified_by;
+        }
     }
 
     pub fn start(&self, cloud_init: bool) -> Result<()> {

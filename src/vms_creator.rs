@@ -7,6 +7,7 @@ use procfs::process::FDTarget;
 use walkdir::WalkDir;
 
 use crate::config::Config;
+use crate::specified_by::SpecifiedBy;
 use crate::VM;
 use crate::{Error, Result};
 
@@ -99,12 +100,18 @@ impl<'a> VMsCreator<'a> {
                     .strip_prefix(vms_dir)
                     .expect("prefix is not prefix")
                     .to_string_lossy();
-                let vm = VM::from_config(self.config, &name)?;
-                if self.all
-                    || vm.has_common_tags(&self.tags)
-                    || self.parents.iter().any(|p| vm.has_parent(p))
-                    || self.names.contains(&vm.name)
-                {
+                let mut vm = VM::from_config(self.config, &name)?;
+                if self.names.contains(&vm.name) {
+                    vm.specify(SpecifiedBy::Name);
+                    vms.insert(vm.get_disk().clone(), vm);
+                } else if let Some(parent) = self.parents.iter().find(|p| vm.has_parent(p)) {
+                    vm.specify(SpecifiedBy::Parent(parent.trim_end_matches('/').to_owned()));
+                    vms.insert(vm.get_disk().clone(), vm);
+                } else if vm.has_common_tags(&self.tags) {
+                    vm.specify(SpecifiedBy::Tag);
+                    vms.insert(vm.get_disk().clone(), vm);
+                } else if self.all {
+                    vm.specify(SpecifiedBy::All);
                     vms.insert(vm.get_disk().clone(), vm);
                 }
             }
