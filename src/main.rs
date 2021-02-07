@@ -18,8 +18,8 @@ fn main() -> Result<()> {
                 vmc.all();
             }
 
-            if start_matches.is_present("NAMES") {
-                let names: Vec<&str> = start_matches.values_of("NAMES").unwrap().collect();
+            if start_matches.is_present("names") {
+                let names: Vec<&str> = start_matches.values_of("names").unwrap().collect();
                 vmc.names(&names);
             }
 
@@ -49,8 +49,8 @@ fn main() -> Result<()> {
                 vmc.all();
             }
 
-            if stop_matches.is_present("NAMES") {
-                let names: Vec<&str> = stop_matches.values_of("NAMES").unwrap().collect();
+            if stop_matches.is_present("names") {
+                let names: Vec<&str> = stop_matches.values_of("names").unwrap().collect();
                 vmc.names(&names);
             }
 
@@ -89,8 +89,8 @@ fn main() -> Result<()> {
                 vmc.tags(&tags);
             }
 
-            if ssh_matches.is_present("NAMES") {
-                let names: Vec<&str> = ssh_matches.values_of("NAMES").unwrap().collect();
+            if ssh_matches.is_present("names") {
+                let names: Vec<&str> = ssh_matches.values_of("names").unwrap().collect();
                 vmc.names(&names);
             }
 
@@ -124,8 +124,8 @@ fn main() -> Result<()> {
                 vmc.tags(&tags);
             }
 
-            if rsync_to_matches.is_present("NAMES") {
-                let names: Vec<&str> = rsync_to_matches.values_of("NAMES").unwrap().collect();
+            if rsync_to_matches.is_present("names") {
+                let names: Vec<&str> = rsync_to_matches.values_of("names").unwrap().collect();
                 vmc.names(&names);
             }
 
@@ -166,8 +166,8 @@ fn main() -> Result<()> {
                 vmc.tags(&tags);
             }
 
-            if rsync_from_matches.is_present("NAMES") {
-                let names: Vec<&str> = rsync_from_matches.values_of("NAMES").unwrap().collect();
+            if rsync_from_matches.is_present("names") {
+                let names: Vec<&str> = rsync_from_matches.values_of("names").unwrap().collect();
                 vmc.names(&names);
             }
 
@@ -200,8 +200,8 @@ fn main() -> Result<()> {
             let mut vmc = VMsCreator::new(&config);
             vmc.all();
 
-            if show_matches.is_present("NAMES") {
-                let names: Vec<&str> = show_matches.values_of("NAMES").unwrap().collect();
+            if show_matches.is_present("names") {
+                let names: Vec<&str> = show_matches.values_of("names").unwrap().collect();
                 vmc.names(&names);
             }
 
@@ -241,8 +241,8 @@ fn main() -> Result<()> {
                 vmc.tags(&tags);
             }
 
-            if list_matches.is_present("NAMES") {
-                let names: Vec<&str> = list_matches.values_of("NAMES").unwrap().collect();
+            if list_matches.is_present("names") {
+                let names: Vec<&str> = list_matches.values_of("names").unwrap().collect();
                 vmc.names(&names);
             }
 

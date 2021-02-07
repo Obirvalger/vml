@@ -29,7 +29,7 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("start")
                 .about("start virtual machines")
-                .arg(Arg::new("NAMES").takes_value(true).multiple(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
@@ -40,13 +40,12 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple(true),
                 )
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
-            // .group(ArgGroup::new("vms").required(true).args(&["NAMES", "all", "tags"])),
         )
         .subcommand(
             App::new("stop")
                 .about("stop virtual machines")
                 .arg(Arg::new("force").long("force").short('f'))
-                .arg(Arg::new("NAMES").takes_value(true).multiple(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
@@ -56,7 +55,6 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple(true),
                 )
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
-            // .group(ArgGroup::new("vms").required(true).args(&["NAMES", "all", "tags"])),
         )
         .subcommand(
             App::new("ssh")
@@ -69,7 +67,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .allow_hyphen_values(true)
                         .multiple(true),
                 )
-                .arg(Arg::new("NAMES").takes_value(true).multiple(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(
                     Arg::new("cmd")
                         .long("cmd")
@@ -98,7 +96,7 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("rsync-to")
                 .about("rsync to a virtual machine, default destination is home")
-                .arg(Arg::new("NAMES").takes_value(true).multiple(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(
                     Arg::new("rsync-options")
                         .long("rsync-options")
@@ -145,7 +143,7 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("rsync-from")
                 .about("rsync from a virtual machine, default destination is CWD")
-                .arg(Arg::new("NAMES").takes_value(true).multiple(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(
                     Arg::new("rsync-options")
                         .long("rsync-options")
@@ -192,7 +190,7 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("show")
                 .about("show virtual machines")
-                .arg(Arg::new("NAMES").takes_value(true).multiple(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
@@ -209,7 +207,7 @@ pub fn build_cli() -> clap::App<'static> {
             App::new("list")
                 .about("list virtual machines")
                 .alias("ls")
-                .arg(Arg::new("NAMES").takes_value(true).multiple(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("fold").long("fold").short('f'))
                 .arg(Arg::new("unfold").long("unfold").short('u'))
                 .arg(Arg::new("all").long("all").short('a'))
@@ -224,7 +222,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
                 .group(ArgGroup::new("all_running").args(&["all", "running"]))
                 .group(ArgGroup::new("fold_group").args(&["fold", "unfold"]))
-                .group(ArgGroup::new("vms").args(&["NAMES", "all", "parents", "tags"])),
+                .group(ArgGroup::new("vms").args(&["names", "all", "parents", "tags"])),
         )
         .subcommand(App::new("completion").arg(
             Arg::new("SHELL").about("generate completions").required(true).possible_values(&[

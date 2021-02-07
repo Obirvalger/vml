@@ -52,8 +52,9 @@ touch vml.toml
 Some fields of the `vml.toml` have names as `default` section fields of the
 `config.toml` file.
 
-Finally start the vm and ssh. Option `-c` used to mount cloud-init data.
+Finally start the vm with `test` name and ssh. Option `-c` used to mount
+cloud-init data.
 ```
-vml start test -c
-vml ssh test
+vml start -n test -c
+vml ssh -n test
 ```
