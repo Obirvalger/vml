@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::env;
 
 use vml::cli;
@@ -256,7 +256,7 @@ fn main() -> Result<()> {
                 list_matches.is_present("fold") && !list_matches.is_present("unfold")
             };
 
-            let mut names: HashSet<String> = HashSet::new();
+            let mut names: BTreeSet<String> = BTreeSet::new();
 
             for vm in vmc.create()? {
                 if fold {
