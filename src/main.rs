@@ -15,6 +15,9 @@ fn main() -> Result<()> {
     if let Some(vm_config) = matches.value_of("vm-config") {
         vmc.vm_config(&fs::read_to_string(&vm_config)?);
     }
+    if matches.is_present("minimal-vm-config") {
+        vmc.minimal_vm_config();
+    }
 
     match matches.subcommand() {
         Some(("start", start_matches)) => {

@@ -33,6 +33,12 @@ pub fn build_cli() -> clap::App<'static> {
                 .value_hint(ValueHint::FilePath)
                 .takes_value(true),
         )
+        .arg(
+            Arg::new("minimal-vm-config")
+                .long("minimal-vm-config")
+                .about("Replace vm config with minimal one"),
+        )
+        .group(ArgGroup::new("vm-config-group").args(&["vm-config", "minimal-vm-config"]))
         .subcommand(
             App::new("start")
                 .about("start virtual machines")

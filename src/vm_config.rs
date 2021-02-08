@@ -50,4 +50,14 @@ impl VMConfig {
 
         Ok(config)
     }
+
+    pub fn minimal_config_string() -> String {
+        r#"
+        name = "{{name}}"
+        disk = "{{disk}}"
+        [data]
+        address = "{{address}}"
+        tap = "{{tap}}"
+        "#.to_owned()
+    }
 }

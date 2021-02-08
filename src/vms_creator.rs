@@ -48,6 +48,10 @@ impl<'a> VMsCreator<'a> {
         self.vm_config = Some(vm_config.to_owned());
     }
 
+    pub fn minimal_vm_config(&mut self) {
+        self.vm_config = Some(VMConfig::minimal_config_string());
+    }
+
     pub fn all(&mut self) {
         self.all = true;
         self.names = HashSet::new();
