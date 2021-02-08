@@ -315,16 +315,18 @@ impl VM {
         Ok(())
     }
 
-    fn tera_render(&self, template: &str, place: &str) -> Result<String> {
+    pub fn tera_render(&self, template: &str, place: &str) -> Result<String> {
         let mut context = Context::new();
-        context.insert("name", &self.name);
         context.insert("address", &self.address);
+        context.insert("disk", &self.disk);
+        context.insert("name", &self.name);
+        context.insert("tap", &self.tap);
         context.insert("user_network", &self.user_network);
         Tera::one_off(template, &context, false)
             .map_err(|e| Error::template(place, &e.to_string()))
     }
 
-    fn tera_renders(&self, templates: &[&str], place: &str) -> Result<Vec<String>> {
+    pub fn tera_renders(&self, templates: &[&str], place: &str) -> Result<Vec<String>> {
         let mut strings = Vec::with_capacity(templates.len());
 
         for template in templates {
