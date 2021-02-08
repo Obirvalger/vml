@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,6 +13,7 @@ use crate::{Error, Result};
 pub struct VMConfig {
     pub address: Option<String>,
     pub cloud_init_image: Option<PathBuf>,
+    pub data: Option<HashMap<String, String>>,
     pub disk: Option<PathBuf>,
     pub display: Option<String>,
     pub name: Option<String>,

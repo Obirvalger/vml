@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -96,6 +96,7 @@ pub struct VM {
     address: Option<String>,
     cache: Cache,
     cloud_init_image: Option<PathBuf>,
+    data: HashMap<String, String>,
     directory: PathBuf,
     disk: PathBuf,
     display: Option<String>,
@@ -137,6 +138,7 @@ impl VM {
         let address = vm_config.address;
         let cloud_init_image =
             vm_config.cloud_init_image.or_else(|| config.default.cloud_init_image.to_owned());
+        let data = vm_config.data.unwrap_or_else(HashMap::new);
         let disk = directory.join(vm_config.disk.unwrap_or_else(|| {
             let mut dp = PathBuf::from(&name);
             dp.set_extension("qcow2");
@@ -171,6 +173,7 @@ impl VM {
             address,
             cache,
             cloud_init_image,
+            data,
             directory,
             disk,
             display,
@@ -325,6 +328,7 @@ impl VM {
     pub fn tera_render(&self, template: &str, place: &str) -> Result<String> {
         let mut context = Context::new();
         context.insert("address", &self.address);
+        context.insert("data", &self.data);
         context.insert("disk", &self.disk);
         context.insert("name", &self.name);
         context.insert("tap", &self.tap);
