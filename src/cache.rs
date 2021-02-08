@@ -1,4 +1,3 @@
-use std::env;
 use std::fs;
 use std::path::PathBuf;
 
@@ -9,12 +8,9 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(name: &str) -> Cache {
-        let tmp =
-            env::var("TMP").or_else(|_| env::var("TMPDIR")).unwrap_or_else(|_| "/tmp".to_string());
-        let dir = PathBuf::from(tmp).join("vml").join(name).join(".cache");
+    pub fn new(name: &str, dir: &PathBuf) -> Cache {
         fs::create_dir_all(&dir).unwrap();
-        Cache { name: name.to_string(), dir }
+        Cache { name: name.to_string(), dir: dir.to_owned() }
     }
 
     pub fn store(&self, key: &str, value: &str) {

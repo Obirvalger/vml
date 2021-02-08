@@ -123,11 +123,11 @@ impl VM {
     }
 
     pub fn from_config_vm_config(config: &Config, name: &str, vm_config: &VMConfig) -> Result<VM> {
-        let cache = Cache::new(name);
         let directory = config.vms_dir.join(name);
         let vm_config = vm_config.to_owned();
         let name = vm_config.name.unwrap_or_else(|| name.to_string());
         let name_path = PathBuf::from(&name);
+        let cache = Cache::new(&name, &directory.join(".vml").join("cache"));
 
         let specified_by = SpecifiedBy::All;
 
