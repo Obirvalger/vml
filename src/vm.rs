@@ -127,7 +127,7 @@ impl VM {
         let vm_config = vm_config.to_owned();
         let name = vm_config.name.unwrap_or_else(|| name.to_string());
         let name_path = PathBuf::from(&name);
-        let cache = Cache::new(&name, &directory.join(".vml").join("cache"));
+        let cache = Cache::new(&name, &directory.join(".vml").join("cache"))?;
 
         let specified_by = SpecifiedBy::All;
 
@@ -253,7 +253,7 @@ impl VM {
             if self.user_network {
                 let port = ssh.port().to_string();
                 let port = if port == "random" { get_available_port().unwrap() } else { port };
-                self.cache.store("port", &port);
+                self.cache.store("port", &port)?;
                 kvm.args(&["-nic", &format!("user,hostfwd=tcp::{}-:22", port)]);
             }
         }
@@ -306,7 +306,7 @@ impl VM {
         ssh_cmd.args(self_ssh.options());
 
         let port = self_ssh.port().to_string();
-        let port = if port == "random" { self.cache.load("port") } else { port };
+        let port = if port == "random" { self.cache.load("port")? } else { port };
         ssh_cmd.args(&["-p", &port]);
 
         ssh_cmd.args(ssh_options);
@@ -365,7 +365,7 @@ impl VM {
         ssh_cmd.extend(&self_ssh.options());
 
         let port = self_ssh.port().to_string();
-        let port = if port == "random" { self.cache.load("port") } else { port };
+        let port = if port == "random" { self.cache.load("port")? } else { port };
         ssh_cmd.extend(&["-p", &port]);
 
         let user_host = self_ssh.user_host(&user);
