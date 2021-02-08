@@ -26,6 +26,13 @@ pub fn build_cli() -> clap::App<'static> {
         .setting(AppSettings::VersionlessSubcommands)
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .global_setting(AppSettings::InferSubcommands)
+        .arg(
+            Arg::new("vm-config")
+                .long("vm-config")
+                .about("Path to vm config replacement (use tera templates)")
+                .value_hint(ValueHint::FilePath)
+                .takes_value(true),
+        )
         .subcommand(
             App::new("start")
                 .about("start virtual machines")

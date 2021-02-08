@@ -28,6 +28,13 @@ pub struct VMConfig {
 }
 
 impl VMConfig {
+    pub fn from_str(config_str: &str) -> Result<VMConfig> {
+        let config = toml::from_str(config_str)
+            .map_err(|e| Error::parse_vm_config("config from str", &e.to_string()))?;
+
+        Ok(config)
+    }
+
     pub fn new(config_path: &PathBuf) -> Result<VMConfig> {
         let config_str = &fs::read_to_string(config_path).map_err(|e| {
             Error::ParseConfig(format!(

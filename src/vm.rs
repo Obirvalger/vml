@@ -114,10 +114,17 @@ pub struct VM {
 
 impl VM {
     pub fn from_config(config: &Config, name: &str) -> Result<VM> {
-        let cache = Cache::new(name);
         let directory = config.vms_dir.join(name);
         let config_path = directory.join("vml.toml");
         let vm_config = VMConfig::new(&config_path)?;
+
+        VM::from_config_vm_config(config, name, &vm_config)
+    }
+
+    pub fn from_config_vm_config(config: &Config, name: &str, vm_config: &VMConfig) -> Result<VM> {
+        let cache = Cache::new(name);
+        let directory = config.vms_dir.join(name);
+        let vm_config = vm_config.to_owned();
         let name = vm_config.name.unwrap_or_else(|| name.to_string());
         let name_path = PathBuf::from(&name);
 

@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::env;
+use std::fs;
 
 use vml::cli;
 use vml::config::Config;
@@ -10,10 +11,13 @@ fn main() -> Result<()> {
     let matches = cli::build_cli().get_matches();
 
     let config = Config::new()?;
+    let mut vmc = VMsCreator::new(&config);
+    if let Some(vm_config) = matches.value_of("vm-config") {
+        vmc.vm_config(&fs::read_to_string(&vm_config)?);
+    }
 
     match matches.subcommand() {
         Some(("start", start_matches)) => {
-            let mut vmc = VMsCreator::new(&config);
             if start_matches.is_present("all") {
                 vmc.all();
             }
@@ -44,7 +48,6 @@ fn main() -> Result<()> {
         }
 
         Some(("stop", stop_matches)) => {
-            let mut vmc = VMsCreator::new(&config);
             if stop_matches.is_present("all") {
                 vmc.all();
             }
@@ -77,8 +80,6 @@ fn main() -> Result<()> {
         }
 
         Some(("ssh", ssh_matches)) => {
-            let mut vmc = VMsCreator::new(&config);
-
             if ssh_matches.is_present("parents") {
                 let parents: Vec<&str> = ssh_matches.values_of("parents").unwrap().collect();
                 vmc.parents(&parents);
@@ -153,8 +154,6 @@ fn main() -> Result<()> {
         }
 
         Some(("rsync-from", rsync_from_matches)) => {
-            let mut vmc = VMsCreator::new(&config);
-
             if rsync_from_matches.is_present("parents") {
                 let parents: Vec<&str> =
                     rsync_from_matches.values_of("parents").unwrap().collect();
@@ -197,7 +196,6 @@ fn main() -> Result<()> {
         }
 
         Some(("show", show_matches)) => {
-            let mut vmc = VMsCreator::new(&config);
             vmc.all();
 
             if show_matches.is_present("names") {
@@ -228,7 +226,6 @@ fn main() -> Result<()> {
         }
 
         Some(("list", list_matches)) => {
-            let mut vmc = VMsCreator::new(&config);
             vmc.all();
 
             if list_matches.is_present("parents") {

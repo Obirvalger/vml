@@ -8,6 +8,7 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::specified_by::SpecifiedBy;
+use crate::vm_config::VMConfig;
 use crate::VM;
 use crate::{Error, Result};
 
@@ -27,6 +28,7 @@ pub struct VMsCreator<'a> {
     names: HashSet<String>,
     parents: HashSet<String>,
     tags: HashSet<String>,
+    vm_config: Option<String>,
     with_pid: Option<WithPid>,
 }
 
@@ -37,8 +39,13 @@ impl<'a> VMsCreator<'a> {
         let names = HashSet::new();
         let parents = HashSet::new();
         let tags = HashSet::new();
+        let vm_config = None;
         let with_pid = None;
-        VMsCreator { all, config, error_on_empty, names, parents, tags, with_pid }
+        VMsCreator { all, config, error_on_empty, names, parents, tags, vm_config, with_pid }
+    }
+
+    pub fn vm_config(&mut self, vm_config: &str) {
+        self.vm_config = Some(vm_config.to_owned());
     }
 
     pub fn all(&mut self) {
@@ -101,18 +108,31 @@ impl<'a> VMsCreator<'a> {
                     .expect("prefix is not prefix")
                     .to_string_lossy();
                 let mut vm = VM::from_config(self.config, &name)?;
+
+                let mut inser_vm = false;
                 if self.names.contains(&vm.name) {
                     vm.specify(SpecifiedBy::Name);
-                    vms.insert(vm.get_disk().clone(), vm);
+                    inser_vm = true;
                 } else if let Some(parent) = self.parents.iter().find(|p| vm.has_parent(p)) {
                     vm.specify(SpecifiedBy::Parent(parent.trim_end_matches('/').to_owned()));
-                    vms.insert(vm.get_disk().clone(), vm);
+                    inser_vm = true;
                 } else if vm.has_common_tags(&self.tags) {
                     vm.specify(SpecifiedBy::Tag);
-                    vms.insert(vm.get_disk().clone(), vm);
+                    inser_vm = true;
                 } else if self.all {
                     vm.specify(SpecifiedBy::All);
-                    vms.insert(vm.get_disk().clone(), vm);
+                    inser_vm = true;
+                }
+
+                if inser_vm {
+                    let disk = vm.get_disk().to_owned();
+                    if let Some(vm_config) = &self.vm_config {
+                        let vm_config = vm.tera_render(&vm_config, "vms_creator:create")?;
+                        let vm_config = VMConfig::from_str(&vm_config)?;
+                        vm = VM::from_config_vm_config(self.config, &name, &vm_config)?
+                    }
+
+                    vms.insert(disk, vm);
                 }
             }
         }
