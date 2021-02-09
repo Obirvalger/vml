@@ -1,0 +1,11 @@
+#cloud-config
+
+users:
+  - name: root
+    ssh_authorized_keys:
+      - SSH_PUBLIC_KEY
+  - name: user
+    groups:
+      - wheel
+    ssh_authorized_keys:
+      - SSH_PUBLIC_KEY
