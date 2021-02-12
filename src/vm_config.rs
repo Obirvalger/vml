@@ -58,6 +58,7 @@ impl VMConfig {
         [data]
         address = "{{address}}"
         tap = "{{tap}}"
-        "#.to_owned()
+        "#
+        .to_owned()
     }
 }
