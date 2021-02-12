@@ -271,6 +271,35 @@ fn main() -> Result<()> {
             }
         }
 
+        Some(("monitor", monitor_matches)) => {
+            if monitor_matches.is_present("parents") {
+                let parents: Vec<&str> = monitor_matches.values_of("parents").unwrap().collect();
+                vmc.parents(&parents);
+            }
+
+            if monitor_matches.is_present("tags") {
+                let tags: Vec<&str> = monitor_matches.values_of("tags").unwrap().collect();
+                vmc.tags(&tags);
+            }
+
+            if monitor_matches.is_present("names") {
+                let names: Vec<&str> = monitor_matches.values_of("names").unwrap().collect();
+                vmc.names(&names);
+            }
+
+            if monitor_matches.is_present("running") {
+                vmc.with_pid(WithPid::Filter);
+            }
+
+            let command = monitor_matches.value_of("command");
+
+            vmc.with_pid(WithPid::Error);
+            vmc.error_on_empty();
+            for vm in vmc.create()? {
+                vm.monitor(command)?;
+            }
+        }
+
         Some(("completion", completion_matches)) => {
             cli::completion(completion_matches.value_of("SHELL").unwrap())
         }

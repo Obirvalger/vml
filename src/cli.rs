@@ -237,6 +237,23 @@ pub fn build_cli() -> clap::App<'static> {
                 .group(ArgGroup::new("fold_group").args(&["fold", "unfold"]))
                 .group(ArgGroup::new("vms").args(&["names", "all", "parents", "tags"])),
         )
+        .subcommand(
+            App::new("monitor")
+                .about("acces to qemu monitor")
+                .arg(Arg::new("command").long("command").short('c').takes_value(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(Arg::new("all").long("all").short('a'))
+                .arg(
+                    Arg::new("parents")
+                        .long("parents")
+                        .short('p')
+                        .takes_value(true)
+                        .multiple(true),
+                )
+                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
+                .arg(Arg::new("running").long("running").short('r'))
+                .group(ArgGroup::new("all_running").args(&["all", "running"])),
+        )
         .subcommand(App::new("completion").arg(
             Arg::new("SHELL").about("generate completions").required(true).possible_values(&[
                 "bash",

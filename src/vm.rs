@@ -1,8 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::io::prelude::Write;
 use std::net::TcpListener;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread::sleep;
+use std::time::Duration;
 
 use rand::Rng;
 use tera::{Context, Tera};
@@ -421,6 +425,24 @@ impl VM {
         destination: &Option<&str>,
     ) -> Result<()> {
         self.rsync_to_from(false, user, rsync_options, sources, destination)
+    }
+
+    pub fn monitor(&self, command: Option<&str>) -> Result<()> {
+        if let Some(command) = command {
+            let mut stream = UnixStream::connect(&self.monitor)?;
+            let command = &format!("{}\n", command);
+            stream.write_all(command.as_bytes())?;
+            // NOTE `stream.flush()?` does not work
+            sleep(Duration::from_millis(5));
+        } else {
+            Command::new("socat")
+                .arg("-,echo=0,icanon=0")
+                .arg(&format!("unix-connect:{}", &self.monitor.to_string_lossy()))
+                .spawn()?
+                .wait()?;
+        }
+
+        Ok(())
     }
 
     pub fn folded_name(&self) -> String {
