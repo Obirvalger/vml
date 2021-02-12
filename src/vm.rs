@@ -101,6 +101,7 @@ pub struct VM {
     disk: PathBuf,
     display: Option<String>,
     memory: String,
+    monitor: PathBuf,
     minimum_disk_size: Option<u128>,
     pub name: String,
     name_path: PathBuf,
@@ -130,6 +131,7 @@ impl VM {
         let name = vm_config.name.unwrap_or_else(|| name.to_string());
         let name_path = PathBuf::from(&name);
         let cache = Cache::new(&name, &vml_directory.join("cache"))?;
+        let monitor = vml_directory.join("monitor.socket");
 
         let specified_by = SpecifiedBy::All;
 
@@ -180,6 +182,7 @@ impl VM {
             disk,
             display,
             memory,
+            monitor,
             minimum_disk_size,
             name,
             name_path,
@@ -233,6 +236,7 @@ impl VM {
             .args(&["-cpu", "host"])
             .args(&["-smp", &self.nproc])
             .args(&["-drive", &format!("file={},if=virtio", self.disk.to_string_lossy())])
+            .args(&["-monitor", &format!("unix:{},server,nowait", self.monitor.to_string_lossy())])
             .arg("-daemonize")
             .current_dir(&self.directory);
 
