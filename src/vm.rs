@@ -106,11 +106,12 @@ pub struct VM {
     name_path: PathBuf,
     nproc: String,
     specified_by: SpecifiedBy,
-    ssh: Option<SSH>,
     pid: Option<i32>,
+    ssh: Option<SSH>,
     tags: HashSet<String>,
     tap: Option<String>,
     user_network: bool,
+    vml_directory: PathBuf,
 }
 
 impl VM {
@@ -124,10 +125,11 @@ impl VM {
 
     pub fn from_config_vm_config(config: &Config, name: &str, vm_config: &VMConfig) -> Result<VM> {
         let directory = config.vms_dir.join(name);
+        let vml_directory = directory.join(".vml");
         let vm_config = vm_config.to_owned();
         let name = vm_config.name.unwrap_or_else(|| name.to_string());
         let name_path = PathBuf::from(&name);
-        let cache = Cache::new(&name, &directory.join(".vml").join("cache"))?;
+        let cache = Cache::new(&name, &vml_directory.join("cache"))?;
 
         let specified_by = SpecifiedBy::All;
 
@@ -188,6 +190,7 @@ impl VM {
             tags,
             tap,
             user_network,
+            vml_directory,
         })
     }
 
