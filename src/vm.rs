@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::prelude::Write;
 use std::net::TcpListener;
@@ -358,6 +359,19 @@ impl VM {
         Ok(strings)
     }
 
+    pub fn tera_render_file(
+        &self,
+        template_file: &str,
+        rendered_file: &str,
+        place: &str,
+    ) -> Result<()> {
+        let template = fs::read_to_string(template_file)?;
+        let rendered = self.tera_render(&template, place)?;
+        fs::write(rendered_file, &rendered.as_bytes())?;
+
+        Ok(())
+    }
+
     fn rsync_to_from(
         &self,
         to: bool,
@@ -415,6 +429,20 @@ impl VM {
         destination: &Option<&str>,
     ) -> Result<()> {
         self.rsync_to_from(true, user, rsync_options, sources, destination)
+    }
+
+    pub fn rsync_to_template(
+        &self,
+        user: &Option<&str>,
+        rsync_options: &[&str],
+        template: &str,
+        destination: &Option<&str>,
+    ) -> Result<()> {
+        let tmp_dir = tempfile::tempdir().expect("can't create tmp file");
+        let tmp_name = tmp_dir.path().join(template).to_string_lossy().to_string();
+        let sources = [tmp_name.as_str()];
+        self.tera_render_file(template, &tmp_name, "rsync_to_template")?;
+        self.rsync_to_from(true, user, rsync_options, &sources, destination)
     }
 
     pub fn rsync_from(

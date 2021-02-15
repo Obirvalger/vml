@@ -148,9 +148,15 @@ pub fn build_cli() -> clap::App<'static> {
                         .short('s')
                         .value_hint(ValueHint::AnyPath)
                         .takes_value(true)
-                        .multiple(true)
-                        .required(true),
+                        .multiple(true),
                 )
+                .arg(
+                    Arg::new("template")
+                        .long("template")
+                        .value_hint(ValueHint::AnyPath)
+                        .takes_value(true),
+                )
+                .group(ArgGroup::new("source").args(&["sources", "template"]).required(true))
                 .group(ArgGroup::new("action").args(&["destination", "list"])),
         )
         .subcommand(

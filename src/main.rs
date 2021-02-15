@@ -141,7 +141,8 @@ fn main() -> Result<()> {
                 Vec::new()
             };
 
-            let sources: Vec<&str> = rsync_to_matches.values_of("sources").unwrap().collect();
+            let sources = rsync_to_matches.values_of("sources");
+            let template = rsync_to_matches.value_of("template");
 
             let destination = if rsync_to_matches.is_present("list") {
                 None
@@ -151,8 +152,15 @@ fn main() -> Result<()> {
 
             vmc.with_pid(WithPid::Error);
             vmc.error_on_empty();
-            for vm in vmc.create()? {
-                vm.rsync_to(&user, &rsync_options, &sources, &destination)?;
+            if let Some(sources) = sources {
+                let sources: Vec<&str> = sources.collect();
+                for vm in vmc.create()? {
+                    vm.rsync_to(&user, &rsync_options, &sources, &destination)?;
+                }
+            } else if let Some(template) = template {
+                for vm in vmc.create()? {
+                    vm.rsync_to_template(&user, &rsync_options, template, &destination)?;
+                }
             }
         }
 

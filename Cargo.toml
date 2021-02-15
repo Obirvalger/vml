@@ -14,6 +14,7 @@ json = "0.12.4"
 procfs = "0.9.1"
 rand = "0.8.2"
 serde = { version = "1.0.118", features = ["derive"] }
+tempfile = "3.2.0"
 tera = "1.6.1"
 toml = "0.5.8"
 walkdir = "2.3.1"
