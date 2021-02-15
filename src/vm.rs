@@ -286,14 +286,18 @@ impl VM {
         Ok(())
     }
 
-    pub fn stop(&self) -> Result<()> {
+    pub fn stop(&self, force: bool) -> Result<()> {
         #[cfg(debug_assertions)]
         println!("Stop vm {:?}", self.name);
 
         if let Some(pid) = self.pid {
-            Command::new("kill").args(&[pid.to_string()]).spawn()?;
-            #[cfg(debug_assertions)]
-            println!("Kill {}", pid);
+            if force {
+                Command::new("kill").args(&[pid.to_string()]).spawn()?;
+                #[cfg(debug_assertions)]
+                println!("Kill {}", pid);
+            } else {
+                self.monitor(Some("quit"))?;
+            }
         } else {
             return Err(Error::VMHasNoPid(self.name.to_string()));
         }

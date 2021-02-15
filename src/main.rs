@@ -76,9 +76,7 @@ fn main() -> Result<()> {
             vmc.error_on_empty();
 
             for vm in vmc.create()? {
-                if force || vm.ssh(&Some("root"), &[], &Some(vec!["poweroff"])).is_err() {
-                    vm.stop()?;
-                }
+                vm.stop(force)?;
             }
         }
 
