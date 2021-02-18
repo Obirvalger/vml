@@ -301,8 +301,17 @@ fn main() -> Result<()> {
 
             vmc.with_pid(WithPid::Error);
             vmc.error_on_empty();
-            for vm in vmc.create()? {
-                vm.monitor(command)?;
+            if let Some(command) = command {
+                for vm in vmc.create()? {
+                    let reply = vm.monitor_command(command)?;
+                    if let Some(reply) = reply {
+                        println!("{}", reply);
+                    }
+                }
+            } else {
+                for vm in vmc.create()? {
+                    vm.monitor()?;
+                }
             }
         }
 

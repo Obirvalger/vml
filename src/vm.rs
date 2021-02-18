@@ -1,19 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::io::prelude::Write;
 use std::net::TcpListener;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::thread::sleep;
-use std::time::Duration;
 
 use rand::Rng;
 use tera::{Context, Tera};
 
 use crate::cache::Cache;
 use crate::config::Config;
+use crate::socket;
 use crate::specified_by::SpecifiedBy;
 use crate::vm_config::VMConfig;
 use crate::{Error, Result};
@@ -296,7 +293,7 @@ impl VM {
                 #[cfg(debug_assertions)]
                 println!("Kill {}", pid);
             } else {
-                self.monitor(Some("quit"))?;
+                self.monitor_command("quit")?;
             }
         } else {
             return Err(Error::VMHasNoPid(self.name.to_string()));
@@ -459,22 +456,26 @@ impl VM {
         self.rsync_to_from(false, user, rsync_options, sources, destination)
     }
 
-    pub fn monitor(&self, command: Option<&str>) -> Result<()> {
-        if let Some(command) = command {
-            let mut stream = UnixStream::connect(&self.monitor)?;
-            let command = &format!("{}\n", command);
-            stream.write_all(command.as_bytes())?;
-            // NOTE `stream.flush()?` does not work
-            sleep(Duration::from_millis(5));
-        } else {
-            Command::new("socat")
-                .arg("-,echo=0,icanon=0")
-                .arg(&format!("unix-connect:{}", &self.monitor.to_string_lossy()))
-                .spawn()?
-                .wait()?;
-        }
+    pub fn monitor(&self) -> Result<()> {
+        Command::new("socat")
+            .arg("-,echo=0,icanon=0")
+            .arg(&format!("unix-connect:{}", &self.monitor.to_string_lossy()))
+            .spawn()?
+            .wait()?;
 
         Ok(())
+    }
+
+    pub fn monitor_command(&self, command: &str) -> Result<Option<String>> {
+        let command = &format!("{}\n", command);
+        let reply = socket::reply(command.as_bytes(), &self.monitor)?;
+        let reply =
+            String::from_utf8(reply).map_err(|e| Error::other("from_utf8", &e.to_string()))?;
+        let lines: Vec<&str> = reply.lines().collect();
+        let reply = lines[2..lines.len() - 1].join("\n");
+        let reply = if reply.is_empty() { None } else { Some(reply) };
+
+        Ok(reply)
     }
 
     pub fn folded_name(&self) -> String {
