@@ -472,10 +472,14 @@ impl VM {
         let reply =
             String::from_utf8(reply).map_err(|e| Error::other("from_utf8", &e.to_string()))?;
         let lines: Vec<&str> = reply.lines().collect();
-        let reply = lines[2..lines.len() - 1].join("\n");
-        let reply = if reply.is_empty() { None } else { Some(reply) };
+        if lines.len() > 3 {
+            lines[2..lines.len() - 1].join("\n");
+            if !reply.is_empty() {
+                return Ok(Some(reply));
+            }
+        }
 
-        Ok(reply)
+        Ok(None)
     }
 
     pub fn folded_name(&self) -> String {
