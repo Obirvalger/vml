@@ -15,6 +15,20 @@ use crate::specified_by::SpecifiedBy;
 use crate::vm_config::VMConfig;
 use crate::{Error, Result};
 
+pub fn create(config: &Config, name: &str, image: Option<&str>) -> Result<()> {
+    let image = image.unwrap_or(&config.images.default);
+    let vm_dir = config.vms_dir.join(name);
+    let image_path = &config.images.directory.join(image);
+    let vm_disk = vm_dir.join(format!("{}.qcow2", name));
+    let vml_path = vm_dir.join("vml.toml");
+
+    fs::create_dir_all(&vm_dir)?;
+    fs::copy(&image_path, &vm_disk)?;
+    fs::OpenOptions::new().create(true).write(true).open(&vml_path)?;
+
+    Ok(())
+}
+
 fn get_random_mac() -> String {
     let mut rng = rand::thread_rng();
     let mac_tail = (0..5).map(|_| rng.gen::<u8>().to_string()).collect::<Vec<_>>().join(":");

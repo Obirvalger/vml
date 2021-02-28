@@ -20,6 +20,16 @@ fn main() -> Result<()> {
     }
 
     match matches.subcommand() {
+        Some(("create", create_matches)) => {
+            let names: Vec<&str> = create_matches.values_of("names").unwrap().collect();
+
+            let image = create_matches.value_of("image");
+
+            for name in names {
+                vml::create_vm(&config, name, image)?;
+            }
+        }
+
         Some(("start", start_matches)) => {
             if start_matches.is_present("all") {
                 vmc.all();

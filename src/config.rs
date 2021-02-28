@@ -25,10 +25,18 @@ pub struct VMsDefault {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+pub struct Images {
+    pub directory: PathBuf,
+    pub default: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Config {
     pub vms_dir: PathBuf,
     pub list_fold: bool,
     pub default: VMsDefault,
+    pub images: Images,
 }
 
 impl Config {
