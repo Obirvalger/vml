@@ -22,31 +22,19 @@ cp config.toml ~/.config/vml
 ```
 And edit config with your preferences.
 
+Copy images file.
+```
+mkdir -p ~/.local/share/vml/images
+cp images.toml ~/.local/share/vml/images
+```
+
 ## Run
 Suppose you set vms-dir to `/home/user/vms/vml` and creating vm named `test`,
-create the directory and set it current working directory.
+using alt-sisyphus image.
 ```
 mkdir -p /home/user/vms/vml/test
-cd /home/user/vms/vml/test
-```
-
-Then download the image. Assume using image with cloud-init, .e.g
-http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/alt-sisyphus-cloud-x86_64.qcow2
-however you could use any image with ssh access configured, but without using
-cloud-init.
-```
-wget http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/alt-sisyphus-cloud-x86_64.qcow2
-```
-
-Rename image with respect to the name of vm - test.qcow in out example.
-```
-mv alt-sisyphus-cloud-x86_64.qcow2 test.qcow2
-```
-
-Create `vml.toml` file with vm configuration, all fields are default, so colud
-be used just empty file!
-```
-touch vml.toml
+vml images pull alt-sisyphus
+vml create -i alt-sisyphus -n test
 ```
 
 Some fields of the `vml.toml` have names as `default` section fields of the
