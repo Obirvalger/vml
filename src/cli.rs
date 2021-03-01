@@ -54,12 +54,15 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("create")
                 .about("create virtual machine")
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
-                .arg(Arg::new("image").long("image").short('i').takes_value(true)),
+                .arg(Arg::new("image").long("image").short('i').takes_value(true))
+                .group(ArgGroup::new("name_group").args(&["names", "NAME"]).required(true)),
         )
         .subcommand(
             App::new("start")
                 .about("start virtual machines")
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("all").long("all").short('a'))
@@ -76,6 +79,7 @@ pub fn build_cli() -> clap::App<'static> {
             App::new("stop")
                 .about("stop virtual machines")
                 .arg(Arg::new("force").long("force").short('f'))
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
@@ -98,6 +102,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .allow_hyphen_values(true)
                         .multiple(true),
                 )
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(
                     Arg::new("cmd")
@@ -127,6 +132,7 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("rsync-to")
                 .about("rsync to a virtual machine, default destination is home")
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(
                     Arg::new("rsync-options")
@@ -180,6 +186,7 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("rsync-from")
                 .about("rsync from a virtual machine, default destination is CWD")
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(
                     Arg::new("rsync-options")
@@ -227,6 +234,7 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("show")
                 .about("show virtual machines")
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
@@ -244,6 +252,7 @@ pub fn build_cli() -> clap::App<'static> {
             App::new("list")
                 .about("list virtual machines")
                 .alias("ls")
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("fold").long("fold").short('f'))
                 .arg(Arg::new("unfold").long("unfold").short('u'))
@@ -258,13 +267,13 @@ pub fn build_cli() -> clap::App<'static> {
                 )
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
                 .group(ArgGroup::new("all_running").args(&["all", "running"]))
-                .group(ArgGroup::new("fold_group").args(&["fold", "unfold"]))
-                .group(ArgGroup::new("vms").args(&["names", "all", "parents", "tags"])),
+                .group(ArgGroup::new("fold_group").args(&["fold", "unfold"])),
         )
         .subcommand(
             App::new("monitor")
                 .about("acces to qemu monitor")
                 .arg(Arg::new("command").long("command").short('c').takes_value(true))
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
@@ -280,6 +289,7 @@ pub fn build_cli() -> clap::App<'static> {
             App::new("rm")
                 .about("remove virtual machines")
                 .arg(Arg::new("force").long("force").short('f'))
+                .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(

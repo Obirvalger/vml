@@ -41,6 +41,10 @@ fn confirm(message: &str) -> bool {
 }
 
 fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
+    if let Some(name) = matches.value_of("NAME") {
+        vmc.name(name);
+    }
+
     if matches.is_present("names") {
         let names: Vec<&str> = matches.values_of("names").unwrap().collect();
         vmc.names(&names);
@@ -101,7 +105,13 @@ fn main() -> Result<()> {
         }
 
         Some(("create", create_matches)) => {
-            let names: Vec<&str> = create_matches.values_of("names").unwrap().collect();
+            let names: Vec<&str> = if create_matches.is_present("names") {
+                create_matches.values_of("names").unwrap().collect()
+            } else if let Some(name) = create_matches.value_of("NAME") {
+                vec![name]
+            } else {
+                vec![]
+            };
 
             let image = create_matches.value_of("image");
 
