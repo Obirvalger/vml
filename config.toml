@@ -3,6 +3,7 @@ vms-dir = "/home/user/vms/vml"
 
 list-fold = false
 
+
 [default]
 memory = "2G"
 
@@ -26,3 +27,10 @@ ssh-port-user-network = "random"
 user-network = true
 
 minimum-disk-size = "30G"
+
+
+[images]
+
+default = "alt-sisyphus"
+
+directory = "/home/user/.local/share/vml/images"
