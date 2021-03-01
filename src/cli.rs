@@ -274,9 +274,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .multiple(true),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
-                .arg(Arg::new("running").long("running").short('r'))
-                .group(ArgGroup::new("all_running").args(&["all", "running"])),
+                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
         )
         .subcommand(
             App::new("rm")
