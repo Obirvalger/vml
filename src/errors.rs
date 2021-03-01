@@ -2,15 +2,15 @@ use std::io;
 
 #[derive(Debug, Clone)]
 pub enum Error {
+    DiskDoesNotExists { disk_path: String, vm_name: String },
     EmptyVMsList,
-    VMHasNoPid(String),
-    VMHasNoSSH(String),
+    Other(String, String),
     ParseConfig(String),
-    Template { place: String, error: String },
     ParseVMConfig { config_path: String, error: String },
     ParseVMConfigField { vm_name: String, field: String },
-    DiskDoesNotExists { disk_path: String, vm_name: String },
-    Other(String, String),
+    Template { place: String, error: String },
+    VMHasNoPid(String),
+    VMHasNoSSH(String),
 }
 
 impl Error {
