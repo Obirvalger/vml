@@ -10,6 +10,6 @@ mod vm_config;
 mod vms_creator;
 
 pub use errors::{Error, Result};
-pub use vm::VM;
 pub use vm::create as create_vm;
+pub use vm::VM;
 pub use vms_creator::{VMsCreator, WithPid};

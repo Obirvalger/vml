@@ -266,6 +266,21 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("running").long("running").short('r'))
                 .group(ArgGroup::new("all_running").args(&["all", "running"])),
         )
+        .subcommand(
+            App::new("rm")
+                .about("remove virtual machines")
+                .arg(Arg::new("force").long("force").short('f'))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(Arg::new("all").long("all").short('a'))
+                .arg(
+                    Arg::new("parents")
+                        .long("parents")
+                        .short('p')
+                        .takes_value(true)
+                        .multiple(true),
+                )
+                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
+        )
         .subcommand(App::new("completion").arg(
             Arg::new("SHELL").about("generate completions").required(true).possible_values(&[
                 "bash",

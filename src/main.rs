@@ -1,11 +1,42 @@
 use std::collections::BTreeSet;
 use std::env;
 use std::fs;
+use std::io;
 
 use vml::cli;
 use vml::config::Config;
 use vml::Result;
 use vml::{VMsCreator, WithPid};
+
+fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<()> {
+    let fold = if config.list_fold { fold || !unfold } else { fold && !unfold };
+
+    let mut names: BTreeSet<String> = BTreeSet::new();
+
+    for vm in vmc.create()? {
+        if fold {
+            names.insert(vm.folded_name());
+        } else {
+            names.insert(vm.name.to_owned());
+        }
+    }
+
+    for name in names {
+        println!("{}", name);
+    }
+
+    Ok(())
+}
+
+fn confirm(message: &str) -> bool {
+    println!("{}", message);
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).expect("Cannot read from stdin");
+    let input = input.trim_end();
+    let input = input.to_lowercase();
+
+    matches!(input.as_str(), "y" | "yes")
+}
 
 fn main() -> Result<()> {
     let matches = cli::build_cli().get_matches();
@@ -266,25 +297,12 @@ fn main() -> Result<()> {
                 vmc.with_pid(WithPid::Filter);
             }
 
-            let fold = if config.list_fold {
-                list_matches.is_present("fold") || !list_matches.is_present("unfold")
-            } else {
-                list_matches.is_present("fold") && !list_matches.is_present("unfold")
-            };
-
-            let mut names: BTreeSet<String> = BTreeSet::new();
-
-            for vm in vmc.create()? {
-                if fold {
-                    names.insert(vm.folded_name());
-                } else {
-                    names.insert(vm.name.to_owned());
-                }
-            }
-
-            for name in names {
-                println!("{}", name);
-            }
+            list(
+                &vmc,
+                &config,
+                list_matches.is_present("fold"),
+                list_matches.is_present("unfold"),
+            )?;
         }
 
         Some(("monitor", monitor_matches)) => {
@@ -321,6 +339,42 @@ fn main() -> Result<()> {
             } else {
                 for vm in vmc.create()? {
                     vm.monitor()?;
+                }
+            }
+        }
+
+        Some(("rm", rm_matches)) => {
+            if rm_matches.is_present("parents") {
+                let parents: Vec<&str> = rm_matches.values_of("parents").unwrap().collect();
+                vmc.parents(&parents);
+            }
+
+            if rm_matches.is_present("tags") {
+                let tags: Vec<&str> = rm_matches.values_of("tags").unwrap().collect();
+                vmc.tags(&tags);
+            }
+
+            if rm_matches.is_present("names") {
+                let names: Vec<&str> = rm_matches.values_of("names").unwrap().collect();
+                vmc.names(&names);
+            }
+
+            let force = rm_matches.is_present("force");
+
+            if !force {
+                vmc.with_pid(WithPid::Without);
+            }
+
+            list(&vmc, &config, false, false)?;
+            let remove = confirm("Do you really want to remove that vms?");
+
+            if remove {
+                for vm in vmc.create()? {
+                    if force && vm.has_pid() {
+                        vm.stop(true)?;
+                    }
+
+                    vm.remove()?;
                 }
             }
         }

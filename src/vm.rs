@@ -496,6 +496,16 @@ impl VM {
         Ok(None)
     }
 
+    pub fn remove(self) -> Result<()> {
+        if self.has_pid() {
+            return Err(Error::RemoveRuuningVM(self.name));
+        }
+
+        fs::remove_dir_all(self.directory)?;
+
+        Ok(())
+    }
+
     pub fn folded_name(&self) -> String {
         match &self.specified_by {
             SpecifiedBy::All | SpecifiedBy::Tag => {

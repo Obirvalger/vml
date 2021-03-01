@@ -8,6 +8,7 @@ pub enum Error {
     ParseConfig(String),
     ParseVMConfig { config_path: String, error: String },
     ParseVMConfigField { vm_name: String, field: String },
+    RemoveRuuningVM(String),
     Template { place: String, error: String },
     VMHasNoPid(String),
     VMHasNoSSH(String),
