@@ -3,6 +3,8 @@ use std::env;
 use std::fs;
 use std::io;
 
+use clap::ArgMatches;
+
 use vml::cli;
 use vml::config::Config;
 use vml::Result;
@@ -36,6 +38,27 @@ fn confirm(message: &str) -> bool {
     let input = input.to_lowercase();
 
     matches!(input.as_str(), "y" | "yes")
+}
+
+fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
+    if matches.is_present("names") {
+        let names: Vec<&str> = matches.values_of("names").unwrap().collect();
+        vmc.names(&names);
+    }
+
+    if matches.is_present("parents") {
+        let parents: Vec<&str> = matches.values_of("parents").unwrap().collect();
+        vmc.parents(&parents);
+    }
+
+    if matches.is_present("tags") {
+        let tags: Vec<&str> = matches.values_of("tags").unwrap().collect();
+        vmc.tags(&tags);
+    }
+
+    if matches.is_present("running") {
+        vmc.with_pid(WithPid::Filter);
+    }
 }
 
 fn main() -> Result<()> {
@@ -92,20 +115,7 @@ fn main() -> Result<()> {
                 vmc.all();
             }
 
-            if start_matches.is_present("names") {
-                let names: Vec<&str> = start_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
-
-            if start_matches.is_present("parents") {
-                let parents: Vec<&str> = start_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if start_matches.is_present("tags") {
-                let tags: Vec<&str> = start_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
+            set_specifications(&mut vmc, start_matches);
 
             let cloud_init = start_matches.is_present("cloud-init");
 
@@ -122,20 +132,7 @@ fn main() -> Result<()> {
                 vmc.all();
             }
 
-            if stop_matches.is_present("names") {
-                let names: Vec<&str> = stop_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
-
-            if stop_matches.is_present("parents") {
-                let parents: Vec<&str> = stop_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if stop_matches.is_present("tags") {
-                let tags: Vec<&str> = stop_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
+            set_specifications(&mut vmc, stop_matches);
 
             let force = stop_matches.is_present("force");
 
@@ -148,20 +145,7 @@ fn main() -> Result<()> {
         }
 
         Some(("ssh", ssh_matches)) => {
-            if ssh_matches.is_present("parents") {
-                let parents: Vec<&str> = ssh_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if ssh_matches.is_present("tags") {
-                let tags: Vec<&str> = ssh_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
-
-            if ssh_matches.is_present("names") {
-                let names: Vec<&str> = ssh_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
+            set_specifications(&mut vmc, ssh_matches);
 
             let user = ssh_matches.value_of("user");
 
@@ -181,22 +165,7 @@ fn main() -> Result<()> {
         }
 
         Some(("rsync-to", rsync_to_matches)) => {
-            let mut vmc = VMsCreator::new(&config);
-
-            if rsync_to_matches.is_present("parents") {
-                let parents: Vec<&str> = rsync_to_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if rsync_to_matches.is_present("tags") {
-                let tags: Vec<&str> = rsync_to_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
-
-            if rsync_to_matches.is_present("names") {
-                let names: Vec<&str> = rsync_to_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
+            set_specifications(&mut vmc, rsync_to_matches);
 
             let user = rsync_to_matches.value_of("user");
 
@@ -230,21 +199,7 @@ fn main() -> Result<()> {
         }
 
         Some(("rsync-from", rsync_from_matches)) => {
-            if rsync_from_matches.is_present("parents") {
-                let parents: Vec<&str> =
-                    rsync_from_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if rsync_from_matches.is_present("tags") {
-                let tags: Vec<&str> = rsync_from_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
-
-            if rsync_from_matches.is_present("names") {
-                let names: Vec<&str> = rsync_from_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
+            set_specifications(&mut vmc, rsync_from_matches);
 
             let user = rsync_from_matches.value_of("user");
 
@@ -274,20 +229,7 @@ fn main() -> Result<()> {
         Some(("show", show_matches)) => {
             vmc.all();
 
-            if show_matches.is_present("names") {
-                let names: Vec<&str> = show_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
-
-            if show_matches.is_present("parents") {
-                let parents: Vec<&str> = show_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if show_matches.is_present("tags") {
-                let tags: Vec<&str> = show_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
+            set_specifications(&mut vmc, show_matches);
 
             if show_matches.is_present("running") {
                 vmc.with_pid(WithPid::Filter);
@@ -304,24 +246,7 @@ fn main() -> Result<()> {
         Some(("list", list_matches)) => {
             vmc.all();
 
-            if list_matches.is_present("parents") {
-                let parents: Vec<&str> = list_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if list_matches.is_present("tags") {
-                let tags: Vec<&str> = list_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
-
-            if list_matches.is_present("names") {
-                let names: Vec<&str> = list_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
-
-            if list_matches.is_present("running") {
-                vmc.with_pid(WithPid::Filter);
-            }
+            set_specifications(&mut vmc, list_matches);
 
             list(
                 &vmc,
@@ -332,24 +257,7 @@ fn main() -> Result<()> {
         }
 
         Some(("monitor", monitor_matches)) => {
-            if monitor_matches.is_present("parents") {
-                let parents: Vec<&str> = monitor_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if monitor_matches.is_present("tags") {
-                let tags: Vec<&str> = monitor_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
-
-            if monitor_matches.is_present("names") {
-                let names: Vec<&str> = monitor_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
-
-            if monitor_matches.is_present("running") {
-                vmc.with_pid(WithPid::Filter);
-            }
+            set_specifications(&mut vmc, monitor_matches);
 
             let command = monitor_matches.value_of("command");
 
@@ -370,20 +278,7 @@ fn main() -> Result<()> {
         }
 
         Some(("rm", rm_matches)) => {
-            if rm_matches.is_present("parents") {
-                let parents: Vec<&str> = rm_matches.values_of("parents").unwrap().collect();
-                vmc.parents(&parents);
-            }
-
-            if rm_matches.is_present("tags") {
-                let tags: Vec<&str> = rm_matches.values_of("tags").unwrap().collect();
-                vmc.tags(&tags);
-            }
-
-            if rm_matches.is_present("names") {
-                let names: Vec<&str> = rm_matches.values_of("names").unwrap().collect();
-                vmc.names(&names);
-            }
+            set_specifications(&mut vmc, rm_matches);
 
             let force = rm_matches.is_present("force");
 
