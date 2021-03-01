@@ -51,6 +51,20 @@ fn main() -> Result<()> {
     }
 
     match matches.subcommand() {
+        Some(("images", images_matches)) => {
+            let images_dir = config.images.directory;
+
+            match images_matches.subcommand() {
+                Some(("list", _list_images_matches)) => {
+                    for image in vml::images::list(&images_dir)? {
+                        println!("{}", image);
+                    }
+                }
+
+                _ => println!("Unexpected images command"),
+            }
+        }
+
         Some(("create", create_matches)) => {
             let names: Vec<&str> = create_matches.values_of("names").unwrap().collect();
 

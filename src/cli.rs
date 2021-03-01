@@ -40,6 +40,12 @@ pub fn build_cli() -> clap::App<'static> {
         )
         .group(ArgGroup::new("vm-config-group").args(&["vm-config", "minimal-vm-config"]))
         .subcommand(
+            App::new("images")
+                .about("command to work with vm images")
+                .setting(AppSettings::SubcommandRequiredElseHelp)
+                .subcommand(App::new("list").about("list vm images").alias("ls")),
+        )
+        .subcommand(
             App::new("create")
                 .about("create virtual machine")
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
