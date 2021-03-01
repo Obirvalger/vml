@@ -1,0 +1,8 @@
+[p9]
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p9/cloud/alt-p9-cloud-x86_64.qcow2"
+
+[alt-p9]
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p9/cloud/alt-p9-cloud-x86_64.qcow2"
+
+[alt-sisyphus]
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/alt-sisyphus-cloud-x86_64.qcow2"
