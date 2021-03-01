@@ -552,7 +552,7 @@ pub const O_DIRECT: ::c_int = 0x20000;
 
 pub const MAP_LOCKED: ::c_int = 0x00080;
 pub const MAP_NORESERVE: ::c_int = 0x00040;
-pub const MAP_SYNC : ::c_int = 0x080000;
+pub const MAP_SYNC: ::c_int = 0x080000;
 
 pub const EDEADLOCK: ::c_int = 58;
 pub const EUCLEAN: ::c_int = 117;
@@ -1046,7 +1046,6 @@ pub const SYS_statx: ::c_long = 383;
 pub const SYS_pidfd_open: ::c_long = 434;
 pub const SYS_clone3: ::c_long = 435;
 
-#[link(name = "util")]
 extern "C" {
     pub fn sysctl(
         name: *mut ::c_int,

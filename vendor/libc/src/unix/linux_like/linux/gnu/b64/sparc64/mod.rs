@@ -247,7 +247,7 @@ pub const MAP_POPULATE: ::c_int = 0x08000;
 pub const MAP_NONBLOCK: ::c_int = 0x010000;
 pub const MAP_STACK: ::c_int = 0x020000;
 pub const MAP_HUGETLB: ::c_int = 0x040000;
-pub const MAP_SYNC : ::c_int = 0x080000;
+pub const MAP_SYNC: ::c_int = 0x080000;
 
 pub const EDEADLK: ::c_int = 78;
 pub const ENAMETOOLONG: ::c_int = 63;
@@ -977,7 +977,6 @@ pub const SYS_pidfd_open: ::c_long = 434;
 // Reserved in the kernel, but not actually implemented yet
 pub const SYS_clone3: ::c_long = 435;
 
-#[link(name = "util")]
 extern "C" {
     pub fn sysctl(
         name: *mut ::c_int,
