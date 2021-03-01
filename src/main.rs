@@ -55,10 +55,22 @@ fn main() -> Result<()> {
             let images_dir = config.images.directory;
 
             match images_matches.subcommand() {
-                Some(("list", _list_images_matches)) => {
+                Some(("list", _)) => {
                     for image in vml::images::list(&images_dir)? {
                         println!("{}", image);
                     }
+                }
+
+                Some(("available", _)) => {
+                    for image in vml::images::available(&images_dir)? {
+                        println!("{}", image);
+                    }
+                }
+
+                Some(("pull", pull_images_matches)) => {
+                    let image = pull_images_matches.value_of("IMAGE").unwrap();
+
+                    vml::images::pull(&images_dir, image)?;
                 }
 
                 _ => println!("Unexpected images command"),
