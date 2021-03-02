@@ -2,6 +2,7 @@ mod cache;
 pub mod cli;
 pub mod config;
 mod errors;
+pub mod files;
 pub mod images;
 mod socket;
 mod specified_by;

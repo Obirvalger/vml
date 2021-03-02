@@ -7,6 +7,7 @@ use clap::ArgMatches;
 
 use vml::cli;
 use vml::config::Config;
+use vml::files;
 use vml::Result;
 use vml::{VMsCreator, WithPid};
 
@@ -66,6 +67,8 @@ fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
 }
 
 fn main() -> Result<()> {
+    files::install_all()?;
+
     let matches = cli::build_cli().get_matches();
 
     let config = Config::new()?;
