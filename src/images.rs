@@ -30,6 +30,16 @@ fn parse(images_file_path: &PathBuf) -> Result<Images> {
     Ok(images)
 }
 
+pub fn path(images_dir: &PathBuf, image_name: &str) -> Result<PathBuf> {
+    let image_path = images_dir.join(image_name);
+    if image_path.is_file() {
+        Ok(image_path)
+    } else {
+        Err(Error::ImageDoesNotExists(image_name.to_string()))
+    }
+
+}
+
 pub fn list(images_dir: &PathBuf) -> Result<Vec<String>> {
     let mut images = Vec::new();
 

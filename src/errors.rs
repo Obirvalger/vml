@@ -5,6 +5,7 @@ pub enum Error {
     DiskDoesNotExists { disk_path: String, vm_name: String },
     DownloadImage(String),
     EmptyVMsList,
+    ImageDoesNotExists(String),
     Other(String, String),
     ParseConfig(String),
     ParseImagesFile { images_file_path: String, error: String },

@@ -10,6 +10,7 @@ use tera::{Context, Tera};
 
 use crate::cache::Cache;
 use crate::config::Config;
+use crate::images;
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
 use crate::vm_config::VMConfig;
@@ -18,7 +19,7 @@ use crate::{Error, Result};
 pub fn create(config: &Config, name: &str, image: Option<&str>) -> Result<()> {
     let image = image.unwrap_or(&config.images.default);
     let vm_dir = config.vms_dir.join(name);
-    let image_path = &config.images.directory.join(image);
+    let image_path = images::path(&config.images.directory, &image)?;
     let vm_disk = vm_dir.join(format!("{}.qcow2", name));
     let vml_path = vm_dir.join("vml.toml");
 
