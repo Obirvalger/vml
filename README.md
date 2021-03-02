@@ -18,14 +18,14 @@ cp target/release/vml ~/bin/vml
 Copy config.toml to user config directory.
 ```
 mkdir -p ~/.config/vml
-cp config.toml ~/.config/vml
+cp files/config.toml ~/.config/vml
 ```
 And edit config with your preferences.
 
 Copy images file.
 ```
 mkdir -p ~/.local/share/vml/images
-cp images.toml ~/.local/share/vml/images
+cp files/images.toml ~/.local/share/vml/images
 ```
 
 ## Run
