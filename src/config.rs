@@ -39,6 +39,11 @@ pub struct Config {
     pub images: Images,
 }
 
+fn expand_tilde(path: &PathBuf) -> PathBuf {
+    let s = path.to_string_lossy().to_string();
+    PathBuf::from(shellexpand::tilde(&s).to_string())
+}
+
 impl Config {
     pub fn new() -> Result<Config> {
         let config_dir = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
@@ -51,9 +56,17 @@ impl Config {
             Error::ParseConfig(format!("unable to read config `{}`: {}", config_path, e))
         })?;
 
-        // NOTE realpath of vms_dir should be used in the config, due to
-        // std::fs::canonicalize does not resolve all symbolic links
-        let config = toml::from_str(config_str).map_err(|e| Error::ParseConfig(e.to_string()))?;
+        let mut config: Config =
+            toml::from_str(config_str).map_err(|e| Error::ParseConfig(e.to_string()))?;
+        config.images.directory = expand_tilde(&config.images.directory);
+        config.vms_dir = expand_tilde(&config.vms_dir);
+        if !config.vms_dir.is_dir() {
+            fs::create_dir_all(&config.vms_dir)?;
+        } else {
+            config.vms_dir = fs::canonicalize(&config.vms_dir)?;
+        }
+        config.default.cloud_init_image =
+            config.default.cloud_init_image.map(|i| expand_tilde(&i));
 
         Ok(config)
     }

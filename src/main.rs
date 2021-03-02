@@ -67,11 +67,12 @@ fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
 }
 
 fn main() -> Result<()> {
-    files::install_all()?;
+    files::install_config()?;
 
     let matches = cli::build_cli().get_matches();
 
     let config = Config::new()?;
+    files::install_all(&config)?;
     let mut vmc = VMsCreator::new(&config);
     if let Some(vm_config) = matches.value_of("vm-config") {
         vmc.vm_config(&fs::read_to_string(&vm_config)?);

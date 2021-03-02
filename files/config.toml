@@ -1,5 +1,5 @@
 # NOTE user your own path
-vms-dir = "/home/user/vms/vml"
+vms-dir = "~/vml"
 
 list-fold = false
 
@@ -22,7 +22,7 @@ ssh-port-user-network = "random"
 # ssh-user = "root"
 
 # NOTE user your own path
-# cloud-init-image = "/home/user/my-seed.img"
+# cloud-init-image = "~/my-seed.img"
 
 user-network = true
 
@@ -33,4 +33,4 @@ minimum-disk-size = "30G"
 
 default = "alt-sisyphus"
 
-directory = "/home/user/.local/share/vml/images"
+directory = "~/.local/share/vml/images"

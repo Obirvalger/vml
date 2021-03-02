@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use rust_embed::RustEmbed;
 
+use crate::config::Config;
 use crate::Result;
 
 #[derive(RustEmbed)]
@@ -22,9 +23,17 @@ fn install(filename: &str, directory: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn install_all() -> Result<()> {
+pub fn install_config() -> Result<()> {
     install("config.toml", "~/.config/vml")?;
-    install("images.toml", "~/.local/share/vml/images")?;
+
+    Ok(())
+}
+
+pub fn install_all(config: &Config) -> Result<()> {
+    if !config.vms_dir.exists() {
+        fs::create_dir_all(&config.vms_dir)?;
+    }
+    install("images.toml", &config.images.directory.to_string_lossy())?;
 
     Ok(())
 }
