@@ -2,15 +2,20 @@
 VML is a tool for easily and transparently work with qemu virtual machines.
 Virtaul machines presend as directories with vml.toml files in it.
 
-## Build and setup
+## Build
 All needed dependencies seved into vendor directory, so it can be built
 in the offline mode.
 ```
 cargo build --release --offline
 ```
 
-Then copy created executable to appropriate path, e.g. ~/bin/vml, if
-~/bin is in your PATH.
+Or just download release binary.
+```
+wget https://github.com/Obirvalger/vml/releases/download/v0.1.0-alpha.1/vml
+```
+
+Then copy created executable to appropriate path, e.g. `~/bin/vml`, if
+`~/bin` is in your PATH.
 ```
 cp target/release/vml ~/bin/vml
 ```
@@ -40,11 +45,11 @@ vml images pull alt-sisyphus
 vml create -i alt-sisyphus -n test
 ```
 
-VM test is described via directory `test` in `<vms_dir>` (vms_dir from config)
-and within files: `test.qcow` is a disk image, `vml.tml` is a current vm config
-file. By default `vml.toml` is empty, but it is needed to mark the directory as
-`vml` vm. Some fields of the `vml.toml` have names as `default` section fields
-of the main config file `~/.config/vml/config.toml`.
+VM `test` is described via directory `test` in `<vms_dir>` (vms_dir from
+config) and within files: `test.qcow` is a disk image, `vml.tml` is a current
+vm config file. By default `vml.toml` is empty, but it is needed to mark the
+directory as `vml` vm. Some fields of the `vml.toml` have names as `default`
+section fields of the main config file `~/.config/vml/config.toml`.
 
 Finally start the vm with `test` name and ssh. Option `-c` used to mount
 cloud-init data.
