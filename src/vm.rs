@@ -293,7 +293,7 @@ impl VM {
 
         #[cfg(debug_assertions)]
         println!("{:?}", &kvm);
-        kvm.spawn()?.wait()?;
+        kvm.spawn().map_err(|e| Error::executable("socat", &e.to_string()))?.wait()?;
 
         Ok(())
     }
@@ -304,7 +304,10 @@ impl VM {
 
         if let Some(pid) = self.pid {
             if force {
-                Command::new("kill").args(&[pid.to_string()]).spawn()?;
+                Command::new("kill")
+                    .args(&[pid.to_string()])
+                    .spawn()
+                    .map_err(|e| Error::executable("kill", &e.to_string()))?;
                 #[cfg(debug_assertions)]
                 println!("Kill {}", pid);
             } else {
@@ -348,7 +351,7 @@ impl VM {
 
         #[cfg(debug_assertions)]
         println!("{:?}", &ssh_cmd);
-        ssh_cmd.spawn()?.wait()?;
+        ssh_cmd.spawn().map_err(|e| Error::executable("ssh", &e.to_string()))?.wait()?;
 
         Ok(())
     }
@@ -432,7 +435,7 @@ impl VM {
 
         #[cfg(debug_assertions)]
         println!("{:#?}", &rsync);
-        rsync.spawn()?.wait()?;
+        rsync.spawn().map_err(|e| Error::executable("rsync", &e.to_string()))?.wait()?;
 
         Ok(())
     }
@@ -475,7 +478,8 @@ impl VM {
         Command::new("socat")
             .arg("-,echo=0,icanon=0")
             .arg(&format!("unix-connect:{}", &self.monitor.to_string_lossy()))
-            .spawn()?
+            .spawn()
+            .map_err(|e| Error::executable("socat", &e.to_string()))?
             .wait()?;
 
         Ok(())
@@ -572,7 +576,8 @@ fn try_resize(image: &PathBuf, size: u128) -> Result<()> {
     if current_size < size {
         Command::new("qemu-img")
             .args(&["resize", &image.to_string_lossy(), &size.to_string()])
-            .spawn()?
+            .spawn()
+            .map_err(|e| Error::executable("qemu-img", &e.to_string()))?
             .wait()?;
     }
 

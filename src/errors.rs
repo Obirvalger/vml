@@ -5,6 +5,7 @@ pub enum Error {
     DiskDoesNotExists { disk_path: String, vm_name: String },
     DownloadImage(String),
     EmptyVMsList,
+    Executable { name: String, error: String },
     ImageDoesNotExists(String),
     Other(String, String),
     ParseConfig(String),
@@ -22,6 +23,12 @@ impl Error {
         let vm_name = vm_name.to_string();
         let disk_path = disk_path.to_string();
         Error::DiskDoesNotExists { disk_path, vm_name }
+    }
+
+    pub fn executable(name: &str, error: &str) -> Error {
+        let name = name.to_string();
+        let error = error.to_string();
+        Error::Executable { name, error }
     }
 
     pub fn parse_images_file(images_file_path: &str, error: &str) -> Error {

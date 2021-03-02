@@ -37,7 +37,6 @@ pub fn path(images_dir: &PathBuf, image_name: &str) -> Result<PathBuf> {
     } else {
         Err(Error::ImageDoesNotExists(image_name.to_string()))
     }
-
 }
 
 pub fn list(images_dir: &PathBuf) -> Result<Vec<String>> {

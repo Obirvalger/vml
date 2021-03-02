@@ -2,7 +2,7 @@ use std::io::prelude::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use crate::Result;
+use crate::{Error, Result};
 
 pub fn reply(message: &[u8], socket_path: &PathBuf) -> Result<Vec<u8>> {
     let socat = Command::new("socat")
@@ -10,7 +10,8 @@ pub fn reply(message: &[u8], socket_path: &PathBuf) -> Result<Vec<u8>> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .arg(socket_path)
-        .spawn()?;
+        .spawn()
+        .map_err(|e| Error::executable("socat", &e.to_string()))?;
 
     socat.stdin.unwrap().write_all(message)?;
     let mut reply = Vec::new();
