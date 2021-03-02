@@ -1,7 +1,9 @@
 use std::io;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub enum Error {
+    CloudInitImageDoesNotExists(PathBuf),
     DiskDoesNotExists { disk_path: String, vm_name: String },
     DownloadImage(String),
     EmptyVMsList,

@@ -263,6 +263,9 @@ impl VM {
 
         if cloud_init {
             if let Some(image) = &self.cloud_init_image {
+                if !image.is_file() {
+                    return Err(Error::CloudInitImageDoesNotExists(image.to_owned()));
+                }
                 kvm.args(&[
                     "-drive",
                     &format!(
