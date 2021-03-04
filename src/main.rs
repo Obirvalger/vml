@@ -99,9 +99,11 @@ fn main() -> Result<()> {
                 }
 
                 Some(("pull", pull_images_matches)) => {
-                    let image = pull_images_matches.value_of("IMAGE").unwrap();
+                    let images = pull_images_matches.values_of("IMAGES").unwrap();
 
-                    vml::images::pull(&images_dir, image)?;
+                    for image in images {
+                        vml::images::pull(&images_dir, image)?;
+                    }
                 }
 
                 _ => println!("Unexpected images command"),

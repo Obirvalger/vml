@@ -48,7 +48,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .subcommand(
                     App::new("pull")
                         .about("pull vm image")
-                        .arg(Arg::new("IMAGE").takes_value(true).required(true)),
+                        .arg(Arg::new("IMAGES").takes_value(true).multiple(true).required(true)),
                 ),
         )
         .subcommand(
