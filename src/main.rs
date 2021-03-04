@@ -82,10 +82,10 @@ fn main() -> Result<()> {
     }
 
     match matches.subcommand() {
-        Some(("images", images_matches)) => {
+        Some(("image", image_matches)) => {
             let images_dir = config.images.directory;
 
-            match images_matches.subcommand() {
+            match image_matches.subcommand() {
                 Some(("list", _)) => {
                     for image in vml::images::list(&images_dir)? {
                         println!("{}", image);

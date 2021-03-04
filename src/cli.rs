@@ -40,7 +40,7 @@ pub fn build_cli() -> clap::App<'static> {
         )
         .group(ArgGroup::new("vm-config-group").args(&["vm-config", "minimal-vm-config"]))
         .subcommand(
-            App::new("images")
+            App::new("image")
                 .about("command to work with vm images")
                 .setting(AppSettings::SubcommandRequiredElseHelp)
                 .subcommand(App::new("available").about("list available to pull vm images"))
