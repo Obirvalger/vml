@@ -26,6 +26,7 @@ pub fn build_cli() -> clap::App<'static> {
         .setting(AppSettings::VersionlessSubcommands)
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .global_setting(AppSettings::InferSubcommands)
+        .arg(Arg::new("all-vms").long("all-vms").about("Specify all vms"))
         .arg(
             Arg::new("vm-config")
                 .long("vm-config")
@@ -66,7 +67,6 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("drives").long("drives").short('d').takes_value(true).multiple(true))
-                .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -82,7 +82,6 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("force").long("force").short('f'))
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
-                .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -113,7 +112,6 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple(true)
                         .value_hint(ValueHint::CommandString),
                 )
-                .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -143,7 +141,6 @@ pub fn build_cli() -> clap::App<'static> {
                         .allow_hyphen_values(true)
                         .multiple(true),
                 )
-                .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -197,7 +194,6 @@ pub fn build_cli() -> clap::App<'static> {
                         .allow_hyphen_values(true)
                         .multiple(true),
                 )
-                .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -276,7 +272,6 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("command").long("command").short('c').takes_value(true))
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
-                .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -292,7 +287,6 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("force").long("force").short('f'))
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
-                .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")

@@ -74,6 +74,10 @@ fn main() -> Result<()> {
     let config = Config::new()?;
     files::install_all(&config)?;
     let mut vmc = VMsCreator::new(&config);
+    if matches.is_present("all-vms") {
+        vmc.all();
+    }
+
     if let Some(vm_config) = matches.value_of("vm-config") {
         vmc.vm_config(&fs::read_to_string(&vm_config)?);
     }
@@ -127,10 +131,6 @@ fn main() -> Result<()> {
         }
 
         Some(("start", start_matches)) => {
-            if start_matches.is_present("all") {
-                vmc.all();
-            }
-
             set_specifications(&mut vmc, start_matches);
 
             let cloud_init = start_matches.is_present("cloud-init");
@@ -149,10 +149,6 @@ fn main() -> Result<()> {
         }
 
         Some(("stop", stop_matches)) => {
-            if stop_matches.is_present("all") {
-                vmc.all();
-            }
-
             set_specifications(&mut vmc, stop_matches);
 
             let force = stop_matches.is_present("force");
@@ -260,6 +256,10 @@ fn main() -> Result<()> {
         }
 
         Some(("show", show_matches)) => {
+            if show_matches.is_present("all") {
+                vmc.all();
+            }
+
             set_specifications(&mut vmc, show_matches);
 
             if show_matches.is_present("running") {
@@ -275,6 +275,11 @@ fn main() -> Result<()> {
         }
 
         Some(("list", list_matches)) => {
+            if list_matches.is_present("all") {
+                vmc.all();
+            }
+
+            // NOTE Get default value from config
             vmc.all();
 
             set_specifications(&mut vmc, list_matches);
