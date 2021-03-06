@@ -65,6 +65,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
+                .arg(Arg::new("drives").long("drives").short('d').takes_value(true).multiple(true))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")

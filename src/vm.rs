@@ -244,7 +244,7 @@ impl VM {
         }
     }
 
-    pub fn start(&self, cloud_init: bool) -> Result<()> {
+    pub fn start(&self, cloud_init: bool, drives: &[&str]) -> Result<()> {
         #[cfg(debug_assertions)]
         println!("Strart vm {:?}", self.name);
         let mut kvm = Command::new("kvm");
@@ -274,6 +274,10 @@ impl VM {
                     ),
                 ]);
             }
+        }
+
+        for drive in drives {
+            kvm.args(&["-drive", drive]);
         }
 
         if let Some(ssh) = &self.ssh {

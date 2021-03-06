@@ -134,12 +134,17 @@ fn main() -> Result<()> {
             set_specifications(&mut vmc, start_matches);
 
             let cloud_init = start_matches.is_present("cloud-init");
+            let drives: Vec<&str> = if let Some(drives) = start_matches.values_of("drives") {
+                drives.collect()
+            } else {
+                vec![]
+            };
 
             vmc.with_pid(WithPid::Without);
             vmc.error_on_empty();
 
             for vm in vmc.create()? {
-                vm.start(cloud_init)?;
+                vm.start(cloud_init, &drives)?;
             }
         }
 
