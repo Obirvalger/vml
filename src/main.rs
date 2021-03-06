@@ -178,7 +178,11 @@ fn main() -> Result<()> {
 
             let cmd: Option<Vec<&str>> = ssh_matches.values_of("cmd").map(|v| v.collect());
 
-            vmc.with_pid(WithPid::Error);
+            if vmc.is_all() {
+                vmc.with_pid(WithPid::Filter);
+            } else {
+                vmc.with_pid(WithPid::Error);
+            }
             vmc.error_on_empty();
             for vm in vmc.create()? {
                 vm.ssh(&user, &ssh_options, &cmd)?;
@@ -205,7 +209,11 @@ fn main() -> Result<()> {
                 Some(rsync_to_matches.value_of("destination").unwrap_or("~"))
             };
 
-            vmc.with_pid(WithPid::Error);
+            if vmc.is_all() {
+                vmc.with_pid(WithPid::Filter);
+            } else {
+                vmc.with_pid(WithPid::Error);
+            }
             vmc.error_on_empty();
             if let Some(sources) = sources {
                 let sources: Vec<&str> = sources.collect();
@@ -240,7 +248,11 @@ fn main() -> Result<()> {
                 Some(rsync_from_matches.value_of("destination").unwrap_or(&cwd))
             };
 
-            vmc.with_pid(WithPid::Error);
+            if vmc.is_all() {
+                vmc.with_pid(WithPid::Filter);
+            } else {
+                vmc.with_pid(WithPid::Error);
+            }
             vmc.error_on_empty();
             for vm in vmc.create()? {
                 vm.rsync_from(&user, &rsync_options, &sources, &destination)?;
@@ -280,7 +292,11 @@ fn main() -> Result<()> {
 
             let command = monitor_matches.value_of("command");
 
-            vmc.with_pid(WithPid::Error);
+            if vmc.is_all() {
+                vmc.with_pid(WithPid::Filter);
+            } else {
+                vmc.with_pid(WithPid::Error);
+            }
             vmc.error_on_empty();
             if let Some(command) = command {
                 for vm in vmc.create()? {

@@ -59,6 +59,10 @@ impl<'a> VMsCreator<'a> {
         self.tags = HashSet::new();
     }
 
+    pub fn is_all(&self) -> bool {
+        self.all
+    }
+
     pub fn error_on_empty(&mut self) {
         self.error_on_empty = true;
     }
