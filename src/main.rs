@@ -248,8 +248,6 @@ fn main() -> Result<()> {
         }
 
         Some(("show", show_matches)) => {
-            vmc.all();
-
             set_specifications(&mut vmc, show_matches);
 
             if show_matches.is_present("running") {
