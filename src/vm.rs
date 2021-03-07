@@ -20,7 +20,7 @@ pub fn create(config: &Config, name: &str, image: Option<&str>) -> Result<()> {
     let image = image.unwrap_or(&config.images.default);
     let vm_dir = config.vms_dir.join(name);
     let image_path = images::path(&config.images.directory, &image)?;
-    let vm_disk = vm_dir.join(format!("{}.qcow2", name));
+    let vm_disk = vm_dir.join("disk.qcow2");
     let vml_path = vm_dir.join("vml.toml");
 
     fs::create_dir_all(&vm_dir)?;
@@ -163,11 +163,7 @@ impl VM {
         let cloud_init_image =
             vm_config.cloud_init_image.or_else(|| config.default.cloud_init_image.to_owned());
         let data = vm_config.data.unwrap_or_else(HashMap::new);
-        let disk = directory.join(vm_config.disk.unwrap_or_else(|| {
-            let mut dp = PathBuf::from(&name);
-            dp.set_extension("qcow2");
-            dp.file_name().unwrap().into()
-        }));
+        let disk = directory.join(vm_config.disk.unwrap_or_else(|| PathBuf::from("disk.qcow2")));
         if !disk.is_file() {
             return Err(Error::disk_does_not_exists(&disk.to_string_lossy(), &name));
         }
