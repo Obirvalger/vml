@@ -335,6 +335,7 @@ impl VM {
         &self,
         user: &Option<&str>,
         ssh_options: &[&str],
+        ssh_flags: &[&str],
         cmd: &Option<Vec<&str>>,
     ) -> Result<()> {
         #[cfg(debug_assertions)]
@@ -352,6 +353,7 @@ impl VM {
         ssh_cmd.args(&["-p", &port]);
 
         ssh_cmd.args(ssh_options);
+        ssh_cmd.args(ssh_flags);
 
         ssh_cmd.arg(self_ssh.user_host(&user));
 

@@ -138,6 +138,8 @@ pub fn build_cli() -> clap::App<'static> {
                 )
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(Arg::new("A").short('A').about("pass -A to ssh command"))
+                .arg(Arg::new("Y").short('Y').about("pass -Y to ssh command"))
                 .arg(
                     Arg::new("cmd")
                         .long("cmd")

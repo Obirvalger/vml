@@ -188,6 +188,14 @@ fn main() -> Result<()> {
                 Vec::new()
             };
 
+            let mut ssh_flags: Vec<&str> = Vec::new();
+            if ssh_matches.is_present("A") {
+                ssh_flags.push("-A");
+            }
+            if ssh_matches.is_present("Y") {
+                ssh_flags.push("-Y");
+            }
+
             let cmd: Option<Vec<&str>> = ssh_matches.values_of("cmd").map(|v| v.collect());
 
             if vmc.is_all() {
@@ -197,7 +205,7 @@ fn main() -> Result<()> {
             }
             vmc.error_on_empty();
             for vm in vmc.create()? {
-                vm.ssh(&user, &ssh_options, &cmd)?;
+                vm.ssh(&user, &ssh_options, &ssh_flags, &cmd)?;
             }
         }
 
