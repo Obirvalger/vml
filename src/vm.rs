@@ -122,6 +122,7 @@ pub struct VM {
     minimum_disk_size: Option<u128>,
     pub name: String,
     name_path: PathBuf,
+    names: Vec<String>,
     nproc: String,
     specified_by: SpecifiedBy,
     pid: Option<i32>,
@@ -147,6 +148,8 @@ impl VM {
         let vm_config = vm_config.to_owned();
         let name = vm_config.name.unwrap_or_else(|| name.to_string());
         let name_path = PathBuf::from(&name);
+        let names: Vec<String> =
+            name_path.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
         let cache = Cache::new(&name, &vml_directory.join("cache"))?;
         let monitor = vml_directory.join("monitor.socket");
 
@@ -203,6 +206,7 @@ impl VM {
             minimum_disk_size,
             name,
             name_path,
+            names,
             pid: None,
             nproc,
             specified_by,
@@ -212,6 +216,10 @@ impl VM {
             user_network,
             vml_directory,
         })
+    }
+
+    pub fn hyphenized(&self) -> String {
+        self.names.join("-")
     }
 
     pub fn get_disk(&self) -> &PathBuf {
@@ -368,6 +376,9 @@ impl VM {
         context.insert("address", &self.address);
         context.insert("data", &self.data);
         context.insert("disk", &self.disk);
+        let n = self.names[self.names.len() - 1].to_string();
+        context.insert("n", &n);
+        context.insert("h", &self.hyphenized());
         context.insert("name", &self.name);
         context.insert("tap", &self.tap);
         context.insert("user_network", &self.user_network);
