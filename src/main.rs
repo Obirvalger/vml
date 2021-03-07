@@ -214,11 +214,20 @@ fn main() -> Result<()> {
 
             let user = rsync_to_matches.value_of("user");
 
-            let rsync_options: Vec<&str> = if rsync_to_matches.is_present("rsync-options") {
+            let mut rsync_options: Vec<&str> = if rsync_to_matches.is_present("rsync-options") {
                 rsync_to_matches.values_of("rsync-options").unwrap().collect()
             } else {
                 Vec::new()
             };
+            if rsync_to_matches.is_present("archive") {
+                rsync_options.push("--archive");
+            }
+            if rsync_to_matches.is_present("verbose") {
+                rsync_options.push("--verbose");
+            }
+            if rsync_to_matches.is_present("P") {
+                rsync_options.push("-P");
+            }
 
             let sources = rsync_to_matches.values_of("sources");
             let template = rsync_to_matches.value_of("template");
@@ -252,11 +261,20 @@ fn main() -> Result<()> {
 
             let user = rsync_from_matches.value_of("user");
 
-            let rsync_options: Vec<&str> = if rsync_from_matches.is_present("rsync-options") {
+            let mut rsync_options: Vec<&str> = if rsync_from_matches.is_present("rsync-options") {
                 rsync_from_matches.values_of("rsync-options").unwrap().collect()
             } else {
                 Vec::new()
             };
+            if rsync_from_matches.is_present("archive") {
+                rsync_options.push("--archive");
+            }
+            if rsync_from_matches.is_present("verbose") {
+                rsync_options.push("--verbose");
+            }
+            if rsync_from_matches.is_present("P") {
+                rsync_options.push("-P");
+            }
 
             let sources: Vec<&str> = rsync_from_matches.values_of("sources").unwrap().collect();
 

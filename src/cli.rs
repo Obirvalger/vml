@@ -178,6 +178,19 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple(true),
                 )
                 .arg(
+                    Arg::new("archive")
+                        .long("archive")
+                        .short('a')
+                        .about("pass --archive to rsync command"),
+                )
+                .arg(
+                    Arg::new("verbose")
+                        .long("verbose")
+                        .short('v')
+                        .about("pass --verbose to rsync command"),
+                )
+                .arg(Arg::new("P").short('P').about("pass -P to rsync command"))
+                .arg(
                     Arg::new("parents")
                         .long("parents")
                         .short('p')
@@ -230,6 +243,19 @@ pub fn build_cli() -> clap::App<'static> {
                         .allow_hyphen_values(true)
                         .multiple(true),
                 )
+                .arg(
+                    Arg::new("archive")
+                        .long("archive")
+                        .short('a')
+                        .about("pass --archive to rsync command"),
+                )
+                .arg(
+                    Arg::new("verbose")
+                        .long("verbose")
+                        .short('v')
+                        .about("pass --verbose to rsync command"),
+                )
+                .arg(Arg::new("P").short('P').about("pass -P to rsync command"))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
