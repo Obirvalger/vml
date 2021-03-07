@@ -555,6 +555,20 @@ impl VM {
             SpecifiedBy::Name => self.name.to_owned(),
         }
     }
+
+    pub fn store_disk(&self, to: &PathBuf, force: bool) -> Result<()> {
+        if self.has_pid() {
+            return Err(Error::StoreRunningVM(self.name.to_string()));
+        }
+
+        if to.exists() && !force {
+            return Err(Error::RewriteExistsPath(to.to_string_lossy().to_string()));
+        }
+
+        fs::copy(&self.disk, to)?;
+
+        Ok(())
+    }
 }
 
 impl PartialEq for VM {

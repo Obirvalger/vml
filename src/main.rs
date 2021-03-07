@@ -87,7 +87,7 @@ fn main() -> Result<()> {
 
     match matches.subcommand() {
         Some(("image", image_matches)) => {
-            let images_dir = config.images.directory;
+            let images_dir = config.images.directory.to_owned();
 
             match image_matches.subcommand() {
                 Some(("list", _)) => {
@@ -99,6 +99,22 @@ fn main() -> Result<()> {
                 Some(("available", _)) => {
                     for image in vml::images::available(&images_dir)? {
                         println!("{}", image);
+                    }
+                }
+
+                Some(("store", store_images_matches)) => {
+                    set_specifications(&mut vmc, store_images_matches);
+                    vmc.with_pid(WithPid::Without);
+                    let image_template = store_images_matches.value_of("image");
+                    let force = store_images_matches.is_present("force");
+
+                    for vm in vmc.create()? {
+                        let image = if let Some(template) = image_template {
+                            vm.tera_render(template, "main: image store (image)")?
+                        } else {
+                            vm.hyphenized()
+                        };
+                        vm.store_disk(&config.images.directory.join(&image), force)?;
                     }
                 }
 

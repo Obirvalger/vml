@@ -47,9 +47,43 @@ pub fn build_cli() -> clap::App<'static> {
                 .subcommand(App::new("available").about("list available to pull vm images"))
                 .subcommand(App::new("list").about("list vm images").alias("ls"))
                 .subcommand(
-                    App::new("pull")
-                        .about("pull vm image")
-                        .arg(Arg::new("IMAGES").takes_value(true).multiple(true).required(true)),
+                    App::new("store")
+                        .about("tore vm disk as image")
+                        .arg(
+                            Arg::new("image")
+                                .about("stored image name (allow templates) [hyphenized vm name]")
+                                .long("image")
+                                .short('i')
+                                .takes_value(true),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .about("rewrite existing image")
+                                .long("force")
+                                .short('f'),
+                        )
+                        .arg(Arg::new("NAME").takes_value(true).required(true))
+                        .arg(
+                            Arg::new("names")
+                                .long("names")
+                                .short('n')
+                                .takes_value(true)
+                                .multiple(true),
+                        )
+                        .arg(
+                            Arg::new("parents")
+                                .long("parents")
+                                .short('p')
+                                .takes_value(true)
+                                .multiple(true),
+                        )
+                        .arg(
+                            Arg::new("tags")
+                                .long("tags")
+                                .short('t')
+                                .takes_value(true)
+                                .multiple(true),
+                        ),
                 ),
         )
         .subcommand(

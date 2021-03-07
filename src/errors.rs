@@ -15,6 +15,8 @@ pub enum Error {
     ParseVMConfig { config_path: String, error: String },
     ParseVMConfigField { vm_name: String, field: String },
     RemoveRuuningVM(String),
+    RewriteExistsPath(String),
+    StoreRunningVM(String),
     Template { place: String, error: String },
     VMHasNoPid(String),
     VMHasNoSSH(String),
