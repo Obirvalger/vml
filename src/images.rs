@@ -4,9 +4,8 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
+use crate::config_dir;
 use crate::{Error, Result};
-
-const IMAGES_FILE: &str = "images.toml";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -19,6 +18,10 @@ struct Image {
 #[serde(transparent)]
 struct Images {
     pub images: BTreeMap<String, Image>,
+}
+
+fn images_file_path() -> PathBuf {
+    config_dir().join("images.toml")
 }
 
 fn parse(images_file_path: &PathBuf) -> Result<Images> {
@@ -44,23 +47,21 @@ pub fn list(images_dir: &PathBuf) -> Result<Vec<String>> {
 
     for path in fs::read_dir(images_dir)? {
         let name = path.unwrap().file_name().to_string_lossy().to_string();
-        if name != IMAGES_FILE {
-            images.push(name);
-        }
+        images.push(name);
     }
 
     Ok(images)
 }
 
-pub fn available(images_dir: &PathBuf) -> Result<Vec<String>> {
-    let images = parse(&images_dir.join(IMAGES_FILE))?.images;
+pub fn available() -> Result<Vec<String>> {
+    let images = parse(&images_file_path())?.images;
     let images = images.keys().map(|s| s.to_string()).collect();
 
     Ok(images)
 }
 
 pub fn pull(images_dir: &PathBuf, image_name: &str) -> Result<()> {
-    let images = parse(&images_dir.join(IMAGES_FILE))?.images;
+    let images = parse(&images_file_path())?.images;
 
     if let Some(image) = images.get(image_name) {
         let mut body =

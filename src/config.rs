@@ -44,16 +44,16 @@ fn expand_tilde(path: &PathBuf) -> PathBuf {
     PathBuf::from(shellexpand::tilde(&s).to_string())
 }
 
+pub fn config_dir() -> PathBuf {
+    let home_config_dir = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| "~/.config".to_string());
+    expand_tilde(&PathBuf::from(home_config_dir)).join("vml")
+}
+
 impl Config {
     pub fn new() -> Result<Config> {
-        let config_dir = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
-            let home = env::var("HOME").expect("HOME variable unset");
-            format!("{}/.config", home)
-        });
-
-        let config_path = &format!("{}/vml/config.toml", config_dir);
-        let config_str = &fs::read_to_string(config_path).map_err(|e| {
-            Error::ParseConfig(format!("unable to read config `{}`: {}", config_path, e))
+        let config_path = config_dir().join("config.toml");
+        let config_str = &fs::read_to_string(&config_path).map_err(|e| {
+            Error::ParseConfig(format!("unable to read config `{:?}`: {}", &config_path, &e))
         })?;
 
         let mut config: Config =

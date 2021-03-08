@@ -67,7 +67,7 @@ fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
 }
 
 fn main() -> Result<()> {
-    files::install_config()?;
+    files::install_main_config()?;
 
     let matches = cli::build_cli().get_matches();
 
@@ -97,7 +97,7 @@ fn main() -> Result<()> {
                 }
 
                 Some(("available", _)) => {
-                    for image in vml::images::available(&images_dir)? {
+                    for image in vml::images::available()? {
                         println!("{}", image);
                     }
                 }
