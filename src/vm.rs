@@ -19,7 +19,9 @@ use crate::{Error, Result};
 pub fn create(config: &Config, name: &str, image: Option<&str>) -> Result<()> {
     let image = image.unwrap_or(&config.images.default);
     let vm_dir = config.vms_dir.join(name);
-    let image_path = images::path(&config.images.directory, &image)?;
+    let mut images_dirs = vec![&config.images.directory];
+    images_dirs.extend(config.images.other_directories_ro.iter());
+    let image_path = images::find(&images_dirs, &image)?;
     let vm_disk = vm_dir.join("disk.qcow2");
     let vml_path = vm_dir.join("vml.toml");
 

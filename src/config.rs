@@ -27,6 +27,7 @@ pub struct VMsDefault {
 #[serde(rename_all = "kebab-case")]
 pub struct Images {
     pub directory: PathBuf,
+    pub other_directories_ro: Vec<PathBuf>,
     pub default: String,
 }
 

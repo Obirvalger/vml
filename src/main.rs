@@ -87,11 +87,14 @@ fn main() -> Result<()> {
 
     match matches.subcommand() {
         Some(("image", image_matches)) => {
-            let images_dir = config.images.directory.to_owned();
+            let images_dir = &config.images.directory;
+            let other_images_ro_dirs = &config.images.other_directories_ro;
+            let mut images_dirs = vec![images_dir];
+            images_dirs.extend(other_images_ro_dirs.iter());
 
             match image_matches.subcommand() {
                 Some(("list", _)) => {
-                    for image in vml::images::list(&images_dir)? {
+                    for image in vml::images::list(&images_dirs)? {
                         println!("{}", image);
                     }
                 }
@@ -122,7 +125,7 @@ fn main() -> Result<()> {
                     let images = pull_images_matches.values_of("IMAGES").unwrap();
 
                     for image in images {
-                        vml::images::pull(&images_dir, image)?;
+                        vml::images::pull(images_dir, image)?;
                     }
                 }
 

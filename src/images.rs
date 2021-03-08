@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -42,15 +42,28 @@ pub fn path(images_dir: &PathBuf, image_name: &str) -> Result<PathBuf> {
     }
 }
 
-pub fn list(images_dir: &PathBuf) -> Result<Vec<String>> {
-    let mut images = Vec::new();
-
-    for path in fs::read_dir(images_dir)? {
-        let name = path.unwrap().file_name().to_string_lossy().to_string();
-        images.push(name);
+pub fn find(images_dirs: &[&PathBuf], image_name: &str) -> Result<PathBuf> {
+    for images_dir in images_dirs {
+        let image_path = images_dir.join(image_name);
+        if image_path.is_file() {
+            return Ok(image_path);
+        }
     }
 
-    Ok(images)
+    Err(Error::ImageDoesNotExists(image_name.to_string()))
+}
+
+pub fn list(images_dirs: &[&PathBuf]) -> Result<Vec<String>> {
+    let mut images = BTreeSet::new();
+
+    for dir in images_dirs {
+        for path in fs::read_dir(dir)? {
+            let name = path.unwrap().file_name().to_string_lossy().to_string();
+            images.insert(name);
+        }
+    }
+
+    Ok(images.into_iter().collect())
 }
 
 pub fn available() -> Result<Vec<String>> {

@@ -34,3 +34,6 @@ minimum-disk-size = "30G"
 default = "alt-sisyphus"
 
 directory = "~/.local/share/vml/images"
+
+# List of read only directories with images
+other-directories-ro = []
