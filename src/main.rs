@@ -2,13 +2,14 @@ use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::io;
+use std::process::Command;
 
 use clap::ArgMatches;
 
 use vml::cli;
 use vml::config::Config;
 use vml::files;
-use vml::Result;
+use vml::{Error, Result};
 use vml::{VMsCreator, WithPid};
 
 fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<()> {
@@ -41,6 +42,24 @@ fn confirm(message: &str) -> bool {
     matches!(input.as_str(), "y" | "yes")
 }
 
+fn args_without_host() -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    let mut args_iterator = env::args();
+    let mut optional_arg = args_iterator.next();
+    let mut found = false;
+    while let Some(arg) = &optional_arg {
+        if !found && matches!(arg.as_str(), "--host" | "-H") {
+            args_iterator.next();
+            found = true;
+        } else {
+            args.push(arg.to_string());
+        }
+        optional_arg = args_iterator.next();
+    }
+
+    args
+}
+
 fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
     if let Some(name) = matches.value_of("NAME") {
         vmc.name(name);
@@ -68,10 +87,24 @@ fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
 
 fn main() -> Result<()> {
     files::install_main_config()?;
-
     let matches = cli::build_cli().get_matches();
-
     let config = Config::new()?;
+
+    if let Some(host) = matches.value_of("host") {
+        let args: Vec<String> = args_without_host();
+        let mut ssh = Command::new("ssh");
+        if matches.subcommand_matches("ssh").is_some() {
+            ssh.arg("-t");
+        }
+        ssh.arg(&host).args(&args);
+
+        ssh.spawn()
+            .map_err(|e| Error::executable("ssh", &e.to_string()))?
+            .wait()?;
+
+        return Ok(())
+    }
+
     files::install_all(&config)?;
     let mut vmc = VMsCreator::new(&config);
     if matches.is_present("all-vms") {

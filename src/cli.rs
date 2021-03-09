@@ -28,6 +28,13 @@ pub fn build_cli() -> clap::App<'static> {
         .global_setting(AppSettings::InferSubcommands)
         .arg(Arg::new("all-vms").long("all-vms").about("Specify all vms"))
         .arg(
+            Arg::new("host")
+                .long("host")
+                .short('H')
+                .takes_value(true)
+                .about("Run vml command on host"),
+        )
+        .arg(
             Arg::new("vm-config")
                 .long("vm-config")
                 .about("Path to vm config replacement (use tera templates)")
