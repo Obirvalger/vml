@@ -60,8 +60,19 @@ fn args_without_host() -> Vec<String> {
     args
 }
 
+fn parse_user_at_name(user_at_name: &str) -> (Option<&str>, &str) {
+    if user_at_name.contains('@') {
+        let user_name: Vec<&str> = user_at_name.splitn(2, '@').collect();
+        (Some(user_name[0]), user_name[1])
+    } else {
+        (None, user_at_name)
+    }
+}
+
 fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
     if let Some(name) = matches.value_of("NAME") {
+        let (_user, name) = parse_user_at_name(name);
+
         vmc.name(name);
     }
 
@@ -214,7 +225,11 @@ fn main() -> Result<()> {
         Some(("ssh", ssh_matches)) => {
             set_specifications(&mut vmc, ssh_matches);
 
-            let user = ssh_matches.value_of("user");
+            let mut user = ssh_matches.value_of("user");
+            if let Some(name) = ssh_matches.value_of("NAME") {
+                let (user_from_arg, _name) = parse_user_at_name(name);
+                user = user.or(user_from_arg);
+            }
 
             let ssh_options: Vec<&str> = if ssh_matches.is_present("ssh-options") {
                 ssh_matches.values_of("ssh-options").unwrap().collect()
@@ -246,7 +261,11 @@ fn main() -> Result<()> {
         Some(("rsync-to", rsync_to_matches)) => {
             set_specifications(&mut vmc, rsync_to_matches);
 
-            let user = rsync_to_matches.value_of("user");
+            let mut user = rsync_to_matches.value_of("user");
+            if let Some(name) = rsync_to_matches.value_of("NAME") {
+                let (user_from_arg, _name) = parse_user_at_name(name);
+                user = user.or(user_from_arg);
+            }
 
             let mut rsync_options: Vec<&str> = if rsync_to_matches.is_present("rsync-options") {
                 rsync_to_matches.values_of("rsync-options").unwrap().collect()
@@ -293,7 +312,11 @@ fn main() -> Result<()> {
         Some(("rsync-from", rsync_from_matches)) => {
             set_specifications(&mut vmc, rsync_from_matches);
 
-            let user = rsync_from_matches.value_of("user");
+            let mut user = rsync_from_matches.value_of("user");
+            if let Some(name) = rsync_from_matches.value_of("NAME") {
+                let (user_from_arg, _name) = parse_user_at_name(name);
+                user = user.or(user_from_arg);
+            }
 
             let mut rsync_options: Vec<&str> = if rsync_from_matches.is_present("rsync-options") {
                 rsync_from_matches.values_of("rsync-options").unwrap().collect()
