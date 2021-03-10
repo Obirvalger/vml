@@ -98,11 +98,9 @@ fn main() -> Result<()> {
         }
         ssh.arg(&host).args(&args);
 
-        ssh.spawn()
-            .map_err(|e| Error::executable("ssh", &e.to_string()))?
-            .wait()?;
+        ssh.spawn().map_err(|e| Error::executable("ssh", &e.to_string()))?.wait()?;
 
-        return Ok(())
+        return Ok(());
     }
 
     files::install_all(&config)?;
