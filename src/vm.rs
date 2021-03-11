@@ -13,6 +13,7 @@ use crate::config::Config;
 use crate::images;
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
+use crate::ssh::SSH;
 use crate::vm_config::VMConfig;
 use crate::{Error, Result};
 
@@ -43,72 +44,6 @@ fn get_available_port() -> Option<String> {
         .find(|&p| TcpListener::bind(("127.0.0.1", p)).is_ok())
         .map(|a| a.to_string())
 }
-
-mod ssh_mod {
-    #[derive(Clone, Debug)]
-    pub struct SSH {
-        host: String,
-        options: Vec<String>,
-        port: String,
-        user: Option<String>,
-    }
-
-    impl SSH {
-        pub fn new(
-            user_network: bool,
-            address: &Option<String>,
-            options: &Option<Vec<String>>,
-            port: &Option<String>,
-            user: &Option<String>,
-        ) -> Option<SSH> {
-            let host = if let Some(address) = address {
-                address.to_string()
-            } else if user_network {
-                "localhost".to_string()
-            } else {
-                return None;
-            };
-
-            let port = if let Some(port) = port {
-                port.to_string()
-            } else {
-                return None;
-            };
-
-            let options =
-                if let Some(options) = options { options.to_owned() } else { Vec::new() };
-
-            let user = user.to_owned();
-
-            Some(SSH { host, options, port, user })
-        }
-
-        pub fn user_host(&self, user: &Option<&str>) -> String {
-            if let Some(user) = user {
-                format!("{}@{}", user, self.host)
-            } else if let Some(user) = &self.user {
-                format!("{}@{}", user, self.host)
-            } else {
-                self.host.to_owned()
-            }
-        }
-
-        pub fn options(&self) -> Vec<&str> {
-            let mut options = Vec::with_capacity(self.options.len() * 2);
-            for option in &self.options {
-                options.push("-o");
-                options.push(&option);
-            }
-            options
-        }
-
-        pub fn port(&self) -> &str {
-            &self.port
-        }
-    }
-}
-
-use ssh_mod::SSH;
 
 #[derive(Clone, Debug)]
 pub struct VM {

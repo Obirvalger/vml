@@ -6,6 +6,7 @@ pub mod files;
 pub mod images;
 mod socket;
 mod specified_by;
+mod ssh;
 mod string_like;
 mod vm;
 mod vm_config;
