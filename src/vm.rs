@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use rand::Rng;
-use tera::{Context, Tera};
+use tera::Context;
 
 use crate::cache::Cache;
 use crate::config::Config;
@@ -14,6 +14,7 @@ use crate::images;
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
 use crate::ssh::SSH;
+use crate::template;
 use crate::vm_config::VMConfig;
 use crate::{Error, Result};
 
@@ -295,7 +296,7 @@ impl VM {
         ssh_cmd.arg(self_ssh.user_host(&user));
 
         if let Some(cmd) = cmd {
-            let cmd = self.tera_renders(cmd, "ssh commands")?;
+            let cmd = template::renders(&self.context(), cmd, "ssh commands")?;
             ssh_cmd.args(cmd);
         }
 
@@ -306,7 +307,7 @@ impl VM {
         Ok(())
     }
 
-    pub fn tera_render(&self, template: &str, place: &str) -> Result<String> {
+    pub fn context(&self) -> Context {
         let mut context = Context::new();
         context.insert("address", &self.address);
         context.insert("data", &self.data);
@@ -317,31 +318,8 @@ impl VM {
         context.insert("name", &self.name);
         context.insert("tap", &self.tap);
         context.insert("user_network", &self.user_network);
-        Tera::one_off(template, &context, false)
-            .map_err(|e| Error::template(place, &e.to_string()))
-    }
 
-    pub fn tera_renders(&self, templates: &[&str], place: &str) -> Result<Vec<String>> {
-        let mut strings = Vec::with_capacity(templates.len());
-
-        for template in templates {
-            strings.push(self.tera_render(template, place)?);
-        }
-
-        Ok(strings)
-    }
-
-    pub fn tera_render_file(
-        &self,
-        template_file: &str,
-        rendered_file: &str,
-        place: &str,
-    ) -> Result<()> {
-        let template = fs::read_to_string(template_file)?;
-        let rendered = self.tera_render(&template, place)?;
-        fs::write(rendered_file, &rendered.as_bytes())?;
-
-        Ok(())
+        context
     }
 
     fn rsync_to_from(
@@ -354,7 +332,8 @@ impl VM {
     ) -> Result<()> {
         let mut ssh_cmd = vec!["ssh"];
 
-        let sources = self.tera_renders(sources, "rsync sources")?;
+        let context = self.context();
+        let sources = template::renders(&context, sources, "rsync sources")?;
 
         let self_ssh =
             self.ssh.as_ref().ok_or_else(|| Error::VMHasNoSSH(self.name.to_string()))?;
@@ -374,14 +353,14 @@ impl VM {
         if to {
             rsync.args(sources);
             if let Some(destination) = destination {
-                let destination = self.tera_render(destination, "rsync destination")?;
+                let destination = template::render(&context, destination, "rsync destination")?;
                 rsync.arg(&format!("{}:{}", user_host, destination));
             }
         } else {
             let sources = sources.join(" ");
             rsync.arg(&format!("{}:{}", user_host, sources));
             if let Some(destination) = destination {
-                let destination = self.tera_render(destination, "rsync destination")?;
+                let destination = template::render(&context, destination, "rsync destination")?;
                 rsync.arg(destination);
             }
         }
@@ -407,13 +386,13 @@ impl VM {
         &self,
         user: &Option<&str>,
         rsync_options: &[&str],
-        template: &str,
+        template_str: &str,
         destination: &Option<&str>,
     ) -> Result<()> {
         let tmp_dir = tempfile::tempdir().expect("can't create tmp file");
-        let tmp_name = tmp_dir.path().join(template).to_string_lossy().to_string();
+        let tmp_name = tmp_dir.path().join(template_str).to_string_lossy().to_string();
         let sources = [tmp_name.as_str()];
-        self.tera_render_file(template, &tmp_name, "rsync_to_template")?;
+        template::render_file(&self.context(), template_str, &tmp_name, "rsync_to_template")?;
         self.rsync_to_from(true, user, rsync_options, &sources, destination)
     }
 

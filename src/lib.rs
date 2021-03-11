@@ -8,6 +8,7 @@ mod socket;
 mod specified_by;
 mod ssh;
 mod string_like;
+pub mod template;
 mod vm;
 mod vm_config;
 mod vms_creator;

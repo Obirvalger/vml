@@ -9,6 +9,7 @@ use clap::ArgMatches;
 use vml::cli;
 use vml::config::Config;
 use vml::files;
+use vml::template;
 use vml::{Error, Result};
 use vml::{VMsCreator, WithPid};
 
@@ -155,7 +156,7 @@ fn main() -> Result<()> {
 
                     for vm in vmc.create()? {
                         let image = if let Some(template) = image_template {
-                            vm.tera_render(template, "main: image store (image)")?
+                            template::render(&vm.context(), template, "main: image store (image)")?
                         } else {
                             vm.hyphenized()
                         };
