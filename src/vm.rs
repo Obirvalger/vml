@@ -65,6 +65,7 @@ pub struct VM {
     specified_by: SpecifiedBy,
     pid: Option<i32>,
     ssh: Option<SSH>,
+    ssh_authorized_key: Option<String>,
     tags: HashSet<String>,
     tap: Option<String>,
     user_network: bool,
@@ -123,6 +124,8 @@ impl VM {
             .map(|p| p.to_string());
         let ssh_options = vm_config.ssh_options.or_else(|| config.default.ssh_options.to_owned());
         let ssh_user = vm_config.ssh_user.or_else(|| config.default.ssh_user.to_owned());
+        let ssh_authorized_key =
+            vm_config.ssh_authorized_key.or_else(|| config.default.ssh_authorized_key.to_owned());
         let tags = vm_config.tags.unwrap_or_else(HashSet::new);
 
         let ssh = SSH::new(user_network, &address, &ssh_options, &ssh_port, &ssh_user);
@@ -145,6 +148,7 @@ impl VM {
             nproc,
             specified_by,
             ssh,
+            ssh_authorized_key,
             tags,
             tap,
             user_network,
@@ -318,6 +322,7 @@ impl VM {
         context.insert("name", &self.name);
         context.insert("tap", &self.tap);
         context.insert("user_network", &self.user_network);
+        context.insert("ssh_authorized_key", &self.ssh_authorized_key);
 
         context
     }

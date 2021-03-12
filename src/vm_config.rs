@@ -20,6 +20,7 @@ pub struct VMConfig {
     pub memory: Option<String>,
     pub minimum_disk_size: Option<Byte>,
     pub nproc: Option<StringOrUint>,
+    pub ssh_authorized_key: Option<String>,
     pub ssh_options: Option<Vec<String>>,
     pub ssh_port: Option<StringOrUint>,
     pub ssh_user: Option<String>,

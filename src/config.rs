@@ -14,6 +14,7 @@ pub struct VMsDefault {
     pub memory: String,
     pub display: Option<String>,
     pub nproc: StringOrUint,
+    pub ssh_authorized_key: Option<String>,
     pub ssh_options: Option<Vec<String>>,
     pub ssh_port_user_network: Option<StringOrUint>,
     pub ssh_port: Option<StringOrUint>,
