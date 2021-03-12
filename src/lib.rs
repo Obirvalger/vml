@@ -1,5 +1,6 @@
 mod cache;
 pub mod cli;
+mod cloud_init;
 pub mod config;
 mod errors;
 pub mod files;

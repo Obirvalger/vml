@@ -9,6 +9,7 @@ use rand::Rng;
 use tera::Context;
 
 use crate::cache::Cache;
+use crate::cloud_init;
 use crate::config::Config;
 use crate::images;
 use crate::socket;
@@ -208,18 +209,23 @@ impl VM {
         }
 
         if cloud_init {
-            if let Some(image) = &self.cloud_init_image {
+            let image = if let Some(image) = &self.cloud_init_image {
                 if !image.is_file() {
                     return Err(Error::CloudInitImageDoesNotExists(image.to_owned()));
                 }
-                kvm.args(&[
-                    "-drive",
-                    &format!(
-                        "file={},if=virtio,format=raw,force-share=on,read-only=on",
-                        &image.to_string_lossy()
-                    ),
-                ]);
-            }
+
+                image.to_owned()
+            } else {
+                cloud_init::generate_data(&self.context(), &self.vml_directory.join("cloud-init"))?
+            };
+
+            kvm.args(&[
+                "-drive",
+                &format!(
+                    "file={},if=virtio,format=raw,force-share=on,read-only=on",
+                    &image.to_string_lossy()
+                ),
+            ]);
         }
 
         for drive in drives {
