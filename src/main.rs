@@ -14,7 +14,7 @@ use vml::{Error, Result};
 use vml::{VMsCreator, WithPid};
 
 fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<()> {
-    let fold = if config.list_fold { fold || !unfold } else { fold && !unfold };
+    let fold = if config.commands.list.fold { fold || !unfold } else { fold && !unfold };
 
     let mut names: BTreeSet<String> = BTreeSet::new();
 
@@ -375,12 +375,11 @@ fn main() -> Result<()> {
         }
 
         Some(("list", list_matches)) => {
-            if list_matches.is_present("all") {
-                vmc.all();
-            }
-
-            // NOTE Get default value from config
             vmc.all();
+
+            if !list_matches.is_present("all") && !config.commands.list.all {
+                vmc.with_pid(WithPid::Filter);
+            }
 
             set_specifications(&mut vmc, list_matches);
 

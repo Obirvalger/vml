@@ -26,6 +26,21 @@ pub struct VMsDefault {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
+pub struct ListCommand {
+    pub all: bool,
+    pub fold: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct Commands {
+    pub list: ListCommand,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Images {
     pub directory: PathBuf,
     pub other_directories_ro: Vec<PathBuf>,
@@ -37,7 +52,7 @@ pub struct Images {
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub vms_dir: PathBuf,
-    pub list_fold: bool,
+    pub commands: Commands,
     pub default: VMsDefault,
     pub images: Images,
 }
