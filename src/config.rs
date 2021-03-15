@@ -50,9 +50,17 @@ pub struct ListCommand {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
+pub struct StrartCommand {
+    pub cloud_init: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Commands {
     pub create: CreateCommand,
     pub list: ListCommand,
+    pub start: StrartCommand,
 }
 
 #[derive(Clone, Debug, Deserialize)]

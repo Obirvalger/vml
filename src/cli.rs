@@ -99,13 +99,13 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
-                .arg(Arg::new("exists_fail").long("exists-fail"))
-                .arg(Arg::new("exists_ignore").long("exists-ignore"))
-                .arg(Arg::new("exists_replace").long("exists-replace"))
+                .arg(Arg::new("exists-fail").long("exists-fail"))
+                .arg(Arg::new("exists-ignore").long("exists-ignore"))
+                .arg(Arg::new("exists-replace").long("exists-replace"))
                 .group(ArgGroup::new("exists").args(&[
-                    "exists_fail",
-                    "exists_ignore",
-                    "exists_replace",
+                    "exists-fail",
+                    "exists-ignore",
+                    "exists-replace",
                 ]))
                 .group(ArgGroup::new("name_group").args(&["names", "NAME"]).required(true)),
         )
@@ -115,6 +115,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
+                .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
                 .arg(Arg::new("drives").long("drives").short('d').takes_value(true).multiple(true))
                 .arg(
                     Arg::new("parents")
@@ -123,7 +124,28 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .multiple(true),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
+                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
+                .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"])),
+        )
+        .subcommand(
+            App::new("run")
+                .about("create and start virtual machines")
+                .arg(Arg::new("NAME").takes_value(true))
+                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
+                .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
+                .arg(Arg::new("drives").long("drives").short('d').takes_value(true).multiple(true))
+                .arg(Arg::new("image").long("image").short('i').takes_value(true))
+                .arg(Arg::new("exists-fail").long("exists-fail"))
+                .arg(Arg::new("exists-ignore").long("exists-ignore"))
+                .arg(Arg::new("exists-replace").long("exists-replace"))
+                .group(ArgGroup::new("exists").args(&[
+                    "exists-fail",
+                    "exists-ignore",
+                    "exists-replace",
+                ]))
+                .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"]))
+                .group(ArgGroup::new("name_group").args(&["names", "NAME"]).required(true)),
         )
         .subcommand(
             App::new("stop")

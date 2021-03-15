@@ -34,6 +34,56 @@ fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<(
     Ok(())
 }
 
+fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
+    let names: Vec<&str> = if create_matches.is_present("names") {
+        create_matches.values_of("names").unwrap().collect()
+    } else if let Some(name) = create_matches.value_of("NAME") {
+        vec![name]
+    } else {
+        vec![]
+    };
+
+    let image = create_matches.value_of("image");
+
+    let exists = if create_matches.is_present("exists-fail") {
+        CreateExistsAction::Fail
+    } else if create_matches.is_present("exists-ignore") {
+        CreateExistsAction::Ignore
+    } else if create_matches.is_present("exists-replace") {
+        CreateExistsAction::Replace
+    } else {
+        config.commands.create.exists
+    };
+
+    for name in names {
+        vml::create_vm(&config, name, image, exists)?;
+    }
+
+    Ok(())
+}
+
+fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> Result<()> {
+    set_specifications(vmc, start_matches);
+
+    let cloud_init = config.commands.start.cloud_init
+        && !start_matches.is_present("no-cloud-init")
+        || start_matches.is_present("cloud-init");
+    let drives: Vec<&str> = if let Some(drives) = start_matches.values_of("drives") {
+        drives.collect()
+    } else {
+        vec![]
+    };
+
+    vmc.with_pid(WithPid::Without);
+    vmc.error_on_empty();
+
+    for vm in vmc.create()? {
+        vm.start(cloud_init, &drives)?;
+    }
+
+    Ok(())
+}
+
 fn confirm(message: &str) -> bool {
     println!("{}", message);
     let mut input = String::new();
@@ -177,48 +227,13 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(("create", create_matches)) => {
-            let names: Vec<&str> = if create_matches.is_present("names") {
-                create_matches.values_of("names").unwrap().collect()
-            } else if let Some(name) = create_matches.value_of("NAME") {
-                vec![name]
-            } else {
-                vec![]
-            };
+        Some(("create", create_matches)) => create(&config, &create_matches)?,
 
-            let image = create_matches.value_of("image");
+        Some(("start", start_matches)) => start(&config, &start_matches, &mut vmc)?,
 
-            let exists = if create_matches.is_present("exists_fail") {
-                CreateExistsAction::Fail
-            } else if create_matches.is_present("exists_ignore") {
-                CreateExistsAction::Ignore
-            } else if create_matches.is_present("exists_replace") {
-                CreateExistsAction::Replace
-            } else {
-                config.commands.create.exists
-            };
-
-            for name in names {
-                vml::create_vm(&config, name, image, exists)?;
-            }
-        }
-
-        Some(("start", start_matches)) => {
-            set_specifications(&mut vmc, start_matches);
-
-            let cloud_init = start_matches.is_present("cloud-init");
-            let drives: Vec<&str> = if let Some(drives) = start_matches.values_of("drives") {
-                drives.collect()
-            } else {
-                vec![]
-            };
-
-            vmc.with_pid(WithPid::Without);
-            vmc.error_on_empty();
-
-            for vm in vmc.create()? {
-                vm.start(cloud_init, &drives)?;
-            }
+        Some(("run", run_matches)) => {
+            create(&config, &run_matches)?;
+            start(&config, &run_matches, &mut vmc)?;
         }
 
         Some(("stop", stop_matches)) => {
