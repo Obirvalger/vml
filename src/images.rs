@@ -9,6 +9,7 @@ use crate::{Error, Result};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 struct Image {
     pub url: String,
 }

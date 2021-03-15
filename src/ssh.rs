@@ -30,6 +30,7 @@ impl Keys {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct ConfigSSH {
     pub authorized_keys: Option<Vec<String>>,
     pub key: Option<String>,

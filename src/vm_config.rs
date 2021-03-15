@@ -11,6 +11,7 @@ use crate::{Error, Result};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct VMConfig {
     pub address: Option<String>,
     pub cloud_init_image: Option<PathBuf>,

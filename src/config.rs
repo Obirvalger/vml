@@ -11,6 +11,7 @@ use crate::{Error, Result};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct VMsDefault {
     pub memory: String,
     pub display: Option<String>,
@@ -24,6 +25,7 @@ pub struct VMsDefault {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Images {
     pub directory: PathBuf,
     pub other_directories_ro: Vec<PathBuf>,
@@ -32,6 +34,7 @@ pub struct Images {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub vms_dir: PathBuf,
     pub list_fold: bool,
