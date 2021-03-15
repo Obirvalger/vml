@@ -11,6 +11,7 @@ use tera::Context;
 use crate::cache::Cache;
 use crate::cloud_init;
 use crate::config::Config;
+use crate::config::CreateExistsAction;
 use crate::images;
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
@@ -19,7 +20,26 @@ use crate::template;
 use crate::vm_config::VMConfig;
 use crate::{Error, Result};
 
-pub fn create(config: &Config, name: &str, image: Option<&str>) -> Result<()> {
+pub fn exists(config: &Config, name: &str) -> bool {
+    let vm_dir = config.vms_dir.join(name);
+    let vml_path = vm_dir.join("vml.toml");
+    vml_path.exists()
+}
+
+pub fn create(
+    config: &Config,
+    name: &str,
+    image: Option<&str>,
+    exists_action: CreateExistsAction,
+) -> Result<()> {
+    if exists(config, name) {
+        match exists_action {
+            CreateExistsAction::Ignore => return Ok(()),
+            CreateExistsAction::Fail => return Err(Error::CreateExistingVM(name.to_string())),
+            CreateExistsAction::Replace => (),
+        }
+    }
+
     let image = image.unwrap_or(&config.images.default);
     let vm_dir = config.vms_dir.join(name);
     let mut images_dirs = vec![&config.images.directory];

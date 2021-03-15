@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub enum Error {
+    CreateExistingVM(String),
     CloudInitImageDoesNotExists(PathBuf),
     DiskDoesNotExists { disk_path: String, vm_name: String },
     DownloadImage(String),

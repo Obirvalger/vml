@@ -99,6 +99,14 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
+                .arg(Arg::new("exists_fail").long("exists-fail"))
+                .arg(Arg::new("exists_ignore").long("exists-ignore"))
+                .arg(Arg::new("exists_replace").long("exists-replace"))
+                .group(ArgGroup::new("exists").args(&[
+                    "exists_fail",
+                    "exists_ignore",
+                    "exists_replace",
+                ]))
                 .group(ArgGroup::new("name_group").args(&["names", "NAME"]).required(true)),
         )
         .subcommand(

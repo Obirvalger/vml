@@ -23,11 +23,20 @@ pub struct VMsDefault {
     pub user_network: bool,
 }
 
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CreateExistsAction {
+    Fail,
+    Ignore,
+    Replace,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct CreateCommand {
     pub pull: bool,
+    pub exists: CreateExistsAction,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -42,8 +51,8 @@ pub struct ListCommand {
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Commands {
-    pub list: ListCommand,
     pub create: CreateCommand,
+    pub list: ListCommand,
 }
 
 #[derive(Clone, Debug, Deserialize)]

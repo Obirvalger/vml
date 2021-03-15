@@ -8,6 +8,7 @@ use clap::ArgMatches;
 
 use vml::cli;
 use vml::config::Config;
+use vml::config::CreateExistsAction;
 use vml::files;
 use vml::template;
 use vml::{Error, Result};
@@ -187,8 +188,18 @@ fn main() -> Result<()> {
 
             let image = create_matches.value_of("image");
 
+            let exists = if create_matches.is_present("exists_fail") {
+                CreateExistsAction::Fail
+            } else if create_matches.is_present("exists_ignore") {
+                CreateExistsAction::Ignore
+            } else if create_matches.is_present("exists_replace") {
+                CreateExistsAction::Replace
+            } else {
+                config.commands.create.exists
+            };
+
             for name in names {
-                vml::create_vm(&config, name, image)?;
+                vml::create_vm(&config, name, image, exists)?;
             }
         }
 
