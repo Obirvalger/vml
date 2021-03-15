@@ -449,6 +449,8 @@ fn main() -> Result<()> {
 
             if !force {
                 vmc.with_pid(WithPid::Without);
+            } else {
+                vmc.with_pid(WithPid::Option);
             }
 
             list(&vmc, &config, false, false)?;
