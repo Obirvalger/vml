@@ -74,7 +74,7 @@ pub fn available() -> Result<Vec<String>> {
     Ok(images)
 }
 
-pub fn pull(images_dir: &PathBuf, image_name: &str) -> Result<()> {
+pub fn pull(images_dir: &PathBuf, image_name: &str) -> Result<PathBuf> {
     let images = parse(&images_file_path())?.images;
 
     if let Some(image) = images.get(image_name) {
@@ -86,8 +86,10 @@ pub fn pull(images_dir: &PathBuf, image_name: &str) -> Result<()> {
         println!("Downloading image {} {}", image_name, image.url);
         body.copy_to(&mut tmp).map_err(|e| Error::DownloadImage(e.to_string()))?;
 
-        fs::rename(tmp.path(), image_path)?;
-    }
+        fs::rename(tmp.path(), &image_path)?;
 
-    Ok(())
+        Ok(image_path)
+    } else {
+        Err(Error::UnknownImage(image_name.to_string()))
+    }
 }

@@ -26,6 +26,13 @@ pub struct VMsDefault {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
+pub struct CreateCommand {
+    pub pull: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct ListCommand {
     pub all: bool,
     pub fold: bool,
@@ -36,6 +43,7 @@ pub struct ListCommand {
 #[serde(deny_unknown_fields)]
 pub struct Commands {
     pub list: ListCommand,
+    pub create: CreateCommand,
 }
 
 #[derive(Clone, Debug, Deserialize)]

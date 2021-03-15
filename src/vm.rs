@@ -24,7 +24,16 @@ pub fn create(config: &Config, name: &str, image: Option<&str>) -> Result<()> {
     let vm_dir = config.vms_dir.join(name);
     let mut images_dirs = vec![&config.images.directory];
     images_dirs.extend(config.images.other_directories_ro.iter());
-    let image_path = images::find(&images_dirs, &image)?;
+    let image_path = match images::find(&images_dirs, &image) {
+        Ok(image_path) => image_path,
+        Err(error) => {
+            if matches!(error, Error::ImageDoesNotExists(_)) && config.commands.create.pull {
+                images::pull(&config.images.directory, &image)?
+            } else {
+                return Err(error);
+            }
+        }
+    };
     let vm_disk = vm_dir.join("disk.qcow2");
     let vml_path = vm_dir.join("vml.toml");
 

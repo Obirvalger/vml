@@ -20,6 +20,7 @@ pub enum Error {
     SSHPublicKeyDoesNotExists(String),
     StoreRunningVM(String),
     Template { place: String, error: String },
+    UnknownImage(String),
     VMHasNoPid(String),
     VMHasNoSSH(String),
 }
