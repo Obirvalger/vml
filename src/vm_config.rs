@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use byte_unit::Byte;
 use serde::Deserialize;
 
+use crate::ssh::ConfigSSH;
 use crate::string_like::StringOrUint;
 use crate::{Error, Result};
 
@@ -20,10 +21,8 @@ pub struct VMConfig {
     pub memory: Option<String>,
     pub minimum_disk_size: Option<Byte>,
     pub nproc: Option<StringOrUint>,
-    pub ssh_authorized_key: Option<String>,
-    pub ssh_options: Option<Vec<String>>,
-    pub ssh_port: Option<StringOrUint>,
-    pub ssh_user: Option<String>,
+    #[serde(default)]
+    pub ssh: ConfigSSH,
     pub tags: Option<HashSet<String>>,
     pub tap: Option<String>,
     pub user_network: Option<bool>,

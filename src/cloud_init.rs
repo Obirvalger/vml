@@ -18,9 +18,11 @@ pub fn generate_data(context: &Context, work_dir: &PathBuf) -> Result<PathBuf> {
 
     let user_data_template: &str = "#cloud-config
 disable_root: False
-{% if ssh_authorized_key -%}
+{% if ssh_authorized_keys -%}
 ssh_authorized_keys:
-  - {{ ssh_authorized_key }}
+{% for key in ssh_authorized_keys -%}
+  - {{ key }}
+{% endfor -%}
 {% endif -%}
 preserve_hostname: false
 hostname: {{ n }}

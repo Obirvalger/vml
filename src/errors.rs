@@ -16,6 +16,8 @@ pub enum Error {
     ParseVMConfigField { vm_name: String, field: String },
     RemoveRuuningVM(String),
     RewriteExistsPath(String),
+    SSHPrivateKeyDoesNotExists(String),
+    SSHPublicKeyDoesNotExists(String),
     StoreRunningVM(String),
     Template { place: String, error: String },
     VMHasNoPid(String),

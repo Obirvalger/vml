@@ -66,7 +66,6 @@ pub struct VM {
     specified_by: SpecifiedBy,
     pid: Option<i32>,
     ssh: Option<SSH>,
-    ssh_authorized_key: Option<String>,
     tags: HashSet<String>,
     tap: Option<String>,
     user_network: bool,
@@ -113,23 +112,10 @@ impl VM {
             vm_config.minimum_disk_size.or_else(|| config.default.minimum_disk_size.to_owned());
         let minimum_disk_size = minimum_disk_size.map(|s| s.get_bytes());
         let nproc = vm_config.nproc.unwrap_or_else(|| config.default.nproc.to_owned()).to_string();
-        let ssh_port = vm_config
-            .ssh_port
-            .or_else(|| {
-                if user_network {
-                    config.default.ssh_port_user_network.to_owned()
-                } else {
-                    config.default.ssh_port.to_owned()
-                }
-            })
-            .map(|p| p.to_string());
-        let ssh_options = vm_config.ssh_options.or_else(|| config.default.ssh_options.to_owned());
-        let ssh_user = vm_config.ssh_user.or_else(|| config.default.ssh_user.to_owned());
-        let ssh_authorized_key =
-            vm_config.ssh_authorized_key.or_else(|| config.default.ssh_authorized_key.to_owned());
         let tags = vm_config.tags.unwrap_or_else(HashSet::new);
 
-        let ssh = SSH::new(user_network, &address, &ssh_options, &ssh_port, &ssh_user);
+        let ssh_config = vm_config.ssh.updated(&config.default.ssh);
+        let ssh = SSH::new(&ssh_config, &address, user_network);
 
         Ok(VM {
             address,
@@ -149,7 +135,6 @@ impl VM {
             nproc,
             specified_by,
             ssh,
-            ssh_authorized_key,
             tags,
             tap,
             user_network,
@@ -216,7 +201,14 @@ impl VM {
 
                 image.to_owned()
             } else {
-                cloud_init::generate_data(&self.context(), &self.vml_directory.join("cloud-init"))?
+                let mut context = self.context();
+                if let Some(ssh) = &self.ssh {
+                    if ssh.has_key() {
+                        let keys = ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
+                        context.insert("ssh_authorized_keys", &keys.authorized_keys());
+                    }
+                }
+                cloud_init::generate_data(&context, &self.vml_directory.join("cloud-init"))?
             };
 
             kvm.args(&[
@@ -304,6 +296,13 @@ impl VM {
         ssh_cmd.args(ssh_flags);
 
         ssh_cmd.arg(self_ssh.user_host(&user));
+        if self_ssh.has_key() {
+            let keys = self_ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
+            if let Some(pvt_key) = keys.private() {
+                ssh_cmd.args(&["-o", "IdentitiesOnly=yes"]);
+                ssh_cmd.arg("-i").arg(pvt_key);
+            }
+        }
 
         if let Some(cmd) = cmd {
             let cmd = template::renders(&self.context(), cmd, "ssh commands")?;
@@ -328,7 +327,6 @@ impl VM {
         context.insert("name", &self.name);
         context.insert("tap", &self.tap);
         context.insert("user_network", &self.user_network);
-        context.insert("ssh_authorized_key", &self.ssh_authorized_key);
 
         context
     }
