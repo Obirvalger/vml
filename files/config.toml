@@ -1,27 +1,45 @@
 # NOTE user your own path
 vms-dir = "~/vml"
 
-list-fold = false
+
+[commands]
+create.pull = true
+
+# Do this when create vm that already exists: fail, ignore, replace
+create.exists = "fail"
+
+list.all = false
+
+list.fold = true
+
+start.cloud-init = true
 
 
 [default]
 memory = "2G"
 
-# display = "none"
+display = "none"
 
 nproc = 2
 
-# ssh-options = ["StrictHostKeyChecking=no", "UserKnownHostsFile=/dev/null"]
+# ssh.authorized-keys = []
 
-# NOTE ssh-port-user must be specified to use ssh commands with user network
-ssh-port-user-network = "random"
+# ssh.options = [
+    # "StrictHostKeyChecking=no",
+    # "UserKnownHostsFile=/dev/null",
+    # "LogLevel=ERROR",
+# ]
 
-# NOTE ssh-port must be specified to use ssh commands with tap network
-# ssh-port = 22
+ssh.port-user-network = "random"
 
-# ssh-user = "root"
+ssh.port = 22
 
-# NOTE user your own path
+ssh.user = "root"
+
+# Path to private key or "none" or "create"
+ssh.key = "create"
+
+# NOTE if not set create image from vm specifications
 # cloud-init-image = "~/my-seed.img"
 
 user-network = true
