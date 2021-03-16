@@ -39,6 +39,9 @@ pub fn install_all(config: &Config) -> Result<()> {
     if !config.vms_dir.exists() {
         fs::create_dir_all(&config.vms_dir)?;
     }
+    if !config.images.directory.exists() {
+        fs::create_dir_all(&config.images.directory)?;
+    }
     install_config("images.toml")?;
 
     Ok(())
