@@ -42,15 +42,19 @@ pub fn create(
 
     let image = image.unwrap_or(&config.images.default);
     let vm_dir = config.vms_dir.join(name);
-    let mut images_dirs = vec![&config.images.directory];
-    images_dirs.extend(config.images.other_directories_ro.iter());
-    let image_path = match images::find(&images_dirs, &image) {
-        Ok(image_path) => image_path,
-        Err(error) => {
-            if matches!(error, Error::ImageDoesNotExists(_)) && config.commands.create.pull {
-                images::pull(&config.images.directory, &image)?
-            } else {
-                return Err(error);
+    let image_path = if image.starts_with('/') {
+        PathBuf::from(image)
+    } else {
+        let mut images_dirs = vec![&config.images.directory];
+        images_dirs.extend(config.images.other_directories_ro.iter());
+        match images::find(&images_dirs, &image) {
+            Ok(image_path) => image_path,
+            Err(error) => {
+                if matches!(error, Error::ImageDoesNotExists(_)) && config.commands.create.pull {
+                    images::pull(&config.images.directory, &image)?
+                } else {
+                    return Err(error);
+                }
             }
         }
     };
