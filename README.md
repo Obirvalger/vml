@@ -22,6 +22,7 @@ cp target/release/vml ~/bin/vml
 
 The following programs (packages) should be installed:
 * `kvm` (qemu-kvm)
+* `rsync`
 * `socat`
 * `cloud-localds` (cloud-utils)
 
