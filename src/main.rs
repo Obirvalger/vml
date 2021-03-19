@@ -244,7 +244,7 @@ fn main() -> Result<()> {
             vmc.with_pid(WithPid::Filter);
             vmc.error_on_empty();
 
-            for vm in vmc.create()? {
+            for mut vm in vmc.create()? {
                 vm.stop(force)?;
             }
         }
@@ -457,7 +457,7 @@ fn main() -> Result<()> {
             let remove = confirm("Do you really want to remove that vms?");
 
             if remove {
-                for vm in vmc.create()? {
+                for mut vm in vmc.create()? {
                     if force && vm.has_pid() {
                         vm.stop(true)?;
                     }

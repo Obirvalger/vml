@@ -282,7 +282,7 @@ impl VM {
         Ok(())
     }
 
-    pub fn stop(&self, force: bool) -> Result<()> {
+    pub fn stop(&mut self, force: bool) -> Result<()> {
         #[cfg(debug_assertions)]
         println!("Stop vm {:?}", self.name);
 
@@ -297,6 +297,8 @@ impl VM {
             } else {
                 self.monitor_command("quit")?;
             }
+
+            self.pid = None;
         } else {
             return Err(Error::VMHasNoPid(self.name.to_string()));
         }
