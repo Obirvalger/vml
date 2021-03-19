@@ -239,6 +239,9 @@ impl VM {
                     if ssh.has_key() {
                         let keys = ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
                         context.insert("ssh_authorized_keys", &keys.authorized_keys());
+
+                        let users = if let Some(user) = ssh.user() { vec![user] } else { vec![] };
+                        context.insert("users", &users);
                     }
                 }
                 cloud_init::generate_data(&context, &self.vml_directory.join("cloud-init"))?

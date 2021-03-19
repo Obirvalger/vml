@@ -147,6 +147,10 @@ impl SSH {
         Ok(Keys { key: ensured_key, authorized_keys: self.authorized_keys.to_owned() })
     }
 
+    pub fn user(&self) -> Option<String> {
+        self.user.to_owned()
+    }
+
     pub fn user_host(&self, user: &Option<&str>) -> String {
         if let Some(user) = user {
             format!("{}@{}", user, self.host)

@@ -20,8 +20,20 @@ pub fn generate_data(context: &Context, work_dir: &PathBuf) -> Result<PathBuf> {
 disable_root: False
 {% if ssh_authorized_keys -%}
 ssh_authorized_keys:
-{% for key in ssh_authorized_keys -%}
+{%- for key in ssh_authorized_keys %}
   - {{ key }}
+{% endfor -%}
+{% endif -%}
+{% if users -%}
+users:
+{%- for user in users %}
+  - name: {{ user }}
+{%- if ssh_authorized_keys %}
+    ssh_authorized_keys:
+{%- for key in ssh_authorized_keys %}
+      - {{ key }}
+{% endfor -%}
+{% endif -%}
 {% endfor -%}
 {% endif -%}
 preserve_hostname: false
