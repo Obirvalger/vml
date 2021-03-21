@@ -151,9 +151,9 @@ impl SSH {
         self.user.to_owned()
     }
 
-    pub fn user_host(&self, user: &Option<&str>) -> String {
+    pub fn user_host<S: AsRef<str>>(&self, user: &Option<S>) -> String {
         if let Some(user) = user {
-            format!("{}@{}", user, self.host)
+            format!("{}@{}", user.as_ref(), self.host)
         } else if let Some(user) = &self.user {
             format!("{}@{}", user, self.host)
         } else {

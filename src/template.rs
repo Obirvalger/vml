@@ -1,14 +1,20 @@
 use std::fs;
+use std::path::Path;
 
 use tera::{Context, Tera};
 
 use crate::{Error, Result};
 
-pub fn render(context: &Context, template: &str, place: &str) -> Result<String> {
-    Tera::one_off(template, &context, false).map_err(|e| Error::template(place, &e.to_string()))
+pub fn render<S: AsRef<str>>(context: &Context, template: S, place: &str) -> Result<String> {
+    Tera::one_off(template.as_ref(), &context, false)
+        .map_err(|e| Error::template(place, &e.to_string()))
 }
 
-pub fn renders(context: &Context, templates: &[&str], place: &str) -> Result<Vec<String>> {
+pub fn renders<S: AsRef<str>>(
+    context: &Context,
+    templates: &[S],
+    place: &str,
+) -> Result<Vec<String>> {
     let mut strings = Vec::with_capacity(templates.len());
 
     for template in templates {
@@ -18,10 +24,10 @@ pub fn renders(context: &Context, templates: &[&str], place: &str) -> Result<Vec
     Ok(strings)
 }
 
-pub fn render_file(
+pub fn render_file<T: AsRef<Path>, R: AsRef<Path>>(
     context: &Context,
-    template_file: &str,
-    rendered_file: &str,
+    template_file: T,
+    rendered_file: R,
     place: &str,
 ) -> Result<()> {
     let template = fs::read_to_string(template_file)?;

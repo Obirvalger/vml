@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::net::TcpListener;
@@ -20,18 +21,19 @@ use crate::template;
 use crate::vm_config::VMConfig;
 use crate::{Error, Result};
 
-pub fn exists(config: &Config, name: &str) -> bool {
-    let vm_dir = config.vms_dir.join(name);
+pub fn exists<S: AsRef<str>>(config: &Config, name: S) -> bool {
+    let vm_dir = config.vms_dir.join(name.as_ref());
     let vml_path = vm_dir.join("vml.toml");
     vml_path.exists()
 }
 
-pub fn create(
+pub fn create<S: AsRef<str>>(
     config: &Config,
-    name: &str,
+    name: S,
     image: Option<&str>,
     exists_action: CreateExistsAction,
 ) -> Result<()> {
+    let name = name.as_ref();
     if exists(config, name) {
         match exists_action {
             CreateExistsAction::Ignore => return Ok(()),
@@ -106,7 +108,8 @@ pub struct VM {
 }
 
 impl VM {
-    pub fn from_config(config: &Config, name: &str) -> Result<VM> {
+    pub fn from_config<S: AsRef<str>>(config: &Config, name: S) -> Result<VM> {
+        let name = name.as_ref();
         let directory = config.vms_dir.join(name);
         let config_path = directory.join("vml.toml");
         let vm_config = VMConfig::new(&config_path)?;
@@ -114,7 +117,12 @@ impl VM {
         VM::from_config_vm_config(config, name, &vm_config)
     }
 
-    pub fn from_config_vm_config(config: &Config, name: &str, vm_config: &VMConfig) -> Result<VM> {
+    pub fn from_config_vm_config<S: AsRef<str>>(
+        config: &Config,
+        name: S,
+        vm_config: &VMConfig,
+    ) -> Result<VM> {
+        let name = name.as_ref();
         let directory = config.vms_dir.join(name);
         let vml_directory = directory.join(".vml");
         let vm_config = vm_config.to_owned();
@@ -191,12 +199,12 @@ impl VM {
         self.pid.is_some()
     }
 
-    pub fn has_parent(&self, parent: &str) -> bool {
-        self.name_path.starts_with(parent)
+    pub fn has_parent<S: AsRef<str>>(&self, parent: S) -> bool {
+        self.name_path.starts_with(parent.as_ref())
     }
 
-    pub fn has_tag(&self, tag: &str) -> bool {
-        self.tags.contains(tag)
+    pub fn has_tag<S: AsRef<str>>(&self, tag: S) -> bool {
+        self.tags.contains(tag.as_ref())
     }
 
     pub fn has_common_tags(&self, tags: &HashSet<String>) -> bool {
@@ -209,7 +217,7 @@ impl VM {
         }
     }
 
-    pub fn start(&self, cloud_init: bool, drives: &[&str]) -> Result<()> {
+    pub fn start<S: AsRef<OsStr>>(&self, cloud_init: bool, drives: &[S]) -> Result<()> {
         #[cfg(debug_assertions)]
         println!("Strart vm {:?}", self.name);
         let mut kvm = Command::new("kvm");
@@ -257,7 +265,7 @@ impl VM {
         }
 
         for drive in drives {
-            kvm.args(&["-drive", drive]);
+            kvm.arg("-drive").arg(drive);
         }
 
         if let Some(ssh) = &self.ssh {
@@ -309,12 +317,12 @@ impl VM {
         Ok(())
     }
 
-    pub fn ssh(
+    pub fn ssh<U: AsRef<str>, O: AsRef<OsStr>, F: AsRef<OsStr>, C: AsRef<str>>(
         &self,
-        user: &Option<&str>,
-        ssh_options: &[&str],
-        ssh_flags: &[&str],
-        cmd: &Option<Vec<&str>>,
+        user: &Option<U>,
+        ssh_options: &[O],
+        ssh_flags: &[F],
+        cmd: &Option<Vec<C>>,
     ) -> Result<()> {
         #[cfg(debug_assertions)]
         println!("SSH to vm {:?}", self.name);
@@ -331,12 +339,12 @@ impl VM {
         ssh_cmd.args(&["-p", &port]);
 
         for option in ssh_options {
-            ssh_cmd.args(&["-o", option]);
+            ssh_cmd.arg("-o").arg(option.as_ref());
         }
 
         ssh_cmd.args(ssh_flags);
 
-        ssh_cmd.arg(self_ssh.user_host(&user));
+        ssh_cmd.arg(self_ssh.user_host(user));
         if self_ssh.has_key() {
             let keys = self_ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
             if let Some(pvt_key) = keys.private() {
@@ -372,13 +380,13 @@ impl VM {
         context
     }
 
-    fn rsync_to_from(
+    fn rsync_to_from<U: AsRef<str>, O: AsRef<OsStr>, S: AsRef<str>, D: AsRef<str>>(
         &self,
         to: bool,
-        user: &Option<&str>,
-        rsync_options: &[&str],
-        sources: &[&str],
-        destination: &Option<&str>,
+        user: &Option<U>,
+        rsync_options: &[O],
+        sources: &[S],
+        destination: &Option<D>,
     ) -> Result<()> {
         let mut ssh_cmd = vec!["ssh"];
 
@@ -422,36 +430,41 @@ impl VM {
         Ok(())
     }
 
-    pub fn rsync_to(
+    pub fn rsync_to<U: AsRef<str>, O: AsRef<OsStr>, S: AsRef<str>, D: AsRef<str>>(
         &self,
-        user: &Option<&str>,
-        rsync_options: &[&str],
-        sources: &[&str],
-        destination: &Option<&str>,
+        user: &Option<U>,
+        rsync_options: &[O],
+        sources: &[S],
+        destination: &Option<D>,
     ) -> Result<()> {
         self.rsync_to_from(true, user, rsync_options, sources, destination)
     }
 
-    pub fn rsync_to_template(
+    pub fn rsync_to_template<U: AsRef<str>, O: AsRef<OsStr>, T: AsRef<str>, D: AsRef<str>>(
         &self,
-        user: &Option<&str>,
-        rsync_options: &[&str],
-        template_str: &str,
-        destination: &Option<&str>,
+        user: &Option<U>,
+        rsync_options: &[O],
+        template_str: T,
+        destination: &Option<D>,
     ) -> Result<()> {
         let tmp_dir = tempfile::tempdir().expect("can't create tmp file");
-        let tmp_name = tmp_dir.path().join(template_str).to_string_lossy().to_string();
+        let tmp_name = tmp_dir.path().join(template_str.as_ref()).to_string_lossy().to_string();
         let sources = [tmp_name.as_str()];
-        template::render_file(&self.context(), template_str, &tmp_name, "rsync_to_template")?;
+        template::render_file(
+            &self.context(),
+            template_str.as_ref(),
+            &tmp_name,
+            "rsync_to_template",
+        )?;
         self.rsync_to_from(true, user, rsync_options, &sources, destination)
     }
 
-    pub fn rsync_from(
+    pub fn rsync_from<U: AsRef<str>, O: AsRef<OsStr>, S: AsRef<str>, D: AsRef<str>>(
         &self,
-        user: &Option<&str>,
-        rsync_options: &[&str],
-        sources: &[&str],
-        destination: &Option<&str>,
+        user: &Option<U>,
+        rsync_options: &[O],
+        sources: &[S],
+        destination: &Option<D>,
     ) -> Result<()> {
         self.rsync_to_from(false, user, rsync_options, sources, destination)
     }
@@ -467,8 +480,8 @@ impl VM {
         Ok(())
     }
 
-    pub fn monitor_command(&self, command: &str) -> Result<Option<String>> {
-        let command = &format!("{}\n", command);
+    pub fn monitor_command<S: AsRef<str>>(&self, command: S) -> Result<Option<String>> {
+        let command = &format!("{}\n", command.as_ref());
         let reply = socket::reply(command.as_bytes(), &self.monitor)?;
         let reply =
             String::from_utf8(reply).map_err(|e| Error::other("from_utf8", &e.to_string()))?;
@@ -520,7 +533,9 @@ impl VM {
         }
     }
 
-    pub fn store_disk(&self, to: &PathBuf, force: bool) -> Result<()> {
+    pub fn store_disk<P: AsRef<Path>>(&self, to: P, force: bool) -> Result<()> {
+        let to = to.as_ref();
+
         if self.has_pid() {
             return Err(Error::StoreRunningVM(self.name.to_string()));
         }
@@ -549,10 +564,9 @@ impl Hash for VM {
     }
 }
 
-fn image_size(image: &PathBuf) -> Result<u128> {
-    let out = Command::new("qemu-img")
-        .args(&["info", "--output=json", &image.to_string_lossy()])
-        .output()?;
+fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u128> {
+    let out =
+        Command::new("qemu-img").args(&["info", "--output=json"]).arg(image.as_ref()).output()?;
 
     let out =
         String::from_utf8(out.stdout).map_err(|e| Error::other("from_utf8", &e.to_string()))?;
@@ -566,12 +580,15 @@ fn image_size(image: &PathBuf) -> Result<u128> {
     Err(Error::other("parse qemu-img out", "can't read virtual-size as u128"))
 }
 
-fn try_resize(image: &PathBuf, size: u128) -> Result<()> {
+fn try_resize<S: AsRef<OsStr>>(image: S, size: u128) -> Result<()> {
+    let image = image.as_ref();
     let current_size = image_size(image)?;
 
     if current_size < size {
         Command::new("qemu-img")
-            .args(&["resize", &image.to_string_lossy(), &size.to_string()])
+            .arg("resize")
+            .arg(image)
+            .arg(&size.to_string())
             .spawn()
             .map_err(|e| Error::executable("qemu-img", &e.to_string()))?
             .wait()?;

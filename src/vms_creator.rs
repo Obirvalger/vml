@@ -45,8 +45,8 @@ impl<'a> VMsCreator<'a> {
         VMsCreator { all, config, error_on_empty, names, parents, tags, vm_config, with_pid }
     }
 
-    pub fn vm_config(&mut self, vm_config: &str) {
-        self.vm_config = Some(vm_config.to_owned());
+    pub fn vm_config<S: AsRef<str>>(&mut self, vm_config: S) {
+        self.vm_config = Some(vm_config.as_ref().to_string());
     }
 
     pub fn minimal_vm_config(&mut self) {
@@ -68,36 +68,36 @@ impl<'a> VMsCreator<'a> {
         self.error_on_empty = true;
     }
 
-    pub fn name(&mut self, name: &str) {
+    pub fn name<S: AsRef<str>>(&mut self, name: S) {
         self.all = false;
-        self.names.insert(name.to_string());
+        self.names.insert(name.as_ref().to_string());
     }
 
-    pub fn names(&mut self, names: &[&str]) {
+    pub fn names<S: AsRef<str>>(&mut self, names: &[S]) {
         self.all = false;
-        let names: HashSet<String> = names.iter().cloned().map(|t| t.to_string()).collect();
+        let names: HashSet<String> = names.iter().map(|t| t.as_ref().to_string()).collect();
         self.names.extend(names);
     }
 
-    pub fn parent(&mut self, parent: &str) {
+    pub fn parent<S: AsRef<str>>(&mut self, parent: S) {
         self.all = false;
-        self.parents.insert(parent.to_string());
+        self.parents.insert(parent.as_ref().to_string());
     }
 
-    pub fn parents(&mut self, parents: &[&str]) {
+    pub fn parents<S: AsRef<str>>(&mut self, parents: &[S]) {
         self.all = false;
-        let parents: HashSet<String> = parents.iter().cloned().map(|t| t.to_string()).collect();
+        let parents: HashSet<String> = parents.iter().map(|t| t.as_ref().to_string()).collect();
         self.parents.extend(parents);
     }
 
-    pub fn tag(&mut self, tag: &str) {
+    pub fn tag<S: AsRef<str>>(&mut self, tag: S) {
         self.all = false;
-        self.tags.insert(tag.to_string());
+        self.tags.insert(tag.as_ref().to_string());
     }
 
-    pub fn tags(&mut self, tags: &[&str]) {
+    pub fn tags<S: AsRef<str>>(&mut self, tags: &[S]) {
         self.all = false;
-        let tags: HashSet<String> = tags.iter().cloned().map(|t| t.to_string()).collect();
+        let tags: HashSet<String> = tags.iter().map(|t| t.as_ref().to_string()).collect();
         self.tags.extend(tags);
     }
 
