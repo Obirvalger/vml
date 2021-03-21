@@ -330,7 +330,10 @@ impl VM {
         let port = if port == "random" { self.cache.load("port")? } else { port };
         ssh_cmd.args(&["-p", &port]);
 
-        ssh_cmd.args(ssh_options);
+        for option in ssh_options {
+            ssh_cmd.args(&["-o", option]);
+        }
+
         ssh_cmd.args(ssh_flags);
 
         ssh_cmd.arg(self_ssh.user_host(&user));

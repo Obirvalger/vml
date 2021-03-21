@@ -170,7 +170,6 @@ pub fn build_cli() -> clap::App<'static> {
                         .long("ssh-options")
                         .takes_value(true)
                         .default_values(&[])
-                        .allow_hyphen_values(true)
                         .multiple(true),
                 )
                 .arg(Arg::new("NAME").takes_value(true))
