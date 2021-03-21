@@ -65,6 +65,7 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
 fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> Result<()> {
     set_specifications(vmc, start_matches);
 
+    let wait_ssh = start_matches.is_present("wait-ssh");
     let cloud_init = config.commands.start.cloud_init
         && !start_matches.is_present("no-cloud-init")
         || start_matches.is_present("cloud-init");
@@ -77,8 +78,22 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
     vmc.with_pid(WithPid::Without);
     vmc.error_on_empty();
 
-    for vm in vmc.create()? {
+    let vms = vmc.create()?;
+
+    for vm in &vms {
         vm.start(cloud_init, &drives)?;
+    }
+
+    if wait_ssh {
+        let user: Option<&str> = None;
+        let options = [
+            format!("ConnectionAttempts={}", config.commands.start.wait_ssh_attempts),
+            format!("ConnectTimeout={}", config.commands.start.wait_ssh_timeout),
+        ];
+        let flags: Vec<&str> = vec![];
+        for vm in &vms {
+            vm.ssh(&user, &options, &flags, &Some(vec!["true"]))?;
+        }
     }
 
     Ok(())

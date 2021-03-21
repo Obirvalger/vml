@@ -14,6 +14,10 @@ list.fold = true
 
 start.cloud-init = true
 
+start.wait-ssh-attempts = 60
+
+start.wait-ssh-timeout = 1
+
 
 [default]
 memory = "2G"

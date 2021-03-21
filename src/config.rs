@@ -52,6 +52,8 @@ pub struct ListCommand {
 #[serde(deny_unknown_fields)]
 pub struct StrartCommand {
     pub cloud_init: bool,
+    pub wait_ssh_timeout: i32,
+    pub wait_ssh_attempts: i32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
