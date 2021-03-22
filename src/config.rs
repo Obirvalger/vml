@@ -47,13 +47,37 @@ pub struct ListCommand {
     pub fold: bool,
 }
 
+fn default_wait_ssh_timeout() -> i32 {
+    1
+}
+
+fn default_wait_ssh_attempts() -> i32 {
+    60
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct WaitSSH {
+    #[serde(default = "default_wait_ssh_attempts")]
+    pub attempts: i32,
+    #[serde(default = "default_wait_ssh_timeout")]
+    pub timeout: i32,
+}
+
+impl Default for WaitSSH {
+    fn default() -> WaitSSH {
+        WaitSSH { attempts: default_wait_ssh_attempts(), timeout: default_wait_ssh_timeout() }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct StrartCommand {
     pub cloud_init: bool,
-    pub wait_ssh_timeout: i32,
-    pub wait_ssh_attempts: i32,
+    #[serde(default)]
+    pub wait_ssh: WaitSSH,
 }
 
 #[derive(Clone, Debug, Deserialize)]
