@@ -72,7 +72,8 @@ pub fn create<S: AsRef<str>>(
 
 fn get_random_mac() -> String {
     let mut rng = rand::thread_rng();
-    let mac_tail = (0..5).map(|_| rng.gen::<u8>().to_string()).collect::<Vec<_>>().join(":");
+    let mac_tail =
+        (0..5).map(|_| format!("{:02x}", rng.gen::<u8>())).collect::<Vec<_>>().join(":");
     format!("fe:{}", &mac_tail)
 }
 
