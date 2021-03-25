@@ -4,6 +4,7 @@ use std::process::Command;
 
 use serde::Deserialize;
 
+use crate::net::{self, ConfigNet};
 use crate::string_like::StringOrUint;
 use crate::{Error, Result};
 
@@ -89,13 +90,11 @@ pub struct SSH {
 }
 
 impl SSH {
-    pub fn new(config: &ConfigSSH, address: &Option<String>, user_network: bool) -> Option<SSH> {
-        let host = if let Some(address) = address {
-            address.to_string()
-        } else if user_network {
-            "localhost".to_string()
-        } else {
-            return None;
+    pub fn new(config: &ConfigSSH, config_net: &ConfigNet) -> Option<SSH> {
+        let host = match config_net {
+            ConfigNet::Tap { address, .. } => address.as_ref().and_then(net::address)?,
+            ConfigNet::User => "localhost".to_string(),
+            _ => return None,
         };
 
         let authorized_keys = if let Some(authorized_keys) = &config.authorized_keys {
@@ -111,8 +110,11 @@ impl SSH {
             }
         }
 
-        let port =
-            if user_network { config.port_user_network.as_ref() } else { config.port.as_ref() };
+        let port = if config_net.is_user() {
+            config.port_user_network.as_ref()
+        } else {
+            config.port.as_ref()
+        };
 
         let port = if let Some(port) = port { port.to_string() } else { return None };
 

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use byte_unit::Byte;
 use serde::Deserialize;
 
+use crate::net::ConfigNet;
 use crate::ssh::ConfigSSH;
 use crate::string_like::StringOrUint;
 use crate::{Error, Result};
@@ -13,7 +14,6 @@ use crate::{Error, Result};
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct VMConfig {
-    pub address: Option<String>,
     pub cloud_init_image: Option<PathBuf>,
     pub data: Option<HashMap<String, String>>,
     pub disk: Option<PathBuf>,
@@ -21,12 +21,12 @@ pub struct VMConfig {
     pub name: Option<String>,
     pub memory: Option<String>,
     pub minimum_disk_size: Option<Byte>,
+    #[serde(default)]
+    pub net: ConfigNet,
     pub nproc: Option<StringOrUint>,
     #[serde(default)]
     pub ssh: ConfigSSH,
     pub tags: Option<HashSet<String>>,
-    pub tap: Option<String>,
-    pub user_network: Option<bool>,
 }
 
 impl VMConfig {
@@ -57,8 +57,7 @@ impl VMConfig {
         name = "{{name}}"
         disk = "{{disk}}"
         [data]
-        address = "{{address}}"
-        tap = "{{tap}}"
+        net = "{{net}}"
         "#
         .to_owned()
     }

@@ -5,6 +5,7 @@ pub mod config;
 mod errors;
 pub mod files;
 pub mod images;
+mod net;
 mod socket;
 mod specified_by;
 mod ssh;

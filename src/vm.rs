@@ -14,6 +14,7 @@ use crate::cloud_init;
 use crate::config::Config;
 use crate::config::CreateExistsAction;
 use crate::images;
+use crate::net::{ConfigNet, Net};
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
 use crate::ssh::SSH;
@@ -85,7 +86,6 @@ fn get_available_port() -> Option<String> {
 
 #[derive(Clone, Debug)]
 pub struct VM {
-    address: Option<String>,
     cache: Cache,
     cloud_init_image: Option<PathBuf>,
     data: HashMap<String, String>,
@@ -98,13 +98,12 @@ pub struct VM {
     pub name: String,
     name_path: PathBuf,
     names: Vec<String>,
+    net: Option<Net>,
     nproc: String,
     specified_by: SpecifiedBy,
     pid: Option<i32>,
     ssh: Option<SSH>,
     tags: HashSet<String>,
-    tap: Option<String>,
-    user_network: bool,
     vml_directory: PathBuf,
 }
 
@@ -136,11 +135,6 @@ impl VM {
 
         let specified_by = SpecifiedBy::All;
 
-        let tap = vm_config.tap;
-        let user_network =
-            vm_config.user_network.unwrap_or(tap.is_none() && config.default.user_network);
-
-        let address = vm_config.address;
         let cloud_init_image =
             vm_config.cloud_init_image.or_else(|| config.default.cloud_init_image.to_owned());
         let data = vm_config.data.unwrap_or_else(HashMap::new);
@@ -156,11 +150,16 @@ impl VM {
         let nproc = vm_config.nproc.unwrap_or_else(|| config.default.nproc.to_owned()).to_string();
         let tags = vm_config.tags.unwrap_or_else(HashSet::new);
 
+        let mut net_config = vm_config.net.updated(&config.default.net);
+        if let ConfigNet::Tap { nameservers: ref mut nameservers @ None, .. } = net_config {
+            *nameservers = config.nameservers.to_owned();
+        }
+        let net = Net::new(&net_config)?;
+
         let ssh_config = vm_config.ssh.updated(&config.default.ssh);
-        let ssh = SSH::new(&ssh_config, &address, user_network);
+        let ssh = SSH::new(&ssh_config, &net_config);
 
         Ok(VM {
-            address,
             cache,
             cloud_init_image,
             data,
@@ -173,13 +172,12 @@ impl VM {
             name,
             name_path,
             names,
+            net,
             pid: None,
             nproc,
             specified_by,
             ssh,
             tags,
-            tap,
-            user_network,
             vml_directory,
         })
     }
@@ -222,6 +220,7 @@ impl VM {
         #[cfg(debug_assertions)]
         println!("Strart vm {:?}", self.name);
         let mut kvm = Command::new("kvm");
+        let mut context = self.context();
 
         kvm.args(&["-m", &self.memory])
             .args(&["-cpu", "host"])
@@ -235,6 +234,37 @@ impl VM {
             kvm.args(&["-display", display]);
         }
 
+        for drive in drives {
+            kvm.arg("-drive").arg(drive);
+        }
+
+        if let Some(net) = &self.net {
+            match net {
+                Net::User => {
+                    let hostfwd = if let Some(ssh) = &self.ssh {
+                        let port = ssh.port().to_string();
+                        let port =
+                            if port == "random" { get_available_port().unwrap() } else { port };
+                        self.cache.store("port", &port)?;
+                        format!(",hostfwd=tcp::{}-:22", port)
+                    } else {
+                        "".to_string()
+                    };
+                    kvm.args(&["-nic", &format!("user{}", hostfwd)]);
+                }
+                Net::Tap { address, nameservers, tap, .. } => {
+                    context.insert("address", &address);
+                    context.insert("gateway4", &net.gateway4());
+                    context.insert("gateway6", &net.gateway6());
+                    context.insert("tap", &tap);
+                    context.insert("nameservers", &nameservers);
+                    let mac = get_random_mac();
+                    context.insert("mac", &mac);
+                    kvm.args(&["-nic", &format!("tap,ifname={},script=no,mac={}", tap, mac)]);
+                }
+            }
+        }
+
         if cloud_init {
             let image = if let Some(image) = &self.cloud_init_image {
                 if !image.is_file() {
@@ -243,7 +273,6 @@ impl VM {
 
                 image.to_owned()
             } else {
-                let mut context = self.context();
                 if let Some(ssh) = &self.ssh {
                     if ssh.has_key() {
                         let keys = ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
@@ -253,6 +282,7 @@ impl VM {
                         context.insert("users", &users);
                     }
                 }
+
                 cloud_init::generate_data(&context, &self.vml_directory.join("cloud-init"))?
             };
 
@@ -263,24 +293,6 @@ impl VM {
                     &image.to_string_lossy()
                 ),
             ]);
-        }
-
-        for drive in drives {
-            kvm.arg("-drive").arg(drive);
-        }
-
-        if let Some(ssh) = &self.ssh {
-            if self.user_network {
-                let port = ssh.port().to_string();
-                let port = if port == "random" { get_available_port().unwrap() } else { port };
-                self.cache.store("port", &port)?;
-                kvm.args(&["-nic", &format!("user,hostfwd=tcp::{}-:22", port)]);
-            }
-        }
-
-        if let Some(tap) = &self.tap {
-            let mac = get_random_mac();
-            kvm.args(&["-nic", &format!("tap,ifname={},script=no,mac={}", tap, mac)]);
         }
 
         if let Some(size) = &self.minimum_disk_size {
@@ -368,15 +380,12 @@ impl VM {
 
     pub fn context(&self) -> Context {
         let mut context = Context::new();
-        context.insert("address", &self.address);
         context.insert("data", &self.data);
         context.insert("disk", &self.disk);
         let n = self.names[self.names.len() - 1].to_string();
         context.insert("n", &n);
         context.insert("h", &self.hyphenized());
         context.insert("name", &self.name);
-        context.insert("tap", &self.tap);
-        context.insert("user_network", &self.user_network);
 
         context
     }

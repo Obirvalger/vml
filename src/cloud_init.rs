@@ -4,6 +4,7 @@ use std::process::Command;
 
 use tera::Context;
 
+use crate::net;
 use crate::template;
 use crate::{Error, Result};
 
@@ -45,6 +46,36 @@ hostname: {{ n }}
 
     let mut cloud_localds = Command::new("cloud-localds");
     cloud_localds.args(&[&data, &user_data_yaml, &meta_data_yaml]);
+
+    if let Some(address) = context.get("address").and_then(|a| a.as_str()) {
+        if !net::is_cidr(address) {
+            return Err(Error::BadCIDR(address.to_string()));
+        }
+        let network_template: &str = r#"version: 2
+ethernets:
+  interface0:
+    match:
+      macaddress: "{{ mac }}"
+    addresses:
+      - {{ address }}
+    nameservers:
+      addresses:
+{%- for ns in nameservers %}
+      - {{ ns }}
+{% endfor -%}
+{%- if gateway4 %}
+    gateway4: {{ gateway4 }}
+{% endif -%}
+{%- if gateway6 %}
+    gateway6: {{ gateway6 }}
+{% endif -%}
+"#;
+        let network = template::render(context, network_template, "cloud-init network")?;
+        let network_yaml = work_dir.join("network.yaml");
+        fs::write(&network_yaml, &network)?;
+        cloud_localds.arg("-N").arg(&network_yaml);
+    }
+
     cloud_localds
         .spawn()
         .map_err(|e| Error::executable("cloud-localds", &e.to_string()))?

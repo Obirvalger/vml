@@ -1,6 +1,8 @@
 # NOTE user your own path
 vms-dir = "~/vml"
 
+nameservers = ["8.8.8.8"]
+
 
 [commands]
 create.pull = true
@@ -44,7 +46,15 @@ ssh.key = "create"
 # NOTE if not set create image from vm specifications
 # cloud-init-image = "~/my-seed.img"
 
-user-network = true
+# net.type = "none"
+
+# net.type = "tap"
+# net.address = "192.168.0.2"
+# net.tap = "tap0"
+# net.gateway = "192.168.0.1"
+# net.nameservers = ["8.8.8.8"]
+
+net.type = "user"
 
 minimum-disk-size = "30G"
 
