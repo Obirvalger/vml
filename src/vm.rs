@@ -218,7 +218,7 @@ impl VM {
 
     pub fn start<S: AsRef<OsStr>>(&self, cloud_init: bool, drives: &[S]) -> Result<()> {
         #[cfg(debug_assertions)]
-        println!("Strart vm {:?}", self.name);
+        eprintln!("Strart vm {:?}", self.name);
         let mut kvm = Command::new("kvm");
         let mut context = self.context();
 
@@ -300,7 +300,7 @@ impl VM {
         }
 
         #[cfg(debug_assertions)]
-        println!("{:?}", &kvm);
+        eprintln!("{:?}", &kvm);
         kvm.spawn().map_err(|e| Error::executable("kvm", &e.to_string()))?.wait()?;
 
         Ok(())
@@ -308,7 +308,7 @@ impl VM {
 
     pub fn stop(&mut self, force: bool) -> Result<()> {
         #[cfg(debug_assertions)]
-        println!("Stop vm {:?}", self.name);
+        eprintln!("Stop vm {:?}", self.name);
 
         if let Some(pid) = self.pid {
             if force {
@@ -317,7 +317,7 @@ impl VM {
                     .spawn()
                     .map_err(|e| Error::executable("kill", &e.to_string()))?;
                 #[cfg(debug_assertions)]
-                println!("Kill {}", pid);
+                eprintln!("Kill {}", pid);
             } else {
                 self.monitor_command("quit")?;
             }
@@ -338,7 +338,7 @@ impl VM {
         cmd: &Option<Vec<C>>,
     ) -> Result<()> {
         #[cfg(debug_assertions)]
-        println!("SSH to vm {:?}", self.name);
+        eprintln!("SSH to vm {:?}", self.name);
 
         let self_ssh =
             self.ssh.as_ref().ok_or_else(|| Error::VMHasNoSSH(self.name.to_string()))?;
@@ -372,7 +372,7 @@ impl VM {
         }
 
         #[cfg(debug_assertions)]
-        println!("{:?}", &ssh_cmd);
+        eprintln!("{:?}", &ssh_cmd);
         ssh_cmd.spawn().map_err(|e| Error::executable("ssh", &e.to_string()))?.wait()?;
 
         Ok(())
@@ -434,7 +434,7 @@ impl VM {
         }
 
         #[cfg(debug_assertions)]
-        println!("{:#?}", &rsync);
+        eprintln!("{:#?}", &rsync);
         rsync.spawn().map_err(|e| Error::executable("rsync", &e.to_string()))?.wait()?;
 
         Ok(())
