@@ -86,13 +86,18 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
 
     if wait_ssh {
         let user: Option<&str> = None;
+        let repeat = config.commands.start.wait_ssh.repeat;
         let options = [
             format!("ConnectionAttempts={}", config.commands.start.wait_ssh.attempts),
             format!("ConnectTimeout={}", config.commands.start.wait_ssh.timeout),
         ];
         let flags: Vec<&str> = vec![];
         for vm in &vms {
-            vm.ssh(&user, &options, &flags, &Some(vec!["true"]))?;
+            for _ in 0..repeat {
+                if vm.ssh(&user, &options, &flags, &Some(vec!["true"]))? == Some(0) {
+                    break;
+                }
+            }
         }
     }
 
