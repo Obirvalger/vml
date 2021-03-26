@@ -1,6 +1,8 @@
 # vml
 VML is a tool for easily and transparently work with qemu virtual machines.
 Virtaul machines presend as directories with vml.toml files in it.
+VML is able to initialize images with cloud-init. Virtual machines with ALT,
+Centos, Debian and Ubuntu could be created with just one command.
 
 ## Build
 All needed dependencies seved into vendor directory, so it can be built
