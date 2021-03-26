@@ -49,15 +49,19 @@ pub struct ListCommand {
     pub fold: bool,
 }
 
-fn default_wait_ssh_timeout() -> i32 {
+fn default_wait_ssh_timeout() -> u64 {
     1
 }
 
-fn default_wait_ssh_repeat() -> i32 {
+fn default_wait_ssh_repeat() -> u64 {
     1
 }
 
-fn default_wait_ssh_attempts() -> i32 {
+fn default_wait_ssh_sleep() -> u64 {
+    60
+}
+
+fn default_wait_ssh_attempts() -> u64 {
     60
 }
 
@@ -66,11 +70,13 @@ fn default_wait_ssh_attempts() -> i32 {
 #[serde(deny_unknown_fields)]
 pub struct WaitSSH {
     #[serde(default = "default_wait_ssh_attempts")]
-    pub attempts: i32,
+    pub attempts: u64,
     #[serde(default = "default_wait_ssh_repeat")]
-    pub repeat: i32,
+    pub repeat: u64,
+    #[serde(default = "default_wait_ssh_sleep")]
+    pub sleep: u64,
     #[serde(default = "default_wait_ssh_timeout")]
-    pub timeout: i32,
+    pub timeout: u64,
 }
 
 impl Default for WaitSSH {
@@ -78,6 +84,7 @@ impl Default for WaitSSH {
         WaitSSH {
             attempts: default_wait_ssh_attempts(),
             repeat: default_wait_ssh_repeat(),
+            sleep: default_wait_ssh_sleep(),
             timeout: default_wait_ssh_timeout(),
         }
     }

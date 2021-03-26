@@ -3,6 +3,8 @@ use std::env;
 use std::fs;
 use std::io;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use clap::ArgMatches;
 
@@ -87,6 +89,7 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
     if wait_ssh {
         let user: Option<&str> = None;
         let repeat = config.commands.start.wait_ssh.repeat;
+        let sleep = config.commands.start.wait_ssh.sleep;
         let options = [
             format!("ConnectionAttempts={}", config.commands.start.wait_ssh.attempts),
             format!("ConnectTimeout={}", config.commands.start.wait_ssh.timeout),
@@ -96,6 +99,8 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
             for _ in 0..repeat {
                 if vm.ssh(&user, &options, &flags, &Some(vec!["true"]))? == Some(0) {
                     break;
+                } else {
+                    thread::sleep(Duration::from_secs(sleep));
                 }
             }
         }

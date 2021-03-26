@@ -16,7 +16,7 @@ list.fold = true
 
 start.cloud-init = true
 
-start.wait-ssh = { attempts = 60, repeat = 1, timeout = 1 }
+start.wait-ssh = { attempts = 60, repeat = 1, sleep = 1, timeout = 1 }
 
 
 [default]
