@@ -301,7 +301,7 @@ impl VM {
 
         #[cfg(debug_assertions)]
         println!("{:?}", &kvm);
-        kvm.spawn().map_err(|e| Error::executable("socat", &e.to_string()))?.wait()?;
+        kvm.spawn().map_err(|e| Error::executable("kvm", &e.to_string()))?.wait()?;
 
         Ok(())
     }
