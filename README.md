@@ -49,7 +49,7 @@ $EDITOR ~/.config/vml/config.toml
 
 Run vm named `test`, using `alt-sisyphus` image.
 ```
-vml run -i alt-sisyphus -n test
+vml run -i alt-sisyphus --wait-ssh -n test
 ```
 
 VM `test` is described via directory `test` in `<vms_dir>` (vms_dir from
