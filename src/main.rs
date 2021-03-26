@@ -482,8 +482,12 @@ fn main() -> Result<()> {
                 vmc.with_pid(WithPid::Option);
             }
 
-            list(&vmc, &config, false, false)?;
-            let remove = confirm("Do you really want to remove that vms?");
+            let remove = if force {
+                true
+            } else {
+                list(&vmc, &config, false, false)?;
+                confirm("Do you really want to remove that vms?")
+            };
 
             if remove {
                 for mut vm in vmc.create()? {
