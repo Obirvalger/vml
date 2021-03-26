@@ -179,6 +179,11 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("A").short('A').about("pass -A to ssh command"))
                 .arg(Arg::new("Y").short('Y').about("pass -Y to ssh command"))
                 .arg(
+                    Arg::new("check")
+                        .long("check")
+                        .about("fail on first command with non zero return code"),
+                )
+                .arg(
                     Arg::new("cmd")
                         .long("cmd")
                         .short('c')

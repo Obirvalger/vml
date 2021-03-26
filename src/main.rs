@@ -296,7 +296,11 @@ fn main() -> Result<()> {
             }
             vmc.error_on_empty();
             for vm in vmc.create()? {
-                vm.ssh(&user, &ssh_options, &ssh_flags, &cmd)?;
+                if vm.ssh(&user, &ssh_options, &ssh_flags, &cmd)? != Some(0)
+                    && ssh_matches.is_present("check")
+                {
+                    return Err(Error::SSHFailed(vm.name));
+                }
             }
         }
 

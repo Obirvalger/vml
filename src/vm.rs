@@ -336,7 +336,7 @@ impl VM {
         ssh_options: &[O],
         ssh_flags: &[F],
         cmd: &Option<Vec<C>>,
-    ) -> Result<()> {
+    ) -> Result<Option<i32>> {
         #[cfg(debug_assertions)]
         eprintln!("SSH to vm {:?}", self.name);
 
@@ -373,9 +373,10 @@ impl VM {
 
         #[cfg(debug_assertions)]
         eprintln!("{:?}", &ssh_cmd);
-        ssh_cmd.spawn().map_err(|e| Error::executable("ssh", &e.to_string()))?.wait()?;
+        let rc =
+            ssh_cmd.spawn().map_err(|e| Error::executable("ssh", &e.to_string()))?.wait()?.code();
 
-        Ok(())
+        Ok(rc)
     }
 
     pub fn context(&self) -> Context {
