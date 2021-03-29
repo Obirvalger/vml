@@ -58,5 +58,5 @@ mkdir -p %buildroot%_datadir/fish/vendor_completions.d
 %doc doc *.md
 
 %changelog
-* Sat Mar 27 2021 Mikhail Gordeev <obirvalger@altlinux.org> 0.1.0-alt1
+* Mon Mar 29 2021 Mikhail Gordeev <obirvalger@altlinux.org> 0.1.0-alt1
 - Initial build for Sisyphus
