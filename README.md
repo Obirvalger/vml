@@ -52,7 +52,7 @@ Run vm named `test`, using `alt-sisyphus` image.
 vml run -i alt-sisyphus --wait-ssh -n test
 ```
 
-VM `test` is described via directory `test` in `<vms_dir>` (vms_dir from
+VM `test` is described via directory `test` in `<vms-dir>` (vms-dir from
 config) and within files: `test.qcow` is a disk image, `vml.tml` is a current
 vm config file. By default `vml.toml` is empty, but it is needed to mark the
 directory as `vml` vm. Some fields of the `vml.toml` have names as `default`
