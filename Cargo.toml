@@ -1,6 +1,6 @@
 [package]
 name = "vml"
-version = "0.1.0-alpha.2"
+version = "0.1.0"
 authors = ["Mikhail Gordeev <obirvalger@altlinux.org>"]
 edition = "2018"
 
