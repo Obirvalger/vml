@@ -68,9 +68,14 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
     set_specifications(vmc, start_matches);
 
     let wait_ssh = start_matches.is_present("wait-ssh");
-    let cloud_init = config.commands.start.cloud_init
-        && !start_matches.is_present("no-cloud-init")
-        || start_matches.is_present("cloud-init");
+    let cloud_init = if start_matches.is_present("no-cloud-init") {
+        Some(false)
+    } else if start_matches.is_present("cloud-init") {
+        Some(true)
+    } else {
+        None
+    };
+
     let drives: Vec<&str> = if let Some(drives) = start_matches.values_of("drives") {
         drives.collect()
     } else {

@@ -17,8 +17,6 @@ list.all = false
 
 list.fold = true
 
-start.cloud-init = true
-
 start.wait-ssh = { attempts = 60, repeat = 1, sleep = 1, timeout = 1 }
 
 
@@ -45,6 +43,8 @@ ssh.user = "root"
 
 # Path to private key or "none" or "create"
 ssh.key = "create"
+
+cloud-init = true
 
 # NOTE if not set create image from vm specifications
 # cloud-init-image = "~/my-seed.img"

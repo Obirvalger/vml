@@ -14,6 +14,7 @@ use crate::{Error, Result};
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct VMConfig {
+    pub cloud_init: Option<bool>,
     pub cloud_init_image: Option<PathBuf>,
     pub data: Option<HashMap<String, String>>,
     pub disk: Option<PathBuf>,
@@ -65,6 +66,7 @@ impl VMConfig {
     // if self value is None set it to others
     pub fn update(&mut self, other: &Self) {
         let VMConfig {
+            ref mut cloud_init,
             ref mut cloud_init_image,
             ref mut data,
             ref mut disk,
@@ -78,6 +80,9 @@ impl VMConfig {
             ref mut tags,
         } = self;
 
+        if cloud_init.is_none() {
+            *cloud_init = other.cloud_init.to_owned();
+        }
         if cloud_init_image.is_none() {
             *cloud_init_image = other.cloud_init_image.to_owned();
         }

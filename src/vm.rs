@@ -87,6 +87,7 @@ fn get_available_port() -> Option<String> {
 #[derive(Clone, Debug)]
 pub struct VM {
     cache: Cache,
+    cloud_init: bool,
     cloud_init_image: Option<PathBuf>,
     data: HashMap<String, String>,
     directory: PathBuf,
@@ -121,7 +122,7 @@ impl VM {
                 }
 
                 if config_dir == config.vms_dir {
-                    break
+                    break;
                 }
             }
         }
@@ -147,6 +148,7 @@ impl VM {
 
         let specified_by = SpecifiedBy::All;
 
+        let cloud_init = vm_config.cloud_init.unwrap_or(config.default.cloud_init);
         let cloud_init_image =
             vm_config.cloud_init_image.or_else(|| config.default.cloud_init_image.to_owned());
         let data = vm_config.data.unwrap_or_else(HashMap::new);
@@ -173,6 +175,7 @@ impl VM {
 
         Ok(VM {
             cache,
+            cloud_init,
             cloud_init_image,
             data,
             directory,
@@ -228,7 +231,7 @@ impl VM {
         }
     }
 
-    pub fn start<S: AsRef<OsStr>>(&self, cloud_init: bool, drives: &[S]) -> Result<()> {
+    pub fn start<S: AsRef<OsStr>>(&self, cloud_init: Option<bool>, drives: &[S]) -> Result<()> {
         #[cfg(debug_assertions)]
         eprintln!("Strart vm {:?}", self.name);
         let mut kvm = Command::new("kvm");
@@ -276,6 +279,9 @@ impl VM {
                 }
             }
         }
+
+        let cloud_init =
+            if let Some(cloud_init) = cloud_init { cloud_init } else { self.cloud_init };
 
         if cloud_init {
             let image = if let Some(image) = &self.cloud_init_image {

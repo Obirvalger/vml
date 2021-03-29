@@ -22,6 +22,7 @@ pub struct VMsDefault {
     #[serde(default)]
     pub ssh: ConfigSSH,
     pub minimum_disk_size: Option<Byte>,
+    pub cloud_init: bool,
     pub cloud_init_image: Option<PathBuf>,
 }
 
@@ -94,7 +95,6 @@ impl Default for WaitSSH {
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct StrartCommand {
-    pub cloud_init: bool,
     #[serde(default)]
     pub wait_ssh: WaitSSH,
 }
