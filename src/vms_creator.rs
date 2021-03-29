@@ -118,22 +118,22 @@ impl<'a> VMsCreator<'a> {
                     .to_string_lossy();
                 let mut vm = VM::from_config(self.config, &name)?;
 
-                let mut inser_vm = false;
+                let mut insert_vm = false;
                 if self.names.contains(&vm.name) {
                     vm.specify(SpecifiedBy::Name);
-                    inser_vm = true;
+                    insert_vm = true;
                 } else if let Some(parent) = self.parents.iter().find(|p| vm.has_parent(p)) {
                     vm.specify(SpecifiedBy::Parent(parent.trim_end_matches('/').to_owned()));
-                    inser_vm = true;
+                    insert_vm = true;
                 } else if vm.has_common_tags(&self.tags) {
                     vm.specify(SpecifiedBy::Tag);
-                    inser_vm = true;
+                    insert_vm = true;
                 } else if self.all {
                     vm.specify(SpecifiedBy::All);
-                    inser_vm = true;
+                    insert_vm = true;
                 }
 
-                if inser_vm {
+                if insert_vm {
                     let disk = vm.get_disk().to_owned();
                     if let Some(vm_config) = &self.vm_config {
                         let vm_config =
