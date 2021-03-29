@@ -3,6 +3,9 @@ vms-dir = "~/vml"
 
 nameservers = ["8.8.8.8"]
 
+# treat vml-common.toml files in parent dirs as additional configs
+config-hierarchy = true
+
 
 [commands]
 create.pull = true

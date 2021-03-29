@@ -112,7 +112,19 @@ impl VM {
         let name = name.as_ref();
         let directory = config.vms_dir.join(name);
         let config_path = directory.join("vml.toml");
-        let vm_config = VMConfig::new(&config_path)?;
+        let mut vm_config = VMConfig::new(&config_path)?;
+        if config.config_hierarchy {
+            for config_dir in directory.ancestors().skip(1) {
+                let config_path = config_dir.join("vml-common.toml");
+                if config_path.is_file() {
+                    vm_config.update(&VMConfig::new(&config_path)?);
+                }
+
+                if config_dir == config.vms_dir {
+                    break
+                }
+            }
+        }
 
         VM::from_config_vm_config(config, name, &vm_config)
     }

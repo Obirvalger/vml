@@ -122,6 +122,7 @@ pub struct Images {
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub vms_dir: PathBuf,
+    pub config_hierarchy: bool,
     pub commands: Commands,
     pub default: VMsDefault,
     pub images: Images,

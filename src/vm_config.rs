@@ -61,4 +61,51 @@ impl VMConfig {
         "#
         .to_owned()
     }
+
+    // if self value is None set it to others
+    pub fn update(&mut self, other: &Self) {
+        let VMConfig {
+            ref mut cloud_init_image,
+            ref mut data,
+            ref mut disk,
+            ref mut display,
+            ref mut name,
+            ref mut memory,
+            ref mut minimum_disk_size,
+            ref mut net,
+            ref mut nproc,
+            ref mut ssh,
+            ref mut tags,
+        } = self;
+
+        if cloud_init_image.is_none() {
+            *cloud_init_image = other.cloud_init_image.to_owned();
+        }
+        if data.is_none() {
+            *data = other.data.to_owned();
+        }
+        if disk.is_none() {
+            *disk = other.disk.to_owned();
+        }
+        if display.is_none() {
+            *display = other.display.to_owned();
+        }
+        if name.is_none() {
+            *name = other.name.to_owned();
+        }
+        if memory.is_none() {
+            *memory = other.memory.to_owned();
+        }
+        if minimum_disk_size.is_none() {
+            *minimum_disk_size = other.minimum_disk_size.to_owned();
+        }
+        *net = other.net.updated(net);
+        if nproc.is_none() {
+            *nproc = other.nproc.to_owned();
+        }
+        *ssh = other.ssh.updated(ssh);
+        if tags.is_none() {
+            *tags = other.tags.to_owned();
+        }
+    }
 }
