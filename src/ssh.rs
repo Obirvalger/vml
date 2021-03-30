@@ -29,7 +29,7 @@ impl Keys {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct ConfigSSH {
@@ -58,19 +58,6 @@ impl ConfigSSH {
                 .or_else(|| other.port_user_network.as_ref())
                 .cloned(),
             user: self.user.as_ref().or_else(|| other.user.as_ref()).cloned(),
-        }
-    }
-}
-
-impl Default for ConfigSSH {
-    fn default() -> ConfigSSH {
-        ConfigSSH {
-            authorized_keys: None,
-            key: None,
-            options: None,
-            port: None,
-            port_user_network: None,
-            user: None,
         }
     }
 }
