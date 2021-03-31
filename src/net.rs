@@ -61,12 +61,6 @@ impl ConfigNet {
     }
 }
 
-impl Default for ConfigNet {
-    fn default() -> ConfigNet {
-        ConfigNet::None
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Net {
     Tap {

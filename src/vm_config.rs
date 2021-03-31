@@ -22,11 +22,9 @@ pub struct VMConfig {
     pub name: Option<String>,
     pub memory: Option<String>,
     pub minimum_disk_size: Option<Byte>,
-    #[serde(default)]
-    pub net: ConfigNet,
+    pub net: Option<ConfigNet>,
     pub nproc: Option<StringOrUint>,
-    #[serde(default)]
-    pub ssh: ConfigSSH,
+    pub ssh: Option<ConfigSSH>,
     pub tags: Option<HashSet<String>>,
 }
 
@@ -104,11 +102,25 @@ impl VMConfig {
         if minimum_disk_size.is_none() {
             *minimum_disk_size = other.minimum_disk_size.to_owned();
         }
-        *net = other.net.updated(net);
+        match net {
+            None => *net = other.net.to_owned(),
+            Some(net) => {
+                if let Some(other_net) = &other.net {
+                    *net = other_net.updated(net)
+                }
+            }
+        }
         if nproc.is_none() {
             *nproc = other.nproc.to_owned();
         }
-        *ssh = other.ssh.updated(ssh);
+        match ssh {
+            None => *ssh = other.ssh.to_owned(),
+            Some(ssh) => {
+                if let Some(other_ssh) = &other.ssh {
+                    *ssh = other_ssh.updated(ssh)
+                }
+            }
+        }
         if tags.is_none() {
             *tags = other.tags.to_owned();
         }

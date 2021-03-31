@@ -16,7 +16,6 @@ use crate::{Error, Result};
 pub struct VMsDefault {
     pub memory: String,
     pub display: Option<String>,
-    #[serde(default)]
     pub net: ConfigNet,
     pub nproc: StringOrUint,
     #[serde(default)]

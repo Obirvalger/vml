@@ -164,13 +164,19 @@ impl VM {
         let nproc = vm_config.nproc.unwrap_or_else(|| config.default.nproc.to_owned()).to_string();
         let tags = vm_config.tags.unwrap_or_else(HashSet::new);
 
-        let mut net_config = vm_config.net.updated(&config.default.net);
+        let mut net_config = match vm_config.net {
+            None => config.default.net.to_owned(),
+            Some(net) => net.updated(&config.default.net),
+        };
         if let ConfigNet::Tap { nameservers: ref mut nameservers @ None, .. } = net_config {
             *nameservers = config.nameservers.to_owned();
         }
         let net = Net::new(&net_config)?;
 
-        let ssh_config = vm_config.ssh.updated(&config.default.ssh);
+        let ssh_config = match vm_config.ssh {
+            None => config.default.ssh.to_owned(),
+            Some(ssh) => ssh.updated(&config.default.ssh),
+        };
         let ssh = SSH::new(&ssh_config, &net_config);
 
         Ok(VM {
