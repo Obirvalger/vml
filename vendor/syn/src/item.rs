@@ -71,8 +71,31 @@ ast_enum_of_structs! {
         /// Tokens forming an item not interpreted by Syn.
         Verbatim(TokenStream),
 
+        // The following is the only supported idiom for exhaustive matching of
+        // this enum.
+        //
+        //     match expr {
+        //         Item::Const(e) => {...}
+        //         Item::Enum(e) => {...}
+        //         ...
+        //         Item::Verbatim(e) => {...}
+        //
+        //         #[cfg(test)]
+        //         Item::__TestExhaustive(_) => unimplemented!(),
+        //         #[cfg(not(test))]
+        //         _ => { /* some sane fallback */ }
+        //     }
+        //
+        // This way we fail your tests but don't break your library when adding
+        // a variant. You will be notified by a test failure when a variant is
+        // added, so that you can add code to handle it, but your library will
+        // continue to compile and work for downstream users in the interim.
+        //
+        // Once `deny(reachable)` is available in rustc, Item will be
+        // reimplemented as a non_exhaustive enum.
+        // https://github.com/rust-lang/rust/issues/44109#issuecomment-521781237
         #[doc(hidden)]
-        __Nonexhaustive,
+        __TestExhaustive(crate::private),
     }
 }
 
@@ -357,7 +380,11 @@ impl Item {
             | Item::Macro(ItemMacro { attrs, .. })
             | Item::Macro2(ItemMacro2 { attrs, .. }) => mem::replace(attrs, new),
             Item::Verbatim(_) => Vec::new(),
-            Item::__Nonexhaustive => unreachable!(),
+
+            #[cfg(test)]
+            Item::__TestExhaustive(_) => unimplemented!(),
+            #[cfg(not(test))]
+            _ => unreachable!(),
         }
     }
 }
@@ -553,8 +580,31 @@ ast_enum_of_structs! {
         /// Tokens in an `extern` block not interpreted by Syn.
         Verbatim(TokenStream),
 
+        // The following is the only supported idiom for exhaustive matching of
+        // this enum.
+        //
+        //     match expr {
+        //         ForeignItem::Fn(e) => {...}
+        //         ForeignItem::Static(e) => {...}
+        //         ...
+        //         ForeignItem::Verbatim(e) => {...}
+        //
+        //         #[cfg(test)]
+        //         ForeignItem::__TestExhaustive(_) => unimplemented!(),
+        //         #[cfg(not(test))]
+        //         _ => { /* some sane fallback */ }
+        //     }
+        //
+        // This way we fail your tests but don't break your library when adding
+        // a variant. You will be notified by a test failure when a variant is
+        // added, so that you can add code to handle it, but your library will
+        // continue to compile and work for downstream users in the interim.
+        //
+        // Once `deny(reachable)` is available in rustc, ForeignItem will be
+        // reimplemented as a non_exhaustive enum.
+        // https://github.com/rust-lang/rust/issues/44109#issuecomment-521781237
         #[doc(hidden)]
-        __Nonexhaustive,
+        __TestExhaustive(crate::private),
     }
 }
 
@@ -641,8 +691,31 @@ ast_enum_of_structs! {
         /// Tokens within the definition of a trait not interpreted by Syn.
         Verbatim(TokenStream),
 
+        // The following is the only supported idiom for exhaustive matching of
+        // this enum.
+        //
+        //     match expr {
+        //         TraitItem::Const(e) => {...}
+        //         TraitItem::Method(e) => {...}
+        //         ...
+        //         TraitItem::Verbatim(e) => {...}
+        //
+        //         #[cfg(test)]
+        //         TraitItem::__TestExhaustive(_) => unimplemented!(),
+        //         #[cfg(not(test))]
+        //         _ => { /* some sane fallback */ }
+        //     }
+        //
+        // This way we fail your tests but don't break your library when adding
+        // a variant. You will be notified by a test failure when a variant is
+        // added, so that you can add code to handle it, but your library will
+        // continue to compile and work for downstream users in the interim.
+        //
+        // Once `deny(reachable)` is available in rustc, TraitItem will be
+        // reimplemented as a non_exhaustive enum.
+        // https://github.com/rust-lang/rust/issues/44109#issuecomment-521781237
         #[doc(hidden)]
-        __Nonexhaustive,
+        __TestExhaustive(crate::private),
     }
 }
 
@@ -731,8 +804,31 @@ ast_enum_of_structs! {
         /// Tokens within an impl block not interpreted by Syn.
         Verbatim(TokenStream),
 
+        // The following is the only supported idiom for exhaustive matching of
+        // this enum.
+        //
+        //     match expr {
+        //         ImplItem::Const(e) => {...}
+        //         ImplItem::Method(e) => {...}
+        //         ...
+        //         ImplItem::Verbatim(e) => {...}
+        //
+        //         #[cfg(test)]
+        //         ImplItem::__TestExhaustive(_) => unimplemented!(),
+        //         #[cfg(not(test))]
+        //         _ => { /* some sane fallback */ }
+        //     }
+        //
+        // This way we fail your tests but don't break your library when adding
+        // a variant. You will be notified by a test failure when a variant is
+        // added, so that you can add code to handle it, but your library will
+        // continue to compile and work for downstream users in the interim.
+        //
+        // Once `deny(reachable)` is available in rustc, ImplItem will be
+        // reimplemented as a non_exhaustive enum.
+        // https://github.com/rust-lang/rust/issues/44109#issuecomment-521781237
         #[doc(hidden)]
-        __Nonexhaustive,
+        __TestExhaustive(crate::private),
     }
 }
 
@@ -890,6 +986,7 @@ pub mod parsing {
     use std::iter::{self, FromIterator};
 
     crate::custom_keyword!(existential);
+    crate::custom_keyword!(macro_rules);
 
     #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
     impl Parse for Item {
@@ -934,24 +1031,31 @@ pub mod parsing {
                 let static_token = input.parse()?;
                 let mutability = input.parse()?;
                 let ident = input.parse()?;
-                let colon_token = input.parse()?;
-                let ty = input.parse()?;
-                if input.peek(Token![;]) {
+                if input.peek(Token![=]) {
+                    input.parse::<Token![=]>()?;
+                    input.parse::<Expr>()?;
                     input.parse::<Token![;]>()?;
                     Ok(Item::Verbatim(verbatim::between(begin, input)))
                 } else {
-                    Ok(Item::Static(ItemStatic {
-                        attrs: Vec::new(),
-                        vis,
-                        static_token,
-                        mutability,
-                        ident,
-                        colon_token,
-                        ty,
-                        eq_token: input.parse()?,
-                        expr: input.parse()?,
-                        semi_token: input.parse()?,
-                    }))
+                    let colon_token = input.parse()?;
+                    let ty = input.parse()?;
+                    if input.peek(Token![;]) {
+                        input.parse::<Token![;]>()?;
+                        Ok(Item::Verbatim(verbatim::between(begin, input)))
+                    } else {
+                        Ok(Item::Static(ItemStatic {
+                            attrs: Vec::new(),
+                            vis,
+                            static_token,
+                            mutability,
+                            ident,
+                            colon_token,
+                            ty,
+                            eq_token: input.parse()?,
+                            expr: input.parse()?,
+                            semi_token: input.parse()?,
+                        }))
+                    }
                 }
             } else if lookahead.peek(Token![const]) {
                 ahead.parse::<Token![const]>()?;
@@ -1050,6 +1154,10 @@ pub mod parsing {
                     || lookahead.peek(Token![::]))
             {
                 input.parse().map(Item::Macro)
+            } else if ahead.peek(macro_rules) {
+                input.advance_to(&ahead);
+                input.parse::<ItemMacro>()?;
+                Ok(Item::Verbatim(verbatim::between(begin, input)))
             } else {
                 Err(lookahead.error())
             }?;
@@ -1072,7 +1180,6 @@ pub mod parsing {
         semi_token: Token![;],
     }
 
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
     impl Parse for FlexibleItemType {
         fn parse(input: ParseStream) -> Result<Self> {
             let vis: Visibility = input.parse()?;
@@ -1084,14 +1191,14 @@ pub mod parsing {
             let mut bounds = Punctuated::new();
             if colon_token.is_some() {
                 loop {
+                    if input.peek(Token![where]) || input.peek(Token![=]) || input.peek(Token![;]) {
+                        break;
+                    }
                     bounds.push_value(input.parse::<TypeParamBound>()?);
                     if input.peek(Token![where]) || input.peek(Token![=]) || input.peek(Token![;]) {
                         break;
                     }
                     bounds.push_punct(input.parse::<Token![+]>()?);
-                    if input.peek(Token![where]) || input.peek(Token![=]) || input.peek(Token![;]) {
-                        break;
-                    }
                 }
             }
             generics.where_clause = input.parse()?;
@@ -1405,11 +1512,11 @@ pub mod parsing {
                 abi,
                 fn_token,
                 ident,
+                generics,
                 paren_token,
                 inputs,
-                output,
                 variadic,
-                generics,
+                output,
             })
         }
     }
@@ -1695,7 +1802,11 @@ pub mod parsing {
                 ForeignItem::Type(item) => &mut item.attrs,
                 ForeignItem::Macro(item) => &mut item.attrs,
                 ForeignItem::Verbatim(_) => return Ok(item),
-                ForeignItem::__Nonexhaustive => unreachable!(),
+
+                #[cfg(test)]
+                ForeignItem::__TestExhaustive(_) => unimplemented!(),
+                #[cfg(not(test))]
+                _ => unreachable!(),
             };
             attrs.extend(item_attrs.drain(..));
             *item_attrs = attrs;
@@ -2032,14 +2143,14 @@ pub mod parsing {
         let mut supertraits = Punctuated::new();
         if colon_token.is_some() {
             loop {
+                if input.peek(Token![where]) || input.peek(token::Brace) {
+                    break;
+                }
                 supertraits.push_value(input.parse()?);
                 if input.peek(Token![where]) || input.peek(token::Brace) {
                     break;
                 }
                 supertraits.push_punct(input.parse()?);
-                if input.peek(Token![where]) || input.peek(token::Brace) {
-                    break;
-                }
             }
         }
 
@@ -2173,7 +2284,12 @@ pub mod parsing {
                 TraitItem::Method(item) => &mut item.attrs,
                 TraitItem::Type(item) => &mut item.attrs,
                 TraitItem::Macro(item) => &mut item.attrs,
-                TraitItem::Verbatim(_) | TraitItem::__Nonexhaustive => unreachable!(),
+                TraitItem::Verbatim(_) => unreachable!(),
+
+                #[cfg(test)]
+                TraitItem::__TestExhaustive(_) => unimplemented!(),
+                #[cfg(not(test))]
+                _ => unreachable!(),
             };
             attrs.extend(item_attrs.drain(..));
             *item_attrs = attrs;
@@ -2504,7 +2620,11 @@ pub mod parsing {
                     ImplItem::Type(item) => &mut item.attrs,
                     ImplItem::Macro(item) => &mut item.attrs,
                     ImplItem::Verbatim(_) => return Ok(item),
-                    ImplItem::__Nonexhaustive => unreachable!(),
+
+                    #[cfg(test)]
+                    ImplItem::__TestExhaustive(_) => unimplemented!(),
+                    #[cfg(not(test))]
+                    _ => unreachable!(),
                 };
                 attrs.extend(item_attrs.drain(..));
                 *item_attrs = attrs;

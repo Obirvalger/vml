@@ -7,17 +7,17 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-byte-unit = { version = "4.0.9", features = ["serde"] }
+byte-unit = { version = "4.0.10", features = ["serde"] }
 clap = "3.0.0-beta.2"
 clap_generate = "3.0.0-beta.2"
 json = "0.12.4"
 procfs = "0.9.1"
-rand = "0.8.2"
-reqwest = { version = "0.11.0", features = ["blocking"] }
+rand = "0.8.3"
+reqwest = { version = "0.11.2", features = ["blocking"] }
 rust-embed = "5.9.0"
-serde = { version = "1.0.118", features = ["derive"] }
+serde = { version = "1.0.125", features = ["derive"] }
 shellexpand = "2.1.0"
 tempfile = "3.2.0"
-tera = "1.6.1"
+tera = "1.7.0"
 toml = "0.5.8"
-walkdir = "2.3.1"
+walkdir = "2.3.2"

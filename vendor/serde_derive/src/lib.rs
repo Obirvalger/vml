@@ -13,13 +13,15 @@
 //!
 //! [https://serde.rs/derive.html]: https://serde.rs/derive.html
 
-#![doc(html_root_url = "https://docs.rs/serde_derive/1.0.118")]
+#![doc(html_root_url = "https://docs.rs/serde_derive/1.0.125")]
 #![allow(unknown_lints, bare_trait_objects)]
 #![deny(clippy::all, clippy::pedantic)]
 // Ignored clippy lints
 #![allow(
     clippy::cognitive_complexity,
     clippy::enum_variant_names,
+    // clippy bug: https://github.com/rust-lang/rust-clippy/issues/6797
+    clippy::manual_map,
     clippy::match_like_matches_macro,
     clippy::needless_pass_by_value,
     clippy::too_many_arguments,
@@ -38,6 +40,7 @@
     clippy::filter_map,
     clippy::indexing_slicing,
     clippy::items_after_statements,
+    clippy::let_underscore_drop,
     clippy::map_err_ignore,
     clippy::match_same_arms,
     clippy::module_name_repetitions,
@@ -48,6 +51,7 @@
     clippy::struct_excessive_bools,
     clippy::too_many_lines,
     clippy::unseparated_literal_suffix,
+    clippy::unused_self,
     clippy::use_self,
     clippy::wildcard_imports
 )]
@@ -78,16 +82,16 @@ mod try;
 
 #[proc_macro_derive(Serialize, attributes(serde))]
 pub fn derive_serialize(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    ser::expand_derive_serialize(&input)
+    let mut input = parse_macro_input!(input as DeriveInput);
+    ser::expand_derive_serialize(&mut input)
         .unwrap_or_else(to_compile_errors)
         .into()
 }
 
 #[proc_macro_derive(Deserialize, attributes(serde))]
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    de::expand_derive_deserialize(&input)
+    let mut input = parse_macro_input!(input as DeriveInput);
+    de::expand_derive_deserialize(&mut input)
         .unwrap_or_else(to_compile_errors)
         .into()
 }

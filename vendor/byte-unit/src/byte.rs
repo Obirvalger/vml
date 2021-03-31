@@ -17,12 +17,12 @@ use crate::serde::ser::{Serialize, Serializer};
 use crate::serde::de::{Deserialize, Deserializer, Error as DeError, Unexpected, Visitor};
 
 #[cfg(feature = "u128")]
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Default)]
 /// Represent the n-bytes data. Use associated functions: `from_unit`, `from_bytes`, `from_str`, to create the instance.
 pub struct Byte(u128);
 
 #[cfg(not(feature = "u128"))]
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Default)]
 /// Represent the n-bytes data. Use associated functions: `from_unit`, `from_bytes`, `from_str`, to create the instance.
 pub struct Byte(u64);
 
@@ -66,7 +66,7 @@ impl Byte {
     /// ```
     #[cfg(feature = "u128")]
     #[inline]
-    pub fn from_bytes(bytes: u128) -> Byte {
+    pub const fn from_bytes(bytes: u128) -> Byte {
         Byte(bytes)
     }
 
@@ -85,7 +85,7 @@ impl Byte {
     /// ```
     #[cfg(not(feature = "u128"))]
     #[inline]
-    pub fn from_bytes(bytes: u64) -> Byte {
+    pub const fn from_bytes(bytes: u64) -> Byte {
         Byte(bytes)
     }
 
@@ -310,7 +310,7 @@ impl Byte {
     /// ```
     #[cfg(feature = "u128")]
     #[inline]
-    pub fn get_bytes(&self) -> u128 {
+    pub const fn get_bytes(&self) -> u128 {
         self.0
     }
 
@@ -343,7 +343,7 @@ impl Byte {
     /// ```
     #[cfg(not(feature = "u128"))]
     #[inline]
-    pub fn get_bytes(&self) -> u64 {
+    pub const fn get_bytes(&self) -> u64 {
         self.0
     }
 
@@ -475,18 +475,18 @@ impl Display for Byte {
 }
 
 #[cfg(feature = "u128")]
-impl Into<u128> for Byte {
+impl From<Byte> for u128 {
     #[inline]
-    fn into(self) -> u128 {
-        self.0
+    fn from(b: Byte) -> u128 {
+        b.0
     }
 }
 
 #[cfg(not(feature = "u128"))]
-impl Into<u64> for Byte {
+impl From<Byte> for u64 {
     #[inline]
-    fn into(self) -> u64 {
-        self.0
+    fn from(b: Byte) -> u64 {
+        b.0
     }
 }
 

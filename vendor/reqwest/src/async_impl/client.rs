@@ -1,13 +1,8 @@
-#[cfg(any(
-    feature = "native-tls",
-    feature = "__rustls",
-))]
+#[cfg(any(feature = "native-tls", feature = "__rustls",))]
 use std::any::Any;
 use std::convert::TryInto;
 use std::net::IpAddr;
 use std::sync::Arc;
-#[cfg(feature = "cookies")]
-use std::sync::RwLock;
 use std::time::Duration;
 use std::{fmt, str};
 
@@ -21,13 +16,13 @@ use http::Uri;
 use hyper::client::ResponseFuture;
 #[cfg(feature = "native-tls-crate")]
 use native_tls_crate::TlsConnector;
+use pin_project_lite::pin_project;
 #[cfg(feature = "rustls-tls-native-roots")]
 use rustls::RootCertStore;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::time::Sleep;
-use pin_project_lite::pin_project;
 
 use log::debug;
 
@@ -103,10 +98,12 @@ struct Config {
     http1_title_case_headers: bool,
     http2_initial_stream_window_size: Option<u32>,
     http2_initial_connection_window_size: Option<u32>,
+    http2_adaptive_window: bool,
+    http2_max_frame_size: Option<u32>,
     local_address: Option<IpAddr>,
     nodelay: bool,
     #[cfg(feature = "cookies")]
-    cookie_store: Option<cookie::CookieStore>,
+    cookie_store: Option<Arc<dyn cookie::CookieStore>>,
     trust_dns: bool,
     error: Option<crate::Error>,
     https_only: bool,
@@ -159,6 +156,8 @@ impl ClientBuilder {
                 http1_title_case_headers: false,
                 http2_initial_stream_window_size: None,
                 http2_initial_connection_window_size: None,
+                http2_adaptive_window: false,
+                http2_max_frame_size: None,
                 local_address: None,
                 nodelay: true,
                 trust_dns: cfg!(feature = "trust-dns"),
@@ -228,7 +227,6 @@ impl ClientBuilder {
                         }
                     }
 
-
                     Connector::new_default_tls(
                         http,
                         tls,
@@ -237,27 +235,25 @@ impl ClientBuilder {
                         config.local_address,
                         config.nodelay,
                     )?
-                },
+                }
                 #[cfg(feature = "native-tls")]
-                TlsBackend::BuiltNativeTls(conn) => {
-                    Connector::from_built_default_tls(
-                        http,
-                        conn,
-                        proxies.clone(),
-                        user_agent(&config.headers),
-                        config.local_address,
-                        config.nodelay)
-                },
+                TlsBackend::BuiltNativeTls(conn) => Connector::from_built_default_tls(
+                    http,
+                    conn,
+                    proxies.clone(),
+                    user_agent(&config.headers),
+                    config.local_address,
+                    config.nodelay,
+                ),
                 #[cfg(feature = "__rustls")]
-                TlsBackend::BuiltRustls(conn) => {
-                    Connector::new_rustls_tls(
-                        http,
-                        conn,
-                        proxies.clone(),
-                        user_agent(&config.headers),
-                        config.local_address,
-                        config.nodelay)
-                },
+                TlsBackend::BuiltRustls(conn) => Connector::new_rustls_tls(
+                    http,
+                    conn,
+                    proxies.clone(),
+                    user_agent(&config.headers),
+                    config.local_address,
+                    config.nodelay,
+                ),
                 #[cfg(feature = "__rustls")]
                 TlsBackend::Rustls => {
                     use crate::tls::NoVerifier;
@@ -270,8 +266,8 @@ impl ClientBuilder {
                     }
                     #[cfg(feature = "rustls-tls-webpki-roots")]
                     if config.tls_built_in_root_certs {
-                    tls.root_store
-                        .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+                        tls.root_store
+                            .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
                     }
                     #[cfg(feature = "rustls-tls-native-roots")]
                     if config.tls_built_in_root_certs {
@@ -300,16 +296,13 @@ impl ClientBuilder {
                         config.local_address,
                         config.nodelay,
                     )
-                },
-                #[cfg(any(
-                    feature = "native-tls",
-                    feature = "__rustls",
-                ))]
+                }
+                #[cfg(any(feature = "native-tls", feature = "__rustls",))]
                 TlsBackend::UnknownPreconfigured => {
                     return Err(crate::error::builder(
-                        "Unknown TLS backend passed to `use_preconfigured_tls`"
+                        "Unknown TLS backend passed to `use_preconfigured_tls`",
                     ));
-                },
+                }
             }
 
             #[cfg(not(feature = "__tls"))]
@@ -332,6 +325,12 @@ impl ClientBuilder {
         {
             builder.http2_initial_connection_window_size(http2_initial_connection_window_size);
         }
+        if config.http2_adaptive_window {
+            builder.http2_adaptive_window(true);
+        }
+        if let Some(http2_max_frame_size) = config.http2_max_frame_size {
+            builder.http2_max_frame_size(http2_max_frame_size);
+        }
 
         builder.pool_idle_timeout(config.pool_idle_timeout);
         builder.pool_max_idle_per_host(config.pool_max_idle_per_host);
@@ -349,7 +348,7 @@ impl ClientBuilder {
             inner: Arc::new(ClientRef {
                 accepts: config.accepts,
                 #[cfg(feature = "cookies")]
-                cookie_store: config.cookie_store.map(RwLock::new),
+                cookie_store: config.cookie_store,
                 hyper: hyper_client,
                 headers: config.headers,
                 redirect_policy: config.redirect_policy,
@@ -463,11 +462,31 @@ impl ClientBuilder {
     #[cfg(feature = "cookies")]
     #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
     pub fn cookie_store(mut self, enable: bool) -> ClientBuilder {
-        self.config.cookie_store = if enable {
-            Some(cookie::CookieStore::default())
+        if enable {
+            self.cookie_provider(Arc::new(cookie::Jar::default()))
         } else {
-            None
-        };
+            self.config.cookie_store = None;
+            self
+        }
+    }
+
+    /// Set the persistent cookie store for the client.
+    ///
+    /// Cookies received in responses will be passed to this store, and
+    /// additional requests will query this store for cookies.
+    ///
+    /// By default, no cookie store is used.
+    ///
+    /// # Optional
+    ///
+    /// This requires the optional `cookies` feature to be enabled.
+    #[cfg(feature = "cookies")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
+    pub fn cookie_provider<C: cookie::CookieStore + 'static>(
+        mut self,
+        cookie_store: Arc<C>,
+    ) -> ClientBuilder {
+        self.config.cookie_store = Some(cookie_store as _);
         self
     }
 
@@ -680,6 +699,23 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets whether to use an adaptive flow control.
+    ///
+    /// Enabling this will override the limits set in `http2_initial_stream_window_size` and
+    /// `http2_initial_connection_window_size`.
+    pub fn http2_adaptive_window(mut self, enabled: bool) -> ClientBuilder {
+        self.config.http2_adaptive_window = enabled;
+        self
+    }
+
+    /// Sets the maximum frame size to use for HTTP2.
+    ///
+    /// Default is currently 16,384 but may change internally to optimize for common uses.
+    pub fn http2_max_frame_size(mut self, sz: impl Into<Option<u32>>) -> ClientBuilder {
+        self.config.http2_max_frame_size = sz.into();
+        self
+    }
+
     // TCP options
 
     /// Set whether sockets have `SO_NODELAY` enabled.
@@ -713,8 +749,8 @@ impl ClientBuilder {
     ///
     /// If `None`, the option will not be set.
     pub fn tcp_keepalive<D>(mut self, val: D) -> ClientBuilder
-        where
-            D: Into<Option<Duration>>,
+    where
+        D: Into<Option<Duration>>,
     {
         self.config.tcp_keepalive = val.into();
         self
@@ -732,7 +768,14 @@ impl ClientBuilder {
     /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
     /// feature to be enabled.
     #[cfg(feature = "__tls")]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls-tls"))))]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "default-tls",
+            feature = "native-tls",
+            feature = "rustls-tls"
+        )))
+    )]
     pub fn add_root_certificate(mut self, cert: Certificate) -> ClientBuilder {
         self.config.root_certs.push(cert);
         self
@@ -747,11 +790,15 @@ impl ClientBuilder {
     /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
     /// feature to be enabled.
     #[cfg(feature = "__tls")]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls-tls"))))]
-    pub fn tls_built_in_root_certs(
-        mut self,
-        tls_built_in_root_certs: bool,
-    ) -> ClientBuilder {
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "default-tls",
+            feature = "native-tls",
+            feature = "rustls-tls"
+        )))
+    )]
+    pub fn tls_built_in_root_certs(mut self, tls_built_in_root_certs: bool) -> ClientBuilder {
         self.config.tls_built_in_root_certs = tls_built_in_root_certs;
         self
     }
@@ -810,7 +857,14 @@ impl ClientBuilder {
     /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
     /// feature to be enabled.
     #[cfg(feature = "__tls")]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls-tls"))))]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "default-tls",
+            feature = "native-tls",
+            feature = "rustls-tls"
+        )))
+    )]
     pub fn danger_accept_invalid_certs(mut self, accept_invalid_certs: bool) -> ClientBuilder {
         self.config.certs_verification = !accept_invalid_certs;
         self
@@ -864,16 +918,15 @@ impl ClientBuilder {
     ///
     /// This requires one of the optional features `native-tls` or
     /// `rustls-tls(-...)` to be enabled.
-    #[cfg(any(
-        feature = "native-tls",
-        feature = "__rustls",
-    ))]
+    #[cfg(any(feature = "native-tls", feature = "__rustls",))]
     #[cfg_attr(docsrs, doc(cfg(any(feature = "native-tls", feature = "rustls-tls"))))]
     pub fn use_preconfigured_tls(mut self, tls: impl Any) -> ClientBuilder {
         let mut tls = Some(tls);
         #[cfg(feature = "native-tls")]
         {
-            if let Some(conn) = (&mut tls as &mut dyn Any).downcast_mut::<Option<native_tls_crate::TlsConnector>>() {
+            if let Some(conn) =
+                (&mut tls as &mut dyn Any).downcast_mut::<Option<native_tls_crate::TlsConnector>>()
+            {
                 let tls = conn.take().expect("is definitely Some");
                 let tls = crate::tls::TlsBackend::BuiltNativeTls(tls);
                 self.config.tls = tls;
@@ -882,8 +935,9 @@ impl ClientBuilder {
         }
         #[cfg(feature = "__rustls")]
         {
-            if let Some(conn) = (&mut tls as &mut dyn Any).downcast_mut::<Option<rustls::ClientConfig>>() {
-
+            if let Some(conn) =
+                (&mut tls as &mut dyn Any).downcast_mut::<Option<rustls::ClientConfig>>()
+            {
                 let tls = conn.take().expect("is definitely Some");
                 let tls = crate::tls::TlsBackend::BuiltRustls(tls);
                 self.config.tls = tls;
@@ -928,7 +982,7 @@ impl ClientBuilder {
     }
 
     /// Restrict the Client to be used with HTTPS only requests.
-    /// 
+    ///
     /// Defaults to false.
     pub fn https_only(mut self, enabled: bool) -> ClientBuilder {
         self.config.https_only = enabled;
@@ -1073,10 +1127,9 @@ impl Client {
         // Add cookies from the cookie store.
         #[cfg(feature = "cookies")]
         {
-            if let Some(cookie_store_wrapper) = self.inner.cookie_store.as_ref() {
+            if let Some(cookie_store) = self.inner.cookie_store.as_ref() {
                 if headers.get(crate::header::COOKIE).is_none() {
-                    let cookie_store = cookie_store_wrapper.read().unwrap();
-                    add_cookie_header(&mut headers, &cookie_store, &url);
+                    add_cookie_header(&mut headers, &**cookie_store, &url);
                 }
             }
         }
@@ -1253,7 +1306,7 @@ impl Config {
 struct ClientRef {
     accepts: Accepts,
     #[cfg(feature = "cookies")]
-    cookie_store: Option<RwLock<cookie::CookieStore>>,
+    cookie_store: Option<Arc<dyn cookie::CookieStore>>,
     headers: HeaderMap,
     hyper: HyperClient,
     redirect_policy: redirect::Policy,
@@ -1395,14 +1448,11 @@ impl Future for PendingRequest {
 
             #[cfg(feature = "cookies")]
             {
-                if let Some(store_wrapper) = self.client.cookie_store.as_ref() {
-                    let mut cookies = cookie::extract_response_cookies(&res.headers())
-                        .filter_map(|res| res.ok())
-                        .map(|cookie| cookie.into_inner().into_owned())
-                        .peekable();
+                if let Some(ref cookie_store) = self.client.cookie_store {
+                    let mut cookies =
+                        cookie::extract_response_cookie_headers(&res.headers()).peekable();
                     if cookies.peek().is_some() {
-                      let mut store = store_wrapper.write().unwrap();
-                      store.0.store_response_cookies(cookies, &self.url);
+                        cookie_store.set_cookies(&mut cookies, &self.url);
                     }
                 }
             }
@@ -1495,11 +1545,8 @@ impl Future for PendingRequest {
                             // Add cookies from the cookie store.
                             #[cfg(feature = "cookies")]
                             {
-                                if let Some(cookie_store_wrapper) =
-                                    self.client.cookie_store.as_ref()
-                                {
-                                    let cookie_store = cookie_store_wrapper.read().unwrap();
-                                    add_cookie_header(&mut headers, &cookie_store, &self.url);
+                                if let Some(ref cookie_store) = self.client.cookie_store {
+                                    add_cookie_header(&mut headers, &**cookie_store, &self.url);
                                 }
                             }
 
@@ -1556,24 +1603,16 @@ fn make_referer(next: &Url, previous: &Url) -> Option<HeaderValue> {
 }
 
 #[cfg(feature = "cookies")]
-fn add_cookie_header(headers: &mut HeaderMap, cookie_store: &cookie::CookieStore, url: &Url) {
-    let header = cookie_store
-        .0
-        .get_request_cookies(url)
-        .map(|c| format!("{}={}", c.name(), c.value()))
-        .collect::<Vec<_>>()
-        .join("; ");
-    if !header.is_empty() {
-        headers.insert(
-            crate::header::COOKIE,
-            HeaderValue::from_bytes(header.as_bytes()).unwrap(),
-        );
+fn add_cookie_header(headers: &mut HeaderMap, cookie_store: &dyn cookie::CookieStore, url: &Url) {
+    if let Some(header) = cookie_store.cookies(url) {
+        headers.insert(crate::header::COOKIE, header);
     }
 }
 
 #[cfg(feature = "rustls-tls-native-roots")]
 lazy_static! {
-    static ref NATIVE_ROOTS: std::io::Result<RootCertStore> = rustls_native_certs::load_native_certs().map_err(|e| e.1);
+    static ref NATIVE_ROOTS: std::io::Result<RootCertStore> =
+        rustls_native_certs::load_native_certs().map_err(|e| e.1);
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "byte-unit"
-version = "4.0.9"
+version = "4.0.10"
 authors = ["Magic Len <len@magiclen.org>"]
 include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE"]
 description = "A library for interaction with units of bytes."
