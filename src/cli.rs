@@ -52,7 +52,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .about("command to work with vm images")
                 .setting(AppSettings::SubcommandRequiredElseHelp)
                 .subcommand(App::new("available").about("list available to pull vm images"))
-                .subcommand(App::new("list").about("list vm images").alias("ls"))
+                .subcommand(App::new("list").about("list vm images").visible_alias("ls"))
                 .subcommand(
                     App::new("store")
                         .about("tore vm disk as image")
@@ -353,7 +353,7 @@ pub fn build_cli() -> clap::App<'static> {
         .subcommand(
             App::new("list")
                 .about("list virtual machines")
-                .alias("ls")
+                .visible_alias("ls")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("fold").long("fold").short('f'))
