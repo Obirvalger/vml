@@ -12,7 +12,7 @@ mod ssh;
 mod string_like;
 pub mod template;
 mod vm;
-mod vm_config;
+pub mod vm_config;
 mod vms_creator;
 
 pub use config::config_dir;
