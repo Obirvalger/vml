@@ -266,6 +266,23 @@ fn main() -> Result<()> {
                     }
                 }
 
+                Some(("remove", remove_image_matches)) => {
+                    let images: Vec<String> =
+                        if let Some(images) = remove_image_matches.values_of("images") {
+                            images.map(|i| i.to_string()).collect()
+                        } else if let Some(image) = remove_image_matches.value_of("IMAGE") {
+                            vec![image.to_string()]
+                        } else if remove_image_matches.is_present("all") {
+                            vml::images::list(&[images_dir])?
+                        } else {
+                            return Err(Error::EmptyVMsList);
+                        };
+
+                    for image in images {
+                        vml::images::remove(&images_dir, &image)?;
+                    }
+                }
+
                 Some(("store", store_images_matches)) => {
                     set_specifications(&mut vmc, store_images_matches);
                     vmc.with_pid(WithPid::Without);

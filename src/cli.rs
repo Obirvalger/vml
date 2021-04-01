@@ -54,6 +54,20 @@ pub fn build_cli() -> clap::App<'static> {
                 .about("command to work with vm images")
                 .setting(AppSettings::SubcommandRequiredElseHelp)
                 .subcommand(App::new("available").about("list available to pull vm images"))
+                .subcommand(
+                    App::new("remove")
+                        .about("remove images")
+                        .visible_alias("rm")
+                        .arg(Arg::new("all").long("all").short('a'))
+                        .arg(
+                            Arg::new("images")
+                                .long("images")
+                                .short('i')
+                                .takes_value(true)
+                                .multiple(true),
+                        )
+                        .arg(Arg::new("IMAGE").takes_value(true)),
+                )
                 .subcommand(App::new("list").about("list vm images").visible_alias("ls"))
                 .subcommand(
                     App::new("store")

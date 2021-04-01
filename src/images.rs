@@ -74,6 +74,11 @@ pub fn available() -> Result<Vec<String>> {
     Ok(images)
 }
 
+pub fn remove(images_dir: &PathBuf, image_name: &str) -> Result<()> {
+    let image_path = images_dir.join(image_name);
+    fs::remove_file(&image_path)?;
+    Ok(())
+}
 pub fn pull(images_dir: &PathBuf, image_name: &str) -> Result<PathBuf> {
     let images = parse(&images_file_path())?.images;
 
