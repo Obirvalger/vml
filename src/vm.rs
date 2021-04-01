@@ -30,6 +30,7 @@ pub fn exists<S: AsRef<str>>(config: &Config, name: S) -> bool {
 
 pub fn create<S: AsRef<str>>(
     config: &Config,
+    vm_config: &VMConfig,
     name: S,
     image: Option<&str>,
     exists_action: CreateExistsAction,
@@ -66,7 +67,8 @@ pub fn create<S: AsRef<str>>(
 
     fs::create_dir_all(&vm_dir)?;
     fs::copy(&image_path, &vm_disk)?;
-    fs::OpenOptions::new().create(true).write(true).open(&vml_path)?;
+    let vm_config_string = toml::to_string(&vm_config).expect("Could not serialize vm config");
+    fs::write(&vml_path, &vm_config_string)?;
 
     Ok(())
 }
@@ -95,7 +97,7 @@ pub struct VM {
     display: Option<String>,
     memory: String,
     monitor: PathBuf,
-    minimum_disk_size: Option<u128>,
+    minimum_disk_size: Option<u64>,
     pub name: String,
     name_path: PathBuf,
     names: Vec<String>,
@@ -601,7 +603,7 @@ impl Hash for VM {
     }
 }
 
-fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u128> {
+fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u64> {
     let out =
         Command::new("qemu-img").args(&["info", "--output=json"]).arg(image.as_ref()).output()?;
 
@@ -611,13 +613,13 @@ fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u128> {
     let parsed = json::parse(&out).map_err(|e| Error::other("json", &e.to_string()))?;
 
     if let Some(size) = parsed["virtual-size"].as_u64() {
-        return Ok(size.into());
+        return Ok(size);
     }
 
-    Err(Error::other("parse qemu-img out", "can't read virtual-size as u128"))
+    Err(Error::other("parse qemu-img out", "can't read virtual-size as u64"))
 }
 
-fn try_resize<S: AsRef<OsStr>>(image: S, size: u128) -> Result<()> {
+fn try_resize<S: AsRef<OsStr>>(image: S, size: u64) -> Result<()> {
     let image = image.as_ref();
     let current_size = image_size(image)?;
 

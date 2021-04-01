@@ -1,7 +1,9 @@
+use std::io;
+
+use byte_unit::Byte;
 use clap::{App, AppSettings, Arg, ArgGroup, ValueHint};
 use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
 use clap_generate::{generate, Generator};
-use std::io;
 
 fn print_completions<G: Generator>(app: &mut App) {
     generate::<G, _>(app, app.get_name().to_string(), &mut io::stdout());
@@ -99,9 +101,48 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
+                .arg(Arg::new("memory").long("memory").short('m').takes_value(true))
+                .arg(
+                    Arg::new("minimum-disk-size")
+                        .long("minimum-disk-size")
+                        .takes_value(true)
+                        .validator(|s| Byte::from_str(s).map(|b| b.to_string())),
+                )
+                .arg(Arg::new("net-tap").long("net-tap").takes_value(true))
+                .arg(
+                    Arg::new("net-address")
+                        .long("net-address")
+                        .takes_value(true)
+                        .requires("net-tap")
+                        .conflicts_with_all(&["net-user", "net-none"]),
+                )
+                .arg(
+                    Arg::new("net-gateway")
+                        .long("net-gateway")
+                        .takes_value(true)
+                        .requires("net-tap")
+                        .conflicts_with_all(&["net-user", "net-none"]),
+                )
+                .arg(
+                    Arg::new("net-nameservers")
+                        .long("net-nameservers")
+                        .takes_value(true)
+                        .multiple(true)
+                        .requires("net-tap")
+                        .conflicts_with_all(&["net-user", "net-none"]),
+                )
+                .arg(Arg::new("net-none").long("net-none"))
+                .arg(Arg::new("net-user").long("net-user"))
+                .arg(Arg::new("cloud-init").long("cloud-init"))
+                .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
+                .arg(Arg::new("display-gtk").long("display-gtk"))
+                .arg(Arg::new("display-none").long("display-none"))
                 .arg(Arg::new("exists-fail").long("exists-fail"))
                 .arg(Arg::new("exists-ignore").long("exists-ignore"))
                 .arg(Arg::new("exists-replace").long("exists-replace"))
+                .group(ArgGroup::new("net").args(&["net-tap", "net-none", "net-user"]))
+                .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"]))
+                .group(ArgGroup::new("display").args(&["display-gtk", "display-none"]))
                 .group(ArgGroup::new("exists").args(&[
                     "exists-fail",
                     "exists-ignore",

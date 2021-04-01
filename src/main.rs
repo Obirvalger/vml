@@ -6,13 +6,16 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+use byte_unit::Byte;
 use clap::ArgMatches;
 
 use vml::cli;
 use vml::config::Config;
 use vml::config::CreateExistsAction;
 use vml::files;
+use vml::net::ConfigNet;
 use vml::template;
+use vml::vm_config::VMConfig;
 use vml::{Error, Result};
 use vml::{VMsCreator, WithPid};
 
@@ -45,6 +48,8 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         vec![]
     };
 
+    let mut vm_config: VMConfig = Default::default();
+
     let image = create_matches.value_of("image");
 
     let exists = if create_matches.is_present("exists-fail") {
@@ -57,8 +62,40 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         config.commands.create.exists
     };
 
+    vm_config.memory = create_matches.value_of("memory").map(|m| m.to_string());
+    vm_config.minimum_disk_size = create_matches
+        .value_of("minimum-disk-size")
+        .map(|s| Byte::from_str(s).expect("Should be checked by cli"));
+
+    if create_matches.is_present("no-cloud-init") {
+        vm_config.cloud_init = Some(false)
+    } else if create_matches.is_present("cloud_init") {
+        vm_config.cloud_init = Some(true)
+    }
+
+    if create_matches.is_present("net-user") {
+        vm_config.net = Some(ConfigNet::User);
+    } else if create_matches.is_present("net-tap") {
+        vm_config.net = Some(ConfigNet::Tap {
+            tap: create_matches.value_of("net-tap").map(|t| t.to_string()),
+            address: create_matches.value_of("net-address").map(|t| t.to_string()),
+            gateway: create_matches.value_of("net-gateway").map(|g| g.to_string()),
+            nameservers: create_matches
+                .values_of("net-nameservers")
+                .map(|ns| ns.map(|n| n.to_string()).collect()),
+        });
+    } else if create_matches.is_present("net-none") {
+        vm_config.net = Some(ConfigNet::None);
+    }
+
+    if create_matches.is_present("display-gtk") {
+        vm_config.display = Some("gtk".to_string())
+    } else if create_matches.is_present("display-none") {
+        vm_config.display = Some("none".to_string())
+    }
+
     for name in names {
-        vml::create_vm(&config, name, image, exists)?;
+        vml::create_vm(&config, &vm_config, name, image, exists)?;
     }
 
     Ok(())

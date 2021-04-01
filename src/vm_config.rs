@@ -3,14 +3,14 @@ use std::fs;
 use std::path::PathBuf;
 
 use byte_unit::Byte;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::net::ConfigNet;
 use crate::ssh::ConfigSSH;
 use crate::string_like::StringOrUint;
 use crate::{Error, Result};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct VMConfig {
