@@ -1,29 +1,75 @@
+[alt]
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/alt-sisyphus-cloud-x86_64.qcow2"
+description = "ALT Linux Sisyphus"
+
 [alt-p9]
 url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p9/cloud/alt-p9-cloud-x86_64.qcow2"
+description = "ALT Linux p9"
 
 [alt-sisyphus]
 url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/alt-sisyphus-cloud-x86_64.qcow2"
+description = "ALT Linux Sisyphus"
+
+[ubuntu]
+url = "https://cloud-images.ubuntu.com/groovy/current/groovy-server-cloudimg-amd64.img"
+description = "latest Ubuntu release (20.10)"
+
+[ubuntu-lts]
+url = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+description = "latest LTS Ubuntu release (20.04)"
+
+[ubuntu-groovy]
+url = "https://cloud-images.ubuntu.com/groovy/current/groovy-server-cloudimg-amd64.img"
+description = "Ubuntu 20.10 Groovy Gorilla"
 
 [ubuntu-focal]
 url = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+description = "Ubuntu 20.04 Focal Fossa"
 
 [ubuntu-bionic]
 url = "https://cloud-images.ubuntu.com/bionic/current/bionic-server-cloudimg-amd64.img"
+description = "Ubuntu 18.04 Bionic Beaver"
 
-[ubuntu-xenial]
-url = "https://cloud-images.ubuntu.com/xenial/current/xenial-server-cloudimg-amd64-disk1.img"
+[debian]
+url = "https://cloud.debian.org/images/cloud/buster/daily/20210404-597/debian-10-genericcloud-amd64-daily-20210404-597.qcow2"
+description = "Debian stable"
 
 [debian-10]
-url = "https://cloud.debian.org/images/cloud/buster/daily/20200119-143/debian-10-generic-amd64-daily-20200119-143.qcow2"
+url = "https://cloud.debian.org/images/cloud/buster/daily/20210404-597/debian-10-genericcloud-amd64-daily-20210404-597.qcow2"
+description = "Debian buster (stable)"
 
 [debian-9]
 url = "https://cdimage.debian.org/cdimage/openstack/current-9/debian-9-openstack-amd64.qcow2"
+description = "Debian stretch (oldstable)"
+
+[centos]
+url = "https://cloud.centos.org/centos/8/x86_64/images/CentOS-8-GenericCloud-8.2.2004-20200611.2.x86_64.qcow2"
+description = "latest CentOS release (8)"
 
 [centos-8]
 url = "https://cloud.centos.org/centos/8/x86_64/images/CentOS-8-GenericCloud-8.2.2004-20200611.2.x86_64.qcow2"
+description = "CentOS 8"
 
 [centos-7]
 url = "https://cloud.centos.org/centos/7/images/CentOS-7-x86_64-GenericCloud.qcow2"
+description = "CentOS 7"
 
 [centos-6]
 url = "https://cloud.centos.org/centos/6/images/CentOS-6-x86_64-GenericCloud.qcow2"
+description = "CentOS 6"
+
+[fedora]
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/33/Cloud/x86_64/images/Fedora-Cloud-Base-33-1.2.x86_64.qcow2"
+description = "Fedora 33"
+
+[opensuse]
+url = "https://download.opensuse.org/tumbleweed/appliances/openSUSE-Tumbleweed-JeOS.x86_64-OpenStack-Cloud.qcow2"
+description = "openSUSE Tumbleweed"
+
+[opensuse-leap]
+url = "https://download.opensuse.org/distribution/leap/15.2/appliances/openSUSE-Leap-15.2-JeOS.x86_64-OpenStack-Cloud.qcow2"
+description = "openSUSE Leap 15.2"
+
+[opensuse-tumbleweed]
+url = "https://download.opensuse.org/tumbleweed/appliances/openSUSE-Tumbleweed-JeOS.x86_64-OpenStack-Cloud.qcow2"
+description = "openSUSE Tumbleweed"

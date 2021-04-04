@@ -11,6 +11,7 @@ use crate::{Error, Result};
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 struct Image {
+    pub description: Option<String>,
     pub url: String,
 }
 
@@ -67,9 +68,9 @@ pub fn list(images_dirs: &[&PathBuf]) -> Result<Vec<String>> {
     Ok(images.into_iter().collect())
 }
 
-pub fn available() -> Result<Vec<String>> {
+pub fn available() -> Result<Vec<(String, Option<String>)>> {
     let images = parse(&images_file_path())?.images;
-    let images = images.keys().map(|s| s.to_string()).collect();
+    let images = images.iter().map(|(k, v)| (k.to_string(), v.description.to_owned())).collect();
 
     Ok(images)
 }

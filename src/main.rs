@@ -261,8 +261,12 @@ fn main() -> Result<()> {
                 }
 
                 Some(("available", _)) => {
-                    for image in vml::images::available()? {
-                        println!("{}", image);
+                    for (image, description) in vml::images::available()? {
+                        if let Some(description) = description {
+                            println!("{} - {}", image, description);
+                        } else {
+                            println!("{}", image);
+                        }
                     }
                 }
 
