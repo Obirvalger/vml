@@ -68,7 +68,9 @@ pub fn create<S: AsRef<str>>(
     fs::create_dir_all(&vm_dir)?;
     fs::copy(&image_path, &vm_disk)?;
     let vm_config_string = toml::to_string(&vm_config).expect("Could not serialize vm config");
-    fs::write(&vml_path, &vm_config_string)?;
+    if !vml_path.is_file() {
+        fs::write(&vml_path, &vm_config_string)?
+    }
 
     Ok(())
 }
