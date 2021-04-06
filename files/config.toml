@@ -29,11 +29,11 @@ nproc = 2
 
 # ssh.authorized-keys = []
 
-# ssh.options = [
-    # "StrictHostKeyChecking=no",
-    # "UserKnownHostsFile=/dev/null",
-    # "LogLevel=ERROR",
-# ]
+ssh.options = [
+    "StrictHostKeyChecking=no",
+    "UserKnownHostsFile=/dev/null",
+    "LogLevel=ERROR",
+]
 
 ssh.port-user-network = "random"
 
