@@ -17,7 +17,7 @@ list.all = false
 
 list.fold = true
 
-start.wait-ssh = { attempts = 60, repeat = 1, sleep = 1, timeout = 1 }
+start.wait-ssh = { on = true, attempts = 60, repeat = 2, sleep = 5, timeout = 1 }
 
 
 [default]

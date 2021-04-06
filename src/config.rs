@@ -65,10 +65,16 @@ fn default_wait_ssh_attempts() -> u64 {
     60
 }
 
+fn default_wait_ssh_on() -> bool {
+    false
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct WaitSSH {
+    #[serde(default = "default_wait_ssh_on")]
+    pub on: bool,
     #[serde(default = "default_wait_ssh_attempts")]
     pub attempts: u64,
     #[serde(default = "default_wait_ssh_repeat")]
@@ -82,6 +88,7 @@ pub struct WaitSSH {
 impl Default for WaitSSH {
     fn default() -> WaitSSH {
         WaitSSH {
+            on: default_wait_ssh_on(),
             attempts: default_wait_ssh_attempts(),
             repeat: default_wait_ssh_repeat(),
             sleep: default_wait_ssh_sleep(),

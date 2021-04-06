@@ -104,7 +104,8 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
 fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> Result<()> {
     set_specifications(vmc, start_matches);
 
-    let wait_ssh = start_matches.is_present("wait-ssh");
+    let wait_ssh = config.commands.start.wait_ssh.on && !start_matches.is_present("no-wait-ssh")
+        || start_matches.is_present("wait-ssh");
     let cloud_init = if start_matches.is_present("no-cloud-init") {
         Some(false)
     } else if start_matches.is_present("cloud-init") {
