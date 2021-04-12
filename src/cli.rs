@@ -24,7 +24,7 @@ pub fn completion(shell: &str) {
 pub fn build_cli() -> clap::App<'static> {
     App::new("vml")
         .about("virtual machines manage utility")
-        .version("0.1.0")
+        .version("0.1.1")
         .setting(AppSettings::VersionlessSubcommands)
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .global_setting(AppSettings::InferSubcommands)
