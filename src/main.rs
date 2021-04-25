@@ -353,12 +353,19 @@ fn main() -> Result<()> {
                 Vec::new()
             };
 
-            let mut ssh_flags: Vec<&str> = Vec::new();
-            if ssh_matches.is_present("A") {
-                ssh_flags.push("-A");
+            let mut ssh_flags: Vec<String> = Vec::new();
+            let bool_flags = &["A", "N", "Y", "f"];
+            for &flag in bool_flags {
+                if ssh_matches.is_present(flag) {
+                    ssh_flags.push(format!("-{}", flag));
+                }
             }
-            if ssh_matches.is_present("Y") {
-                ssh_flags.push("-Y");
+            let value_flags = &["L"];
+            for flag in value_flags {
+                if let Some(value) = ssh_matches.value_of(flag) {
+                    ssh_flags.push(format!("-{}", flag));
+                    ssh_flags.push(value.to_string());
+                }
             }
 
             let cmd: Option<Vec<&str>> = ssh_matches.values_of("cmd").map(|v| v.collect());
