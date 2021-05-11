@@ -34,7 +34,7 @@ User running `vml` should be able to use kvm (.e.g be in `vmusers` group).
 All needed files are copied with any command. For example list available to
 pull images.
 ```
-vml images available
+vml image available
 ```
 
 Or get completion for your shell (zsh in example).
