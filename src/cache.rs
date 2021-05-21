@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::Result;
 
@@ -10,7 +10,7 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(name: &str, dir: &PathBuf) -> Result<Cache> {
+    pub fn new(name: &str, dir: &Path) -> Result<Cache> {
         fs::create_dir_all(&dir)?;
         Ok(Cache { name: name.to_string(), dir: dir.to_owned() })
     }

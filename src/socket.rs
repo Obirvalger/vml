@@ -1,10 +1,10 @@
 use std::io::prelude::{Read, Write};
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::{Error, Result};
 
-pub fn reply(message: &[u8], socket_path: &PathBuf) -> Result<Vec<u8>> {
+pub fn reply(message: &[u8], socket_path: &Path) -> Result<Vec<u8>> {
     let socat = Command::new("socat")
         .arg("-")
         .stdin(Stdio::piped())

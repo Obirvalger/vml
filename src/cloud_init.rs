@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tera::Context;
@@ -8,7 +8,7 @@ use crate::net;
 use crate::template;
 use crate::{Error, Result};
 
-pub fn generate_data(context: &Context, work_dir: &PathBuf) -> Result<PathBuf> {
+pub fn generate_data(context: &Context, work_dir: &Path) -> Result<PathBuf> {
     let data = work_dir.join("data.img");
     fs::create_dir_all(&work_dir)?;
 

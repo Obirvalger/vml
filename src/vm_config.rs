@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use byte_unit::Byte;
 use serde::{Deserialize, Serialize};
@@ -36,7 +36,7 @@ impl VMConfig {
         Ok(config)
     }
 
-    pub fn new(config_path: &PathBuf) -> Result<VMConfig> {
+    pub fn new(config_path: &Path) -> Result<VMConfig> {
         let config_str = &fs::read_to_string(config_path).map_err(|e| {
             Error::ParseConfig(format!(
                 "unable to read config `{}`: {}",

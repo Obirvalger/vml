@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -26,7 +26,7 @@ fn images_file_path() -> PathBuf {
     config_dir().join("images.toml")
 }
 
-fn parse(images_file_path: &PathBuf) -> Result<Images> {
+fn parse(images_file_path: &Path) -> Result<Images> {
     let images_str = &fs::read_to_string(images_file_path)?;
     let images = toml::from_str(images_str).map_err(|e| {
         Error::parse_images_file(&images_file_path.to_string_lossy(), &e.to_string())
@@ -35,7 +35,7 @@ fn parse(images_file_path: &PathBuf) -> Result<Images> {
     Ok(images)
 }
 
-pub fn path(images_dir: &PathBuf, image_name: &str) -> Result<PathBuf> {
+pub fn path(images_dir: &Path, image_name: &str) -> Result<PathBuf> {
     let image_path = images_dir.join(image_name);
     if image_path.is_file() {
         Ok(image_path)
@@ -75,12 +75,12 @@ pub fn available() -> Result<Vec<(String, Option<String>)>> {
     Ok(images)
 }
 
-pub fn remove(images_dir: &PathBuf, image_name: &str) -> Result<()> {
+pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {
     let image_path = images_dir.join(image_name);
     fs::remove_file(&image_path)?;
     Ok(())
 }
-pub fn pull(images_dir: &PathBuf, image_name: &str) -> Result<PathBuf> {
+pub fn pull(images_dir: &Path, image_name: &str) -> Result<PathBuf> {
     let images = parse(&images_file_path())?.images;
 
     if let Some(image) = images.get(image_name) {

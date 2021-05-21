@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
@@ -116,7 +116,7 @@ impl SSH {
         self.key.is_some()
     }
 
-    pub fn ensure_keys(&self, work_dir: &PathBuf) -> Result<Keys> {
+    pub fn ensure_keys(&self, work_dir: &Path) -> Result<Keys> {
         let mut ensured_key = self.key.to_owned();
         if let Some(key) = &self.key {
             if key.to_lowercase() == "create" {
@@ -164,7 +164,7 @@ impl SSH {
     }
 }
 
-fn generate_key(work_dir: &PathBuf) -> Result<String> {
+fn generate_key(work_dir: &Path) -> Result<String> {
     let key_type = "ed25519";
     let pvt_key = work_dir.join(key_type);
     let pub_key = work_dir.join(public(&key_type));

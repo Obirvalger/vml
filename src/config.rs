@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use byte_unit::Byte;
 use serde::Deserialize;
@@ -135,7 +135,7 @@ pub struct Config {
     pub nameservers: Option<Vec<String>>,
 }
 
-fn expand_tilde(path: &PathBuf) -> PathBuf {
+fn expand_tilde(path: &Path) -> PathBuf {
     let s = path.to_string_lossy().to_string();
     PathBuf::from(shellexpand::tilde(&s).to_string())
 }
