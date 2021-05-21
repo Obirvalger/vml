@@ -327,6 +327,9 @@ fn main() -> Result<()> {
 
         Some(("stop", stop_matches)) => {
             set_specifications(&mut vmc, stop_matches);
+            if stop_matches.is_present("all") {
+                vmc.all()
+            }
 
             let force = stop_matches.is_present("force");
 
