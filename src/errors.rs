@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    BadCIDR(String),
+    BadCidr(String),
     CreateExistingVM(String),
     CloudInitImageDoesNotExists(PathBuf),
     DiskDoesNotExists { disk_path: String, vm_name: String },
@@ -18,15 +18,15 @@ pub enum Error {
     ParseVMConfigField { vm_name: String, field: String },
     RemoveRuuningVM(String),
     RewriteExistsPath(String),
-    SSHFailed(String),
-    SSHPrivateKeyDoesNotExists(String),
-    SSHPublicKeyDoesNotExists(String),
+    SshFailed(String),
+    SshPrivateKeyDoesNotExists(String),
+    SshPublicKeyDoesNotExists(String),
     StoreRunningVM(String),
     TapNetworkTapUnset,
     Template { place: String, error: String },
     UnknownImage(String),
     VMHasNoPid(String),
-    VMHasNoSSH(String),
+    VMHasNoSsh(String),
 }
 
 impl Error {

@@ -6,7 +6,7 @@ use byte_unit::Byte;
 use serde::{Deserialize, Serialize};
 
 use crate::net::ConfigNet;
-use crate::ssh::ConfigSSH;
+use crate::ssh::ConfigSsh;
 use crate::string_like::StringOrUint;
 use crate::{Error, Result};
 
@@ -24,7 +24,7 @@ pub struct VMConfig {
     pub minimum_disk_size: Option<Byte>,
     pub net: Option<ConfigNet>,
     pub nproc: Option<StringOrUint>,
-    pub ssh: Option<ConfigSSH>,
+    pub ssh: Option<ConfigSsh>,
     pub tags: Option<HashSet<String>>,
 }
 

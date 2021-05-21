@@ -32,7 +32,7 @@ impl Keys {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-pub struct ConfigSSH {
+pub struct ConfigSsh {
     pub authorized_keys: Option<Vec<String>>,
     pub key: Option<String>,
     pub options: Option<Vec<String>>,
@@ -41,9 +41,9 @@ pub struct ConfigSSH {
     pub user: Option<String>,
 }
 
-impl ConfigSSH {
-    pub fn updated(&self, other: &Self) -> ConfigSSH {
-        ConfigSSH {
+impl ConfigSsh {
+    pub fn updated(&self, other: &Self) -> ConfigSsh {
+        ConfigSsh {
             authorized_keys: self
                 .authorized_keys
                 .as_ref()
@@ -67,7 +67,7 @@ fn public(pvt_key: &str) -> String {
 }
 
 #[derive(Clone, Debug)]
-pub struct SSH {
+pub struct Ssh {
     host: String,
     authorized_keys: Vec<String>,
     key: Option<String>,
@@ -76,8 +76,8 @@ pub struct SSH {
     user: Option<String>,
 }
 
-impl SSH {
-    pub fn new(config: &ConfigSSH, config_net: &ConfigNet) -> Option<SSH> {
+impl Ssh {
+    pub fn new(config: &ConfigSsh, config_net: &ConfigNet) -> Option<Ssh> {
         let host = match config_net {
             ConfigNet::Tap { address, .. } => address.as_ref().and_then(net::address)?,
             ConfigNet::User => "localhost".to_string(),
@@ -109,7 +109,7 @@ impl SSH {
             if let Some(options) = &config.options { options.to_owned() } else { Vec::new() };
         let user = config.user.to_owned();
 
-        Some(SSH { host, authorized_keys, key, options, port, user })
+        Some(Ssh { host, authorized_keys, key, options, port, user })
     }
 
     pub fn has_key(&self) -> bool {
@@ -125,10 +125,10 @@ impl SSH {
                 let pvt_key = key;
                 let pub_key = public(pvt_key);
                 if !Path::new(&pub_key).exists() {
-                    return Err(Error::SSHPublicKeyDoesNotExists(pub_key));
+                    return Err(Error::SshPublicKeyDoesNotExists(pub_key));
                 };
                 if !Path::new(pvt_key).exists() {
-                    return Err(Error::SSHPrivateKeyDoesNotExists(pub_key));
+                    return Err(Error::SshPrivateKeyDoesNotExists(pub_key));
                 };
             }
         }

@@ -6,7 +6,7 @@ use byte_unit::Byte;
 use serde::Deserialize;
 
 use crate::net::ConfigNet;
-use crate::ssh::ConfigSSH;
+use crate::ssh::ConfigSsh;
 use crate::string_like::StringOrUint;
 use crate::{Error, Result};
 
@@ -19,7 +19,7 @@ pub struct VMsDefault {
     pub net: ConfigNet,
     pub nproc: StringOrUint,
     #[serde(default)]
-    pub ssh: ConfigSSH,
+    pub ssh: ConfigSsh,
     pub minimum_disk_size: Option<Byte>,
     pub cloud_init: bool,
     pub cloud_init_image: Option<PathBuf>,
@@ -72,7 +72,7 @@ fn default_wait_ssh_on() -> bool {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-pub struct WaitSSH {
+pub struct WaitSsh {
     #[serde(default = "default_wait_ssh_on")]
     pub on: bool,
     #[serde(default = "default_wait_ssh_attempts")]
@@ -85,9 +85,9 @@ pub struct WaitSSH {
     pub timeout: u64,
 }
 
-impl Default for WaitSSH {
-    fn default() -> WaitSSH {
-        WaitSSH {
+impl Default for WaitSsh {
+    fn default() -> WaitSsh {
+        WaitSsh {
             on: default_wait_ssh_on(),
             attempts: default_wait_ssh_attempts(),
             repeat: default_wait_ssh_repeat(),
@@ -102,7 +102,7 @@ impl Default for WaitSSH {
 #[serde(deny_unknown_fields)]
 pub struct StrartCommand {
     #[serde(default)]
-    pub wait_ssh: WaitSSH,
+    pub wait_ssh: WaitSsh,
 }
 
 #[derive(Clone, Debug, Deserialize)]

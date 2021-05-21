@@ -109,13 +109,13 @@ impl Net {
     }
 }
 
-struct CIDR {
+struct Cidr {
     pub address: Option<String>,
     pub network: Option<String>,
 }
 
-impl CIDR {
-    pub fn new<S: AsRef<str>>(cidr: S) -> CIDR {
+impl Cidr {
+    pub fn new<S: AsRef<str>>(cidr: S) -> Cidr {
         let cidr = cidr.as_ref();
         let cidr: Vec<&str> = cidr.split('/').collect();
         let (address, network) = match cidr.len() {
@@ -130,15 +130,15 @@ impl CIDR {
             None
         };
 
-        CIDR { address, network }
+        Cidr { address, network }
     }
 }
 
 pub fn address<S: AsRef<str>>(cidr: S) -> Option<String> {
-    CIDR::new(cidr.as_ref()).address
+    Cidr::new(cidr.as_ref()).address
 }
 
 pub fn is_cidr<S: AsRef<str>>(cidr: S) -> bool {
-    let cidr = CIDR::new(cidr.as_ref());
+    let cidr = Cidr::new(cidr.as_ref());
     cidr.address.is_some() && cidr.network.is_some()
 }

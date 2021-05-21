@@ -49,7 +49,7 @@ hostname: {{ n }}
 
     if let Some(address) = context.get("address").and_then(|a| a.as_str()) {
         if !net::is_cidr(address) {
-            return Err(Error::BadCIDR(address.to_string()));
+            return Err(Error::BadCidr(address.to_string()));
         }
         let network_template: &str = r#"version: 2
 ethernets:

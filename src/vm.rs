@@ -17,7 +17,7 @@ use crate::images;
 use crate::net::{ConfigNet, Net};
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
-use crate::ssh::SSH;
+use crate::ssh::Ssh;
 use crate::template;
 use crate::vm_config::VMConfig;
 use crate::{Error, Result};
@@ -107,7 +107,7 @@ pub struct VM {
     nproc: String,
     specified_by: SpecifiedBy,
     pid: Option<i32>,
-    ssh: Option<SSH>,
+    ssh: Option<Ssh>,
     tags: HashSet<String>,
     vml_directory: PathBuf,
 }
@@ -181,7 +181,7 @@ impl VM {
             None => config.default.ssh.to_owned(),
             Some(ssh) => ssh.updated(&config.default.ssh),
         };
-        let ssh = SSH::new(&ssh_config, &net_config);
+        let ssh = Ssh::new(&ssh_config, &net_config);
 
         Ok(VM {
             cache,
@@ -366,10 +366,10 @@ impl VM {
         cmd: &Option<Vec<C>>,
     ) -> Result<Option<i32>> {
         #[cfg(debug_assertions)]
-        eprintln!("SSH to vm {:?}", self.name);
+        eprintln!("Ssh to vm {:?}", self.name);
 
         let self_ssh =
-            self.ssh.as_ref().ok_or_else(|| Error::VMHasNoSSH(self.name.to_string()))?;
+            self.ssh.as_ref().ok_or_else(|| Error::VMHasNoSsh(self.name.to_string()))?;
 
         let mut ssh_cmd = Command::new("ssh");
 
@@ -433,7 +433,7 @@ impl VM {
         let sources = template::renders(&context, sources, "rsync sources")?;
 
         let self_ssh =
-            self.ssh.as_ref().ok_or_else(|| Error::VMHasNoSSH(self.name.to_string()))?;
+            self.ssh.as_ref().ok_or_else(|| Error::VMHasNoSsh(self.name.to_string()))?;
 
         ssh_cmd.extend(&self_ssh.options());
 
