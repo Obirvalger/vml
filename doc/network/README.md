@@ -23,15 +23,17 @@ Place the following content in fst and snd vms configs.
 ```
 $ cat net/fst/vml.toml
 net.type = "tap"
-net.address = "172.16.0.2/24"
 net.tap = "tap0"
+net.address = "172.16.0.2/24"
+net.gateway = "172.16.0.1"
 ```
 
 ```
 $ cat net/snd/vml.toml
 net.type = "tap"
-net.address = "172.16.0.3/24"
 net.tap = "tap1"
+net.address = "172.16.0.3/24"
+net.gateway = "172.16.0.1"
 ```
 
 Finally run vms.
