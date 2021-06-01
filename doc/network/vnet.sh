@@ -3,6 +3,8 @@
 ip link add br0 type bridge
 ip link add dummy0 type dummy
 
+sysctl net.ipv4.ip_forward=1
+
 ip link set br0 up
 ip link set dummy0 up
 ip link set dummy0 master br0
