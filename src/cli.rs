@@ -71,7 +71,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .subcommand(App::new("list").about("list vm images").visible_alias("ls"))
                 .subcommand(
                     App::new("store")
-                        .about("tore vm disk as image")
+                        .about("store vm disk as image")
                         .arg(
                             Arg::new("image")
                                 .about("stored image name (allow templates) [hyphenized vm name]")
