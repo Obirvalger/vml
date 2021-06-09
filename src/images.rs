@@ -80,6 +80,7 @@ pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {
     fs::remove_file(&image_path)?;
     Ok(())
 }
+
 pub fn pull(images_dir: &Path, image_name: &str) -> Result<PathBuf> {
     let images = parse(&images_file_path())?.images;
 
