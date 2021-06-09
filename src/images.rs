@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,10 +8,48 @@ use serde::Deserialize;
 use crate::config_dir;
 use crate::{Error, Result};
 
+#[derive(Clone, Debug)]
+pub struct Image {
+    pub description: Option<String>,
+    pub name: String,
+    pub url: String,
+}
+
+impl PartialEq for Image {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for Image {}
+
+impl PartialOrd for Image {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Image {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Images {
+    pub images: BTreeSet<Image>,
+}
+
+impl Images {
+    pub fn names(&self) -> BTreeSet<String> {
+        self.images.iter().map(|i| i.name.to_string()).collect()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-struct Image {
+struct DeserializeImage {
     pub description: Option<String>,
     pub url: String,
 }
@@ -18,15 +57,15 @@ struct Image {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(transparent)]
-struct Images {
-    pub images: BTreeMap<String, Image>,
+struct DeserializeImages {
+    pub images: BTreeMap<String, DeserializeImage>,
 }
 
 fn images_file_path() -> PathBuf {
     config_dir().join("images.toml")
 }
 
-fn parse(images_file_path: &Path) -> Result<Images> {
+fn parse(images_file_path: &Path) -> Result<DeserializeImages> {
     let images_str = &fs::read_to_string(images_file_path)?;
     let images = toml::from_str(images_str).map_err(|e| {
         Error::parse_images_file(&images_file_path.to_string_lossy(), &e.to_string())
@@ -68,11 +107,14 @@ pub fn list(images_dirs: &[&PathBuf]) -> Result<Vec<String>> {
     Ok(images.into_iter().collect())
 }
 
-pub fn available() -> Result<Vec<(String, Option<String>)>> {
+pub fn available() -> Result<Images> {
     let images = parse(&images_file_path())?.images;
-    let images = images.iter().map(|(k, v)| (k.to_string(), v.description.to_owned())).collect();
+    let images = images
+        .into_iter()
+        .map(|(k, v)| Image { name: k, url: v.url, description: v.description })
+        .collect();
 
-    Ok(images)
+    Ok(Images { images })
 }
 
 pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {
