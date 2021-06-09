@@ -109,6 +109,7 @@ pub fn build_cli() -> clap::App<'static> {
                         ),
                 ),
         )
+        .replace("images", &["image", "ls"])
         .subcommand(
             App::new("create")
                 .about("create virtual machine")
