@@ -498,8 +498,9 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
         )
         .subcommand(
-            App::new("rm")
+            App::new("remove")
                 .about("remove virtual machines")
+                .visible_alias("rm")
                 .arg(Arg::new("force").long("force").short('f'))
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))

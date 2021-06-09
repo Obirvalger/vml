@@ -545,10 +545,10 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(("rm", rm_matches)) => {
-            set_specifications(&mut vmc, rm_matches);
+        Some(("remove", remove_matches)) => {
+            set_specifications(&mut vmc, remove_matches);
 
-            let force = rm_matches.is_present("force");
+            let force = remove_matches.is_present("force");
 
             if !force {
                 vmc.with_pid(WithPid::Without);
