@@ -11,12 +11,16 @@ url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/
 description = "ALT Linux Sisyphus"
 
 [ubuntu]
-url = "https://cloud-images.ubuntu.com/groovy/current/groovy-server-cloudimg-amd64.img"
-description = "latest Ubuntu release (20.10)"
+url = "https://cloud-images.ubuntu.com/hirsute/current/hirsute-server-cloudimg-amd64.img"
+description = "latest Ubuntu release (21.04)"
 
 [ubuntu-lts]
 url = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
 description = "latest LTS Ubuntu release (20.04)"
+
+[ubuntu-hirsute]
+url = "https://cloud-images.ubuntu.com/hirsute/current/hirsute-server-cloudimg-amd64.img"
+description = "Ubuntu 21.04 Hirsute Hippo"
 
 [ubuntu-groovy]
 url = "https://cloud-images.ubuntu.com/groovy/current/groovy-server-cloudimg-amd64.img"
