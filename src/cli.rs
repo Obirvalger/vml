@@ -187,7 +187,7 @@ pub fn build_cli() -> clap::App<'static> {
         )
         .subcommand(
             App::new("run")
-                .about("create and start virtual machines")
+                .about("shortcut to create and start")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
