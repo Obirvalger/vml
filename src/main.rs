@@ -19,7 +19,7 @@ use vml::vm_config::VMConfig;
 use vml::{Error, Result};
 use vml::{VMsCreator, WithPid};
 
-fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<()> {
+fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<u64> {
     let fold = if config.commands.list.fold { fold || !unfold } else { fold && !unfold };
 
     let mut names: BTreeSet<String> = BTreeSet::new();
@@ -32,11 +32,13 @@ fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<(
         }
     }
 
+    let size = names.len() as u64;
+
     for name in names {
         println!("{}", name);
     }
 
-    Ok(())
+    Ok(size)
 }
 
 fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
@@ -559,8 +561,12 @@ fn main() -> Result<()> {
             let remove = if force {
                 true
             } else {
-                list(&vmc, &config, false, false)?;
-                confirm("Do you really want to remove that vms?")
+                let size = list(&vmc, &config, false, false)?;
+                if size > 0 {
+                    confirm("Do you really want to remove that vms?")
+                } else {
+                    false
+                }
             };
 
             if remove {
