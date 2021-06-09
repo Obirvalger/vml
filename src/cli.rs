@@ -502,6 +502,8 @@ pub fn build_cli() -> clap::App<'static> {
                 .about("remove virtual machines")
                 .visible_alias("rm")
                 .arg(Arg::new("force").long("force").short('f'))
+                .arg(Arg::new("verbose").long("verbose").short('v'))
+                .arg(Arg::new("interactive").long("interactive").short('i'))
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
                 .arg(

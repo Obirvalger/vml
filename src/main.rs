@@ -19,7 +19,7 @@ use vml::vm_config::VMConfig;
 use vml::{Error, Result};
 use vml::{VMsCreator, WithPid};
 
-fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<u64> {
+fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<BTreeSet<String>> {
     let fold = if config.commands.list.fold { fold || !unfold } else { fold && !unfold };
 
     let mut names: BTreeSet<String> = BTreeSet::new();
@@ -32,13 +32,7 @@ fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<u
         }
     }
 
-    let size = names.len() as u64;
-
-    for name in names {
-        println!("{}", name);
-    }
-
-    Ok(size)
+    Ok(names)
 }
 
 fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
@@ -514,12 +508,16 @@ fn main() -> Result<()> {
 
             set_specifications(&mut vmc, list_matches);
 
-            list(
+            let names = list(
                 &vmc,
                 &config,
                 list_matches.is_present("fold"),
                 list_matches.is_present("unfold"),
             )?;
+
+            for name in names {
+                println!("{}", name);
+            }
         }
 
         Some(("monitor", monitor_matches)) => {
@@ -551,6 +549,9 @@ fn main() -> Result<()> {
             set_specifications(&mut vmc, remove_matches);
 
             let force = remove_matches.is_present("force");
+            let verbose = remove_matches.is_present("verbose") || config.commands.remove.verbose;
+            let interactive =
+                remove_matches.is_present("interactive") || config.commands.remove.interactive;
 
             if !force {
                 vmc.with_pid(WithPid::Without);
@@ -561,9 +562,16 @@ fn main() -> Result<()> {
             let remove = if force {
                 true
             } else {
-                let size = list(&vmc, &config, false, false)?;
-                if size > 0 {
-                    confirm("Do you really want to remove that vms?")
+                let names = list(&vmc, &config, false, false)?;
+                if !names.is_empty() {
+                    if interactive {
+                        for name in names {
+                            println!("{}", name);
+                        }
+                        confirm("Do you really want to remove that vms?")
+                    } else {
+                        true
+                    }
                 } else {
                     false
                 }
@@ -575,7 +583,11 @@ fn main() -> Result<()> {
                         vm.stop(true)?;
                     }
 
+                    let vm_name = vm.name.to_string();
                     vm.remove()?;
+                    if verbose {
+                        println!("Removed {}", vm_name)
+                    }
                 }
             }
         }

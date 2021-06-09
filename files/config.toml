@@ -17,6 +17,10 @@ list.all = false
 
 list.fold = true
 
+remove.interactive = true
+
+remove.verbose = true
+
 start.wait-ssh = { on = true, attempts = 60, repeat = 2, sleep = 5, timeout = 1 }
 
 

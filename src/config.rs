@@ -49,6 +49,33 @@ pub struct ListCommand {
     pub fold: bool,
 }
 
+fn default_remove_interactive() -> bool {
+    true
+}
+
+fn default_remove_verbose() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct RemoveCommand {
+    #[serde(default = "default_remove_interactive")]
+    pub interactive: bool,
+    #[serde(default = "default_remove_verbose")]
+    pub verbose: bool,
+}
+
+impl Default for RemoveCommand {
+    fn default() -> RemoveCommand {
+        RemoveCommand {
+            interactive: default_remove_interactive(),
+            verbose: default_remove_verbose(),
+        }
+    }
+}
+
 fn default_wait_ssh_timeout() -> u64 {
     1
 }
@@ -111,6 +138,8 @@ pub struct StrartCommand {
 pub struct Commands {
     pub create: CreateCommand,
     pub list: ListCommand,
+    #[serde(default)]
+    pub remove: RemoveCommand,
     pub start: StrartCommand,
 }
 

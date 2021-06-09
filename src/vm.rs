@@ -536,8 +536,6 @@ impl VM {
     }
 
     pub fn remove(self) -> Result<()> {
-        #[cfg(debug_assertions)]
-        eprintln!("Remove vm {:?}", self.name);
         if self.has_pid() {
             return Err(Error::RemoveRuuningVM(self.name));
         }
