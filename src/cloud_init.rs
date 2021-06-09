@@ -55,7 +55,7 @@ hostname: {{ n }}
 ethernets:
   interface0:
     match:
-      macaddress: "{{ mac }}"
+      name: "e*"
     addresses:
       - {{ address }}
     nameservers:
