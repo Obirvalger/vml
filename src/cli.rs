@@ -70,6 +70,24 @@ pub fn build_cli() -> clap::App<'static> {
                 )
                 .subcommand(App::new("list").about("list vm images").visible_alias("ls"))
                 .subcommand(
+                    App::new("pull")
+                        .about("pull vm images")
+                        .arg(Arg::new("available").long("available").short('a'))
+                        .arg(
+                            Arg::new("IMAGES")
+                                // .long("images")
+                                // .short('i')
+                                .takes_value(true)
+                                .multiple(true),
+                        )
+                        .arg(Arg::new("exists").long("exists").short('e'))
+                        .group(
+                            ArgGroup::new("specified_by")
+                                .args(&["IMAGES", "available", "exists"])
+                                .required(true),
+                        ),
+                )
+                .subcommand(
                     App::new("store")
                         .about("store vm disk as image")
                         .arg(
