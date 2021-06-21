@@ -21,6 +21,7 @@ pub enum Error {
     SshFailed(String),
     SshPrivateKeyDoesNotExists(String),
     SshPublicKeyDoesNotExists(String),
+    StartVmFailed(String),
     StoreRunningVM(String),
     TapNetworkTapUnset,
     Template { place: String, error: String },

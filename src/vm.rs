@@ -329,7 +329,12 @@ impl VM {
 
         #[cfg(debug_assertions)]
         eprintln!("{:?}", &kvm);
-        kvm.spawn().map_err(|e| Error::executable("kvm", &e.to_string()))?.wait()?;
+        let exit_status =
+            kvm.spawn().map_err(|e| Error::executable("kvm", &e.to_string()))?.wait()?;
+
+        if !exit_status.success() {
+            return Err(Error::StartVmFailed(self.name.to_string()));
+        }
 
         Ok(())
     }
