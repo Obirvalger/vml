@@ -118,6 +118,11 @@ impl Context {
         self.data.get(index)
     }
 
+    /// Remove a key from the context, returning the value at the key if the key was previously inserted into the context.
+    pub fn remove(&mut self, index: &str) -> Option<Value> {
+        self.data.remove(index)
+    }
+
     /// Checks if a value exists at a specific index.
     pub fn contains_key(&self, index: &str) -> bool {
         self.data.contains_key(index)
@@ -204,7 +209,15 @@ impl ValueTruthy for Value {
 /// Converts a dotted path to a json pointer one
 #[inline]
 pub fn get_json_pointer(key: &str) -> String {
-    ["/", &key.replace(".", "/")].join("")
+    lazy_static::lazy_static! {
+        // Split the key into dot-separated segments, respecting quoted strings as single units
+        // to fix https://github.com/Keats/tera/issues/590
+        static ref JSON_POINTER_REGEX: regex::Regex = regex::Regex::new("\"[^\"]*\"|[^.]+").unwrap();
+    }
+
+    let mut segments = vec![""];
+    segments.extend(JSON_POINTER_REGEX.find_iter(key).map(|mat| mat.as_str().trim_matches('"')));
+    segments.join("/")
 }
 
 #[cfg(test)]
@@ -251,5 +264,24 @@ mod tests {
         context.insert("name", "bob");
         context.insert("last_name", "something");
         assert_eq!(context_from_serialize, context);
+    }
+
+    #[test]
+    fn can_remove_a_key() {
+        let mut context = Context::new();
+        context.insert("name", "foo");
+        context.insert("bio", "Hi, I'm foo.");
+
+        let mut expected = Context::new();
+        expected.insert("name", "foo");
+        assert_eq!(context.remove("bio"), Some(to_value("Hi, I'm foo.").unwrap()));
+        assert_eq!(context.get("bio"), None);
+        assert_eq!(context, expected);
+    }
+
+    #[test]
+    fn remove_return_none_with_unknown_index() {
+        let mut context = Context::new();
+        assert_eq!(context.remove("unknown"), None);
     }
 }

@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.11.0 (2021-06-14)
+
+- Allow iterating on strings with `for`
+
+## 1.10.0 (2021-05-21)
+
+- Add `Tera::get_template_names`
+
+## 1.9.0 (2021-05-16)
+
+- Add `Context::remove`
+
+## 1.8.0 (2021-04-21)
+
+- Add `linebreaksbr` filter from Django
+- Allow dots in context object key names
+
+## 1.7.1 (2021-04-12)
+
+- Fix parsing of filter arguments separated by whitespaces
+
 ## 1.7.0 (2021-03-07)
 
 - Allow rendering to `std::io::Write`

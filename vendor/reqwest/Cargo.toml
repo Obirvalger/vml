@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "reqwest"
-version = "0.11.2"
+version = "0.11.4"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 autotests = true
 description = "higher level HTTP client library"
@@ -80,6 +80,11 @@ path = "tests/brotli.rs"
 required-features = ["brotli"]
 
 [[test]]
+name = "deflate"
+path = "tests/deflate.rs"
+required-features = ["deflate"]
+
+[[test]]
 name = "multipart"
 path = "tests/multipart.rs"
 required-features = ["multipart"]
@@ -116,10 +121,12 @@ brotli = ["async-compression", "async-compression/brotli", "tokio-util"]
 cookies = ["cookie_crate", "cookie_store", "time"]
 default = ["default-tls"]
 default-tls = ["hyper-tls", "native-tls-crate", "__tls", "tokio-native-tls"]
+deflate = ["async-compression", "async-compression/zlib", "tokio-util"]
 gzip = ["async-compression", "async-compression/gzip", "tokio-util"]
 json = ["serde_json"]
 multipart = ["mime_guess"]
 native-tls = ["default-tls"]
+native-tls-alpn = ["native-tls", "native-tls-crate/alpn"]
 native-tls-vendored = ["native-tls", "native-tls-crate/vendored"]
 rustls-tls = ["rustls-tls-webpki-roots"]
 rustls-tls-manual-roots = ["__rustls"]
@@ -278,7 +285,7 @@ version = "0.4.18"
 
 [target."cfg(target_arch = \"wasm32\")".dependencies.web-sys]
 version = "0.3.25"
-features = ["Headers", "Request", "RequestInit", "RequestMode", "Response", "Window", "FormData", "Blob", "BlobPropertyBag", "ServiceWorkerGlobalScope"]
+features = ["Headers", "Request", "RequestInit", "RequestMode", "Response", "Window", "FormData", "Blob", "BlobPropertyBag", "ServiceWorkerGlobalScope", "RequestCredentials"]
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-test]
 version = "0.3"
 [target."cfg(windows)".dependencies.winreg]

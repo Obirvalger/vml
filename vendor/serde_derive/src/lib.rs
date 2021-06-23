@@ -13,11 +13,13 @@
 //!
 //! [https://serde.rs/derive.html]: https://serde.rs/derive.html
 
-#![doc(html_root_url = "https://docs.rs/serde_derive/1.0.125")]
+#![doc(html_root_url = "https://docs.rs/serde_derive/1.0.126")]
 #![allow(unknown_lints, bare_trait_objects)]
 #![deny(clippy::all, clippy::pedantic)]
 // Ignored clippy lints
 #![allow(
+    // clippy false positive: https://github.com/rust-lang/rust-clippy/issues/7054
+    clippy::branches_sharing_code,
     clippy::cognitive_complexity,
     clippy::enum_variant_names,
     // clippy bug: https://github.com/rust-lang/rust-clippy/issues/6797
@@ -37,12 +39,13 @@
     clippy::checked_conversions,
     clippy::doc_markdown,
     clippy::enum_glob_use,
-    clippy::filter_map,
     clippy::indexing_slicing,
     clippy::items_after_statements,
     clippy::let_underscore_drop,
     clippy::map_err_ignore,
     clippy::match_same_arms,
+    // clippy bug: https://github.com/rust-lang/rust-clippy/issues/6984
+    clippy::match_wildcard_for_single_variants,
     clippy::module_name_repetitions,
     clippy::must_use_candidate,
     clippy::option_if_let_else,

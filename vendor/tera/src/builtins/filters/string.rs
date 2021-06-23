@@ -4,11 +4,10 @@ use std::collections::HashMap;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 use serde_json::value::{to_value, Value};
+use unic_segment::GraphemeIndices;
 
 #[cfg(feature = "builtins")]
 use percent_encoding::{percent_encode, AsciiSet, NON_ALPHANUMERIC};
-#[cfg(feature = "builtins")]
-use unic_segment::GraphemeIndices;
 
 use crate::errors::{Error, Result};
 use crate::utils;
@@ -154,7 +153,6 @@ pub fn trim_end_matches(value: &Value, args: &HashMap<String, Value>) -> Result<
 /// The return value of this function might be longer than `length`: the `end`
 /// string is *added* after the truncation occurs.
 ///
-#[cfg(feature = "builtins")]
 pub fn truncate(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
     let s = try_get_value!("truncate", "value", String, value);
     let length = match args.get("length") {
@@ -253,6 +251,14 @@ pub fn title(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
         format!("{}{}", first, rest)
     }))
     .unwrap())
+}
+
+/// Convert line breaks (`\n` or `\r\n`) to HTML linebreaks (`<br>`).
+///
+/// Example: The input "Hello\nWorld" turns into "Hello<br>World".
+pub fn linebreaksbr(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("title", "value", String, value);
+    Ok(to_value(&s.replace("\r\n", "<br>").replace("\n", "<br>")).unwrap())
 }
 
 /// Removes html tags from string
@@ -455,7 +461,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "builtins")]
     #[test]
     fn test_truncate_smaller_than_length() {
         let mut args = HashMap::new();
@@ -465,7 +470,6 @@ mod tests {
         assert_eq!(result.unwrap(), to_value("hello").unwrap());
     }
 
-    #[cfg(feature = "builtins")]
     #[test]
     fn test_truncate_when_required() {
         let mut args = HashMap::new();
@@ -475,7 +479,6 @@ mod tests {
         assert_eq!(result.unwrap(), to_value("日本…").unwrap());
     }
 
-    #[cfg(feature = "builtins")]
     #[test]
     fn test_truncate_custom_end() {
         let mut args = HashMap::new();
@@ -486,7 +489,6 @@ mod tests {
         assert_eq!(result.unwrap(), to_value("日本").unwrap());
     }
 
-    #[cfg(feature = "builtins")]
     #[test]
     fn test_truncate_multichar_grapheme() {
         let mut args = HashMap::new();
@@ -818,5 +820,23 @@ mod tests {
         let result = float(&to_value(1.23).unwrap(), &args);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), to_value(1.23).unwrap());
+    }
+
+    #[test]
+    fn test_linebreaksbr() {
+        let args = HashMap::new();
+        let tests: Vec<(&str, &str)> = vec![
+            ("hello world", "hello world"),
+            ("hello\nworld", "hello<br>world"),
+            ("hello\r\nworld", "hello<br>world"),
+            ("hello\n\rworld", "hello<br>\rworld"),
+            ("hello\r\n\nworld", "hello<br><br>world"),
+            ("hello<br>world\n", "hello<br>world<br>"),
+        ];
+        for (input, expected) in tests {
+            let result = linebreaksbr(&to_value(input).unwrap(), &args);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), to_value(expected).unwrap());
+        }
     }
 }

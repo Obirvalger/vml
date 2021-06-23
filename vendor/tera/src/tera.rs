@@ -390,6 +390,28 @@ impl Tera {
         }
     }
 
+    /// Returns an iterator over the names of all registered templates in an
+    /// unspecified order.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tera::Tera;
+    ///
+    /// let mut tera = Tera::default();
+    /// tera.add_raw_template("foo", "{{ hello }}");
+    /// tera.add_raw_template("another-one.html", "contents go here");
+    ///
+    /// let names: Vec<_> = tera.get_template_names().collect();
+    /// assert_eq!(names.len(), 2);
+    /// assert!(names.contains(&"foo"));
+    /// assert!(names.contains(&"another-one.html"));
+    /// ```
+    #[inline]
+    pub fn get_template_names(&self) -> impl Iterator<Item = &str> {
+        self.templates.keys().map(|s| s.as_str())
+    }
+
     /// Add a single template to the Tera instance
     ///
     /// This will error if the inheritance chain can't be built, such as adding a child
@@ -550,12 +572,12 @@ impl Tera {
         self.register_filter("trim_end", string::trim_end);
         self.register_filter("trim_start_matches", string::trim_start_matches);
         self.register_filter("trim_end_matches", string::trim_end_matches);
-        #[cfg(feature = "builtins")]
         self.register_filter("truncate", string::truncate);
         self.register_filter("wordcount", string::wordcount);
         self.register_filter("replace", string::replace);
         self.register_filter("capitalize", string::capitalize);
         self.register_filter("title", string::title);
+        self.register_filter("linebreaksbr", string::linebreaksbr);
         self.register_filter("striptags", string::striptags);
         #[cfg(feature = "builtins")]
         self.register_filter("urlencode", string::urlencode);
@@ -949,6 +971,27 @@ mod tests {
             tera.render_str("{{ echo(greeting='Hello') }} world", &Context::default()).unwrap();
 
         assert_eq!(result, "Hello world");
+    }
+
+    #[test]
+    fn test_render_map_with_dotted_keys() {
+        let mut my_tera = Tera::default();
+        my_tera
+            .add_raw_templates(vec![
+                ("dots", r#"{{ map["a.b.c"] }}"#),
+                ("urls", r#"{{ map["https://example.com"] }}"#),
+            ])
+            .unwrap();
+
+        let mut map = HashMap::new();
+        map.insert("a.b.c", "success");
+        map.insert("https://example.com", "success");
+
+        let mut tera_context = Context::new();
+        tera_context.insert("map", &map);
+
+        my_tera.render("dots", &tera_context).unwrap();
+        my_tera.render("urls", &tera_context).unwrap();
     }
 
     #[test]

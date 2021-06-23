@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "byte-unit"
-version = "4.0.10"
+version = "4.0.12"
 authors = ["Magic Len <len@magiclen.org>"]
 include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE"]
 description = "A library for interaction with units of bytes."
@@ -34,6 +34,3 @@ version = "0.1"
 default = ["std", "u128"]
 std = []
 u128 = []
-[badges.travis-ci]
-branch = "master"
-repository = "magiclen/Byte-Unit"
