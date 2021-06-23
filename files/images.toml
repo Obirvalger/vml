@@ -63,6 +63,14 @@ url = "https://cloud.centos.org/centos/6/images/CentOS-6-x86_64-GenericCloud.qco
 description = "CentOS 6"
 
 [fedora]
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/34/Cloud/x86_64/images/Fedora-Cloud-Base-34-1.2.x86_64.qcow2"
+description = "latest Fedora release (34)"
+
+[fedora-34]
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/34/Cloud/x86_64/images/Fedora-Cloud-Base-34-1.2.x86_64.qcow2"
+description = "Fedora 34"
+
+[fedora-33]
 url = "https://download.fedoraproject.org/pub/fedora/linux/releases/33/Cloud/x86_64/images/Fedora-Cloud-Base-33-1.2.x86_64.qcow2"
 description = "Fedora 33"
 
