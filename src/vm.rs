@@ -433,6 +433,7 @@ impl VM {
         destination: &Option<D>,
     ) -> Result<()> {
         let mut ssh_cmd = vec!["ssh"];
+        let ssh_key: String;
 
         let context = self.context();
         let sources = template::renders(&context, sources, "rsync sources")?;
@@ -445,6 +446,15 @@ impl VM {
         let port = self_ssh.port().to_string();
         let port = if port == "random" { self.cache.load("port")? } else { port };
         ssh_cmd.extend(&["-p", &port]);
+
+        if self_ssh.has_key() {
+            let keys = self_ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
+            if let Some(pvt_key) = keys.private() {
+                ssh_key = pvt_key;
+                ssh_cmd.extend(&["-o", "IdentitiesOnly=yes"]);
+                ssh_cmd.extend(&["-i", &ssh_key]);
+            }
+        }
 
         let user_host = self_ssh.user_host(&user);
 
