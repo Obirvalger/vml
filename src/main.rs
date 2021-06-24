@@ -371,7 +371,7 @@ fn main() -> Result<()> {
                     ssh_flags.push(format!("-{}", flag));
                 }
             }
-            let value_flags = &["L"];
+            let value_flags = &["L", "R"];
             for flag in value_flags {
                 if let Some(value) = ssh_matches.value_of(flag) {
                     ssh_flags.push(format!("-{}", flag));
