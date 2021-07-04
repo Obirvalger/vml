@@ -12,7 +12,7 @@ pub fn generate_data(context: &Context, work_dir: &Path) -> Result<PathBuf> {
     let data = work_dir.join("data.img");
     fs::create_dir_all(&work_dir)?;
 
-    let meta_data_template: &str = "instance-id: {{ n }}\nlocal-hostname: {{ n }}\n";
+    let meta_data_template: &str = "instance-id: {{ n }}\nlocal-hostname: {{ hostname }}\n";
     let meta_data = template::render(context, meta_data_template, "cloud-init meta-data")?;
     let meta_data_yaml = work_dir.join("meta-data.yaml");
     fs::write(&meta_data_yaml, &meta_data)?;
@@ -38,7 +38,7 @@ users:
 {% endfor -%}
 {% endif -%}
 preserve_hostname: false
-hostname: {{ n }}
+hostname: {{ hostname }}
 ";
     let user_data = template::render(context, user_data_template, "cloud-init user-data")?;
     let user_data_yaml = work_dir.join("user-data.yaml");

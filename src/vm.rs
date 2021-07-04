@@ -418,14 +418,17 @@ impl VM {
         context.insert("data", &self.data);
         context.insert("disk", &self.disk);
         let len = self.names.len();
-        let mut n = self.names[len - 1].to_string();
-        if n.parse::<u128>().is_ok() {
-            let host = if len > 1 { &self.names[len - 2] } else { "host" };
-            n = format!("{}-{}", host, &n);
-        }
+        let n = self.names[len - 1].to_string();
         context.insert("n", &n);
         context.insert("h", &self.hyphenized());
         context.insert("name", &self.name);
+        let hostname = if n.parse::<u128>().is_ok() {
+            let host = if len > 1 { &self.names[len - 2] } else { "host" };
+            format!("{}-{}", host, &n)
+        } else {
+            n
+        };
+        context.insert("hostname", &hostname);
 
         context
     }
