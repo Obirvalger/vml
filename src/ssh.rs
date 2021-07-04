@@ -80,7 +80,7 @@ impl Ssh {
     pub fn new(config: &ConfigSsh, config_net: &ConfigNet) -> Option<Ssh> {
         let host = match config_net {
             ConfigNet::Tap { address, .. } => address.as_ref().and_then(net::address)?,
-            ConfigNet::User => "localhost".to_string(),
+            ConfigNet::User => "127.0.0.1".to_string(),
             _ => return None,
         };
 
@@ -148,6 +148,10 @@ impl Ssh {
         } else {
             self.host.to_owned()
         }
+    }
+
+    pub fn host(&self) -> &str {
+        &self.host
     }
 
     pub fn options(&self) -> Vec<&str> {

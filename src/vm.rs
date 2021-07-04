@@ -267,11 +267,12 @@ impl VM {
             match net {
                 Net::User => {
                     let hostfwd = if let Some(ssh) = &self.ssh {
+                        let host = ssh.host().to_string();
                         let port = ssh.port().to_string();
                         let port =
                             if port == "random" { get_available_port().unwrap() } else { port };
                         self.cache.store("port", &port)?;
-                        format!(",hostfwd=tcp::{}-:22", port)
+                        format!(",hostfwd=tcp:{}:{}-:22", host, port)
                     } else {
                         "".to_string()
                     };
