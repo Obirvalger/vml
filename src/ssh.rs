@@ -38,6 +38,7 @@ pub struct ConfigSsh {
     pub options: Option<Vec<String>>,
     pub port: Option<StringOrUint>,
     pub port_user_network: Option<StringOrUint>,
+    pub host_user_network: Option<String>,
     pub user: Option<String>,
 }
 
@@ -56,6 +57,11 @@ impl ConfigSsh {
                 .port_user_network
                 .as_ref()
                 .or_else(|| other.port_user_network.as_ref())
+                .cloned(),
+            host_user_network: self
+                .host_user_network
+                .as_ref()
+                .or_else(|| other.host_user_network.as_ref())
                 .cloned(),
             user: self.user.as_ref().or_else(|| other.user.as_ref()).cloned(),
         }
@@ -80,7 +86,9 @@ impl Ssh {
     pub fn new(config: &ConfigSsh, config_net: &ConfigNet) -> Option<Ssh> {
         let host = match config_net {
             ConfigNet::Tap { address, .. } => address.as_ref().and_then(net::address)?,
-            ConfigNet::User => "127.0.0.1".to_string(),
+            ConfigNet::User => {
+                config.host_user_network.to_owned().unwrap_or_else(|| "127.0.0.1".to_string())
+            }
             _ => return None,
         };
 

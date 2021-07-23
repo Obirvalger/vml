@@ -43,6 +43,9 @@ ssh.port-user-network = "random"
 
 ssh.port = 22
 
+# Use 0.0.0.0 if you want to bind ssh port to all ip addresses
+ssh.host-user-network = "127.0.0.1"
+
 ssh.user = "root"
 
 # Path to private key or "none" or "create"
