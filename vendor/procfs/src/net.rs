@@ -22,7 +22,7 @@
 //! let all_procs = procfs::process::all_processes().unwrap();
 //!
 //! // build up a map between socket inodes and processes:
-//! let mut map: HashMap<u32, &Process> = HashMap::new();
+//! let mut map: HashMap<u64, &Process> = HashMap::new();
 //! for process in &all_procs {
 //!     if let Ok(fds) = process.fd() {
 //!         for fd in fds {
@@ -60,7 +60,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::{path::PathBuf, str::FromStr};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TcpState {
     Established = 1,
     SynSent,
@@ -113,7 +113,7 @@ impl TcpState {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UdpState {
     Established = 1,
     Close = 7,
@@ -136,7 +136,7 @@ impl UdpState {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnixState {
     UNCONNECTED = 1,
     CONNECTING = 2,
@@ -166,29 +166,29 @@ impl UnixState {
 }
 
 /// An entry in the TCP socket table
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TcpNetEntry {
     pub local_address: SocketAddr,
     pub remote_address: SocketAddr,
     pub state: TcpState,
     pub rx_queue: u32,
     pub tx_queue: u32,
-    pub inode: u32,
+    pub inode: u64,
 }
 
 /// An entry in the UDP socket table
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UdpNetEntry {
     pub local_address: SocketAddr,
     pub remote_address: SocketAddr,
     pub state: UdpState,
     pub rx_queue: u32,
     pub tx_queue: u32,
-    pub inode: u32,
+    pub inode: u64,
 }
 
 /// An entry in the Unix socket table
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnixNetEntry {
     /// The number of users of the socket
     pub ref_count: u32,
@@ -200,7 +200,7 @@ pub struct UnixNetEntry {
     /// The state of the socket
     pub state: UnixState,
     /// The inode number of the socket
-    pub inode: u32,
+    pub inode: u64,
     /// The bound pathname (if any) of the socket.
     ///
     /// Sockets in the abstract namespace are included, and are shown with a path that commences
@@ -284,7 +284,7 @@ pub fn read_tcp_table<R: Read>(reader: BufReader<R>) -> ProcResult<Vec<TcpNetEnt
             rx_queue,
             tx_queue,
             state: expect!(TcpState::from_u8(from_str!(u8, state, 16))),
-            inode: from_str!(u32, inode),
+            inode: from_str!(u64, inode),
         });
     }
 
@@ -318,7 +318,7 @@ pub fn read_udp_table<R: Read>(reader: BufReader<R>) -> ProcResult<Vec<UdpNetEnt
             rx_queue,
             tx_queue,
             state: expect!(UdpState::from_u8(from_str!(u8, state, 16))),
-            inode: from_str!(u32, inode),
+            inode: from_str!(u64, inode),
         });
     }
 
@@ -370,7 +370,7 @@ pub fn unix() -> ProcResult<Vec<UnixNetEntry>> {
         s.next(); // skip internal kernel flags
         let socket_type = from_str!(u16, expect!(s.next()), 16);
         let state = from_str!(u8, expect!(s.next()), 16);
-        let inode = from_str!(u32, expect!(s.next()));
+        let inode = from_str!(u64, expect!(s.next()));
         let path = s.next().map(PathBuf::from);
 
         vec.push(UnixNetEntry {
@@ -386,7 +386,7 @@ pub fn unix() -> ProcResult<Vec<UnixNetEntry>> {
 }
 
 /// An entry in the ARP table
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ARPEntry {
     /// IPv4 address
     pub ip_address: Ipv4Addr,

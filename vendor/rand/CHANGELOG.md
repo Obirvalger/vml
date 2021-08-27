@@ -8,6 +8,20 @@ A [separate changelog is kept for rand_core](rand_core/CHANGELOG.md).
 
 You may also find the [Upgrade Guide](https://rust-random.github.io/book/update.html) useful.
 
+## [0.8.4] - 2021-06-15
+### Additions
+- Use const-generics to support arrays of all sizes (#1104)
+- Implement `Clone` and `Copy` for `Alphanumeric` (#1126)
+- Add `Distribution::map` to derive a distribution using a closure (#1129)
+- Add `Slice` distribution (#1107)
+- Add `DistString` trait with impls for `Standard` and `Alphanumeric` (#1133)
+
+### Other
+- Reorder asserts in `Uniform` float distributions for easier debugging of non-finite arguments
+  (#1094, #1108)
+- Add range overflow check in `Uniform` float distributions (#1108)
+- Deprecate `rngs::adapter::ReadRng` (#1130)
+
 ## [0.8.3] - 2021-01-25
 ### Fixes
 - Fix `no-std` + `alloc` build by gating `choose_multiple_weighted` on `std` (#1088)

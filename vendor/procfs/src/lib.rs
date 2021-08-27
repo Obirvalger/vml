@@ -55,7 +55,6 @@ use libc::pid_t;
 use libc::sysconf;
 use libc::{_SC_CLK_TCK, _SC_PAGESIZE};
 
-use std::ffi::CStr;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -64,6 +63,7 @@ use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
+use std::{ffi::CStr, fs::OpenOptions};
 
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, Local};
@@ -228,7 +228,7 @@ pub(crate) fn read_file<P: AsRef<Path>>(path: P) -> ProcResult<String> {
 }
 
 pub(crate) fn write_file<P: AsRef<Path>, T: AsRef<[u8]>>(path: P, buf: T) -> ProcResult<()> {
-    let mut f = File::open(path)?;
+    let mut f = OpenOptions::new().read(false).write(true).open(path)?;
     f.write_all(buf.as_ref())?;
     Ok(())
 }
@@ -538,7 +538,7 @@ impl std::error::Error for ProcError {}
 ///
 /// Load averages are calculated as the number of jobs in the run queue (state R) or waiting for
 /// disk I/O (state D) averaged over 1, 5, and 15 minutes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoadAverage {
     /// The one-minute load average
     pub one: f32,
@@ -655,7 +655,7 @@ pub fn page_size() -> std::io::Result<i64> {
 }
 
 /// Possible values for a kernel config option
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConfigSetting {
     Yes,
     Module,
@@ -724,7 +724,7 @@ pub fn kernel_config() -> ProcResult<HashMap<String, ConfigSetting>> {
 
 /// To convert this value to seconds, you can divide by the tps.  There are also convenience methods
 /// that you can use too.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CpuTime {
     /// Ticks spent in user mode
     pub user: u64,
@@ -925,7 +925,7 @@ impl CpuTime {
 }
 
 /// Kernel/system statistics, from `/proc/stat`
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KernelStats {
     /// The amount of time the system spent in various states
     pub total: CpuTime,
@@ -956,8 +956,8 @@ impl KernelStats {
     pub fn new() -> ProcResult<KernelStats> {
         KernelStats::from_reader(FileWrapper::open("/proc/stat")?)
     }
-
-    fn from_reader<R: io::Read>(r: R) -> ProcResult<KernelStats> {
+    /// Get KernelStatus from a custom Read instead of the default `/proc/stat`.
+    pub fn from_reader<R: io::Read>(r: R) -> ProcResult<KernelStats> {
         let bufread = BufReader::new(r);
         let lines = bufread.lines();
 
@@ -1029,7 +1029,7 @@ pub fn vmstat() -> ProcResult<HashMap<String, i64>> {
 ///
 /// For an example, see the [lsmod.rs](https://github.com/eminence/procfs/tree/master/examples)
 /// example in the source repo.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KernelModule {
     /// The name of the module
     pub name: String,
@@ -1090,6 +1090,19 @@ pub fn modules() -> ProcResult<HashMap<String, KernelModule>> {
     Ok(map)
 }
 
+/// Get a list of the arguments passed to the Linux kernel at boot time
+///
+/// This corresponds to the data in `/proc/cmdline`
+pub fn cmdline() -> ProcResult<Vec<String>> {
+    let mut buf = String::new();
+    let mut f = FileWrapper::open("/proc/cmdline")?;
+    f.read_to_string(&mut buf)?;
+    Ok(buf
+        .split(' ')
+        .filter_map(|s| if !s.is_empty() { Some(s.to_string()) } else { None })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1112,6 +1125,11 @@ mod tests {
         assert_eq!(k.major, 4);
         assert_eq!(k.minor, 9);
         assert_eq!(k.patch, 16);
+
+        let k = KernelVersion::from_str("4.9.266-0.1.ac.225.84.332.metal1.x86_64").unwrap();
+        assert_eq!(k.major, 4);
+        assert_eq!(k.minor, 9);
+        assert_eq!(k.patch, 266);
     }
 
     #[test]
@@ -1300,5 +1318,14 @@ mod tests {
     fn tests_tps() {
         let tps = ticks_per_second().unwrap();
         println!("{} ticks per second", tps);
+    }
+
+    #[test]
+    fn test_cmdline() {
+        let cmdline = cmdline().unwrap();
+
+        for argument in cmdline {
+            println!("{}", argument);
+        }
     }
 }

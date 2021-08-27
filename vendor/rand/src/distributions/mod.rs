@@ -93,163 +93,43 @@
 //! [`rand_distr`]: https://crates.io/crates/rand_distr
 //! [`statrs`]: https://crates.io/crates/statrs
 
-use crate::Rng;
-use core::iter;
-
-pub use self::bernoulli::{Bernoulli, BernoulliError};
-pub use self::float::{Open01, OpenClosed01};
-pub use self::other::Alphanumeric;
-#[doc(inline)] pub use self::uniform::Uniform;
-
-#[cfg(feature = "alloc")]
-pub use self::weighted_index::{WeightedError, WeightedIndex};
-
 mod bernoulli;
-pub mod uniform;
-
-#[deprecated(since = "0.8.0", note = "use rand::distributions::{WeightedIndex, WeightedError} instead")]
-#[cfg(feature = "alloc")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "alloc")))]
-pub mod weighted;
-#[cfg(feature = "alloc")] mod weighted_index;
-
-#[cfg(feature = "serde1")]
-use serde::{Serialize, Deserialize};
-
+mod distribution;
 mod float;
+mod integer;
+mod other;
+mod slice;
+mod utils;
+#[cfg(feature = "alloc")]
+mod weighted_index;
+
 #[doc(hidden)]
 pub mod hidden_export {
     pub use super::float::IntoFloat; // used by rand_distr
 }
-mod integer;
-mod other;
-mod utils;
+pub mod uniform;
+#[deprecated(
+    since = "0.8.0",
+    note = "use rand::distributions::{WeightedIndex, WeightedError} instead"
+)]
+#[cfg(feature = "alloc")]
+#[cfg_attr(doc_cfg, doc(cfg(feature = "alloc")))]
+pub mod weighted;
 
-/// Types (distributions) that can be used to create a random instance of `T`.
-///
-/// It is possible to sample from a distribution through both the
-/// `Distribution` and [`Rng`] traits, via `distr.sample(&mut rng)` and
-/// `rng.sample(distr)`. They also both offer the [`sample_iter`] method, which
-/// produces an iterator that samples from the distribution.
-///
-/// All implementations are expected to be immutable; this has the significant
-/// advantage of not needing to consider thread safety, and for most
-/// distributions efficient state-less sampling algorithms are available.
-///
-/// Implementations are typically expected to be portable with reproducible
-/// results when used with a PRNG with fixed seed; see the
-/// [portability chapter](https://rust-random.github.io/book/portability.html)
-/// of The Rust Rand Book. In some cases this does not apply, e.g. the `usize`
-/// type requires different sampling on 32-bit and 64-bit machines.
-///
-/// [`sample_iter`]: Distribution::method.sample_iter
-pub trait Distribution<T> {
-    /// Generate a random value of `T`, using `rng` as the source of randomness.
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> T;
+pub use self::bernoulli::{Bernoulli, BernoulliError};
+pub use self::distribution::{Distribution, DistIter, DistMap};
+#[cfg(feature = "alloc")]
+pub use self::distribution::DistString;
+pub use self::float::{Open01, OpenClosed01};
+pub use self::other::Alphanumeric;
+pub use self::slice::Slice;
+#[doc(inline)]
+pub use self::uniform::Uniform;
+#[cfg(feature = "alloc")]
+pub use self::weighted_index::{WeightedError, WeightedIndex};
 
-    /// Create an iterator that generates random values of `T`, using `rng` as
-    /// the source of randomness.
-    ///
-    /// Note that this function takes `self` by value. This works since
-    /// `Distribution<T>` is impl'd for `&D` where `D: Distribution<T>`,
-    /// however borrowing is not automatic hence `distr.sample_iter(...)` may
-    /// need to be replaced with `(&distr).sample_iter(...)` to borrow or
-    /// `(&*distr).sample_iter(...)` to reborrow an existing reference.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use rand::thread_rng;
-    /// use rand::distributions::{Distribution, Alphanumeric, Uniform, Standard};
-    ///
-    /// let mut rng = thread_rng();
-    ///
-    /// // Vec of 16 x f32:
-    /// let v: Vec<f32> = Standard.sample_iter(&mut rng).take(16).collect();
-    ///
-    /// // String:
-    /// let s: String = Alphanumeric
-    ///     .sample_iter(&mut rng)
-    ///     .take(7)
-    ///     .map(char::from)
-    ///     .collect();
-    ///
-    /// // Dice-rolling:
-    /// let die_range = Uniform::new_inclusive(1, 6);
-    /// let mut roll_die = die_range.sample_iter(&mut rng);
-    /// while roll_die.next().unwrap() != 6 {
-    ///     println!("Not a 6; rolling again!");
-    /// }
-    /// ```
-    fn sample_iter<R>(self, rng: R) -> DistIter<Self, R, T>
-    where
-        R: Rng,
-        Self: Sized,
-    {
-        DistIter {
-            distr: self,
-            rng,
-            phantom: ::core::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, T, D: Distribution<T>> Distribution<T> for &'a D {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> T {
-        (*self).sample(rng)
-    }
-}
-
-
-/// An iterator that generates random values of `T` with distribution `D`,
-/// using `R` as the source of randomness.
-///
-/// This `struct` is created by the [`sample_iter`] method on [`Distribution`].
-/// See its documentation for more.
-///
-/// [`sample_iter`]: Distribution::sample_iter
-#[derive(Debug)]
-pub struct DistIter<D, R, T> {
-    distr: D,
-    rng: R,
-    phantom: ::core::marker::PhantomData<T>,
-}
-
-impl<D, R, T> Iterator for DistIter<D, R, T>
-where
-    D: Distribution<T>,
-    R: Rng,
-{
-    type Item = T;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<T> {
-        // Here, self.rng may be a reference, but we must take &mut anyway.
-        // Even if sample could take an R: Rng by value, we would need to do this
-        // since Rng is not copyable and we cannot enforce that this is "reborrowable".
-        Some(self.distr.sample(&mut self.rng))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (usize::max_value(), None)
-    }
-}
-
-impl<D, R, T> iter::FusedIterator for DistIter<D, R, T>
-where
-    D: Distribution<T>,
-    R: Rng,
-{
-}
-
-#[cfg(features = "nightly")]
-impl<D, R, T> iter::TrustedLen for DistIter<D, R, T>
-where
-    D: Distribution<T>,
-    R: Rng,
-{
-}
-
+#[allow(unused)]
+use crate::Rng;
 
 /// A generic random value distribution, implemented for many primitive types.
 /// Usually generates values with a numerically uniform distribution, and with a
@@ -279,6 +159,12 @@ where
 /// *   Arrays (up to 32 elements): each element is generated sequentially;
 ///     see also [`Rng::fill`] which supports arbitrary array length for integer
 ///     types and tends to be faster for `u32` and smaller types.
+///     When using `rustc` ≥ 1.51, enable the `min_const_gen` feature to support
+///     arrays larger than 32 elements.
+///     Note that [`Rng::fill`] and `Standard`'s array support are *not* equivalent:
+///     the former is optimised for integer types (using fewer RNG calls for
+///     element types smaller than the RNG word size), while the latter supports
+///     any element type supported by `Standard`.
 /// *   `Option<T>` first generates a `bool`, and if true generates and returns
 ///     `Some(value)` where `value: T`, otherwise returning `None`.
 ///
@@ -328,45 +214,5 @@ where
 ///
 /// [`Uniform`]: uniform::Uniform
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Standard;
-
-
-#[cfg(test)]
-mod tests {
-    use super::{Distribution, Uniform};
-    use crate::Rng;
-
-    #[test]
-    fn test_distributions_iter() {
-        use crate::distributions::Open01;
-        let mut rng = crate::test::rng(210);
-        let distr = Open01;
-        let mut iter = Distribution::<f32>::sample_iter(distr, &mut rng);
-        let mut sum: f32 = 0.;
-        for _ in 0..100 {
-            sum += iter.next().unwrap();
-        }
-        assert!(0. < sum && sum < 100.);
-    }
-
-    #[test]
-    fn test_make_an_iter() {
-        fn ten_dice_rolls_other_than_five<'a, R: Rng>(
-            rng: &'a mut R,
-        ) -> impl Iterator<Item = i32> + 'a {
-            Uniform::new_inclusive(1, 6)
-                .sample_iter(rng)
-                .filter(|x| *x != 5)
-                .take(10)
-        }
-
-        let mut rng = crate::test::rng(211);
-        let mut count = 0;
-        for val in ten_dice_rolls_other_than_five(&mut rng) {
-            assert!(val >= 1 && val <= 6 && val != 5);
-            count += 1;
-        }
-        assert_eq!(count, 10);
-    }
-}

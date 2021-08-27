@@ -24,7 +24,7 @@ use super::{convert_to_kibibytes, FileWrapper, ProcResult};
 /// programs rely on /proc/meminfo to specify size with the "kB" string.
 ///
 /// New fields to this struct may be added at any time (even without a major or minor semver bump).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(non_snake_case)]
 pub struct Meminfo {
     // this private field prevents clients from directly constructing this object.
@@ -286,7 +286,8 @@ impl Meminfo {
         Meminfo::from_reader(f)
     }
 
-    fn from_reader<R: io::Read>(r: R) -> ProcResult<Meminfo> {
+    /// Get Meminfo from a custom Read instead of the default `/proc/meminfo`.
+    pub fn from_reader<R: io::Read>(r: R) -> ProcResult<Meminfo> {
         use std::collections::HashMap;
         use std::io::{BufRead, BufReader};
 

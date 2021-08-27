@@ -13,9 +13,9 @@
 [package]
 edition = "2018"
 name = "tera"
-version = "1.11.0"
+version = "1.12.1"
 authors = ["Vincent Prouillet <hello@prouilletvincent.com>"]
-include = ["src/**/*", "LICENSE", "README.md", "CHANGELOG.md"]
+include = ["/src/**/*", "/LICENSE", "/README.md", "/CHANGELOG.md"]
 description = "Template engine based on Jinja2/Django templates"
 homepage = "https://tera.netlify.com/"
 readme = "README.md"
@@ -25,7 +25,9 @@ license = "MIT"
 repository = "https://github.com/Keats/tera"
 [dependencies.chrono]
 version = "0.4.1"
+features = ["std", "clock"]
 optional = true
+default-features = false
 
 [dependencies.chrono-tz]
 version = "0.5"

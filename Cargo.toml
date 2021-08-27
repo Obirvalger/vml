@@ -11,13 +11,13 @@ byte-unit = { version = "4.0.12", default-features = false, features = ["serde",
 clap = "3.0.0-beta.4"
 clap_generate = "3.0.0-beta.4"
 json = "0.12.4"
-procfs = "0.9.1"
-rand = "0.8.3"
-reqwest = { version = "0.11.3", features = ["blocking"] }
+procfs = "0.10.1"
+rand = "0.8.4"
+reqwest = { version = "0.11.4", features = ["blocking"] }
 rust-embed = "6.0.1"
-serde = { version = "1.0.126", features = ["derive"] }
+serde = { version = "1.0.129", features = ["derive"] }
 shellexpand = "2.1.0"
 tempfile = "3.2.0"
-tera = "1.10.0"
+tera = "1.12.1"
 toml = "0.5.8"
 walkdir = "2.3.2"
