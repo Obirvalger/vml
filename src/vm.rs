@@ -104,6 +104,7 @@ pub struct VM {
     name_path: PathBuf,
     names: Vec<String>,
     net: Option<Net>,
+    nic_model: String,
     nproc: String,
     specified_by: SpecifiedBy,
     pid: Option<i32>,
@@ -165,6 +166,8 @@ impl VM {
         let minimum_disk_size =
             vm_config.minimum_disk_size.or_else(|| config.default.minimum_disk_size.to_owned());
         let minimum_disk_size = minimum_disk_size.map(|s| s.get_bytes());
+        let nic_model =
+            vm_config.nic_model.unwrap_or_else(|| config.default.nic_model.to_string());
         let nproc = vm_config.nproc.unwrap_or_else(|| config.default.nproc.to_owned()).to_string();
         let tags = vm_config.tags.unwrap_or_else(HashSet::new);
 
@@ -199,6 +202,7 @@ impl VM {
             names,
             net,
             pid: None,
+            nic_model,
             nproc,
             specified_by,
             ssh,
@@ -272,7 +276,7 @@ impl VM {
                         let port =
                             if port == "random" { get_available_port().unwrap() } else { port };
                         self.cache.store("port", &port)?;
-                        format!(",hostfwd=tcp:{}:{}-:22", host, port)
+                        format!(",hostfwd=tcp:{}:{}-:22,model={}", host, port, &self.nic_model)
                     } else {
                         "".to_string()
                     };
@@ -286,7 +290,13 @@ impl VM {
                     context.insert("nameservers", &nameservers);
                     let mac = get_random_mac();
                     context.insert("mac", &mac);
-                    kvm.args(&["-nic", &format!("tap,ifname={},script=no,mac={}", tap, mac)]);
+                    kvm.args(&[
+                        "-nic",
+                        &format!(
+                            "tap,ifname={},script=no,mac={},model={}",
+                            tap, mac, &self.nic_model
+                        ),
+                    ]);
                 }
             }
         }

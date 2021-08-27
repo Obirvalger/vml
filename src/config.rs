@@ -17,12 +17,18 @@ pub struct VMsDefault {
     pub memory: String,
     pub display: Option<String>,
     pub net: ConfigNet,
+    #[serde(default = "default_nic_model")]
+    pub nic_model: String,
     pub nproc: StringOrUint,
     #[serde(default)]
     pub ssh: ConfigSsh,
     pub minimum_disk_size: Option<Byte>,
     pub cloud_init: bool,
     pub cloud_init_image: Option<PathBuf>,
+}
+
+fn default_nic_model() -> String {
+    "virtio-net-pci".to_string()
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]

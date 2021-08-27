@@ -23,6 +23,7 @@ pub struct VMConfig {
     pub memory: Option<String>,
     pub minimum_disk_size: Option<Byte>,
     pub net: Option<ConfigNet>,
+    pub nic_model: Option<String>,
     pub nproc: Option<StringOrUint>,
     pub ssh: Option<ConfigSsh>,
     pub tags: Option<HashSet<String>>,
@@ -73,6 +74,7 @@ impl VMConfig {
             ref mut memory,
             ref mut minimum_disk_size,
             ref mut net,
+            ref mut nic_model,
             ref mut nproc,
             ref mut ssh,
             ref mut tags,
@@ -109,6 +111,9 @@ impl VMConfig {
                     *net = other_net.updated(net)
                 }
             }
+        }
+        if nic_model.is_none() {
+            *nic_model = other.nic_model.to_owned();
         }
         if nproc.is_none() {
             *nproc = other.nproc.to_owned();
