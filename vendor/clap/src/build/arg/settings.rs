@@ -8,25 +8,28 @@ bitflags! {
     struct Flags: u32 {
         const REQUIRED         = 1;
         const MULTIPLE_OCC     = 1 << 1;
-        const EMPTY_VALS       = 1 << 2 | Self::TAKES_VAL.bits;
+        const NO_EMPTY_VALS    = 1 << 2;
         const GLOBAL           = 1 << 3;
         const HIDDEN           = 1 << 4;
         const TAKES_VAL        = 1 << 5;
         const USE_DELIM        = 1 << 6;
         const NEXT_LINE_HELP   = 1 << 7;
         const R_UNLESS_ALL     = 1 << 8;
-        const REQ_DELIM        = 1 << 9 | Self::TAKES_VAL.bits | Self::USE_DELIM.bits;
+        const REQ_DELIM        = 1 << 9;
         const DELIM_NOT_SET    = 1 << 10;
-        const HIDE_POS_VALS    = 1 << 11 | Self::TAKES_VAL.bits;
-        const ALLOW_TAC_VALS   = 1 << 12 | Self::TAKES_VAL.bits;
-        const REQUIRE_EQUALS   = 1 << 13 | Self::TAKES_VAL.bits;
-        const LAST             = 1 << 14 | Self::TAKES_VAL.bits;
-        const HIDE_DEFAULT_VAL = 1 << 15 | Self::TAKES_VAL.bits;
+        const HIDE_POS_VALS    = 1 << 11;
+        const ALLOW_TAC_VALS   = 1 << 12;
+        const REQUIRE_EQUALS   = 1 << 13;
+        const LAST             = 1 << 14;
+        const HIDE_DEFAULT_VAL = 1 << 15;
         const CASE_INSENSITIVE = 1 << 16;
+        #[cfg(feature = "env")]
         const HIDE_ENV_VALS    = 1 << 17;
         const HIDDEN_SHORT_H   = 1 << 18;
         const HIDDEN_LONG_H    = 1 << 19;
-        const MULTIPLE_VALS    = 1 << 20 | Self::TAKES_VAL.bits;
+        const MULTIPLE_VALS    = 1 << 20;
+        #[cfg(feature = "env")]
+        const HIDE_ENV         = 1 << 21;
     }
 }
 
@@ -38,7 +41,7 @@ impl_settings! { ArgSettings, ArgFlags,
     Required("required") => Flags::REQUIRED,
     MultipleOccurrences("multipleoccurrences") => Flags::MULTIPLE_OCC,
     MultipleValues("multiplevalues") => Flags::MULTIPLE_VALS,
-    AllowEmptyValues("allowemptyvalues") => Flags::EMPTY_VALS,
+    ForbidEmptyValues("forbidemptyvalues") => Flags::NO_EMPTY_VALS,
     Hidden("hidden") => Flags::HIDDEN,
     TakesValue("takesvalue") => Flags::TAKES_VAL,
     UseValueDelimiter("usevaluedelimiter") => Flags::USE_DELIM,
@@ -50,6 +53,9 @@ impl_settings! { ArgSettings, ArgFlags,
     RequireEquals("requireequals") => Flags::REQUIRE_EQUALS,
     Last("last") => Flags::LAST,
     IgnoreCase("ignorecase") => Flags::CASE_INSENSITIVE,
+    #[cfg(feature = "env")]
+    HideEnv("hideenv") => Flags::HIDE_ENV,
+    #[cfg(feature = "env")]
     HideEnvValues("hideenvvalues") => Flags::HIDE_ENV_VALS,
     HideDefaultValue("hidedefaultvalue") => Flags::HIDE_DEFAULT_VAL,
     HiddenShortHelp("hiddenshorthelp") => Flags::HIDDEN_SHORT_H,
@@ -66,10 +72,10 @@ impl Default for ArgFlags {
 /// methods [`Arg::setting`], [`Arg::unset_setting`], and [`Arg::is_set`]. This is what the
 /// [`Arg`] methods which accept a `bool` use internally.
 ///
-/// [`Arg`]: ./struct.Arg.html
-/// [`Arg::setting`]: ./struct.Arg.html#method.setting
-/// [`Arg::unset_setting`]: ./struct.Arg.html#method.unset_setting
-/// [`Arg::is_set`]: ./struct.Arg.html#method.is_set
+/// [`Arg`]: crate::Arg
+/// [`Arg::setting`]: crate::Arg::setting()
+/// [`Arg::unset_setting`]: crate::Arg::unset_setting()
+/// [`Arg::is_set`]: crate::Arg::is_set()
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ArgSettings {
     /// Specifies that an arg must be used
@@ -78,8 +84,8 @@ pub enum ArgSettings {
     MultipleValues,
     /// Allows an arg to appear multiple times
     MultipleOccurrences,
-    /// Allows an arg accept empty values such as `""`
-    AllowEmptyValues,
+    /// Forbids an arg from accepting empty values such as `""`
+    ForbidEmptyValues,
     /// Hides an arg from the help message
     Hidden,
     /// Allows an argument to take a value (such as `--option value`)
@@ -104,8 +110,12 @@ pub enum ArgSettings {
     HideDefaultValue,
     /// Possible values become case insensitive
     IgnoreCase,
+    /// Hides environment variable arguments from the help message
+    #[cfg(feature = "env")]
+    HideEnv,
     /// Hides any values currently assigned to ENV variables in the help message (good for sensitive
     /// information)
+    #[cfg(feature = "env")]
     HideEnvValues,
     /// The argument should **not** be shown in short help text
     HiddenShortHelp,
@@ -126,8 +136,8 @@ mod test {
             ArgSettings::AllowHyphenValues
         );
         assert_eq!(
-            "allowemptyvalues".parse::<ArgSettings>().unwrap(),
-            ArgSettings::AllowEmptyValues
+            "forbidemptyvalues".parse::<ArgSettings>().unwrap(),
+            ArgSettings::ForbidEmptyValues
         );
         assert_eq!(
             "hidepossiblevalues".parse::<ArgSettings>().unwrap(),
@@ -174,6 +184,12 @@ mod test {
             "ignorecase".parse::<ArgSettings>().unwrap(),
             ArgSettings::IgnoreCase
         );
+        #[cfg(feature = "env")]
+        assert_eq!(
+            "hideenv".parse::<ArgSettings>().unwrap(),
+            ArgSettings::HideEnv
+        );
+        #[cfg(feature = "env")]
         assert_eq!(
             "hideenvvalues".parse::<ArgSettings>().unwrap(),
             ArgSettings::HideEnvValues

@@ -8,10 +8,14 @@ use std::path::Path;
 use tar::Archive;
 use walkdir::DirEntry;
 
-const REVISION: &str = "52e3dffa50cfffdcfa145c0cc0ba48b49abc0c07";
+const REVISION: &str = "716394d6581b60c75cfdd88b8e5b876f2db88b62";
 
 #[rustfmt::skip]
 static EXCLUDE: &[&str] = &[
+    // Rustc loses some attributes
+    // https://github.com/rust-lang/rust/issues/84879
+    "src/test/ui/proc-macro/issue-81555.rs",
+
     // Compile-fail expr parameter in const generic position: f::<1 + 2>()
     "src/test/ui/const-generics/closing-args-token.rs",
     "src/test/ui/const-generics/const-expression-parameter.rs",
@@ -21,6 +25,9 @@ static EXCLUDE: &[&str] = &[
     "src/test/ui/issues/issue-13775.rs",
     "src/test/ui/issues/issue-34074.rs",
     "src/test/ui/proc-macro/trait-fn-args-2015.rs",
+
+    // Excessive nesting
+    "src/test/ui/issues/issue-74564-if-expr-stack-overflow.rs",
 
     // Not actually test cases
     "src/test/rustdoc-ui/test-compile-fail2.rs",

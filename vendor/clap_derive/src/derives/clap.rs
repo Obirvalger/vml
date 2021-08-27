@@ -13,7 +13,7 @@
 // MIT/Apache 2.0 license.
 
 use crate::{
-    derives::{arg_enum, from_arg_matches, into_app, subcommand},
+    derives::{args, into_app, subcommand},
     dummies,
 };
 
@@ -56,29 +56,25 @@ fn gen_for_struct(
     fields: &Punctuated<Field, Comma>,
     attrs: &[Attribute],
 ) -> TokenStream {
-    let (into_app, attrs) = into_app::gen_for_struct(name, fields, attrs);
-    let from_arg_matches = from_arg_matches::gen_for_struct(name, fields, &attrs);
+    let into_app = into_app::gen_for_struct(name, attrs);
+    let args = args::gen_for_struct(name, fields, attrs);
 
     quote! {
-        impl ::clap::Clap for #name {}
+        impl clap::Clap for #name {}
 
         #into_app
-        #from_arg_matches
+        #args
     }
 }
 
 fn gen_for_enum(name: &Ident, attrs: &[Attribute], e: &DataEnum) -> TokenStream {
-    let into_app = into_app::gen_for_enum(name);
-    let from_arg_matches = from_arg_matches::gen_for_enum(name);
+    let into_app = into_app::gen_for_enum(name, attrs);
     let subcommand = subcommand::gen_for_enum(name, attrs, e);
-    let arg_enum = arg_enum::gen_for_enum(name, attrs, e);
 
     quote! {
-        impl ::clap::Clap for #name {}
+        impl clap::Clap for #name {}
 
         #into_app
-        #from_arg_matches
         #subcommand
-        #arg_enum
     }
 }

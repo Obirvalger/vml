@@ -6,13 +6,13 @@
 //! advantage of internal assumptions.
 //!
 //! These functions should only be passed bytes that can be given to
-//! [`OsStrBytes::from_bytes`] without error. Only valid UTF-8 data or bytes
-//! extracted using this crate are acceptable. Other sequences will not cause
-//! safety issues, but they may result in panics or confusing results, so their
-//! use is unsupported.
+//! [`OsStrBytes::from_raw_bytes`] without error. Only valid UTF-8 data or
+//! bytes extracted using this crate are acceptable. Other sequences will not
+//! cause safety issues, but they may result in panics or confusing results, so
+//! their use is unsupported.
 //!
-//! [limited specification]: ../index.html#encoding
-//! [`OsStrBytes::from_bytes`]: ../trait.OsStrBytes.html#tymethod.from_bytes
+//! [limited specification]: super#encoding
+//! [`OsStrBytes::from_raw_bytes`]: super::OsStrBytes::from_raw_bytes
 
 #![cfg_attr(os_str_bytes_docs_rs, doc(cfg(feature = "raw")))]
 
@@ -39,16 +39,14 @@ use super::imp::raw as imp;
 /// use os_str_bytes::raw;
 ///
 /// let os_string = OsStr::new("bar");
-/// let os_bytes = os_string.to_bytes();
+/// let os_bytes = os_string.to_raw_bytes();
 /// assert!(raw::ends_with("foobar", &os_bytes));
 /// ```
-///
-/// [`slice::ends_with`]: https://doc.rust-lang.org/std/primitive.slice.html#method.ends_with
 #[inline]
 #[must_use]
-pub fn ends_with<TString>(string: &TString, suffix: &[u8]) -> bool
+pub fn ends_with<S>(string: S, suffix: &[u8]) -> bool
 where
-    TString: AsRef<[u8]> + ?Sized,
+    S: AsRef<[u8]>,
 {
     imp::ends_with(string.as_ref(), suffix)
 }
@@ -75,16 +73,14 @@ where
 /// use os_str_bytes::raw;
 ///
 /// let os_string = OsStr::new("foo");
-/// let os_bytes = os_string.to_bytes();
+/// let os_bytes = os_string.to_raw_bytes();
 /// assert!(raw::starts_with("foobar", &os_bytes));
 /// ```
-///
-/// [`slice::starts_with`]: https://doc.rust-lang.org/std/primitive.slice.html#method.starts_with
 #[inline]
 #[must_use]
-pub fn starts_with<TString>(string: &TString, prefix: &[u8]) -> bool
+pub fn starts_with<S>(string: S, prefix: &[u8]) -> bool
 where
-    TString: AsRef<[u8]> + ?Sized,
+    S: AsRef<[u8]>,
 {
     imp::starts_with(string.as_ref(), prefix)
 }

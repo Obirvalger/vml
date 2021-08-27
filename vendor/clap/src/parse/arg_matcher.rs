@@ -8,6 +8,9 @@ use crate::{
     util::Id,
 };
 
+// Third party
+use indexmap::map::Entry;
+
 #[derive(Debug)]
 pub(crate) struct ArgMatcher(pub(crate) ArgMatches);
 
@@ -86,10 +89,6 @@ impl ArgMatcher {
         self.0.args.swap_remove(arg);
     }
 
-    pub(crate) fn insert(&mut self, name: &Id) {
-        self.0.args.insert(name.clone(), MatchedArg::new());
-    }
-
     pub(crate) fn contains(&self, arg: &Id) -> bool {
         self.0.args.contains_key(arg)
     }
@@ -118,49 +117,66 @@ impl ArgMatcher {
         self.0.args.iter()
     }
 
-    pub(crate) fn inc_occurrence_of(&mut self, arg: &Id) {
+    pub(crate) fn inc_occurrence_of(&mut self, arg: &Id, ci: bool) {
         debug!("ArgMatcher::inc_occurrence_of: arg={:?}", arg);
-        if let Some(a) = self.get_mut(arg) {
-            a.occurs += 1;
-            return;
-        }
-        debug!("ArgMatcher::inc_occurrence_of: first instance");
-        self.insert(arg);
+        let ma = self.entry(arg).or_insert(MatchedArg::new());
+        ma.set_ty(ValueType::CommandLine);
+        ma.set_case_insensitive(ci);
+        ma.occurs += 1;
     }
 
-    pub(crate) fn add_val_to(&mut self, arg: &Id, val: OsString, ty: ValueType) {
-        let ma = self.entry(arg).or_insert(MatchedArg {
-            occurs: 0, // @TODO @question Shouldn't this be 1 if we're already adding a value to this arg?
-            ty,
-            indices: Vec::with_capacity(1),
-            vals: Vec::with_capacity(1),
-        });
-        ma.vals.push(val);
+    pub(crate) fn add_val_to(&mut self, arg: &Id, val: OsString, ty: ValueType, append: bool) {
+        if append {
+            self.append_val_to(arg, val, ty);
+        } else {
+            self.push_val_to(arg, val, ty);
+        }
+    }
+
+    pub(crate) fn push_val_to(&mut self, arg: &Id, val: OsString, ty: ValueType) {
+        // We will manually inc occurrences later(for flexibility under
+        // specific circumstances, like only add one occurrence for flag
+        // when we met: `--flag=one,two`).
+        let ma = self.entry(arg).or_default();
+        ma.set_ty(ty);
+        ma.push_val(val);
+    }
+
+    pub(crate) fn new_val_group(&mut self, arg: &Id) {
+        let ma = self.entry(arg).or_default();
+        ma.new_val_group();
+    }
+
+    pub(crate) fn append_val_to(&mut self, arg: &Id, val: OsString, ty: ValueType) {
+        let ma = self.entry(arg).or_default();
+        ma.set_ty(ty);
+        ma.append_val(val);
     }
 
     pub(crate) fn add_index_to(&mut self, arg: &Id, idx: usize, ty: ValueType) {
-        let ma = self.entry(arg).or_insert(MatchedArg {
-            occurs: 0,
-            indices: Vec::with_capacity(1),
-            vals: Vec::new(),
-            ty,
-        });
-        ma.indices.push(idx);
+        let ma = self.entry(arg).or_default();
+        ma.set_ty(ty);
+        ma.push_index(idx);
+    }
+
+    pub(crate) fn arg_have_val(&mut self, arg: &Id) -> bool {
+        matches!(self.entry(arg), Entry::Occupied(_))
     }
 
     pub(crate) fn needs_more_vals(&self, o: &Arg) -> bool {
         debug!("ArgMatcher::needs_more_vals: o={}", o.name);
         if let Some(ma) = self.get(&o.id) {
+            let current_num = ma.num_vals();
             if let Some(num) = o.num_vals {
                 debug!("ArgMatcher::needs_more_vals: num_vals...{}", num);
-                return if o.is_set(ArgSettings::MultipleValues) {
-                    ((ma.vals.len() as u64) % num) != 0
+                return if o.is_set(ArgSettings::MultipleOccurrences) {
+                    (current_num % num) != 0
                 } else {
-                    num != (ma.vals.len() as u64)
+                    num != current_num
                 };
             } else if let Some(num) = o.max_vals {
                 debug!("ArgMatcher::needs_more_vals: max_vals...{}", num);
-                return (ma.vals.len() as u64) < num;
+                return current_num < num;
             } else if o.min_vals.is_some() {
                 debug!("ArgMatcher::needs_more_vals: min_vals...true");
                 return true;

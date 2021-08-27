@@ -3,21 +3,22 @@
 // (see LICENSE or <http://opensource.org/licenses/MIT>) All files in the project carrying such
 // notice may not be copied, modified, or distributed except according to those terms.
 
-#![cfg_attr(feature = "doc", feature(external_doc))]
-#![doc(html_root_url = "https://docs.rs/clap/3.0.0-beta.2")]
-#![cfg_attr(feature = "doc", doc(include = "../README.md"))]
-//! https://github.com/clap-rs/clap
+#![doc(html_logo_url = "https://clap.rs/images/media/clap.png")]
+#![doc(html_root_url = "https://docs.rs/clap/3.0.0-beta.4")]
+#![doc = include_str!("../README.md")]
+//! <https://github.com/clap-rs/clap>
 #![crate_type = "lib"]
 #![deny(
     missing_docs,
     missing_debug_implementations,
     missing_copy_implementations,
     trivial_casts,
-    unused_import_braces,
     unused_allocation,
     trivial_numeric_casts
 )]
 #![forbid(unsafe_code)]
+// TODO: https://github.com/rust-lang/rust-clippy/issues/7290
+#![allow(clippy::single_component_path_imports)]
 
 #[cfg(not(feature = "std"))]
 compile_error!("`std` feature is currently required to build `clap`");
@@ -29,14 +30,14 @@ pub use crate::{
 };
 
 #[cfg(feature = "derive")]
-pub use crate::derive::{ArgEnum, Clap, FromArgMatches, IntoApp, Subcommand};
+pub use crate::derive::{ArgEnum, Args, Clap, FromArgMatches, IntoApp, Subcommand};
 
 #[cfg(feature = "yaml")]
-#[cfg_attr(feature = "yaml", doc(hidden))]
+#[doc(hidden)]
 pub use yaml_rust::YamlLoader;
 
 #[cfg(feature = "derive")]
-#[cfg_attr(feature = "derive", doc(hidden))]
+#[doc(hidden)]
 pub use clap_derive::{self, *};
 
 #[cfg(any(feature = "derive", feature = "cargo"))]

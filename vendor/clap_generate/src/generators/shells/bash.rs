@@ -146,31 +146,35 @@ fn option_details_for_path(app: &App, path: &str) -> String {
     let p = Bash::find_subcommand_with_path(app, path.split("__").skip(1).collect());
     let mut opts = String::new();
 
-    for o in p.get_opts_with_no_heading() {
-        if let Some(l) = o.get_long() {
-            opts = format!(
-                "{}
+    for o in p.get_opts() {
+        if let Some(longs) = o.get_long_and_visible_aliases() {
+            for long in longs {
+                opts = format!(
+                    "{}
                 --{})
                     COMPREPLY=({})
                     return 0
                     ;;",
-                opts,
-                l,
-                vals_for(o)
-            );
+                    opts,
+                    long,
+                    vals_for(o)
+                );
+            }
         }
 
-        if let Some(s) = o.get_short() {
-            opts = format!(
-                "{}
-                    -{})
+        if let Some(shorts) = o.get_short_and_visible_aliases() {
+            for short in shorts {
+                opts = format!(
+                    "{}
+                -{})
                     COMPREPLY=({})
                     return 0
                     ;;",
-                opts,
-                s,
-                vals_for(o)
-            );
+                    opts,
+                    short,
+                    vals_for(o)
+                );
+            }
         }
     }
 
@@ -180,7 +184,7 @@ fn option_details_for_path(app: &App, path: &str) -> String {
 fn vals_for(o: &Arg) -> String {
     debug!("vals_for: o={}", o.get_name());
 
-    if let Some(ref vals) = o.get_possible_values() {
+    if let Some(vals) = o.get_possible_values() {
         format!("$(compgen -W \"{}\" -- \"${{cur}}\")", vals.join(" "))
     } else {
         String::from("$(compgen -f \"${cur}\")")
@@ -198,7 +202,7 @@ fn all_options_for_path(app: &App, path: &str) -> String {
         shorts = Bash::shorts_and_visible_aliases(p)
             .iter()
             .fold(String::new(), |acc, s| format!("{} -{}", acc, s)),
-        longs = Bash::longs(p)
+        longs = Bash::longs_and_visible_aliases(p)
             .iter()
             .fold(String::new(), |acc, l| format!("{} --{}", acc, l)),
         pos = p

@@ -7,14 +7,9 @@
 
 //! Generates stuff for [`clap`](https://github.com/clap-rs/clap) based CLIs
 
-#![doc(html_root_url = "https://docs.rs/clap_generate/3.0.0-beta.2")]
-#![deny(
-    missing_docs,
-    trivial_casts,
-    unused_import_braces,
-    unused_allocation,
-    trivial_numeric_casts
-)]
+#![doc(html_logo_url = "https://clap.rs/images/media/clap.png")]
+#![doc(html_root_url = "https://docs.rs/clap_generate/3.0.0-beta.4")]
+#![deny(missing_docs, trivial_casts, unused_allocation, trivial_numeric_casts)]
 #![forbid(unsafe_code)]
 #![allow(clippy::needless_doctest_main)]
 
@@ -27,14 +22,19 @@ mod macros;
 
 /// Contains some popular generators
 pub mod generators;
+/// Contains supported shells for auto-completion scripts
+mod shell;
 
 use std::ffi::OsString;
 use std::fs::File;
+use std::io::Error;
 use std::io::Write;
 use std::path::PathBuf;
 
 #[doc(inline)]
 pub use generators::Generator;
+#[doc(inline)]
+pub use shell::Shell;
 
 /// Generate a file for a specified generator at compile time.
 ///
@@ -78,7 +78,7 @@ pub use generators::Generator;
 /// mod cli;
 ///
 /// fn main() {
-///     let m = cli::build_cli().get_matches();
+///     let _m = cli::build_cli().get_matches();
 ///
 ///     // normal logic continues...
 /// }
@@ -90,29 +90,39 @@ pub use generators::Generator;
 /// # Cargo.toml
 /// build = "build.rs"
 ///
+/// [dependencies]
+/// clap = "*"
+///
 /// [build-dependencies]
 /// clap = "*"
+/// clap_generate = "*"
 /// ```
 ///
 /// Next, we place a `build.rs` in our project root.
 ///
 /// ```ignore
 /// use clap_generate::{generate_to, generators::Bash};
+/// use std::env;
+/// use std::io::Error;
 ///
 /// include!("src/cli.rs");
 ///
-/// fn main() {
+/// fn main() -> Result<(), Error> {
 ///     let outdir = match env::var_os("OUT_DIR") {
-///         None => return,
+///         None => return Ok(()),
 ///         Some(outdir) => outdir,
 ///     };
 ///
 ///     let mut app = build_cli();
-///     generate_to::<Bash, _, _>(
-///         &mut app,     // We need to specify what generator to use
-///         "myapp",      // We need to specify the bin name manually
-///         outdir,       // We need to specify where to write to
-///     );
+///     let path = generate_to::<Bash, _, _>(
+///         &mut app, // We need to specify what generator to use
+///         "myapp",  // We need to specify the bin name manually
+///         outdir,   // We need to specify where to write to
+///     )?;
+///
+///     println!("cargo:warning=completion file is generated: {:?}", path);
+///
+///     Ok(())
 /// }
 /// ```
 ///
@@ -120,23 +130,24 @@ pub use generators::Generator;
 /// Assuming we compiled with debug mode, it would be somewhere similar to
 /// `<project>/target/debug/build/myapp-<hash>/out/myapp.bash`.
 ///
-/// **NOTE:** Please look at the individual [generators](./generators/index.html)
+/// **NOTE:** Please look at the individual [generators]
 /// to see the name of the files generated.
-pub fn generate_to<G, S, T>(app: &mut clap::App, bin_name: S, out_dir: T)
+pub fn generate_to<G, S, T>(app: &mut clap::App, bin_name: S, out_dir: T) -> Result<PathBuf, Error>
 where
     G: Generator,
     S: Into<String>,
     T: Into<OsString>,
 {
+    app.set_bin_name(bin_name);
+
     let out_dir = PathBuf::from(out_dir.into());
     let file_name = G::file_name(app.get_bin_name().unwrap());
 
-    let mut file = match File::create(out_dir.join(file_name)) {
-        Err(why) => panic!("couldn't create completion file: {}", why),
-        Ok(file) => file,
-    };
+    let path = out_dir.join(file_name);
+    let mut file = File::create(&path)?;
 
-    generate::<G, S>(app, bin_name, &mut file)
+    _generate::<G, S>(app, &mut file);
+    Ok(path)
 }
 
 /// Generate a completions file for a specified shell at runtime.
@@ -147,7 +158,7 @@ where
 ///
 /// # Examples
 ///
-/// Assuming a separate `cli.rs` like the [example above](./fn.generate_to.html),
+/// Assuming a separate `cli.rs` like the [example above](generate_to()),
 /// we can let users generate a completion script using a command:
 ///
 /// ```ignore
@@ -180,11 +191,17 @@ where
     S: Into<String>,
 {
     app.set_bin_name(bin_name);
+    _generate::<G, S>(app, buf)
+}
 
-    if !app.is_set(clap::AppSettings::Built) {
-        app._build();
-        app._build_bin_names();
-    }
+fn _generate<G, S>(app: &mut clap::App, buf: &mut dyn Write)
+where
+    G: Generator,
+    S: Into<String>,
+{
+    // TODO: All the subcommands need to be built instead of just the top one
+    app._build();
+    app._build_bin_names();
 
     G::generate(app, buf)
 }

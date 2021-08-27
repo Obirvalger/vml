@@ -3,7 +3,7 @@ use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
     fmt::{Debug, Display},
-    iter::{Cloned, Map},
+    iter::{Cloned, Flatten, Map},
     slice::Iter,
     str::FromStr,
 };
@@ -18,7 +18,7 @@ use crate::{
     {Error, INVALID_UTF8},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubCommand {
     pub(crate) id: Id,
     pub(crate) name: String,
@@ -40,7 +40,7 @@ pub(crate) struct SubCommand {
 ///         .takes_value(true))
 ///     .arg(Arg::new("debug")
 ///         .short('d')
-///         .multiple(true))
+///         .multiple_occurrences(true))
 ///     .arg(Arg::new("cfg")
 ///         .short('c')
 ///         .takes_value(true))
@@ -63,7 +63,7 @@ pub(crate) struct SubCommand {
 ///     // Another way to check if an argument was present, or if it occurred multiple times is to
 ///     // use occurrences_of() which returns 0 if an argument isn't found at runtime, or the
 ///     // number of times that it occurred, if it was. To allow an argument to appear more than
-///     // once, you must use the .multiple(true) method, otherwise it will only return 1 or 0.
+///     // once, you must use the .multiple_occurrences(true) method, otherwise it will only return 1 or 0.
 ///     if matches.occurrences_of("debug") > 2 {
 ///         println!("Debug mode is REALLY on, don't be crazy");
 ///     } else {
@@ -71,8 +71,8 @@ pub(crate) struct SubCommand {
 ///     }
 /// }
 /// ```
-/// [`App::get_matches`]: ./struct.App.html#method.get_matches
-#[derive(Debug, Clone)]
+/// [`App::get_matches`]: crate::App::get_matches()
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArgMatches {
     pub(crate) args: IndexMap<Id, MatchedArg>,
     pub(crate) subcommand: Option<Box<SubCommand>>,
@@ -96,6 +96,9 @@ impl ArgMatches {
     /// prefer [`ArgMatches::values_of`] as `ArgMatches::value_of` will only return the *first*
     /// value.
     ///
+    /// *NOTE:* This will always return `Some(value)` if [`default_value`] has been set.
+    /// [`occurrences_of`] can be used to check if a value is present at runtime.
+    ///
     /// # Panics
     ///
     /// This method will [`panic!`] if the value contains invalid UTF-8 code points.
@@ -111,13 +114,14 @@ impl ArgMatches {
     ///
     /// assert_eq!(m.value_of("output"), Some("something"));
     /// ```
-    /// [option]: ./struct.Arg.html#method.takes_value
-    /// [positional]: ./struct.Arg.html#method.index
-    /// [`ArgMatches::values_of`]: ./struct.ArgMatches.html#method.values_of
-    /// [`panic!`]: https://doc.rust-lang.org/std/macro.panic!.html
+    /// [option]: crate::Arg::takes_value()
+    /// [positional]: crate::Arg::index()
+    /// [`ArgMatches::values_of`]: ArgMatches::values_of()
+    /// [`default_value`]: crate::Arg::default_value()
+    /// [`occurrences_of`]: crate::ArgMatches::occurrences_of()
     pub fn value_of<T: Key>(&self, id: T) -> Option<&str> {
         if let Some(arg) = self.args.get(&Id::from(id)) {
-            if let Some(v) = arg.vals.get(0) {
+            if let Some(v) = arg.first() {
                 return Some(v.to_str().expect(INVALID_UTF8));
             }
         }
@@ -130,6 +134,9 @@ impl ArgMatches {
     ///
     /// *NOTE:* If getting a value for an option or positional argument that allows multiples,
     /// prefer [`Arg::values_of_lossy`] as `value_of_lossy()` will only return the *first* value.
+    ///
+    /// *NOTE:* This will always return `Some(value)` if [`default_value`] has been set.
+    /// [`occurrences_of`] can be used to check if a value is present at runtime.
     ///
     /// # Examples
     ///
@@ -146,10 +153,12 @@ impl ArgMatches {
     ///                             OsString::from_vec(vec![b'H', b'i', b' ', 0xe9, b'!'])]);
     /// assert_eq!(&*m.value_of_lossy("arg").unwrap(), "Hi \u{FFFD}!");
     /// ```
-    /// [`Arg::values_of_lossy`]: ./struct.ArgMatches.html#method.values_of_lossy
+    /// [`default_value`]: crate::Arg::default_value()
+    /// [`occurrences_of`]: ArgMatches::occurrences_of()
+    /// [`Arg::values_of_lossy`]: ArgMatches::values_of_lossy()
     pub fn value_of_lossy<T: Key>(&self, id: T) -> Option<Cow<'_, str>> {
         if let Some(arg) = self.args.get(&Id::from(id)) {
-            if let Some(v) = arg.vals.get(0) {
+            if let Some(v) = arg.first() {
                 return Some(v.to_string_lossy());
             }
         }
@@ -166,6 +175,9 @@ impl ArgMatches {
     /// prefer [`ArgMatches::values_of_os`] as `Arg::value_of_os` will only return the *first*
     /// value.
     ///
+    /// *NOTE:* This will always return `Some(value)` if [`default_value`] has been set.
+    /// [`occurrences_of`] can be used to check if a value is present at runtime.
+    ///
     /// # Examples
     ///
     #[cfg_attr(not(unix), doc = " ```ignore")]
@@ -181,12 +193,13 @@ impl ArgMatches {
     ///                             OsString::from_vec(vec![b'H', b'i', b' ', 0xe9, b'!'])]);
     /// assert_eq!(&*m.value_of_os("arg").unwrap().as_bytes(), [b'H', b'i', b' ', 0xe9, b'!']);
     /// ```
-    /// [`String`]: https://doc.rust-lang.org/std/string/struct.String.html
-    /// [`ArgMatches::values_of_os`]: ./struct.ArgMatches.html#method.values_of_os
+    /// [`default_value`]: crate::Arg::default_value()
+    /// [`occurrences_of`]: ArgMatches::occurrences_of()
+    /// [`ArgMatches::values_of_os`]: ArgMatches::values_of_os()
     pub fn value_of_os<T: Key>(&self, id: T) -> Option<&OsStr> {
         self.args
             .get(&Id::from(id))
-            .and_then(|arg| arg.vals.get(0).map(OsString::as_os_str))
+            .and_then(|arg| arg.first().map(OsString::as_os_str))
     }
 
     /// Gets a [`Values`] struct which implements [`Iterator`] for values of a specific argument
@@ -203,7 +216,7 @@ impl ArgMatches {
     /// # use clap::{App, Arg};
     /// let m = App::new("myprog")
     ///     .arg(Arg::new("output")
-    ///         .multiple(true)
+    ///         .multiple_values(true)
     ///         .short('o')
     ///         .takes_value(true))
     ///     .get_matches_from(vec![
@@ -212,19 +225,35 @@ impl ArgMatches {
     /// let vals: Vec<&str> = m.values_of("output").unwrap().collect();
     /// assert_eq!(vals, ["val1", "val2", "val3"]);
     /// ```
-    /// [`Values`]: ./struct.Values.html
-    /// [`Iterator`]: https://doc.rust-lang.org/std/iter/trait.Iterator.html
+    /// [`Iterator`]: std::iter::Iterator
     pub fn values_of<T: Key>(&self, id: T) -> Option<Values> {
         self.args.get(&Id::from(id)).map(|arg| {
             fn to_str_slice(o: &OsString) -> &str {
                 o.to_str().expect(INVALID_UTF8)
             }
-            let to_str_slice: fn(&OsString) -> &str = to_str_slice; // coerce to fn pointer
 
             Values {
-                iter: arg.vals.iter().map(to_str_slice),
+                iter: arg.vals_flatten().map(to_str_slice),
             }
         })
+    }
+
+    /// Placeholder documentation.
+    pub fn grouped_values_of<T: Key>(&self, id: T) -> Option<GroupedValues> {
+        #[allow(clippy::type_complexity)]
+        let arg_values: for<'a> fn(
+            &'a MatchedArg,
+        ) -> Map<
+            Iter<'a, Vec<OsString>>,
+            fn(&Vec<OsString>) -> Vec<&str>,
+        > = |arg| {
+            arg.vals()
+                .map(|g| g.iter().map(|x| x.to_str().expect(INVALID_UTF8)).collect())
+        };
+        self.args
+            .get(&Id::from(id))
+            .map(arg_values)
+            .map(|iter| GroupedValues { iter })
     }
 
     /// Gets the lossy values of a specific argument. If the option wasn't present at runtime
@@ -253,8 +282,7 @@ impl ArgMatches {
     /// ```
     pub fn values_of_lossy<T: Key>(&self, id: T) -> Option<Vec<String>> {
         self.args.get(&Id::from(id)).map(|arg| {
-            arg.vals
-                .iter()
+            arg.vals_flatten()
                 .map(|v| v.to_string_lossy().into_owned())
                 .collect()
         })
@@ -287,18 +315,16 @@ impl ArgMatches {
     /// assert_eq!(itr.next(), Some(OsStr::from_bytes(&[0xe9, b'!'])));
     /// assert_eq!(itr.next(), None);
     /// ```
-    /// [`OsValues`]: ./struct.OsValues.html
-    /// [`Iterator`]: https://doc.rust-lang.org/std/iter/trait.Iterator.html
-    /// [`OsString`]: https://doc.rust-lang.org/std/ffi/struct.OsString.html
-    /// [`String`]: https://doc.rust-lang.org/std/string/struct.String.html
-    pub fn values_of_os<'a, T: Key>(&'a self, id: T) -> Option<OsValues<'a>> {
+    /// [`Iterator`]: std::iter::Iterator
+    /// [`OsString`]: std::ffi::OsString
+    /// [`String`]: std::string::String
+    pub fn values_of_os<T: Key>(&self, id: T) -> Option<OsValues> {
         fn to_str_slice(o: &OsString) -> &OsStr {
-            &*o
+            o
         }
-        let to_str_slice: fn(&'a OsString) -> &'a OsStr = to_str_slice; // coerce to fn pointer
 
         self.args.get(&Id::from(id)).map(|arg| OsValues {
-            iter: arg.vals.iter().map(to_str_slice),
+            iter: arg.vals_flatten().map(to_str_slice),
         })
     }
 
@@ -335,10 +361,9 @@ impl ArgMatches {
     /// let _: u32 = also_len;
     /// ```
     ///
-    /// [`std::str::FromStr`]: https://doc.rust-lang.org/std/str/trait.FromStr.html
-    /// [`ErrorKind`]: enum.ErrorKind.html
-    /// [`ArgMatches::values_of_t`]: ./struct.ArgMatches.html#method.values_of_t
+    /// [`ArgMatches::values_of_t`]: ArgMatches::values_of_t()
     /// [`panic!`]: https://doc.rust-lang.org/std/macro.panic!.html
+    /// [`ErrorKind`]: crate::ErrorKind
     pub fn value_of_t<R>(&self, name: &str) -> Result<R, Error>
     where
         R: FromStr,
@@ -351,7 +376,12 @@ impl ArgMatches {
                     v, name, e
                 );
 
-                Error::value_validation(name.to_string(), v.to_string(), message, ColorChoice::Auto)
+                Error::value_validation(
+                    name.to_string(),
+                    v.to_string(),
+                    message.into(),
+                    ColorChoice::Auto,
+                )
             })
         } else {
             Err(Error::argument_not_found_auto(name.to_string()))
@@ -386,7 +416,6 @@ impl ArgMatches {
     /// let _: u32 = also_len;
     /// ```
     ///
-    /// [`std::str::FromStr`]: https://doc.rust-lang.org/std/str/trait.FromStr.html
     /// [`panic!`]: https://doc.rust-lang.org/std/macro.panic!.html
     pub fn value_of_t_or_exit<R>(&self, name: &str) -> R
     where
@@ -424,7 +453,6 @@ impl ArgMatches {
     /// let _: Vec<u32> = also_len;
     /// ```
     ///
-    /// [`std::str::FromStr`]: https://doc.rust-lang.org/std/str/trait.FromStr.html
     /// [`panic!`]: https://doc.rust-lang.org/std/macro.panic!.html
     pub fn values_of_t<R>(&self, name: &str) -> Result<Vec<R>, Error>
     where
@@ -439,7 +467,7 @@ impl ArgMatches {
                     Error::value_validation(
                         name.to_string(),
                         v.to_string(),
-                        message,
+                        message.into(),
                         ColorChoice::Auto,
                     )
                 })
@@ -478,7 +506,6 @@ impl ArgMatches {
     /// let _: Vec<u32> = also_len;
     /// ```
     ///
-    /// [`std::str::FromStr`]: https://doc.rust-lang.org/std/str/trait.FromStr.html
     /// [`panic!`]: https://doc.rust-lang.org/std/macro.panic!.html
     pub fn values_of_t_or_exit<R>(&self, name: &str) -> Vec<R>
     where
@@ -489,6 +516,9 @@ impl ArgMatches {
     }
 
     /// Returns `true` if an argument was present at runtime, otherwise `false`.
+    ///
+    /// *NOTE:* This will always return `true` if [`default_value`] has been set.
+    /// [`occurrences_of`] can be used to check if a value is present at runtime.
     ///
     /// # Examples
     ///
@@ -503,14 +533,11 @@ impl ArgMatches {
     ///
     /// assert!(m.is_present("debug"));
     /// ```
+    ///
+    /// [`default_value`]: crate::Arg::default_value()
+    /// [`occurrences_of`]: ArgMatches::occurrences_of()
     pub fn is_present<T: Key>(&self, id: T) -> bool {
         let id = Id::from(id);
-
-        if let Some(ref sc) = self.subcommand {
-            if sc.id == id {
-                return true;
-            }
-        }
         self.args.contains_key(&id)
     }
 
@@ -654,8 +681,7 @@ impl ArgMatches {
     ///         .short('z'))
     ///     .arg(Arg::new("option")
     ///         .short('o')
-    ///         .takes_value(true)
-    ///         .multiple(true))
+    ///         .takes_value(true))
     ///     .get_matches_from(vec!["myapp", "-fzFoval"]);
     ///             // ARGV idices: ^0       ^1
     ///             // clap idices:          ^1,2,3^5
@@ -675,8 +701,8 @@ impl ArgMatches {
     /// let m = App::new("myapp")
     ///     .arg(Arg::new("option")
     ///         .short('o')
-    ///         .takes_value(true)
-    ///         .multiple(true))
+    ///         .use_delimiter(true)
+    ///         .multiple_values(true))
     ///     .get_matches_from(vec!["myapp", "-o=val1,val2,val3"]);
     ///             // ARGV idices: ^0       ^1
     ///             // clap idices:             ^2   ^3   ^4
@@ -684,13 +710,13 @@ impl ArgMatches {
     ///             // clap sees the above as 'myapp -o val1 val2 val3'
     ///             //                         ^0    ^1 ^2   ^3   ^4
     /// assert_eq!(m.index_of("option"), Some(2));
+    /// assert_eq!(m.indices_of("option").unwrap().collect::<Vec<_>>(), &[2, 3, 4]);
     /// ```
-    /// [`ArgMatches`]: ./struct.ArgMatches.html
-    /// [delimiter]: ./struct.Arg.html#method.value_delimiter
+    /// [delimiter]: crate::Arg::value_delimiter()
     pub fn index_of<T: Key>(&self, name: T) -> Option<usize> {
         if let Some(arg) = self.args.get(&Id::from(name)) {
-            if let Some(i) = arg.indices.get(0) {
-                return Some(*i);
+            if let Some(i) = arg.get_index(0) {
+                return Some(i);
             }
         }
         None
@@ -714,9 +740,8 @@ impl ArgMatches {
     /// let m = App::new("myapp")
     ///     .arg(Arg::new("option")
     ///         .short('o')
-    ///         .takes_value(true)
     ///         .use_delimiter(true)
-    ///         .multiple(true))
+    ///         .multiple_values(true))
     ///     .get_matches_from(vec!["myapp", "-o=val1,val2,val3"]);
     ///             // ARGV idices: ^0       ^1
     ///             // clap idices:             ^2   ^3   ^4
@@ -734,7 +759,7 @@ impl ArgMatches {
     ///     .arg(Arg::new("option")
     ///         .short('o')
     ///         .takes_value(true)
-    ///         .multiple(true))
+    ///         .multiple_occurrences(true))
     ///     .arg(Arg::new("flag")
     ///         .short('f')
     ///         .multiple_occurrences(true))
@@ -757,7 +782,7 @@ impl ArgMatches {
     ///     .arg(Arg::new("option")
     ///         .short('o')
     ///         .takes_value(true)
-    ///         .multiple(true))
+    ///         .multiple_values(true))
     ///     .get_matches_from(vec!["myapp", "-o=val1,val2,val3"]);
     ///             // ARGV idices: ^0       ^1
     ///             // clap idices:             ^2
@@ -766,12 +791,11 @@ impl ArgMatches {
     ///             //                         ^0    ^1  ^2
     /// assert_eq!(m.indices_of("option").unwrap().collect::<Vec<_>>(), &[2]);
     /// ```
-    /// [`ArgMatches`]: ./struct.ArgMatches.html
-    /// [`ArgMatches::index_of`]: ./struct.ArgMatches.html#method.index_of
-    /// [delimiter]: ./struct.Arg.html#method.value_delimiter
+    /// [`ArgMatches::index_of`]: ArgMatches::index_of()
+    /// [delimiter]: Arg::value_delimiter()
     pub fn indices_of<T: Key>(&self, id: T) -> Option<Indices<'_>> {
         self.args.get(&Id::from(id)).map(|arg| Indices {
-            iter: arg.indices.iter().cloned(),
+            iter: arg.indices(),
         })
     }
 
@@ -803,9 +827,9 @@ impl ArgMatches {
     ///     assert_eq!(sub_m.value_of("opt"), Some("val"));
     /// }
     /// ```
-    /// [`Subcommand`]: ./struct..html
-    /// [`App`]: ./struct.App.html
-    /// [`ArgMatches`]: ./struct.ArgMatches.html
+    ///
+    /// [`Subcommand`]: crate::Subcommand
+    /// [`App`]: crate::App
     pub fn subcommand_matches<T: Key>(&self, id: T) -> Option<&ArgMatches> {
         if let Some(ref s) = self.subcommand {
             if s.id == id.into() {
@@ -870,9 +894,8 @@ impl ArgMatches {
     ///     _              => {}, // Either no subcommand or one not tested for...
     /// }
     /// ```
-    /// [`Subcommand`]: ./struct..html
-    /// [`App`]: ./struct.App.html
-    /// [`ArgMatches`]: ./struct.ArgMatches.html
+    /// [`Subcommand`]: crate::Subcommand
+    /// [`App`]: crate::App
     #[inline]
     pub fn subcommand_name(&self) -> Option<&str> {
         self.subcommand.as_ref().map(|sc| &*sc.name)
@@ -923,8 +946,8 @@ impl ArgMatches {
     ///     _ => {},
     /// }
     /// ```
-    /// [`ArgMatches::subcommand_matches`]: ./struct.ArgMatches.html#method.subcommand_matches
-    /// [`ArgMatches::subcommand_name`]: ./struct.ArgMatches.html#method.subcommand_name
+    /// [`ArgMatches::subcommand_matches`]: ArgMatches::subcommand_matches()
+    /// [`ArgMatches::subcommand_name`]: ArgMatches::subcommand_name()
     #[inline]
     pub fn subcommand(&self) -> Option<(&str, &ArgMatches)> {
         self.subcommand.as_ref().map(|sc| (&*sc.name, &sc.matches))
@@ -946,7 +969,7 @@ impl ArgMatches {
 /// let m = App::new("myapp")
 ///     .arg(Arg::new("output")
 ///         .short('o')
-///         .multiple(true)
+///         .multiple_values(true)
 ///         .takes_value(true))
 ///     .get_matches_from(vec!["myapp", "-o", "val1", "val2"]);
 ///
@@ -956,11 +979,12 @@ impl ArgMatches {
 /// assert_eq!(values.next(), Some("val2"));
 /// assert_eq!(values.next(), None);
 /// ```
-/// [`ArgMatches::values_of`]: ./struct.ArgMatches.html#method.values_of
+/// [`ArgMatches::values_of`]: ArgMatches::values_of()
 #[derive(Clone)]
 #[allow(missing_debug_implementations)]
 pub struct Values<'a> {
-    iter: Map<Iter<'a, OsString>, fn(&'a OsString) -> &'a str>,
+    #[allow(clippy::type_complexity)]
+    iter: Map<Flatten<Iter<'a, Vec<OsString>>>, for<'r> fn(&'r OsString) -> &'r str>,
 }
 
 impl<'a> Iterator for Values<'a> {
@@ -985,13 +1009,45 @@ impl<'a> ExactSizeIterator for Values<'a> {}
 /// Creates an empty iterator.
 impl<'a> Default for Values<'a> {
     fn default() -> Self {
-        static EMPTY: [OsString; 0] = [];
-        // This is never called because the iterator is empty:
-        fn to_str_slice(_: &OsString) -> &str {
-            unreachable!()
-        };
+        static EMPTY: [Vec<OsString>; 0] = [];
         Values {
-            iter: EMPTY[..].iter().map(to_str_slice),
+            iter: EMPTY[..].iter().flatten().map(|_| unreachable!()),
+        }
+    }
+}
+
+#[derive(Clone)]
+#[allow(missing_debug_implementations)]
+pub struct GroupedValues<'a> {
+    #[allow(clippy::type_complexity)]
+    iter: Map<Iter<'a, Vec<OsString>>, fn(&Vec<OsString>) -> Vec<&str>>,
+}
+
+impl<'a> Iterator for GroupedValues<'a> {
+    type Item = Vec<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+impl<'a> DoubleEndedIterator for GroupedValues<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back()
+    }
+}
+
+impl<'a> ExactSizeIterator for GroupedValues<'a> {}
+
+/// Creates an empty iterator. Used for `unwrap_or_default()`.
+impl<'a> Default for GroupedValues<'a> {
+    fn default() -> Self {
+        static EMPTY: [Vec<OsString>; 0] = [];
+        GroupedValues {
+            iter: EMPTY[..].iter().map(|_| unreachable!()),
         }
     }
 }
@@ -1015,12 +1071,12 @@ impl<'a> Default for Values<'a> {
 ///                             OsString::from_vec(vec![b'H', b'i', b' ', 0xe9, b'!'])]);
 /// assert_eq!(&*m.value_of_os("arg").unwrap().as_bytes(), [b'H', b'i', b' ', 0xe9, b'!']);
 /// ```
-/// [`ArgMatches::values_of_os`]: ./struct.ArgMatches.html#method.values_of_os
-/// [`Values`]: ./struct.Values.html
+/// [`ArgMatches::values_of_os`]: ArgMatches::values_of_os()
 #[derive(Clone)]
 #[allow(missing_debug_implementations)]
 pub struct OsValues<'a> {
-    iter: Map<Iter<'a, OsString>, fn(&'a OsString) -> &'a OsStr>,
+    #[allow(clippy::type_complexity)]
+    iter: Map<Flatten<Iter<'a, Vec<OsString>>>, fn(&OsString) -> &OsStr>,
 }
 
 impl<'a> Iterator for OsValues<'a> {
@@ -1045,13 +1101,9 @@ impl<'a> ExactSizeIterator for OsValues<'a> {}
 /// Creates an empty iterator.
 impl Default for OsValues<'_> {
     fn default() -> Self {
-        static EMPTY: [OsString; 0] = [];
-        // This is never called because the iterator is empty:
-        fn to_str_slice(_: &OsString) -> &OsStr {
-            unreachable!()
-        };
+        static EMPTY: [Vec<OsString>; 0] = [];
         OsValues {
-            iter: EMPTY[..].iter().map(to_str_slice),
+            iter: EMPTY[..].iter().flatten().map(|_| unreachable!()),
         }
     }
 }
@@ -1066,7 +1118,7 @@ impl Default for OsValues<'_> {
 /// let m = App::new("myapp")
 ///     .arg(Arg::new("output")
 ///         .short('o')
-///         .multiple(true)
+///         .multiple_values(true)
 ///         .takes_value(true))
 ///     .get_matches_from(vec!["myapp", "-o", "val1", "val2"]);
 ///
@@ -1076,7 +1128,7 @@ impl Default for OsValues<'_> {
 /// assert_eq!(indices.next(), Some(3));
 /// assert_eq!(indices.next(), None);
 /// ```
-/// [`ArgMatches::indices_of`]: ./struct.ArgMatches.html#method.indices_of
+/// [`ArgMatches::indices_of`]: ArgMatches::indices_of()
 #[derive(Clone)]
 #[allow(missing_debug_implementations)]
 pub struct Indices<'a> {

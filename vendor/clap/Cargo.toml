@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "clap"
-version = "3.0.0-beta.2"
+version = "3.0.0-beta.4"
 authors = ["Kevin K. <kbknapp@gmail.com>", "Clap Maintainers"]
 include = ["src/**/*", "Cargo.toml", "README.md"]
 description = "A simple to use, efficient, and full-featured Command Line Argument Parser"
@@ -25,7 +25,7 @@ categories = ["command-line-interface"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/clap-rs/clap"
 [package.metadata.docs.rs]
-features = ["doc"]
+features = ["yaml", "regex"]
 targets = ["x86_64-unknown-linux-gnu"]
 [profile.bench]
 lto = true
@@ -74,7 +74,7 @@ optional = true
 version = "1.2"
 
 [dependencies.clap_derive]
-version = "3.0.0-beta.2"
+version = "3.0.0-beta.4"
 optional = true
 
 [dependencies.indexmap]
@@ -85,7 +85,7 @@ version = "1"
 optional = true
 
 [dependencies.os_str_bytes]
-version = "2.3"
+version = "3.0"
 features = ["raw"]
 
 [dependencies.regex]
@@ -105,10 +105,9 @@ version = "0.1.12"
 optional = true
 
 [dependencies.textwrap]
-version = "0.12"
-
-[dependencies.unicode-width]
-version = "0.1"
+version = "0.14.0"
+features = []
+default-features = false
 
 [dependencies.vec_map]
 version = "0.8"
@@ -126,25 +125,17 @@ version = "1"
 version = "1.0"
 
 [dev-dependencies.version-sync]
-version = "0.8"
+version = "0.9"
 
 [features]
 cargo = ["lazy_static"]
 color = ["atty", "termcolor"]
 debug = ["clap_derive/debug"]
-default = ["suggestions", "color", "derive", "std", "cargo"]
+default = ["std", "derive", "cargo", "color", "env", "suggestions", "unicode_help"]
 derive = ["clap_derive", "lazy_static"]
-doc = ["yaml", "regex"]
-std = []
+env = []
+std = ["indexmap/std"]
 suggestions = ["strsim"]
-unstable = ["clap_derive/unstable"]
+unicode_help = ["textwrap/unicode-width"]
 wrap_help = ["terminal_size", "textwrap/terminal_size"]
 yaml = ["yaml-rust"]
-[badges.is-it-maintained-issue-resolution]
-repository = "clap-rs/clap"
-
-[badges.is-it-maintained-open-issues]
-repository = "clap-rs/clap"
-
-[badges.maintenance]
-status = "actively-developed"

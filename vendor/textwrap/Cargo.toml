@@ -13,9 +13,10 @@
 [package]
 edition = "2018"
 name = "textwrap"
-version = "0.12.1"
+version = "0.14.2"
 authors = ["Martin Geisler <martin@geisler.net>"]
-description = "Textwrap is a library for word wrapping, indenting, and dedenting\nstrings.\n\nYou can use it to format strings (such as help and error messages) for\ndisplay in commandline applications. It is designed to be efficient\nand handle Unicode characters correctly.\n"
+exclude = [".github/", ".gitignore", "benches/", "examples/", "fuzz/", "images/"]
+description = "Powerful library for word wrapping, indenting, and dedenting strings"
 documentation = "https://docs.rs/textwrap/"
 readme = "README.md"
 keywords = ["text", "formatting", "wrap", "typesetting", "hyphenation"]
@@ -24,33 +25,49 @@ license = "MIT"
 repository = "https://github.com/mgeisler/textwrap"
 [package.metadata.docs.rs]
 all-features = true
+
+[[bench]]
+name = "linear"
+path = "benches/linear.rs"
+harness = false
+
+[[bench]]
+name = "indent"
+path = "benches/indent.rs"
+harness = false
 [dependencies.hyphenation]
-version = "0.8"
+version = "0.8.2"
 features = ["embed_en-us"]
+optional = true
+
+[dependencies.smawk]
+version = "0.3"
 optional = true
 
 [dependencies.terminal_size]
 version = "0.1"
 optional = true
 
+[dependencies.unicode-linebreak]
+version = "0.1"
+optional = true
+
 [dependencies.unicode-width]
 version = "0.1"
+optional = true
+[dev-dependencies.criterion]
+version = "0.3"
+
 [dev-dependencies.lipsum]
-version = "0.6"
+version = "0.8"
 
-[dev-dependencies.rand]
-version = "0.6"
-
-[dev-dependencies.rand_xorshift]
-version = "0.1"
+[dev-dependencies.unic-emoji-char]
+version = "0.9.0"
 
 [dev-dependencies.version-sync]
 version = "0.9"
-[badges.appveyor]
-repository = "mgeisler/textwrap"
 
-[badges.codecov]
-repository = "mgeisler/textwrap"
-
-[badges.travis-ci]
-repository = "mgeisler/textwrap"
+[features]
+default = ["unicode-linebreak", "unicode-width", "smawk"]
+[target."cfg(unix)".dev-dependencies.termion]
+version = "1.5"

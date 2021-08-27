@@ -1,4 +1,4 @@
-use crate::{App, AppSettings, ArgSettings, ValueHint};
+use crate::{build::arg::debug_asserts::assert_arg, App, AppSettings, ArgSettings, ValueHint};
 use std::cmp::Ordering;
 
 #[derive(Eq)]
@@ -62,15 +62,15 @@ pub(crate) fn assert_app(app: &App) {
         }
     }
 
-    for arg in &app.args.args {
-        arg._debug_asserts();
+    for arg in app.args.args() {
+        assert_arg(arg);
 
         if let Some(s) = arg.short.as_ref() {
             short_flags.push(Flag::Arg(format!("-{}", s), &*arg.name));
         }
 
         for (short_alias, _) in &arg.short_aliases {
-            short_flags.push(Flag::Arg(format!("-{}", short_alias), &arg.name));
+            short_flags.push(Flag::Arg(format!("-{}", short_alias), arg.name));
         }
 
         if let Some(l) = arg.long.as_ref() {
@@ -78,7 +78,7 @@ pub(crate) fn assert_app(app: &App) {
         }
 
         for (long_alias, _) in &arg.aliases {
-            long_flags.push(Flag::Arg(format!("--{}", long_alias), &arg.name));
+            long_flags.push(Flag::Arg(format!("--{}", long_alias), arg.name));
         }
 
         // Name conflicts
@@ -144,6 +144,15 @@ pub(crate) fn assert_app(app: &App) {
             );
         }
 
+        for req in &arg.r_ifs_all {
+            assert!(
+                app.id_exists(&req.0),
+                "Argument or group '{:?}' specified in 'required_if_eq_all' for '{}' does not exist",
+                req.0,
+                arg.name
+            );
+        }
+
         for req in &arg.r_unless {
             assert!(
                 app.id_exists(req),
@@ -191,7 +200,7 @@ pub(crate) fn assert_app(app: &App) {
 
         if arg.value_hint == ValueHint::CommandWithArguments {
             assert!(
-                arg.short.is_none() && arg.long.is_none(),
+                arg.is_positional(),
                 "Argument '{}' has hint CommandWithArguments and must be positional.",
                 arg.name
             );
@@ -214,19 +223,31 @@ pub(crate) fn assert_app(app: &App) {
 
         // Groups should not have naming conflicts with Args
         assert!(
-            !app.args.args.iter().any(|x| x.id == group.id),
+            !app.args.args().any(|x| x.id == group.id),
             "Argument group name '{}' must not conflict with argument name",
             group.name,
         );
 
-        // Args listed inside groups should exist
         for arg in &group.args {
+            // Args listed inside groups should exist
             assert!(
-                app.args.args.iter().any(|x| x.id == *arg),
+                app.args.args().any(|x| x.id == *arg),
                 "Argument group '{}' contains non-existent argument '{:?}'",
                 group.name,
                 arg
-            )
+            );
+
+            // Required groups shouldn't have args with default values
+            if group.required {
+                assert!(
+                    app.args
+                        .args ()
+                        .any(|x| x.id == *arg && x.default_vals.is_empty()),
+                    "Argument group '{}' is required but contains argument '{:?}' which has a default value.",
+                    group.name,
+                    arg
+                )
+            }
         }
     }
 

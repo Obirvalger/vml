@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "os_str_bytes"
-version = "2.4.0"
+version = "3.1.0"
 authors = ["dylni"]
 exclude = [".*", "/rustfmt.toml", "/tests"]
 description = "Traits for converting between byte sequences and platform-native strings\n"
@@ -27,7 +27,8 @@ all-features = true
 rustc-args = ["--cfg", "os_str_bytes_docs_rs"]
 rustdoc-args = ["--cfg", "os_str_bytes_docs_rs"]
 [dev-dependencies.getrandom]
-version = "0.1"
+version = "0.2"
+features = ["js"]
 
 [features]
 raw = []

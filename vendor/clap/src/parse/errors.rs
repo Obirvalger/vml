@@ -12,12 +12,12 @@ use crate::{
     build::Arg,
     output::fmt::Colorizer,
     parse::features::suggestions,
-    util::{safe_exit, termcolor::ColorChoice},
+    util::{safe_exit, termcolor::ColorChoice, SUCCESS_CODE, USAGE_CODE},
 };
 
 /// Short hand for [`Result`] type
 ///
-/// [`Result`]: https://doc.rust-lang.org/std/result/enum.Result.html
+/// [`Result`]: std::result::Result
 pub type Result<T> = StdResult<T, Error>;
 
 /// Command line argument parser kind of error
@@ -38,7 +38,6 @@ pub enum ErrorKind {
     /// assert!(result.is_err());
     /// assert_eq!(result.unwrap_err().kind, ErrorKind::InvalidValue);
     /// ```
-    /// [`Arg`]: ./struct.Arg.html
     InvalidValue,
 
     /// Occurs when a user provides a flag, option, argument or subcommand which isn't defined.
@@ -55,7 +54,7 @@ pub enum ErrorKind {
     /// ```
     UnknownArgument,
 
-    /// Occurs when the user provides an unrecognized [``] which meets the threshold for
+    /// Occurs when the user provides an unrecognized [`Subcommand`] which meets the threshold for
     /// being similar enough to an existing subcommand.
     /// If it doesn't meet the threshold, or the 'suggestions' feature is disabled,
     /// the more general [`UnknownArgument`] error is returned.
@@ -75,11 +74,12 @@ pub enum ErrorKind {
     /// assert!(result.is_err());
     /// assert_eq!(result.unwrap_err().kind, ErrorKind::InvalidSubcommand);
     /// ```
-    /// [``]: ./struct..html
-    /// [`UnknownArgument`]: ./enum.ErrorKind.html#variant.UnknownArgument
+    ///
+    /// [`Subcommand`]: crate::Subcommand
+    /// [`UnknownArgument`]: ErrorKind::UnknownArgument
     InvalidSubcommand,
 
-    /// Occurs when the user provides an unrecognized [``] which either
+    /// Occurs when the user provides an unrecognized [`Subcommand`] which either
     /// doesn't meet the threshold for being similar enough to an existing subcommand,
     /// or the 'suggestions' feature is disabled.
     /// Otherwise the more detailed [`InvalidSubcommand`] error is returned.
@@ -101,9 +101,10 @@ pub enum ErrorKind {
     /// assert!(result.is_err());
     /// assert_eq!(result.unwrap_err().kind, ErrorKind::UnrecognizedSubcommand);
     /// ```
-    /// [``]: ./struct..html
-    /// [`InvalidSubcommand`]: ./enum.ErrorKind.html#variant.InvalidSubcommand
-    /// [`UnknownArgument`]: ./enum.ErrorKind.html#variant.UnknownArgument
+    ///
+    /// [`Subcommand`]: crate::Subcommand
+    /// [`InvalidSubcommand`]: ErrorKind::InvalidSubcommand
+    /// [`UnknownArgument`]: ErrorKind::UnknownArgument
     UnrecognizedSubcommand,
 
     /// Occurs when the user provides an empty value for an option that does not allow empty
@@ -116,12 +117,29 @@ pub enum ErrorKind {
     /// let res = App::new("prog")
     ///     .arg(Arg::new("color")
     ///          .setting(ArgSettings::TakesValue)
+    ///          .setting(ArgSettings::ForbidEmptyValues)
     ///          .long("color"))
     ///     .try_get_matches_from(vec!["prog", "--color="]);
     /// assert!(res.is_err());
     /// assert_eq!(res.unwrap_err().kind, ErrorKind::EmptyValue);
     /// ```
     EmptyValue,
+
+    /// Occurs when the user doesn't use equals for an option that requres equal
+    /// sign to provide values.
+    ///
+    /// ```rust
+    /// # use clap::{App, Arg, ErrorKind, ArgSettings};
+    /// let res = App::new("prog")
+    ///     .arg(Arg::new("color")
+    ///          .setting(ArgSettings::TakesValue)
+    ///          .setting(ArgSettings::RequireEquals)
+    ///          .long("color"))
+    ///     .try_get_matches_from(vec!["prog", "--color", "red"]);
+    /// assert!(res.is_err());
+    /// assert_eq!(res.unwrap_err().kind, ErrorKind::NoEquals);
+    /// ```
+    NoEquals,
 
     /// Occurs when the user provides a value for an argument with a custom validation and the
     /// value fails that validation.
@@ -155,13 +173,12 @@ pub enum ErrorKind {
     /// # use clap::{App, Arg, ErrorKind};
     /// let result = App::new("prog")
     ///     .arg(Arg::new("arg")
-    ///         .multiple(true)
     ///         .max_values(2))
     ///     .try_get_matches_from(vec!["prog", "too", "many", "values"]);
     /// assert!(result.is_err());
     /// assert_eq!(result.unwrap_err().kind, ErrorKind::TooManyValues);
     /// ```
-    /// [`Arg::max_values`]: ./struct.Arg.html#method.max_values
+    /// [`Arg::max_values`]: Arg::max_values()
     TooManyValues,
 
     /// Occurs when the user provides fewer values for an argument than were defined by setting
@@ -179,8 +196,26 @@ pub enum ErrorKind {
     /// assert!(result.is_err());
     /// assert_eq!(result.unwrap_err().kind, ErrorKind::TooFewValues);
     /// ```
-    /// [`Arg::min_values`]: ./struct.Arg.html#method.min_values
+    /// [`Arg::min_values`]: Arg::min_values()
     TooFewValues,
+
+    /// Occurs when a user provides more occurrences for an argument than were defined by setting
+    /// [`Arg::max_occurrences`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use clap::{App, Arg, ErrorKind};
+    /// let result = App::new("prog")
+    ///     .arg(Arg::new("verbosity")
+    ///         .short('v')
+    ///         .max_occurrences(2))
+    ///     .try_get_matches_from(vec!["prog", "-vvv"]);
+    /// assert!(result.is_err());
+    /// assert_eq!(result.unwrap_err().kind, ErrorKind::TooManyOccurrences);
+    /// ```
+    /// [`Arg::max_occurrences`]: Arg::max_occurrences()
+    TooManyOccurrences,
 
     /// Occurs when the user provides a different number of values for an argument than what's
     /// been defined by setting [`Arg::number_of_values`] or than was implicitly set by
@@ -200,8 +235,8 @@ pub enum ErrorKind {
     /// assert_eq!(result.unwrap_err().kind, ErrorKind::WrongNumberOfValues);
     /// ```
     ///
-    /// [`Arg::number_of_values`]: ./struct.Arg.html#method.number_of_values
-    /// [`Arg::value_names`]: ./struct.Arg.html#method.value_names
+    /// [`Arg::number_of_values`]: Arg::number_of_values()
+    /// [`Arg::value_names`]: Arg::value_names()
     WrongNumberOfValues,
 
     /// Occurs when the user provides two values which conflict with each other and can't be used
@@ -255,29 +290,9 @@ pub enum ErrorKind {
     /// assert_eq!(err.unwrap_err().kind, ErrorKind::MissingSubcommand);
     /// # ;
     /// ```
-    /// [`AppSettings::SubcommandRequired`]: ./enum.AppSettings.html#variant.SubcommandRequired
+    ///
+    /// [`AppSettings::SubcommandRequired`]: crate::AppSettings::SubcommandRequired
     MissingSubcommand,
-
-    /// Occurs when either an argument or [``] is required, as defined by
-    /// [`AppSettings::ArgRequiredElseHelp`], but the user did not provide one.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use clap::{App, Arg, AppSettings, ErrorKind, };
-    /// let result = App::new("prog")
-    ///     .setting(AppSettings::ArgRequiredElseHelp)
-    ///     .subcommand(App::new("config")
-    ///         .about("Used for configuration")
-    ///         .arg(Arg::new("config_file")
-    ///             .about("The configuration file to use")))
-    ///     .try_get_matches_from(vec!["prog"]);
-    /// assert!(result.is_err());
-    /// assert_eq!(result.unwrap_err().kind, ErrorKind::MissingArgumentOrSubcommand);
-    /// ```
-    /// [``]: ./struct..html
-    /// [`AppSettings::ArgRequiredElseHelp`]: ./enum.AppSettings.html#variant.ArgRequiredElseHelp
-    MissingArgumentOrSubcommand,
 
     /// Occurs when the user provides multiple values to an argument which doesn't allow that.
     ///
@@ -288,7 +303,7 @@ pub enum ErrorKind {
     /// let result = App::new("prog")
     ///     .arg(Arg::new("debug")
     ///         .long("debug")
-    ///         .multiple(false))
+    ///         .multiple_occurrences(false))
     ///     .try_get_matches_from(vec!["prog", "--debug", "--debug"]);
     /// assert!(result.is_err());
     /// assert_eq!(result.unwrap_err().kind, ErrorKind::UnexpectedMultipleUsage);
@@ -320,7 +335,8 @@ pub enum ErrorKind {
     /// assert!(result.is_err());
     /// assert_eq!(result.unwrap_err().kind, ErrorKind::InvalidUtf8);
     /// ```
-    /// [`AppSettings::StrictUtf8`]: ./enum.AppSettings.html#variant.StrictUtf8
+    ///
+    /// [`AppSettings::StrictUtf8`]: crate::AppSettings::StrictUtf8
     InvalidUtf8,
 
     /// Not a true "error" as it means `--help` or similar was used.
@@ -340,6 +356,31 @@ pub enum ErrorKind {
     /// ```
     DisplayHelp,
 
+    /// Occurs when either an argument or a [`Subcommand`] is required, as defined by
+    /// [`AppSettings::ArgRequiredElseHelp`] and
+    /// [`AppSettings::SubcommandRequiredElseHelp`], but the user did not provide
+    /// one.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use clap::{App, Arg, AppSettings, ErrorKind, };
+    /// let result = App::new("prog")
+    ///     .setting(AppSettings::ArgRequiredElseHelp)
+    ///     .subcommand(App::new("config")
+    ///         .about("Used for configuration")
+    ///         .arg(Arg::new("config_file")
+    ///             .about("The configuration file to use")))
+    ///     .try_get_matches_from(vec!["prog"]);
+    /// assert!(result.is_err());
+    /// assert_eq!(result.unwrap_err().kind, ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand);
+    /// ```
+    ///
+    /// [`Subcommand`]: crate::Subcommand
+    /// [`AppSettings::ArgRequiredElseHelp`]: crate::AppSettings::ArgRequiredElseHelp
+    /// [`AppSettings::SubcommandRequiredElseHelp`]: crate::AppSettings::SubcommandRequiredElseHelp
+    DisplayHelpOnMissingArgumentOrSubcommand,
+
     /// Not a true "error" as it means `--version` or similar was used.
     /// The message will be sent to `stdout`.
     ///
@@ -354,21 +395,24 @@ pub enum ErrorKind {
     /// ```
     DisplayVersion,
 
-    /// Occurs when using the [`ArgMathes::value_of_t`] and friends to convert an argument value
+    /// Occurs when using the [`ArgMatches::value_of_t`] and friends to convert an argument value
     /// into type `T`, but the argument you requested wasn't used. I.e. you asked for an argument
     /// with name `config` to be converted, but `config` wasn't used by the user.
+    ///
+    /// [`ArgMatches::value_of_t`]: crate::ArgMatches::value_of_t()
     ArgumentNotFound,
 
     /// Represents an [I/O error].
     /// Can occur when writing to `stderr` or `stdout` or reading a configuration file.
-    /// [I/O error]: https://doc.rust-lang.org/std/io/struct.Error.html
+    ///
+    /// [I/O error]: std::io::Error
     Io,
 
     /// Represents a [Format error] (which is a part of [`Display`]).
     /// Typically caused by writing to `stderr` or `stdout`.
     ///
-    /// [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
-    /// [Format error]: https://doc.rust-lang.org/std/fmt/struct.Error.html
+    /// [`Display`]: std::fmt::Display
+    /// [Format error]: std::fmt::Error
     Format,
 }
 
@@ -382,6 +426,7 @@ pub struct Error {
     /// Additional information depending on the error kind, like values and argument names.
     /// Useful when you want to render an error of your own.
     pub info: Vec<String>,
+    pub(crate) source: Option<Box<dyn error::Error>>,
 }
 
 impl Display for Error {
@@ -420,21 +465,45 @@ impl Error {
     /// Should the message be written to `stdout` or not
     #[inline]
     pub fn use_stderr(&self) -> bool {
-        match self.kind {
-            ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => false,
-            _ => true,
-        }
+        !matches!(
+            self.kind,
+            ErrorKind::DisplayHelp
+                | ErrorKind::DisplayVersion
+                | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+        )
     }
 
-    /// Prints the error to `stderr` and exits with a status of `1`
+    /// Prints the error and exits. Depending on the error kind, this
+    /// either prints to `stderr` and exits with a status of `1`
+    /// or prints to `stdout` and exits with a status of `0`.
     pub fn exit(&self) -> ! {
         if self.use_stderr() {
             self.message.print().expect("Error writing Error to stderr");
-            safe_exit(1);
+            safe_exit(USAGE_CODE);
         }
 
         self.message.print().expect("Error writing Error to stdout");
-        safe_exit(0)
+        safe_exit(SUCCESS_CODE)
+    }
+
+    /// Prints formatted and colored error to `stdout` or `stderr` according to its error kind
+    ///
+    /// # Example
+    /// ```no_run
+    /// use clap::App;
+    ///
+    /// match App::new("App").try_get_matches() {
+    ///     Ok(matches) => {
+    ///         // do_something
+    ///     },
+    ///     Err(err) => {
+    ///         err.print().expect("Error writing Error");
+    ///         // do_something
+    ///     },
+    /// };
+    /// ```
+    pub fn print(&self) -> io::Result<()> {
+        self.message.print()
     }
 
     pub(crate) fn argument_conflict(
@@ -473,6 +542,7 @@ impl Error {
             message: c,
             kind: ErrorKind::ArgumentConflict,
             info,
+            source: None,
         }
     }
 
@@ -490,6 +560,25 @@ impl Error {
             message: c,
             kind: ErrorKind::EmptyValue,
             info: vec![arg],
+            source: None,
+        }
+    }
+
+    pub(crate) fn no_equals(arg: String, usage: String, color: ColorChoice) -> Self {
+        let mut c = Colorizer::new(true, color);
+
+        start_error(&mut c, "Equal sign is needed when assigning values to '");
+        c.warning(&arg);
+        c.none("'.");
+
+        put_usage(&mut c, usage);
+        try_help(&mut c);
+
+        Error {
+            message: c,
+            kind: ErrorKind::NoEquals,
+            info: vec![arg],
+            source: None,
         }
     }
 
@@ -506,12 +595,22 @@ impl Error {
         let mut c = Colorizer::new(true, color);
         let suffix = suggestions::did_you_mean(&bad_val, good_vals.iter()).pop();
 
-        let mut sorted: Vec<String> = good_vals.iter().map(|v| v.to_string()).collect();
+        let mut sorted: Vec<String> = good_vals
+            .iter()
+            .map(|v| v.to_string())
+            .map(|v| {
+                if v.contains(char::is_whitespace) {
+                    format!("{:?}", v)
+                } else {
+                    v
+                }
+            })
+            .collect();
         sorted.sort();
 
-        start_error(&mut c, "'");
-        c.warning(bad_val.clone());
-        c.none("' isn't a valid value for '");
+        start_error(&mut c, "");
+        c.warning(format!("{:?}", bad_val));
+        c.none(" isn't a valid value for '");
         c.warning(arg.to_string());
         c.none("'\n\t[possible values: ");
 
@@ -527,9 +626,9 @@ impl Error {
         c.none("]");
 
         if let Some(val) = suffix {
-            c.none("\n\n\tDid you mean '");
-            c.good(val);
-            c.none("'?");
+            c.none("\n\n\tDid you mean ");
+            c.good(format!("{:?}", val));
+            c.none("?");
         }
 
         put_usage(&mut c, usage);
@@ -541,7 +640,8 @@ impl Error {
         Error {
             message: c,
             kind: ErrorKind::InvalidValue,
-            info: vec![],
+            info,
+            source: None,
         }
     }
 
@@ -572,6 +672,7 @@ impl Error {
             message: c,
             kind: ErrorKind::InvalidSubcommand,
             info: vec![subcmd],
+            source: None,
         }
     }
 
@@ -593,6 +694,7 @@ impl Error {
             message: c,
             kind: ErrorKind::UnrecognizedSubcommand,
             info: vec![subcmd],
+            source: None,
         }
     }
 
@@ -622,6 +724,7 @@ impl Error {
             message: c,
             kind: ErrorKind::MissingRequiredArgument,
             info,
+            source: None,
         }
     }
 
@@ -638,6 +741,7 @@ impl Error {
             message: c,
             kind: ErrorKind::MissingSubcommand,
             info: vec![],
+            source: None,
         }
     }
 
@@ -655,12 +759,45 @@ impl Error {
             message: c,
             kind: ErrorKind::InvalidUtf8,
             info: vec![],
+            source: None,
+        }
+    }
+
+    pub(crate) fn too_many_occurrences(
+        arg: &Arg,
+        max_occurs: usize,
+        curr_occurs: usize,
+        usage: String,
+        color: ColorChoice,
+    ) -> Self {
+        let mut c = Colorizer::new(true, color);
+        let verb = Error::singular_or_plural(curr_occurs);
+
+        start_error(&mut c, "The argument '");
+        c.warning(arg.to_string());
+        c.none("' allows at most ");
+        c.warning(max_occurs.to_string());
+        c.none(" occurrences, but ");
+        c.warning(curr_occurs.to_string());
+        c.none(format!(" {} provided", verb));
+        put_usage(&mut c, usage);
+        try_help(&mut c);
+
+        Error {
+            message: c,
+            kind: ErrorKind::TooManyOccurrences,
+            info: vec![
+                arg.to_string(),
+                curr_occurs.to_string(),
+                max_occurs.to_string(),
+            ],
+            source: None,
         }
     }
 
     pub(crate) fn too_many_values(
         val: String,
-        arg: &Arg,
+        arg: String,
         usage: String,
         color: ColorChoice,
     ) -> Self {
@@ -669,7 +806,7 @@ impl Error {
         start_error(&mut c, "The value '");
         c.warning(val.clone());
         c.none("' was provided to '");
-        c.warning(arg.to_string());
+        c.warning(&arg);
         c.none("' but it wasn't expecting any more values");
         put_usage(&mut c, usage);
         try_help(&mut c);
@@ -677,13 +814,14 @@ impl Error {
         Error {
             message: c,
             kind: ErrorKind::TooManyValues,
-            info: vec![arg.to_string(), val],
+            info: vec![arg, val],
+            source: None,
         }
     }
 
     pub(crate) fn too_few_values(
         arg: &Arg,
-        min_vals: u64,
+        min_vals: usize,
         curr_vals: usize,
         usage: String,
         color: ColorChoice,
@@ -705,13 +843,14 @@ impl Error {
             message: c,
             kind: ErrorKind::TooFewValues,
             info: vec![arg.to_string(), curr_vals.to_string(), min_vals.to_string()],
+            source: None,
         }
     }
 
     pub(crate) fn value_validation(
         arg: String,
         val: String,
-        err: String,
+        err: Box<dyn error::Error>,
         color: ColorChoice,
     ) -> Self {
         let mut c = Colorizer::new(true, color);
@@ -728,13 +867,14 @@ impl Error {
         Error {
             message: c,
             kind: ErrorKind::ValueValidation,
-            info: vec![arg, val, err],
+            info: vec![arg, val, err.to_string()],
+            source: Some(err),
         }
     }
 
     pub(crate) fn wrong_number_of_values(
         arg: &Arg,
-        num_vals: u64,
+        num_vals: usize,
         curr_vals: usize,
         usage: String,
         color: ColorChoice,
@@ -756,6 +896,7 @@ impl Error {
             message: c,
             kind: ErrorKind::WrongNumberOfValues,
             info: vec![arg.to_string(), curr_vals.to_string(), num_vals.to_string()],
+            source: None,
         }
     }
 
@@ -773,6 +914,7 @@ impl Error {
             message: c,
             kind: ErrorKind::UnexpectedMultipleUsage,
             info: vec![arg],
+            source: None,
         }
     }
 
@@ -788,25 +930,53 @@ impl Error {
         c.warning(arg.clone());
         c.none("' which wasn't expected, or isn't valid in this context");
 
-        if let Some(s) = did_you_mean {
+        if let Some((flag, subcmd)) = did_you_mean {
+            let flag = format!("--{}", flag);
             c.none("\n\n\tDid you mean ");
 
-            if let Some(subcmd) = s.1 {
+            if let Some(subcmd) = subcmd {
                 c.none("to put '");
-                c.good(format!("--{}", &s.0));
+                c.good(flag);
                 c.none("' after the subcommand '");
                 c.good(subcmd);
                 c.none("'?");
             } else {
                 c.none("'");
-                c.good(format!("--{}", &s.0));
+                c.good(flag);
                 c.none("'?");
             }
         }
 
+        // If the user wants to supply things like `--a-flag` or `-b` as a value,
+        // suggest `--` for disambiguation.
+        if arg.starts_with('-') {
+            c.none(format!(
+                "\n\n\tIf you tried to supply `{}` as a value rather than a flag, use `-- {}`",
+                arg, arg
+            ));
+        }
+
+        put_usage(&mut c, usage);
+        try_help(&mut c);
+
+        Error {
+            message: c,
+            kind: ErrorKind::UnknownArgument,
+            info: vec![arg],
+            source: None,
+        }
+    }
+
+    pub(crate) fn unnecessary_double_dash(arg: String, usage: String, color: ColorChoice) -> Self {
+        let mut c = Colorizer::new(true, color);
+
+        start_error(&mut c, "Found argument '");
+        c.warning(arg.clone());
+        c.none("' which wasn't expected, or isn't valid in this context");
+
         c.none(format!(
-            "\n\nIf you tried to supply `{}` as a PATTERN use `-- {}`",
-            arg, arg
+            "\n\n\tIf you tried to supply `{}` as a subcommand, remove the '--' before it.",
+            arg
         ));
         put_usage(&mut c, usage);
         try_help(&mut c);
@@ -815,6 +985,7 @@ impl Error {
             message: c,
             kind: ErrorKind::UnknownArgument,
             info: vec![arg],
+            source: None,
         }
     }
 
@@ -830,6 +1001,7 @@ impl Error {
             message: c,
             kind: ErrorKind::ArgumentNotFound,
             info: vec![arg],
+            source: None,
         }
     }
 
@@ -846,6 +1018,7 @@ impl Error {
             message: c,
             kind,
             info: vec![],
+            source: None,
         }
     }
 }
@@ -862,4 +1035,8 @@ impl From<fmt::Error> for Error {
     }
 }
 
-impl error::Error for Error {}
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        self.source.as_deref()
+    }
+}

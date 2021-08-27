@@ -1,53 +1,31 @@
 # Textwrap
 
-[![](https://travis-ci.org/mgeisler/textwrap.svg?branch=master)][travis-ci]
-[![](https://ci.appveyor.com/api/projects/status/github/mgeisler/textwrap?branch=master&svg=true)][appveyor]
+[![](https://github.com/mgeisler/textwrap/workflows/build/badge.svg)][build-status]
 [![](https://codecov.io/gh/mgeisler/textwrap/branch/master/graph/badge.svg)][codecov]
 [![](https://img.shields.io/crates/v/textwrap.svg)][crates-io]
 [![](https://docs.rs/textwrap/badge.svg)][api-docs]
 
-Textwrap is a small Rust crate for word wrapping text. You can use it
-to format strings for display in commandline applications. The crate
-name and interface is inspired by
-the [Python textwrap module][py-textwrap].
+Textwrap is a library for wrapping and indenting text. It is most
+often used by command-line programs to format dynamic output nicely so
+it looks good in a terminal. You can also use Textwrap to wrap text
+set in a proportional font—such as text used to generate PDF files, or
+drawn on a [HTML5 canvas using WebAssembly][wasm-demo].
 
 ## Usage
 
-To use `textwrap`, add this to your `Cargo.toml` file:
+To use the textwrap crate, add this to your `Cargo.toml` file:
 ```toml
 [dependencies]
-textwrap = "0.12"
+textwrap = "0.14"
 ```
 
-This gives you the text wrapping without of the optional features
-listed next.
-
-### `hyphenation`
-
-If you would like to have automatic language-sensitive hyphenation,
-enable the `hyphenation` feature:
-
-```toml
-[dependencies]
-textwrap = { version = "0.12", features = ["hyphenation"] }
-```
-
-This gives you hyphenation support for US English. Please see the
-[`hyphenation` example] for an executable demo. Read the Getting
-Started section below to see how to load the hyphenation patterns for
-other languages.
-
-### `terminal_size`
-
-To conveniently wrap text at the current terminal width, enable the
-`terminal_size` feature:
-
-```toml
-[dependencies]
-textwrap = { version = "0.12", features = ["terminal_size"] }
-```
-
-Please see the [`termwidth` example] for how to use this feature.
+By default, this enables word wrapping with support for Unicode
+strings. Extra features can be enabled with Cargo features—and the
+Unicode support can be disabled if needed. This allows you slim down
+the library and so you will only pay for the features you actually
+use. Please see the [_Cargo Features_ in the crate
+documentation](https://docs.rs/textwrap/#cargo-features) for a full
+list of the available features.
 
 ## Documentation
 
@@ -55,147 +33,107 @@ Please see the [`termwidth` example] for how to use this feature.
 
 ## Getting Started
 
-Word wrapping single strings is easy using the `fill` function:
+Word wrapping is easy using the `fill` function:
+
 ```rust
 fn main() {
-    let text = "textwrap: a small library for wrapping text.";
-    println!("{}", textwrap::fill(text, 18));
+    let text = "textwrap: an efficient and powerful library for wrapping text.";
+    println!("{}", textwrap::fill(text, 28));
 }
 ```
-The output is
+
+The output is wrapped within 28 columns:
+
 ```
-textwrap: a small
-library for
+textwrap: an efficient
+and powerful library for
 wrapping text.
 ```
 
-If you enable the `hyphenation` feature, you get support for automatic
-hyphenation for [about 70 languages][patterns] via high-quality TeX
-hyphenation patterns.
+Sharp-eyed readers will notice that the first line is 22 columns wide.
+So why is the word “and” put in the second line when there is space
+for it in the first line?
 
-Your program must load the hyphenation pattern and call
-`Wrapper::with_splitter` to use it:
+The explanation is that textwrap does not just wrap text one line at a
+time. Instead, it uses an optimal-fit algorithm which looks ahead and
+chooses line breaks which minimize the gaps left at ends of lines.
+
+Without look-ahead, the first line would be longer and the text would
+look like this:
+
+```
+textwrap: an efficient and
+powerful library for
+wrapping text.
+```
+
+The second line is now shorter and the text is more ragged. The kind
+of wrapping can be configured via `Options::wrap_algorithm`.
+
+If you enable the `hyphenation` Cargo feature, you get support for
+automatic hyphenation for [about 70 languages][patterns] via
+high-quality TeX hyphenation patterns.
+
+Your program must load the hyphenation pattern and configure
+`Options::word_splitter` to use it:
 
 ```rust
 use hyphenation::{Language, Load, Standard};
-use textwrap::Wrapper;
+use textwrap::Options;
 
 fn main() {
     let hyphenator = Standard::from_embedded(Language::EnglishUS).unwrap();
-    let wrapper = Wrapper::with_splitter(18, hyphenator);
-    let text = "textwrap: a small library for wrapping text.";
-    println!("{}", wrapper.fill(text))
+    let options = Options::new(28).word_splitter(hyphenator);
+    let text = "textwrap: an efficient and powerful library for wrapping text.";
+    println!("{}", fill(text, &options);
 }
 ```
 
 The output now looks like this:
 ```
-textwrap: a small
-library for wrap-
+textwrap: an efficient and
+powerful library for wrap-
 ping text.
 ```
 
 The US-English hyphenation patterns are embedded when you enable the
 `hyphenation` feature. They are licensed under a [permissive
-license][en-us license] and take up about 88 KB of space in your
-application. If you need hyphenation for other languages, you need to
-download a [precompiled `.bincode` file][bincode] and load it
-yourself. Please see the [`hyphenation` documentation] for details.
+license][en-us license] and take up about 88 KB in your binary. If you
+need hyphenation for other languages, you need to download a
+[precompiled `.bincode` file][bincode] and load it yourself. Please
+see the [`hyphenation` documentation] for details.
 
 ## Wrapping Strings at Compile Time
 
 If your strings are known at compile time, please take a look at the
 procedural macros from the [`textwrap-macros` crate].
 
-
 ## Examples
 
-The library comes with some small example programs that shows various
-features.
+The library comes with [a
+collection](https://github.com/mgeisler/textwrap/tree/master/examples)
+of small example programs that shows various features.
 
-### Layout Example
+If you want to see Textwrap in action right away, then take a look at
+[`examples/wasm/`], which shows how to wrap sans-serif, serif, and
+monospace text. It uses WebAssembly and is automatically deployed to
+https://mgeisler.github.io/textwrap/.
 
-The `layout` example shows how a fixed example string is wrapped at
-different widths. Run the example with:
+For the command-line examples, you’re invited to clone the repository
+and try them out for yourself! Of special note is
+[`examples/interactive.rs`]. This is a demo program which demonstrates
+most of the available features: you can enter text and adjust the
+width at which it is wrapped interactively. You can also adjust the
+`Options` used to see the effect of different `WordSplitter`s and wrap
+algorithms.
 
-```shell
-$ cargo run --features hyphenation --example layout
+Run the demo with
+
+```sh
+$ cargo run --example interactive
 ```
 
-The program will use the following string:
-
-> Memory safety without garbage collection. Concurrency without data
-> races. Zero-cost abstractions.
-
-The string is wrapped at all widths between 15 and 60 columns. With
-narrow columns the output looks like this:
-
-```
-.--- Width: 15 ---.
-| Memory safety   |
-| without garbage |
-| collection.     |
-| Concurrency     |
-| without data    |
-| races. Zero-    |
-| cost abstrac-   |
-| tions.          |
-.--- Width: 16 ----.
-| Memory safety    |
-| without garbage  |
-| collection. Con- |
-| currency without |
-| data races. Ze-  |
-| ro-cost abstrac- |
-| tions.           |
-```
-
-Later, longer lines are used and the output now looks like this:
-
-```
-.-------------------- Width: 49 --------------------.
-| Memory safety without garbage collection. Concur- |
-| rency without data races. Zero-cost abstractions. |
-.---------------------- Width: 53 ----------------------.
-| Memory safety without garbage collection. Concurrency |
-| without data races. Zero-cost abstractions.           |
-.------------------------- Width: 59 -------------------------.
-| Memory safety without garbage collection. Concurrency with- |
-| out data races. Zero-cost abstractions.                     |
-```
-
-Notice how words are split at hyphens (such as "zero-cost") but also
-how words are hyphenated using automatic/machine hyphenation.
-
-### Terminal Width Example
-
-The `termwidth` example simply shows how the width can be set
-automatically to the current terminal width. Run it with this command:
-
-```
-$ cargo run --example termwidth
-```
-
-If you run it in a narrow terminal, you'll see output like this:
-```
-Formatted in within 60 columns:
-----
-Memory safety without garbage collection. Concurrency
-without data races. Zero-cost abstractions.
-----
-```
-
-If `stdout` is not connected to the terminal, the program will use a
-default of 80 columns for the width:
-
-```
-$ cargo run --example termwidth | cat
-Formatted in within 80 columns:
-----
-Memory safety without garbage collection. Concurrency without data races. Zero-
-cost abstractions.
-----
-```
+The demo needs a Linux terminal to function.
 
 ## Release History
 
@@ -208,10 +146,9 @@ Textwrap can be distributed according to the [MIT license][mit].
 Contributions will be accepted under the same license.
 
 [crates-io]: https://crates.io/crates/textwrap
-[travis-ci]: https://travis-ci.org/mgeisler/textwrap
-[appveyor]: https://ci.appveyor.com/project/mgeisler/textwrap
+[build-status]: https://github.com/mgeisler/textwrap/actions?query=workflow%3Abuild+branch%3Amaster
 [codecov]: https://codecov.io/gh/mgeisler/textwrap
-[py-textwrap]: https://docs.python.org/library/textwrap
+[wasm-demo]: https://mgeisler.github.io/textwrap/
 [`textwrap-macros` crate]: https://crates.io/crates/textwrap-macros
 [`hyphenation` example]: https://github.com/mgeisler/textwrap/blob/master/examples/hyphenation.rs
 [`termwidth` example]: https://github.com/mgeisler/textwrap/blob/master/examples/termwidth.rs
@@ -219,6 +156,8 @@ Contributions will be accepted under the same license.
 [en-us license]: https://github.com/hyphenation/tex-hyphen/blob/master/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-en-us.tex
 [bincode]: https://github.com/tapeinosyne/hyphenation/tree/master/dictionaries
 [`hyphenation` documentation]: http://docs.rs/hyphenation
+[`examples/wasm/`]: https://github.com/mgeisler/textwrap/tree/master/examples/wasm
+[`examples/interactive.rs`]: https://github.com/mgeisler/textwrap/tree/master/examples/interactive.rs
 [api-docs]: https://docs.rs/textwrap/
 [CHANGELOG file]: https://github.com/mgeisler/textwrap/blob/master/CHANGELOG.md
 [mit]: LICENSE

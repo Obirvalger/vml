@@ -12,8 +12,11 @@
 // commit#ea76fa1b1b273e65e3b0b1046643715b49bec51f which is licensed under the
 // MIT/Apache 2.0 license.
 
+#![doc(html_logo_url = "https://clap.rs/images/media/clap.png")]
+#![doc(html_root_url = "https://docs.rs/clap_derive/3.0.0-beta.4")]
+
 //! This crate is custom derive for clap. It should not be used
-//! directly. See [clap documentation](https://docs.rs/clap)
+//! directly. See [clap documentation](clap)
 //! for the usage of `#[derive(Clap)]`.
 
 #![forbid(unsafe_code)]
@@ -40,24 +43,16 @@ pub fn arg_enum(input: TokenStream) -> TokenStream {
 
 /// Generates the `Clap` implementation.
 ///
-/// This is far less verbose than defining the [`App`] struct manually,
-/// receiving an instance of [`ArgMatches`] from conducting parsing, and then
-/// implementing a conversion code (usually `impl From<ArgMatches> for
-/// MyStruct`) to instantiate an instance of the user context struct.
+/// This is far less verbose than defining the `clap::App` struct manually,
+/// receiving an instance of `clap::ArgMatches` from conducting parsing, and then
+/// implementing a conversion code to instantiate an instance of the user
+/// context struct.
 #[proc_macro_derive(Clap, attributes(clap))]
 #[proc_macro_error]
 pub fn clap(input: TokenStream) -> TokenStream {
     let input: DeriveInput = parse_macro_input!(input);
     derives::derive_clap(&input).into()
 }
-
-// /// Generates the `FromArgMatches` impl.
-// #[proc_macro_derive(FromArgMatches, attributes(clap))]
-// #[proc_macro_error]
-// pub fn from_arg_matches(input: TokenStream) -> TokenStream {
-//     let input: DeriveInput = parse_macro_input!(input);
-//     derives::derive_from_arg_matches(&input).into()
-// }
 
 /// Generates the `IntoApp` impl.
 #[proc_macro_derive(IntoApp, attributes(clap))]
@@ -73,4 +68,12 @@ pub fn into_app(input: TokenStream) -> TokenStream {
 pub fn subcommand(input: TokenStream) -> TokenStream {
     let input: DeriveInput = parse_macro_input!(input);
     derives::derive_subcommand(&input).into()
+}
+
+/// Generates the `Args` impl.
+#[proc_macro_derive(Args, attributes(clap))]
+#[proc_macro_error]
+pub fn args(input: TokenStream) -> TokenStream {
+    let input: DeriveInput = parse_macro_input!(input);
+    derives::derive_args(&input).into()
 }

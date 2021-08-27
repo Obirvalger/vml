@@ -23,24 +23,13 @@ use yaml_rust::Yaml;
 
 // Internal
 use crate::{
-    build::{app::settings::AppFlags, Arg, ArgGroup, ArgSettings},
+    build::{app::settings::AppFlags, arg::ArgProvider, Arg, ArgGroup, ArgSettings},
     mkeymap::MKeyMap,
     output::{fmt::Colorizer, Help, HelpWriter, Usage},
     parse::{ArgMatcher, ArgMatches, Input, Parser},
-    util::{safe_exit, termcolor::ColorChoice, ArgStr, Id, Key},
+    util::{safe_exit, termcolor::ColorChoice, ArgStr, Id, Key, USAGE_CODE},
     Result as ClapResult, INTERNAL_ERROR_MSG,
 };
-
-// @TODO FIXME (@CreepySkeleton): some of these variants (None) are never constructed
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Propagation {
-    To(Id),
-    Full,
-    #[cfg_attr(not(test), allow(unused))]
-    NextLevel,
-    #[allow(unused)]
-    None,
-}
 
 /// Represents a command line interface which is made up of all possible
 /// command line arguments and subcommands. Interface arguments and settings are
@@ -70,8 +59,8 @@ pub(crate) enum Propagation {
 ///
 /// // Your program logic starts here...
 /// ```
-/// [`App::get_matches`]: ./struct.App.html#method.get_matches
-#[derive(Default, Debug, Clone)]
+/// [`App::get_matches`]: App::get_matches()
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct App<'help> {
     pub(crate) id: Id,
     pub(crate) name: String,
@@ -81,6 +70,7 @@ pub struct App<'help> {
     pub(crate) author: Option<&'help str>,
     pub(crate) version: Option<&'help str>,
     pub(crate) long_version: Option<&'help str>,
+    pub(crate) license: Option<&'help str>,
     pub(crate) about: Option<&'help str>,
     pub(crate) long_about: Option<&'help str>,
     pub(crate) before_help: Option<&'help str>,
@@ -140,7 +130,7 @@ impl<'help> App<'help> {
 
     /// Get the help message specified via [`App::about`].
     ///
-    /// [`App::about`]: ./struct.App.html#method.about
+    /// [`App::about`]: App::about()
     #[inline]
     pub fn get_about(&self) -> Option<&str> {
         self.about.as_deref()
@@ -161,7 +151,7 @@ impl<'help> App<'help> {
             .map(|a| a.0)
     }
 
-    /// Iterate through the *visible* short aliases for this subcommand.
+    /// Iterate through the *visible* long aliases for this subcommand.
     #[inline]
     pub fn get_visible_long_flag_aliases(&self) -> impl Iterator<Item = &'help str> + '_ {
         self.long_flag_aliases
@@ -203,30 +193,101 @@ impl<'help> App<'help> {
     /// Iterate through the set of arguments.
     #[inline]
     pub fn get_arguments(&self) -> impl Iterator<Item = &Arg<'help>> {
-        self.args.args.iter()
+        self.args.args()
     }
 
-    /// Get the list of *positional* arguments.
+    /// Iterate through the *positionals*.
     #[inline]
     pub fn get_positionals(&self) -> impl Iterator<Item = &Arg<'help>> {
         self.get_arguments().filter(|a| a.is_positional())
     }
 
-    /// Iterate through the *flags* that don't have custom heading.
-    pub fn get_flags_with_no_heading(&self) -> impl Iterator<Item = &Arg<'help>> {
+    /// Iterate through the *flags*.
+    pub fn get_flags(&self) -> impl Iterator<Item = &Arg<'help>> {
         self.get_arguments()
             .filter(|a| !a.is_set(ArgSettings::TakesValue) && a.get_index().is_none())
+    }
+
+    /// Iterate through the *options*.
+    pub fn get_opts(&self) -> impl Iterator<Item = &Arg<'help>> {
+        self.get_arguments()
+            .filter(|a| a.is_set(ArgSettings::TakesValue) && a.get_index().is_none())
+    }
+
+    /// Iterate through the *positionals* that don't have custom heading.
+    pub fn get_positionals_with_no_heading(&self) -> impl Iterator<Item = &Arg<'help>> {
+        self.get_positionals()
             .filter(|a| a.get_help_heading().is_none())
+    }
+
+    /// Iterate through the *flags* that don't have custom heading.
+    pub fn get_flags_with_no_heading(&self) -> impl Iterator<Item = &Arg<'help>> {
+        self.get_flags().filter(|a| a.get_help_heading().is_none())
     }
 
     /// Iterate through the *options* that don't have custom heading.
     pub fn get_opts_with_no_heading(&self) -> impl Iterator<Item = &Arg<'help>> {
-        self.get_arguments()
-            .filter(|a| a.is_set(ArgSettings::TakesValue) && a.get_index().is_none())
-            .filter(|a| a.get_help_heading().is_none())
+        self.get_opts().filter(|a| a.get_help_heading().is_none())
+    }
+
+    // Get a list of subcommands which contain the provided Argument
+    //
+    // This command will only include subcommands in its list for which the subcommands
+    // parent also contains the Argument.
+    //
+    // This search follows the propagation rules of global arguments.
+    // It is useful to finding subcommands, that have inherited a global argument.
+    //
+    // **NOTE:** In this case only Sucommand_1 will be included
+    //   Subcommand_1 (contains Arg)
+    //     Subcommand_1.1 (doesn't contain Arg)
+    //       Subcommand_1.1.1 (contains Arg)
+    //
+    fn get_subcommands_containing(&self, arg: &Arg) -> Vec<&App<'help>> {
+        let mut vec = std::vec::Vec::new();
+        for idx in 0..self.subcommands.len() {
+            if self.subcommands[idx].args.args().any(|ar| ar.id == arg.id) {
+                vec.push(&self.subcommands[idx]);
+                vec.append(&mut self.subcommands[idx].get_subcommands_containing(arg));
+            }
+        }
+        vec
+    }
+
+    // Get a unique list of all arguments of all commands and continuous subcommands the given argument conflicts with.
+    //
+    // This behavior follows the propagation rules of global arguments.
+    // It is useful for finding conflicts for arguments declared as global.
+    //
+    // ### Panics
+    //
+    // If the given arg contains a conflict with an argument that is unknown to
+    // this `App`.
+    fn get_global_arg_conflicts_with(&self, arg: &Arg) -> Vec<&Arg<'help>> // FIXME: This could probably have been an iterator
+    {
+        arg.blacklist
+            .iter()
+            .map(|id| {
+                self.args
+                    .args()
+                    .chain(
+                        self.get_subcommands_containing(arg)
+                            .iter()
+                            .flat_map(|x| x.args.args()),
+                    )
+                    .find(|arg| arg.id == *id)
+                    .expect(
+                        "App::get_arg_conflicts_with: \
+                    The passed arg conflicts with an arg unknown to the app",
+                    )
+            })
+            .collect()
     }
 
     /// Get a list of all arguments the given argument conflicts with.
+    ///
+    /// If the provided argument is declared as global, the conflicts will be determined
+    /// based on the propagation rules of global arguments.
     ///
     /// ### Panics
     ///
@@ -234,23 +295,26 @@ impl<'help> App<'help> {
     /// this `App`.
     pub fn get_arg_conflicts_with(&self, arg: &Arg) -> Vec<&Arg<'help>> // FIXME: This could probably have been an iterator
     {
-        arg.blacklist
-            .iter()
-            .map(|id| {
-                self.args.args.iter().find(|arg| arg.id == *id).expect(
-                    "App::get_arg_conflicts_with: \
+        if arg.global {
+            self.get_global_arg_conflicts_with(arg)
+        } else {
+            arg.blacklist
+                .iter()
+                .map(|id| {
+                    self.args.args().find(|arg| arg.id == *id).expect(
+                        "App::get_arg_conflicts_with: \
                     The passed arg conflicts with an arg unknown to the app",
-                )
-            })
-            .collect()
+                    )
+                })
+                .collect()
+        }
     }
 
     /// Returns `true` if the given [`AppSettings`] variant is currently set in
     /// this `App` (checks both [local] and [global settings]).
     ///
-    /// [`AppSettings`]: ./enum.AppSettings.html
-    /// [local]: ./struct.App.html#method.setting
-    /// [global settings]: ./struct.App.html#method.global_setting
+    /// [local]: App::setting()
+    /// [global settings]: App::global_setting()
     #[inline]
     pub fn is_set(&self, s: AppSettings) -> bool {
         self.settings.is_set(s) || self.g_settings.is_set(s)
@@ -295,12 +359,27 @@ impl<'help> App<'help> {
     /// ```
     pub fn new<S: Into<String>>(name: S) -> Self {
         let name = name.into();
+
         App {
             id: Id::from(&*name),
             name,
             disp_ord: 999,
             ..Default::default()
         }
+        .arg(
+            Arg::new("help")
+                .long("help")
+                .about("Print help information")
+                .global(true)
+                .generated(),
+        )
+        .arg(
+            Arg::new("version")
+                .long("version")
+                .about("Print version information")
+                .global(true)
+                .generated(),
+        )
     }
 
     /// Sets a string of author(s) that will be displayed to the user when they
@@ -378,9 +457,9 @@ impl<'help> App<'help> {
     ///     .about("Does really amazing things for great people")
     /// # ;
     /// ```
-    /// [long format]: ./struct.App.html#method.long_about
-    /// [short format]: ./struct.App.html#method.about
-    /// [`App::about`]: ./struct.App.html#method.about
+    /// [long format]: App::long_about()
+    /// [short format]: App::about()
+    /// [`App::about`]: App::about()
     pub fn about<S: Into<&'help str>>(mut self, about: S) -> Self {
         self.about = Some(about.into());
         self
@@ -412,9 +491,9 @@ impl<'help> App<'help> {
     ///  a few lines of text, but that's ok!")
     /// # ;
     /// ```
-    /// [long format]: ./struct.App.html#method.long_about
-    /// [short format]: ./struct.App.html#method.about
-    /// [`App::about`]: ./struct.App.html#method.about
+    /// [long format]: App::long_about()
+    /// [short format]: App::about()
+    /// [`App::about`]: App::about()
     pub fn long_about<S: Into<&'help str>>(mut self, about: S) -> Self {
         self.long_about = Some(about.into());
         self
@@ -438,7 +517,6 @@ impl<'help> App<'help> {
     /// // continued logic goes here, such as `app.get_matches()` etc.
     /// ```
     ///
-    /// [`crate_name!`]: ./macro.crate_name.html
     pub fn name<S: Into<String>>(mut self, name: S) -> Self {
         self.name = name.into();
         self
@@ -460,7 +538,7 @@ impl<'help> App<'help> {
     /// # ;
     /// ```
     ///
-    /// [`App::after_help`]: ./struct.App.html#method.after_help
+    /// [`App::after_help`]: App::after_help()
     pub fn after_help<S: Into<&'help str>>(mut self, help: S) -> Self {
         self.after_help = Some(help.into());
         self
@@ -483,7 +561,7 @@ impl<'help> App<'help> {
     ///                      like, for real, be careful with this!")
     /// # ;
     /// ```
-    /// [`App::after_long_help`]: ./struct.App.html#method.after_long_help
+    /// [`App::after_long_help`]: App::after_long_help()
     pub fn after_long_help<S: Into<&'help str>>(mut self, help: S) -> Self {
         self.after_long_help = Some(help.into());
         self
@@ -504,7 +582,7 @@ impl<'help> App<'help> {
     ///     .before_help("Some info I'd like to appear before the help info")
     /// # ;
     /// ```
-    /// [`App::before_help`]: ./struct.App.html#method.before_help
+    /// [`App::before_help`]: App::before_help()
     pub fn before_help<S: Into<&'help str>>(mut self, help: S) -> Self {
         self.before_help = Some(help.into());
         self
@@ -525,7 +603,7 @@ impl<'help> App<'help> {
     ///     .before_long_help("Some verbose and long info I'd like to appear before the help info")
     /// # ;
     /// ```
-    /// [`App::before_long_help`]: ./struct.App.html#method.before_long_help
+    /// [`App::before_long_help`]: App::before_long_help()
     pub fn before_long_help<S: Into<&'help str>>(mut self, help: S) -> Self {
         self.before_long_help = Some(help.into());
         self
@@ -554,7 +632,7 @@ impl<'help> App<'help> {
     /// let sync_matches = matches.subcommand_matches("sync").unwrap();
     /// assert!(sync_matches.is_present("search"));
     /// ```
-    /// [`Arg::short`]: ./struct.Arg.html#method.short
+    /// [`Arg::short`]: Arg::short()
     pub fn short_flag(mut self, short: char) -> Self {
         self.short_flag = Some(short);
         self
@@ -590,7 +668,7 @@ impl<'help> App<'help> {
     /// assert!(sync_matches.is_present("search"));
     /// ```
     ///
-    /// [`Arg::long`]: ./struct.Arg.html#method.long
+    /// [`Arg::long`]: Arg::long()
     pub fn long_flag(mut self, long: &'help str) -> Self {
         self.long_flag = Some(long.trim_start_matches(|c| c == '-'));
         self
@@ -621,7 +699,7 @@ impl<'help> App<'help> {
     /// ```
     /// [`crate_version!`]: ./macro.crate_version!.html
     /// [`examples/`]: https://github.com/clap-rs/clap/tree/master/examples
-    /// [`App::long_version`]: ./struct.App.html#method.long_version
+    /// [`App::long_version`]: App::long_version()
     pub fn version<S: Into<&'help str>>(mut self, ver: S) -> Self {
         self.version = Some(ver.into());
         self
@@ -661,9 +739,30 @@ impl<'help> App<'help> {
     /// ```
     /// [`crate_version!`]: ./macro.crate_version!.html
     /// [`examples/`]: https://github.com/kbknapp/clap-rs/tree/master/examples
-    /// [`App::version`]: ./struct.App.html#method.version
+    /// [`App::version`]: App::version()
     pub fn long_version<S: Into<&'help str>>(mut self, ver: S) -> Self {
         self.long_version = Some(ver.into());
+        self
+    }
+
+    /// Sets a string of the license to be displayed when displaying help information.
+    ///
+    /// **Pro-tip:** Use `clap`s convenience macro [`crate_license!`] to automatically set your
+    /// application's license to the same thing as your crate at compile time. See the
+    /// [`examples/`] directory for more information
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use clap::{App, Arg};
+    /// App::new("myprog")
+    ///     .license("MIT OR Apache-2.0")
+    /// # ;
+    /// ```
+    /// [`crate_license!`]: ./macro.crate_license!.html
+    /// [`examples/`]: https://github.com/clap-rs/clap/tree/master/examples
+    pub fn license<S: Into<&'help str>>(mut self, license: S) -> Self {
+        self.license = Some(license.into());
         self
     }
 
@@ -686,7 +785,7 @@ impl<'help> App<'help> {
     ///     .override_usage("myapp [-clDas] <some_file>")
     /// # ;
     /// ```
-    /// [`ArgMatches::usage`]: ./struct.ArgMatches.html#method.usage
+    /// [`ArgMatches::usage`]: ArgMatches::usage()
     pub fn override_usage<S: Into<&'help str>>(mut self, usage: S) -> Self {
         self.usage_str = Some(usage.into());
         self
@@ -702,7 +801,7 @@ impl<'help> App<'help> {
     ///
     /// **NOTE:** This **only** replaces the help message for the current
     /// command, meaning if you are using subcommands, those help messages will
-    /// still be auto-generated unless you specify a [`Arg::override_help`] for
+    /// still be auto-generated unless you specify a [`App::override_help`] for
     /// them as well.
     ///
     /// # Examples
@@ -723,11 +822,10 @@ impl<'help> App<'help> {
     ///            -v               Be verbose\n\n\
     ///
     ///            Commmands:\n\
-    ///            help             Prints this message\n\
+    ///            help             Print this message\n\
     ///            work             Do some work")
     /// # ;
     /// ```
-    /// [`Arg::override_help`]: ./struct.Arg.html#method.override_help
     pub fn override_help<S: Into<&'help str>>(mut self, help: S) -> Self {
         self.help_str = Some(help.into());
         self
@@ -746,9 +844,11 @@ impl<'help> App<'help> {
     ///   * `{version}`             - Version number.
     ///   * `{author}`              - Author information.
     ///   * `{author-with-newline}` - Author followed by `\n`.
+    ///   * `{author-section}`      - Author preceded and followed by `\n`.
     ///   * `{about}`               - General description (from [`App::about`] or
     ///                               [`App::long_about`]).
     ///   * `{about-with-newline}`  - About followed by `\n`.
+    ///   * `{about-section}`       - About preceded and followed by '\n'.
     ///   * `{usage-heading}`       - Automatically generated usage heading.
     ///   * `{usage}`               - Automatically generated or given usage string.
     ///   * `{all-args}`            - Help for all arguments (options, flags, positional
@@ -772,13 +872,12 @@ impl<'help> App<'help> {
     ///     .help_template("{bin} ({version}) - {usage}")
     /// # ;
     /// ```
-    /// [`App::about`]: ./struct.App.html#method.about
-    /// [`App::long_about`]: ./struct.App.html#method.long_about
-    /// [`App::after_help`]: ./struct.App.html#method.after_help
-    /// [`App::after_long_help`]: ./struct.App.html#method.after_long_help
-    /// [`App::before_help`]: ./struct.App.html#method.before_help
-    /// [`App::before_long_help`]: ./struct.App.html#method.before_long_help
-    /// [`AppSettings::UnifiedHelpMessage`]: ./enum.AppSettings.html#variant.UnifiedHelpMessage
+    /// [`App::about`]: App::about()
+    /// [`App::long_about`]: App::long_about()
+    /// [`App::after_help`]: App::after_help()
+    /// [`App::after_long_help`]: App::after_long_help()
+    /// [`App::before_help`]: App::before_help()
+    /// [`App::before_long_help`]: App::before_long_help()
     pub fn help_template<S: Into<&'help str>>(mut self, s: S) -> Self {
         self.template = Some(s.into());
         self
@@ -797,7 +896,6 @@ impl<'help> App<'help> {
     ///     .setting(AppSettings::WaitOnError)
     /// # ;
     /// ```
-    /// [`AppSettings`]: ./enum.AppSettings.html
     #[inline]
     pub fn setting(mut self, setting: AppSettings) -> Self {
         self.settings.set(setting);
@@ -816,12 +914,9 @@ impl<'help> App<'help> {
     ///     .unset_setting(AppSettings::ColorAuto)
     /// # ;
     /// ```
-    /// [`AppSettings`]: ./enum.AppSettings.html
-    /// [global]: ./struct.App.html#method.global_setting
     #[inline]
     pub fn unset_setting(mut self, setting: AppSettings) -> Self {
         self.settings.unset(setting);
-        self.g_settings.unset(setting);
         self
     }
 
@@ -840,7 +935,6 @@ impl<'help> App<'help> {
     ///     .global_setting(AppSettings::SubcommandRequired)
     /// # ;
     /// ```
-    /// [`AppSettings`]: ./enum.AppSettings.html
     #[inline]
     pub fn global_setting(mut self, setting: AppSettings) -> Self {
         self.settings.set(setting);
@@ -864,8 +958,7 @@ impl<'help> App<'help> {
     ///     .unset_global_setting(AppSettings::ColorAuto)
     /// # ;
     /// ```
-    /// [`AppSettings`]: ./enum.AppSettings.html
-    /// [global]: ./struct.App.html#method.global_setting
+    /// [global]: App::global_setting()
     #[inline]
     pub fn unset_global_setting(mut self, setting: AppSettings) -> Self {
         self.settings.unset(setting);
@@ -874,7 +967,7 @@ impl<'help> App<'help> {
     }
 
     /// Sets the terminal width at which to wrap help messages. Defaults to
-    /// `120`. Using `0` will ignore terminal widths and use source formatting.
+    /// `100`. Using `0` will ignore terminal widths and use source formatting.
     ///
     /// `clap` automatically tries to determine the terminal width on Unix,
     /// Linux, OSX and Windows if the `wrap_help` cargo "feature" has been enabled
@@ -955,7 +1048,7 @@ impl<'help> App<'help> {
     ///     )
     /// # ;
     /// ```
-    /// [argument]: ./struct.Arg.html
+    /// [argument]: Arg
     pub fn arg<A: Into<Arg<'help>>>(mut self, a: A) -> Self {
         let mut arg = a.into();
         if let Some(help_heading) = self.current_help_heading {
@@ -973,9 +1066,9 @@ impl<'help> App<'help> {
     /// This is useful if the default `FLAGS`, `OPTIONS`, or `ARGS` headings are
     /// not specific enough for one's use case.
     ///
-    /// [`App::arg`]: ./struct.App.html#method.arg
-    /// [`App::help_heading`]: ./struct.App.html#method.help_heading
-    /// [`App::stop_custom_headings`]: ./struct.App.html#method.stop_custom_headings
+    /// [`App::arg`]: App::arg()
+    /// [`App::help_heading`]: App::help_heading()
+    /// [`App::stop_custom_headings`]: App::stop_custom_headings()
     #[inline]
     pub fn help_heading(mut self, heading: &'help str) -> Self {
         self.current_help_heading = Some(heading);
@@ -984,7 +1077,7 @@ impl<'help> App<'help> {
 
     /// Stop using [custom argument headings] and return to default headings.
     ///
-    /// [custom argument headings]: ./struct.App.html#method.help_heading
+    /// [custom argument headings]: App::help_heading()
     #[inline]
     pub fn stop_custom_headings(mut self) -> Self {
         self.current_help_heading = None;
@@ -1004,7 +1097,7 @@ impl<'help> App<'help> {
     ///     ])
     /// # ;
     /// ```
-    /// [arguments]: ./struct.Arg.html
+    /// [arguments]: Arg
     pub fn args<I, T>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -1042,8 +1135,7 @@ impl<'help> App<'help> {
     ///     .get_matches_from(vec!["myprog", "do-stuff"]);
     /// assert_eq!(m.subcommand_name(), Some("test"));
     /// ```
-    /// [`ArgMatches`]: ./struct.ArgMatches.html
-    /// [`App::visible_alias`]: ./struct.App.html#method.visible_alias
+    /// [`App::visible_alias`]: App::visible_alias()
     pub fn alias<S: Into<&'help str>>(mut self, name: S) -> Self {
         self.aliases.push((name.into(), false));
         self
@@ -1120,8 +1212,7 @@ impl<'help> App<'help> {
     ///     .get_matches_from(vec!["myprog", "do-tests"]);
     /// assert_eq!(m.subcommand_name(), Some("test"));
     /// ```
-    /// [`ArgMatches`]: ./struct.ArgMatches.html
-    /// [`App::visible_aliases`]: ./struct.App.html#method.visible_aliases
+    /// [`App::visible_aliases`]: App::visible_aliases()
     pub fn aliases(mut self, names: &[&'help str]) -> Self {
         self.aliases.extend(names.iter().map(|n| (*n, false)));
         self
@@ -1207,8 +1298,7 @@ impl<'help> App<'help> {
     ///     .get_matches_from(vec!["myprog", "do-stuff"]);
     /// assert_eq!(m.subcommand_name(), Some("test"));
     /// ```
-    /// [`ArgMatches`]: ./struct.ArgMatches.html
-    /// [`App::alias`]: ./struct.App.html#method.alias
+    /// [`App::alias`]: App::alias()
     pub fn visible_alias<S: Into<&'help str>>(mut self, name: S) -> Self {
         self.aliases.push((name.into(), true));
         self
@@ -1227,7 +1317,7 @@ impl<'help> App<'help> {
     ///             .get_matches_from(vec!["myprog", "-d"]);
     /// assert_eq!(m.subcommand_name(), Some("test"));
     /// ```
-    /// [`App::short_flag_alias`]: ./struct.App.html#method.short_flag_alias
+    /// [`App::short_flag_alias`]: App::short_flag_alias()
     pub fn visible_short_flag_alias(mut self, name: char) -> Self {
         if name == '-' {
             panic!("short alias name cannot be `-`");
@@ -1249,7 +1339,7 @@ impl<'help> App<'help> {
     ///             .get_matches_from(vec!["myprog", "--testing"]);
     /// assert_eq!(m.subcommand_name(), Some("test"));
     /// ```
-    /// [`App::long_flag_alias`]: ./struct.App.html#method.long_flag_alias
+    /// [`App::long_flag_alias`]: App::long_flag_alias()
     pub fn visible_long_flag_alias(mut self, name: &'help str) -> Self {
         self.long_flag_aliases.push((name, true));
         self
@@ -1280,8 +1370,7 @@ impl<'help> App<'help> {
     ///     .get_matches_from(vec!["myprog", "do-stuff"]);
     /// assert_eq!(m.subcommand_name(), Some("test"));
     /// ```
-    /// [`ArgMatches`]: ./struct.ArgMatches.html
-    /// [`App::alias`]: ./struct.App.html#method.alias
+    /// [`App::alias`]: App::alias()
     pub fn visible_aliases(mut self, names: &[&'help str]) -> Self {
         self.aliases.extend(names.iter().map(|n| (*n, true)));
         self
@@ -1300,7 +1389,7 @@ impl<'help> App<'help> {
     ///             .get_matches_from(vec!["myprog", "-t"]);
     /// assert_eq!(m.subcommand_name(), Some("test"));
     /// ```
-    /// [`App::short_flag_aliases`]: ./struct.App.html#method.short_flag_aliases
+    /// [`App::short_flag_aliases`]: App::short_flag_aliases()
     pub fn visible_short_flag_aliases(mut self, names: &[char]) -> Self {
         for s in names {
             if s == &'-' {
@@ -1324,7 +1413,7 @@ impl<'help> App<'help> {
     ///             .get_matches_from(vec!["myprog", "--testing"]);
     /// assert_eq!(m.subcommand_name(), Some("test"));
     /// ```
-    /// [`App::long_flag_aliases`]: ./struct.App.html#method.long_flag_aliases
+    /// [`App::long_flag_aliases`]: App::long_flag_aliases()
     pub fn visible_long_flag_aliases(mut self, names: &[&'help str]) -> Self {
         for s in names {
             self.long_flag_aliases.push((s, true));
@@ -1335,7 +1424,7 @@ impl<'help> App<'help> {
     /// Replaces an argument or subcommand used on the CLI at runtime with other arguments or subcommands.
     ///
     /// When this method is used, `name` is removed from the CLI, and `target`
-    /// is inserted in it's place. Parsing continues as if the user typed
+    /// is inserted in its place. Parsing continues as if the user typed
     /// `target` instead of `name`.
     ///
     /// This can be used to create "shortcuts" for subcommands, or if a
@@ -1434,7 +1523,7 @@ impl<'help> App<'help> {
     /// assert_eq!(m.value_of("format"), Some("json"));
     /// ```
     ///
-    /// [`App::replace`]: ./struct.App.html#method.replace
+    /// [`App::replace`]: App::replace()
     #[inline]
     pub fn replace(mut self, name: &'help str, target: &'help [&'help str]) -> Self {
         self.replacers.insert(name, target);
@@ -1473,10 +1562,9 @@ impl<'help> App<'help> {
     ///          .required(true))
     /// # ;
     /// ```
-    /// [`ArgGroup`]: ./struct.ArgGroup.html
     #[inline]
-    pub fn group(mut self, group: ArgGroup<'help>) -> Self {
-        self.groups.push(group);
+    pub fn group<G: Into<ArgGroup<'help>>>(mut self, group: G) -> Self {
+        self.groups.push(group.into());
         self
     }
 
@@ -1502,10 +1590,12 @@ impl<'help> App<'help> {
     ///     ])
     /// # ;
     /// ```
-    /// [`ArgGroup`]: ./struct.ArgGroup.html
-    /// [`App`]: ./struct.App.html
-    pub fn groups(mut self, groups: &[ArgGroup<'help>]) -> Self {
-        for g in groups {
+    pub fn groups<I, T>(mut self, groups: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<ArgGroup<'help>>,
+    {
+        for g in groups.into_iter() {
             self = self.group(g.into());
         }
         self
@@ -1526,10 +1616,9 @@ impl<'help> App<'help> {
     ///         .arg("<config> 'Required configuration file to use'"))
     /// # ;
     /// ```
-    /// [`App`]: ./struct.App.html
     #[inline]
-    pub fn subcommand(mut self, subcmd: App<'help>) -> Self {
-        self.subcommands.push(subcmd);
+    pub fn subcommand<S: Into<App<'help>>>(mut self, subcmd: S) -> Self {
+        self.subcommands.push(subcmd.into());
         self
     }
 
@@ -1547,14 +1636,14 @@ impl<'help> App<'help> {
     ///        App::new("debug").about("Controls debug functionality")])
     /// # ;
     /// ```
-    /// [`App`]: ./struct.App.html
-    /// [`IntoIterator`]: https://doc.rust-lang.org/std/iter/trait.IntoIterator.html
-    pub fn subcommands<I>(mut self, subcmds: I) -> Self
+    /// [`IntoIterator`]: std::iter::IntoIterator
+    pub fn subcommands<I, T>(mut self, subcmds: I) -> Self
     where
-        I: IntoIterator<Item = App<'help>>,
+        I: IntoIterator<Item = T>,
+        T: Into<App<'help>>,
     {
-        for subcmd in subcmds {
-            self.subcommands.push(subcmd);
+        for subcmd in subcmds.into_iter() {
+            self.subcommands.push(subcmd.into());
         }
         self
     }
@@ -1598,8 +1687,8 @@ impl<'help> App<'help> {
     ///     cust-ord [FLAGS] [OPTIONS]
     ///
     /// FLAGS:
-    ///     -h, --help       Prints help information
-    ///     -V, --version    Prints version information
+    ///     -h, --help       Print help information
+    ///     -V, --version    Print version information
     ///
     /// SUBCOMMANDS:
     ///     beta    I should be first!
@@ -1633,8 +1722,6 @@ impl<'help> App<'help> {
     /// let res = app.try_get_matches_from_mut(vec!["foo", "-B"]);
     /// assert!(res.is_ok());
     /// ```
-    /// [`Arg`]: ./struct.Arg.html
-    /// [`App`]: ./struct.App.html
     pub fn mut_arg<T, F>(mut self, arg_id: T, f: F) -> Self
     where
         F: FnOnce(Arg<'help>) -> Arg<'help>,
@@ -1642,13 +1729,18 @@ impl<'help> App<'help> {
     {
         let arg_id: &str = arg_id.into();
         let id = Id::from(arg_id);
-        let a = self.args.remove_by_name(&id).unwrap_or_else(|| Arg {
+
+        let mut a = self.args.remove_by_name(&id).unwrap_or_else(|| Arg {
             id,
             name: arg_id,
             ..Arg::default()
         });
-        self.args.push(f(a));
 
+        if a.provider == ArgProvider::Generated {
+            a.provider = ArgProvider::GeneratedMutated;
+        }
+
+        self.args.push(f(a));
         self
     }
 
@@ -1665,9 +1757,10 @@ impl<'help> App<'help> {
     /// let mut app = App::new("myprog");
     /// app.print_help();
     /// ```
-    /// [`io::stdout()`]: https://doc.rust-lang.org/std/io/fn.stdout.html
-    /// [`-h` (short)]: ./struct.Arg.html#method.about
-    /// [`--help` (long)]: ./struct.Arg.html#method.long_about
+    /// [`io::stdout()`]: std::io::stdout()
+    /// [`BufWriter`]: std::io::BufWriter
+    /// [`-h` (short)]: Arg::about()
+    /// [`--help` (long)]: Arg::long_about()
     pub fn print_help(&mut self) -> io::Result<()> {
         self._build();
 
@@ -1690,10 +1783,10 @@ impl<'help> App<'help> {
     /// let mut app = App::new("myprog");
     /// app.print_long_help();
     /// ```
-    /// [`io::stdout()`]: https://doc.rust-lang.org/std/io/fn.stdout.html
-    /// [`BufWriter`]: https://doc.rust-lang.org/std/io/struct.BufWriter.html
-    /// [`-h` (short)]: ./struct.Arg.html#method.about
-    /// [`--help` (long)]: ./struct.Arg.html#method.long_about
+    /// [`io::stdout()`]: std::io::stdout()
+    /// [`BufWriter`]: std::io::BufWriter
+    /// [`-h` (short)]: Arg::about()
+    /// [`--help` (long)]: Arg::long_about()
     pub fn print_long_help(&mut self) -> io::Result<()> {
         self._build();
 
@@ -1718,9 +1811,9 @@ impl<'help> App<'help> {
     /// let mut out = io::stdout();
     /// app.write_help(&mut out).expect("failed to write to stdout");
     /// ```
-    /// [`io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
-    /// [`-h` (short)]: ./struct.Arg.html#method.about
-    /// [`--help` (long)]: ./struct.Arg.html#method.long_about
+    /// [`io::Write`]: std::io::Write
+    /// [`-h` (short)]: Arg::about()
+    /// [`--help` (long)]: Arg::long_about()
     pub fn write_help<W: Write>(&mut self, w: &mut W) -> io::Result<()> {
         self._build();
 
@@ -1744,9 +1837,9 @@ impl<'help> App<'help> {
     /// let mut out = io::stdout();
     /// app.write_long_help(&mut out).expect("failed to write to stdout");
     /// ```
-    /// [`io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
-    /// [`-h` (short)]: ./struct.Arg.html#method.about
-    /// [`--help` (long)]: ./struct.Arg.html#method.long_about
+    /// [`io::Write`]: std::io::Write
+    /// [`-h` (short)]: Arg::about()
+    /// [`--help` (long)]: Arg::long_about()
     pub fn write_long_help<W: Write>(&mut self, w: &mut W) -> io::Result<()> {
         self._build();
 
@@ -1772,9 +1865,9 @@ impl<'help> App<'help> {
     /// let app = App::new("myprog");
     /// println!("{}", app.render_version());
     /// ```
-    /// [`io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
-    /// [`-V` (short)]: ./struct.App.html#method.version
-    /// [`--version` (long)]: ./struct.App.html#method.long_version
+    /// [`io::Write`]: std::io::Write
+    /// [`-V` (short)]: App::version()
+    /// [`--version` (long)]: App::long_version()
     /// [ANSI escape codes]: https://en.wikipedia.org/wiki/ANSI_escape_code
     pub fn render_version(&self) -> String {
         self._render_version(false)
@@ -1797,9 +1890,9 @@ impl<'help> App<'help> {
     /// let app = App::new("myprog");
     /// println!("{}", app.render_long_version());
     /// ```
-    /// [`io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
-    /// [`-V` (short)]: ./struct.App.html#method.version
-    /// [`--version` (long)]: ./struct.App.html#method.long_version
+    /// [`io::Write`]: std::io::Write
+    /// [`-V` (short)]: App::version()
+    /// [`--version` (long)]: App::long_version()
     /// [ANSI escape codes]: https://en.wikipedia.org/wiki/ANSI_escape_code
     pub fn render_long_version(&self) -> String {
         self._render_version(true)
@@ -1809,9 +1902,7 @@ impl<'help> App<'help> {
     pub fn generate_usage(&mut self) -> String {
         // If there are global arguments, or settings we need to propagate them down to subcommands
         // before parsing incase we run into a subcommand
-        if !self.settings.is_set(AppSettings::Built) {
-            self._build();
-        }
+        self._build();
 
         let mut parser = Parser::new(self);
         parser._build();
@@ -1831,7 +1922,7 @@ impl<'help> App<'help> {
     ///     // Args and options go here...
     ///     .get_matches();
     /// ```
-    /// [`env::args_os`]: https://doc.rust-lang.org/std/env/fn.args_os.html
+    /// [`env::args_os`]: std::env::args_os()
     #[inline]
     pub fn get_matches(self) -> ArgMatches {
         self.get_matches_from(&mut env::args_os())
@@ -1848,8 +1939,8 @@ impl<'help> App<'help> {
     ///     ;
     /// let matches = app.get_matches_mut();
     /// ```
-    /// [`env::args_os`]: https://doc.rust-lang.org/std/env/fn.args_os.html
-    /// [`App::get_matches`]: ./struct.App.html#method.get_matches
+    /// [`env::args_os`]: std::env::args_os()
+    /// [`App::get_matches`]: App::get_matches()
     pub fn get_matches_mut(&mut self) -> ArgMatches {
         self.try_get_matches_from_mut(&mut env::args_os())
             .unwrap_or_else(|e| {
@@ -1865,7 +1956,7 @@ impl<'help> App<'help> {
                     }
 
                     drop(e);
-                    safe_exit(2);
+                    safe_exit(USAGE_CODE);
                 }
 
                 e.exit()
@@ -1889,14 +1980,14 @@ impl<'help> App<'help> {
     ///     .try_get_matches()
     ///     .unwrap_or_else(|e| e.exit());
     /// ```
-    /// [`env::args_os`]: https://doc.rust-lang.org/std/env/fn.args_os.html
-    /// [`ErrorKind::DisplayHelp`]: ./enum.ErrorKind.html#variant.DisplayHelp
-    /// [`ErrorKind::DisplayVersion`]: ./enum.ErrorKind.html#variant.DisplayVersion
-    /// [`Error::exit`]: ./struct.Error.html#method.exit
-    /// [`std::process::exit`]: https://doc.rust-lang.org/std/process/fn.exit.html
-    /// [`clap::Result`]: ./type.Result.html
-    /// [`clap::Error`]: ./struct.Error.html
-    /// [`kind`]: ./struct.Error.html
+    /// [`env::args_os`]: std::env::args_os()
+    /// [`Error::exit`]: crate::Error::exit()
+    /// [`std::process::exit`]: std::process::exit()
+    /// [`clap::Result`]: Result
+    /// [`clap::Error`]: crate::Error
+    /// [`kind`]: crate::Error
+    /// [`ErrorKind::DisplayHelp`]: crate::ErrorKind::DisplayHelp
+    /// [`ErrorKind::DisplayVersion`]: crate::ErrorKind::DisplayVersion
     #[inline]
     pub fn try_get_matches(self) -> ClapResult<ArgMatches> {
         // Start the parsing
@@ -1920,10 +2011,9 @@ impl<'help> App<'help> {
     ///     // Args and options go here...
     ///     .get_matches_from(arg_vec);
     /// ```
-    /// [`App::get_matches`]: ./struct.App.html#method.get_matches
-    /// [`clap::Result`]: ./type.Result.html
-    /// [`Vec`]: https://doc.rust-lang.org/std/vec/struct.Vec.html
-    /// [`AppSettings::NoBinaryName`]: ./enum.AppSettings.html#variant.NoBinaryName
+    /// [`App::get_matches`]: App::get_matches()
+    /// [`clap::Result`]: Result
+    /// [`Vec`]: std::vec::Vec
     pub fn get_matches_from<I, T>(mut self, itr: I) -> ArgMatches
     where
         I: IntoIterator<Item = T>,
@@ -1973,16 +2063,15 @@ impl<'help> App<'help> {
     ///     .try_get_matches_from(arg_vec)
     ///     .unwrap_or_else(|e| e.exit());
     /// ```
-    /// [`App::get_matches_from`]: ./struct.App.html#method.get_matches_from
-    /// [`App::try_get_matches`]: ./struct.App.html#method.try_get_matches
-    /// [`ErrorKind::DisplayHelp`]: ./enum.ErrorKind.html#variant.DisplayHelp
-    /// [`ErrorKind::DisplayVersion`]: ./enum.ErrorKind.html#variant.DisplayVersion
-    /// [`Error::exit`]: ./struct.Error.html#method.exit
-    /// [`std::process::exit`]: https://doc.rust-lang.org/std/process/fn.exit.html
-    /// [`clap::Error`]: ./struct.Error.html
-    /// [`Error::exit`]: ./struct.Error.html#method.exit
-    /// [`kind`]: ./struct.Error.html
-    /// [`AppSettings::NoBinaryName`]: ./enum.AppSettings.html#variant.NoBinaryName
+    /// [`App::get_matches_from`]: App::get_matches_from()
+    /// [`App::try_get_matches`]: App::try_get_matches()
+    /// [`Error::exit`]: crate::Error::exit()
+    /// [`std::process::exit`]: std::process::exit()
+    /// [`clap::Error`]: crate::Error
+    /// [`Error::exit`]: crate::Error::exit()
+    /// [`kind`]: crate::Error
+    /// [`ErrorKind::DisplayHelp`]: crate::ErrorKind::DisplayHelp
+    /// [`ErrorKind::DisplayVersion`]: crate::ErrorKind::DisplayVersion
     pub fn try_get_matches_from<I, T>(mut self, itr: I) -> ClapResult<ArgMatches>
     where
         I: IntoIterator<Item = T>,
@@ -2009,9 +2098,7 @@ impl<'help> App<'help> {
     /// let matches = app.try_get_matches_from_mut(arg_vec)
     ///     .unwrap_or_else(|e| e.exit());
     /// ```
-    /// [`App`]: ./struct.App.html
-    /// [`App::try_get_matches_from`]: ./struct.App.html#method.try_get_matches_from
-    /// [`AppSettings::NoBinaryName`]: ./enum.AppSettings.html#variant.NoBinaryName
+    /// [`App::try_get_matches_from`]: App::try_get_matches_from()
     pub fn try_get_matches_from_mut<I, T>(&mut self, itr: I) -> ClapResult<ArgMatches>
     where
         I: IntoIterator<Item = T>,
@@ -2026,11 +2113,11 @@ impl<'help> App<'help> {
         // to display
         // the full path when displaying help messages and such
         if !self.settings.is_set(AppSettings::NoBinaryName) {
-            if let Some((name, _)) = it.next(None) {
+            if let Some((name, _)) = it.next() {
                 let p = Path::new(name);
 
                 if let Some(f) = p.file_name() {
-                    if let Some(s) = f.to_os_string().to_str() {
+                    if let Some(s) = f.to_str() {
                         if self.bin_name.is_none() {
                             self.bin_name = Some(s.to_owned());
                         }
@@ -2064,11 +2151,11 @@ impl<'help> App<'help> {
     ///     myprog [SUBCOMMAND]
     ///
     /// FLAGS:
-    ///     -h, --help       Prints help information
-    ///     -V, --version    Prints version information
+    ///     -h, --help       Print help information
+    ///     -V, --version    Print version information
     ///
     /// SUBCOMMANDS:
-    ///     help    Prints this message or the help of the given subcommand(s)
+    ///     help    Print this message or the help of the given subcommand(s)
     ///     sub1
     /// ```
     ///
@@ -2092,11 +2179,11 @@ impl<'help> App<'help> {
     ///     myprog [THING]
     ///
     /// FLAGS:
-    ///     -h, --help       Prints help information
-    ///     -V, --version    Prints version information
+    ///     -h, --help       Print help information
+    ///     -V, --version    Print version information
     ///
     /// THINGS:
-    ///     help    Prints this message or the help of the given subcommand(s)
+    ///     help    Print this message or the help of the given subcommand(s)
     ///     sub1
     /// ```
     pub fn subcommand_placeholder<S, T>(mut self, placeholder: S, header: T) -> Self
@@ -2112,27 +2199,44 @@ impl<'help> App<'help> {
 
 // Internally used only
 impl<'help> App<'help> {
+    fn get_used_global_args(&self, matcher: &ArgMatcher) -> Vec<Id> {
+        let global_args: Vec<_> = self
+            .args
+            .args()
+            .filter(|a| a.global)
+            .map(|ga| ga.id.clone())
+            .collect();
+        if let Some(used_subcommand) = matcher.0.subcommand.as_ref() {
+            if let Some(used_subcommand) = self
+                .subcommands
+                .iter()
+                .find(|subcommand| subcommand.id == used_subcommand.id)
+            {
+                return [global_args, used_subcommand.get_used_global_args(matcher)].concat();
+            }
+        }
+        global_args
+    }
+
     fn _do_parse(&mut self, it: &mut Input) -> ClapResult<ArgMatches> {
         debug!("App::_do_parse");
         let mut matcher = ArgMatcher::default();
 
         // If there are global arguments, or settings we need to propagate them down to subcommands
         // before parsing in case we run into a subcommand
-        if !self.settings.is_set(AppSettings::Built) {
-            self._build();
-        }
+        self._build();
 
         // do the real parsing
         let mut parser = Parser::new(self);
-        parser.get_matches_with(&mut matcher, it)?;
+        if let Err(error) = parser.get_matches_with(&mut matcher, it) {
+            if self.is_set(AppSettings::IgnoreErrors) {
+                debug!("App::_do_parse: ignoring error: {}", error);
+            } else {
+                return Err(error);
+            }
+        }
 
-        let global_arg_vec: Vec<Id> = self
-            .args
-            .args
-            .iter()
-            .filter(|a| a.global)
-            .map(|ga| ga.id.clone())
-            .collect();
+        let global_arg_vec: Vec<Id> = self.get_used_global_args(&matcher);
 
         matcher.propagate_globals(&global_arg_vec);
 
@@ -2143,65 +2247,66 @@ impl<'help> App<'help> {
     #[doc(hidden)]
     pub fn _build(&mut self) {
         debug!("App::_build");
+        if !self.settings.is_set(AppSettings::Built) {
+            // Make sure all the globally set flags apply to us as well
+            self.settings = self.settings | self.g_settings;
 
-        // Make sure all the globally set flags apply to us as well
-        self.settings = self.settings | self.g_settings;
+            self._propagate();
+            self._check_help_and_version();
+            self._propagate_global_args();
+            self._derive_display_order();
 
-        self._propagate(Propagation::Full);
+            let mut pos_counter = 1;
+            for a in self.args.args_mut() {
+                // Fill in the groups
+                for g in &a.groups {
+                    if let Some(ag) = self.groups.iter_mut().find(|grp| grp.id == *g) {
+                        ag.args.push(a.id.clone());
+                    } else {
+                        let mut ag = ArgGroup::with_id(g.clone());
+                        ag.args.push(a.id.clone());
+                        self.groups.push(ag);
+                    }
+                }
 
-        self._derive_display_order();
-        self._create_help_and_version();
-
-        let mut pos_counter = 1;
-        for a in self.args.args.iter_mut() {
-            // Fill in the groups
-            for g in &a.groups {
-                if let Some(ag) = self.groups.iter_mut().find(|grp| grp.id == *g) {
-                    ag.args.push(a.id.clone());
-                } else {
-                    let mut ag = ArgGroup::with_id(g.clone());
-                    ag.args.push(a.id.clone());
-                    self.groups.push(ag);
+                // Figure out implied settings
+                if a.is_set(ArgSettings::Last) {
+                    // if an arg has `Last` set, we need to imply DontCollapseArgsInUsage so that args
+                    // in the usage string don't get confused or left out.
+                    self.settings.set(AppSettings::DontCollapseArgsInUsage);
+                }
+                a._build();
+                if a.is_positional() && a.index.is_none() {
+                    a.index = Some(pos_counter);
+                    pos_counter += 1;
                 }
             }
 
-            // Figure out implied settings
-            if a.is_set(ArgSettings::Last) {
-                // if an arg has `Last` set, we need to imply DontCollapseArgsInUsage so that args
-                // in the usage string don't get confused or left out.
-                self.settings.set(AppSettings::DontCollapseArgsInUsage);
-                self.settings.set(AppSettings::ContainsLast);
-            }
-            a._build();
-            if a.short.is_none() && a.long.is_none() && a.index.is_none() {
-                a.index = Some(pos_counter);
-                pos_counter += 1;
-            }
+            self.args._build();
+
+            #[cfg(debug_assertions)]
+            self::debug_asserts::assert_app(self);
+            self.settings.set(AppSettings::Built);
+        } else {
+            debug!("App::_build: already built");
         }
-
-        self.args._build();
-        self.settings.set(AppSettings::Built);
-
-        #[cfg(debug_assertions)]
-        self::debug_asserts::assert_app(self);
     }
 
     fn _panic_on_missing_help(&self, help_required_globally: bool) {
         if self.is_set(AppSettings::HelpRequired) || help_required_globally {
             let args_missing_help: Vec<String> = self
                 .args
-                .args
-                .iter()
+                .args()
                 .filter(|arg| arg.about.is_none() && arg.long_about.is_none())
                 .map(|arg| String::from(arg.name))
                 .collect();
 
             if !args_missing_help.is_empty() {
-                panic!(format!(
+                panic!(
                     "AppSettings::HelpRequired is enabled for the App {}, but at least one of its arguments does not have either `help` or `long_help` set. List of such arguments: {}",
                     self.name,
                     args_missing_help.join(", ")
-                ));
+                );
             }
         }
 
@@ -2215,7 +2320,7 @@ impl<'help> App<'help> {
     where
         F: Fn(&Arg) -> bool,
     {
-        two_elements_of(self.args.args.iter().filter(|a: &&Arg| condition(a)))
+        two_elements_of(self.args.args().filter(|a: &&Arg| condition(a)))
     }
 
     // just in case
@@ -2227,114 +2332,159 @@ impl<'help> App<'help> {
         two_elements_of(self.groups.iter().filter(|a| condition(a)))
     }
 
-    pub(crate) fn _propagate(&mut self, prop: Propagation) {
+    /// Propagate global args
+    pub(crate) fn _propagate_global_args(&mut self) {
+        debug!("App::_propagate_global_args:{}", self.name);
+
+        for sc in &mut self.subcommands {
+            for a in self.args.args().filter(|a| a.global) {
+                let mut propagate = false;
+                let is_generated = matches!(
+                    a.provider,
+                    ArgProvider::Generated | ArgProvider::GeneratedMutated
+                );
+
+                // Remove generated help and version args in the subcommand
+                //
+                // Don't remove if those args are futher mutated
+                if is_generated {
+                    let generated_pos = sc
+                        .args
+                        .args()
+                        .position(|x| x.id == a.id && x.provider == ArgProvider::Generated);
+
+                    if let Some(index) = generated_pos {
+                        sc.args.remove(index);
+                        propagate = true;
+                    }
+                }
+
+                if propagate || sc.find(&a.id).is_none() {
+                    sc.args.push(a.clone());
+                }
+            }
+        }
+    }
+
+    /// Propagate settings
+    pub(crate) fn _propagate(&mut self) {
         macro_rules! propagate_subcmd {
             ($_self:expr, $sc:expr) => {{
                 // We have to create a new scope in order to tell rustc the borrow of `sc` is
                 // done and to recursively call this method
                 {
-                    let vsc = $_self.settings.is_set(AppSettings::VersionlessSubcommands);
-                    let gv = $_self.settings.is_set(AppSettings::GlobalVersion);
-
-                    if vsc {
-                        $sc.set(AppSettings::DisableVersion);
+                    if $_self
+                        .settings
+                        .is_set(AppSettings::DisableVersionForSubcommands)
+                    {
+                        $sc.set(AppSettings::DisableVersionFlag);
                     }
-                    if gv && $sc.version.is_none() && $_self.version.is_some() {
-                        $sc.set(AppSettings::GlobalVersion);
+
+                    if $_self.settings.is_set(AppSettings::PropagateVersion)
+                        && $sc.version.is_none()
+                        && $_self.version.is_some()
+                    {
                         $sc.version = Some($_self.version.unwrap());
                     }
+
                     $sc.settings = $sc.settings | $_self.g_settings;
                     $sc.g_settings = $sc.g_settings | $_self.g_settings;
                     $sc.term_w = $_self.term_w;
                     $sc.max_w = $_self.max_w;
-                }
-                {
-                    // FIXME: This doesn't belong here at all.
-                    for a in $_self.args.args.iter().filter(|a| a.global) {
-                        if $sc.find(&a.id).is_none() {
-                            $sc.args.push(a.clone());
-                        }
-                    }
                 }
             }};
         }
 
         debug!("App::_propagate:{}", self.name);
 
-        match prop {
-            Propagation::NextLevel | Propagation::Full => {
-                for sc in &mut self.subcommands {
-                    propagate_subcmd!(self, sc);
-                    if prop == Propagation::Full {
-                        sc._propagate(prop.clone());
-                    }
-                }
-            }
-            Propagation::To(id) => {
-                let mut sc = self
-                    .subcommands
-                    .iter_mut()
-                    .find(|sc| sc.id == id)
-                    .expect(INTERNAL_ERROR_MSG);
-                propagate_subcmd!(self, sc);
-            }
-            Propagation::None => (),
+        for sc in &mut self.subcommands {
+            propagate_subcmd!(self, sc);
         }
     }
 
-    pub(crate) fn _create_help_and_version(&mut self) {
-        debug!("App::_create_help_and_version");
+    #[allow(clippy::blocks_in_if_conditions)]
+    pub(crate) fn _check_help_and_version(&mut self) {
+        debug!("App::_check_help_and_version");
 
-        if !(self
-            .args
-            .args
-            .iter()
-            .any(|x| x.long == Some("help") || x.id == Id::help_hash())
-            || self.is_set(AppSettings::DisableHelpFlags)
+        if self.is_set(AppSettings::DisableHelpFlag)
+            || self.args.args().any(|x| {
+                x.provider == ArgProvider::User
+                    && (x.long == Some("help") || x.id == Id::help_hash())
+            })
             || self
                 .subcommands
                 .iter()
-                .any(|sc| sc.short_flag == Some('h') || sc.long_flag == Some("help")))
+                .any(|sc| sc.long_flag == Some("help"))
         {
-            debug!("App::_create_help_and_version: Building --help");
-            let mut help = Arg::new("help")
-                .long("help")
-                .about("Prints help information");
-            if !self.args.args.iter().any(|x| x.short == Some('h')) {
-                help = help.short('h');
-            }
+            debug!("App::_check_help_and_version: Removing generated help");
 
-            self.args.push(help);
+            let generated_help_pos = self
+                .args
+                .args()
+                .position(|x| x.id == Id::help_hash() && x.provider == ArgProvider::Generated);
+
+            if let Some(index) = generated_help_pos {
+                self.args.remove(index);
+            }
+        } else {
+            let other_arg_has_short = self.args.args().any(|x| x.short == Some('h'));
+            let help = self
+                .args
+                .args_mut()
+                .find(|x| x.id == Id::help_hash())
+                .expect(INTERNAL_ERROR_MSG);
+
+            if !(help.short.is_some()
+                || other_arg_has_short
+                || self.subcommands.iter().any(|sc| sc.short_flag == Some('h')))
+            {
+                help.short = Some('h');
+            }
         }
-        if !(self
-            .args
-            .args
-            .iter()
-            .any(|x| x.long == Some("version") || x.id == Id::version_hash())
-            || self.is_set(AppSettings::DisableVersion)
+
+        if self.is_set(AppSettings::DisableVersionFlag)
+            || self.args.args().any(|x| {
+                x.provider == ArgProvider::User
+                    && (x.long == Some("version") || x.id == Id::version_hash())
+            })
             || self
                 .subcommands
                 .iter()
-                .any(|sc| sc.short_flag == Some('V') || sc.long_flag == Some("version")))
+                .any(|sc| sc.long_flag == Some("version"))
         {
-            debug!("App::_create_help_and_version: Building --version");
-            let mut version = Arg::new("version")
-                .long("version")
-                .about("Prints version information");
-            if !self.args.args.iter().any(|x| x.short == Some('V')) {
-                version = version.short('V');
-            }
+            debug!("App::_check_help_and_version: Removing generated version");
 
-            self.args.push(version);
+            let generated_version_pos = self
+                .args
+                .args()
+                .position(|x| x.id == Id::version_hash() && x.provider == ArgProvider::Generated);
+
+            if let Some(index) = generated_version_pos {
+                self.args.remove(index);
+            }
+        } else {
+            let other_arg_has_short = self.args.args().any(|x| x.short == Some('V'));
+            let version = self
+                .args
+                .args_mut()
+                .find(|x| x.id == Id::version_hash())
+                .expect(INTERNAL_ERROR_MSG);
+
+            if !(version.short.is_some()
+                || other_arg_has_short
+                || self.subcommands.iter().any(|sc| sc.short_flag == Some('V')))
+            {
+                version.short = Some('V');
+            }
         }
-        if self.has_subcommands()
-            && !self.is_set(AppSettings::DisableHelpSubcommand)
+
+        if !self.is_set(AppSettings::DisableHelpSubcommand)
+            && self.has_subcommands()
             && !self.subcommands.iter().any(|s| s.id == Id::help_hash())
         {
-            debug!("App::_create_help_and_version: Building help");
+            debug!("App::_check_help_and_version: Building help subcommand");
             self.subcommands.push(
-                App::new("help")
-                    .about("Prints this message or the help of the given subcommand(s)"),
+                App::new("help").about("Print this message or the help of the given subcommand(s)"),
             );
         }
     }
@@ -2345,9 +2495,8 @@ impl<'help> App<'help> {
         if self.settings.is_set(AppSettings::DeriveDisplayOrder) {
             for (i, a) in self
                 .args
-                .args
-                .iter_mut()
-                .filter(|a| a.has_switch())
+                .args_mut()
+                .filter(|a| !a.is_positional())
                 .filter(|a| a.disp_ord == 999)
                 .enumerate()
             {
@@ -2372,30 +2521,35 @@ impl<'help> App<'help> {
     pub fn _build_bin_names(&mut self) {
         debug!("App::_build_bin_names");
 
-        for mut sc in &mut self.subcommands {
-            debug!("App::_build_bin_names:iter: bin_name set...");
+        if !self.is_set(AppSettings::BinNameBuilt) {
+            for mut sc in &mut self.subcommands {
+                debug!("App::_build_bin_names:iter: bin_name set...");
 
-            if sc.bin_name.is_none() {
-                debug!("No");
-                let bin_name = format!(
-                    "{}{}{}",
-                    self.bin_name.as_ref().unwrap_or(&self.name.clone()),
-                    if self.bin_name.is_some() { " " } else { "" },
-                    &*sc.name
-                );
+                if sc.bin_name.is_none() {
+                    debug!("No");
+                    let bin_name = format!(
+                        "{}{}{}",
+                        self.bin_name.as_ref().unwrap_or(&self.name.clone()),
+                        if self.bin_name.is_some() { " " } else { "" },
+                        &*sc.name
+                    );
+                    debug!(
+                        "App::_build_bin_names:iter: Setting bin_name of {} to {}",
+                        self.name, bin_name
+                    );
+                    sc.bin_name = Some(bin_name);
+                } else {
+                    debug!("yes ({:?})", sc.bin_name);
+                }
                 debug!(
-                    "App::_build_bin_names:iter: Setting bin_name of {} to {}",
-                    self.name, bin_name
+                    "App::_build_bin_names:iter: Calling build_bin_names from...{}",
+                    sc.name
                 );
-                sc.bin_name = Some(bin_name);
-            } else {
-                debug!("yes ({:?})", sc.bin_name);
+                sc._build_bin_names();
             }
-            debug!(
-                "App::_build_bin_names:iter: Calling build_bin_names from...{}",
-                sc.name
-            );
-            sc._build_bin_names();
+            self.set(AppSettings::BinNameBuilt);
+        } else {
+            debug!("App::_build_bin_names: already built");
         }
     }
 
@@ -2428,8 +2582,10 @@ impl<'help> App<'help> {
             .filter_map(|x| self.find(x))
             .map(|x| {
                 if x.index.is_some() {
-                    x.name.to_owned()
+                    // Print val_name for positional arguments. e.g. <file_name>
+                    x.name_no_brackets().to_string()
                 } else {
+                    // Print useage string for flags arguments, e.g. <--help>
                     x.to_string()
                 }
             })
@@ -2439,10 +2595,15 @@ impl<'help> App<'help> {
     }
 }
 
+/// A workaround:
+/// https://github.com/rust-lang/rust/issues/34511#issuecomment-373423999
+pub(crate) trait Captures<'a> {}
+impl<'a, T> Captures<'a> for T {}
+
 // Internal Query Methods
 impl<'help> App<'help> {
     pub(crate) fn find(&self, arg_id: &Id) -> Option<&Arg<'help>> {
-        self.args.args.iter().find(|a| a.id == *arg_id)
+        self.args.args().find(|a| a.id == *arg_id)
     }
 
     #[inline]
@@ -2477,23 +2638,12 @@ impl<'help> App<'help> {
     }
 
     #[inline]
-    pub(crate) fn unset(&mut self, s: AppSettings) {
-        self.settings.unset(s)
-    }
-
-    #[inline]
     pub(crate) fn has_args(&self) -> bool {
         !self.args.is_empty()
     }
 
-    #[inline]
-    pub(crate) fn has_opts(&self) -> bool {
-        self.get_opts_with_no_heading().count() > 0
-    }
-
-    #[inline]
-    pub(crate) fn has_flags(&self) -> bool {
-        self.get_flags_with_no_heading().count() > 0
+    pub(crate) fn has_positionals(&self) -> bool {
+        self.args.keys().any(|x| x.is_position())
     }
 
     pub(crate) fn has_visible_subcommands(&self) -> bool {
@@ -2537,7 +2687,7 @@ impl<'help> App<'help> {
 
     #[cfg(debug_assertions)]
     pub(crate) fn id_exists(&self, id: &Id) -> bool {
-        self.args.args.iter().any(|x| x.id == *id) || self.groups.iter().any(|x| x.id == *id)
+        self.args.args().any(|x| x.id == *id) || self.groups.iter().any(|x| x.id == *id)
     }
 
     /// Iterate through the groups this arg is member of.
@@ -2552,28 +2702,12 @@ impl<'help> App<'help> {
 
     /// Iterate through all the names of all subcommands (not recursively), including aliases.
     /// Used for suggestions.
-    pub(crate) fn all_subcommand_names<'a>(&'a self) -> impl Iterator<Item = &'a str>
-    where
-        'help: 'a,
-    {
-        let a: Vec<_> = self
-            .get_subcommands()
-            .flat_map(|sc| {
-                let name = sc.get_name();
-                let aliases = sc.get_all_aliases();
-                std::iter::once(name).chain(aliases)
-            })
-            .collect();
-
-        // Strictly speaking, we don't need this trip through the Vec.
-        // We should have been able to return FlatMap iter above directly.
-        //
-        // Unfortunately, that would trigger
-        // https://github.com/rust-lang/rust/issues/34511#issuecomment-373423999
-        //
-        // I think this "collect to vec" solution is better then the linked one
-        // because it's simpler and it doesn't really matter performance-wise.
-        a.into_iter()
+    pub(crate) fn all_subcommand_names(&self) -> impl Iterator<Item = &str> + Captures<'help> {
+        self.get_subcommands().flat_map(|sc| {
+            let name = sc.get_name();
+            let aliases = sc.get_all_aliases();
+            std::iter::once(name).chain(aliases)
+        })
     }
 
     pub(crate) fn unroll_args_in_group(&self, group: &Id) -> Vec<Id> {
@@ -2675,138 +2809,96 @@ impl<'help> Index<&'_ Id> for App<'help> {
 #[cfg(feature = "yaml")]
 impl<'help> From<&'help Yaml> for App<'help> {
     #[allow(clippy::cognitive_complexity)]
-    fn from(mut yaml: &'help Yaml) -> Self {
+    fn from(y: &'help Yaml) -> Self {
+        let yaml_file_hash = y.as_hash().expect("YAML file must be a hash");
         // We WANT this to panic on error...so expect() is good.
-        let mut is_sc = None;
-        let mut a = if let Some(name) = yaml["name"].as_str() {
-            App::new(name)
+        let (mut a, yaml, err) = if let Some(name) = y["name"].as_str() {
+            (App::new(name), yaml_file_hash, "app".into())
         } else {
-            let yaml_hash = yaml.as_hash().unwrap();
-            let sc_key = yaml_hash.keys().next().unwrap();
-            is_sc = Some(yaml_hash.get(sc_key).unwrap());
-            App::new(sc_key.as_str().unwrap())
+            let (name_yaml, value_yaml) = yaml_file_hash
+                .iter()
+                .next()
+                .expect("There must be one subcommand in the YAML file");
+            let name_str = name_yaml
+                .as_str()
+                .expect("Subcommand name must be a string");
+
+            (
+                App::new(name_str),
+                value_yaml.as_hash().expect("Subcommand must be a hash"),
+                format!("subcommand '{}'", name_str),
+            )
         };
-        yaml = if let Some(sc) = is_sc { sc } else { yaml };
 
-        macro_rules! yaml_str {
-            ($a:ident, $y:ident, $i:ident) => {
-                if let Some(v) = $y[stringify!($i)].as_str() {
-                    $a = $a.$i(v);
-                } else if $y[stringify!($i)] != Yaml::BadValue {
-                    panic!(
-                        "Failed to convert YAML value {:?} to a string",
-                        $y[stringify!($i)]
-                    );
+        let mut has_metadata = false;
+
+        for (k, v) in yaml {
+            a = match k.as_str().expect("App fields must be strings") {
+                "_has_metadata" => {
+                    has_metadata = true;
+                    a
                 }
-            };
-        }
-
-        yaml_str!(a, yaml, version);
-        yaml_str!(a, yaml, long_version);
-        yaml_str!(a, yaml, author);
-        yaml_str!(a, yaml, bin_name);
-        yaml_str!(a, yaml, about);
-        yaml_str!(a, yaml, before_help);
-        yaml_str!(a, yaml, before_long_help);
-        yaml_str!(a, yaml, after_help);
-        yaml_str!(a, yaml, after_long_help);
-        yaml_str!(a, yaml, alias);
-        yaml_str!(a, yaml, visible_alias);
-
-        if let Some(v) = yaml["display_order"].as_i64() {
-            a = a.display_order(v as usize);
-        } else if yaml["display_order"] != Yaml::BadValue {
-            panic!(
-                "Failed to convert YAML value {:?} to a u64",
-                yaml["display_order"]
-            );
-        }
-        if let Some(v) = yaml["setting"].as_str() {
-            a = a.setting(v.parse().expect("unknown AppSetting found in YAML file"));
-        } else if yaml["setting"] != Yaml::BadValue {
-            panic!(
-                "Failed to convert YAML value {:?} to an AppSetting",
-                yaml["setting"]
-            );
-        }
-        if let Some(v) = yaml["settings"].as_vec() {
-            for ys in v {
-                if let Some(s) = ys.as_str() {
-                    a = a.setting(s.parse().expect("unknown AppSetting found in YAML file"));
-                }
-            }
-        } else if let Some(v) = yaml["settings"].as_str() {
-            a = a.setting(v.parse().expect("unknown AppSetting found in YAML file"));
-        } else if yaml["settings"] != Yaml::BadValue {
-            panic!(
-                "Failed to convert YAML value {:?} to a string",
-                yaml["settings"]
-            );
-        }
-        if let Some(v) = yaml["global_setting"].as_str() {
-            a = a.setting(v.parse().expect("unknown AppSetting found in YAML file"));
-        } else if yaml["global_setting"] != Yaml::BadValue {
-            panic!(
-                "Failed to convert YAML value {:?} to an AppSetting",
-                yaml["setting"]
-            );
-        }
-        if let Some(v) = yaml["global_settings"].as_vec() {
-            for ys in v {
-                if let Some(s) = ys.as_str() {
-                    a = a.global_setting(s.parse().expect("unknown AppSetting found in YAML file"));
-                }
-            }
-        } else if let Some(v) = yaml["global_settings"].as_str() {
-            a = a.global_setting(v.parse().expect("unknown AppSetting found in YAML file"));
-        } else if yaml["global_settings"] != Yaml::BadValue {
-            panic!(
-                "Failed to convert YAML value {:?} to a string",
-                yaml["global_settings"]
-            );
-        }
-
-        macro_rules! vec_or_str {
-            ($a:ident, $y:ident, $as_vec:ident, $as_single:ident) => {{
-                let maybe_vec = $y[stringify!($as_vec)].as_vec();
-                if let Some(vec) = maybe_vec {
-                    for ys in vec {
-                        if let Some(s) = ys.as_str() {
-                            $a = $a.$as_single(s);
-                        } else {
-                            panic!("Failed to convert YAML value {:?} to a string", ys);
+                "bin_name" => yaml_to_str!(a, v, bin_name),
+                "version" => yaml_to_str!(a, v, version),
+                "long_version" => yaml_to_str!(a, v, long_version),
+                "author" => yaml_to_str!(a, v, author),
+                "about" => yaml_to_str!(a, v, about),
+                "before_help" => yaml_to_str!(a, v, before_help),
+                "before_long_help" => yaml_to_str!(a, v, before_long_help),
+                "after_help" => yaml_to_str!(a, v, after_help),
+                "after_long_help" => yaml_to_str!(a, v, after_long_help),
+                "help_heading" => yaml_to_str!(a, v, help_heading),
+                "help_template" => yaml_to_str!(a, v, help_template),
+                "override_help" => yaml_to_str!(a, v, override_help),
+                "override_usage" => yaml_to_str!(a, v, override_usage),
+                "alias" => yaml_to_str!(a, v, alias),
+                "aliases" => yaml_vec_or_str!(a, v, alias),
+                "visible_alias" => yaml_to_str!(a, v, visible_alias),
+                "visible_aliases" => yaml_vec_or_str!(a, v, visible_alias),
+                "display_order" => yaml_to_usize!(a, v, display_order),
+                "term_width" => yaml_to_usize!(a, v, term_width),
+                "max_term_width" => yaml_to_usize!(a, v, max_term_width),
+                "args" => {
+                    if let Some(vec) = v.as_vec() {
+                        for arg_yaml in vec {
+                            a = a.arg(Arg::from(arg_yaml));
                         }
+                    } else {
+                        panic!("Failed to convert YAML value {:?} to a vec", v);
                     }
-                } else {
-                    if let Some(s) = $y[stringify!($as_vec)].as_str() {
-                        $a = $a.$as_single(s);
-                    } else if $y[stringify!($as_vec)] != Yaml::BadValue {
-                        panic!(
-                            "Failed to convert YAML value {:?} to either a vec or string",
-                            $y[stringify!($as_vec)]
-                        );
-                    }
+                    a
                 }
-                $a
-            }};
-        }
-
-        a = vec_or_str!(a, yaml, aliases, alias);
-        a = vec_or_str!(a, yaml, visible_aliases, visible_alias);
-
-        if let Some(v) = yaml["args"].as_vec() {
-            for arg_yaml in v {
-                a = a.arg(Arg::from(arg_yaml));
-            }
-        }
-        if let Some(v) = yaml["subcommands"].as_vec() {
-            for sc_yaml in v {
-                a = a.subcommand(App::from(sc_yaml));
-            }
-        }
-        if let Some(v) = yaml["groups"].as_vec() {
-            for ag_yaml in v {
-                a = a.group(ArgGroup::from(ag_yaml));
+                "subcommands" => {
+                    if let Some(vec) = v.as_vec() {
+                        for sc_yaml in vec {
+                            a = a.subcommand(App::from(sc_yaml));
+                        }
+                    } else {
+                        panic!("Failed to convert YAML value {:?} to a vec", v);
+                    }
+                    a
+                }
+                "groups" => {
+                    if let Some(vec) = v.as_vec() {
+                        for ag_yaml in vec {
+                            a = a.group(ArgGroup::from(ag_yaml));
+                        }
+                    } else {
+                        panic!("Failed to convert YAML value {:?} to a vec", v);
+                    }
+                    a
+                }
+                "setting" | "settings" => yaml_to_setting!(a, v, setting, "AppSetting", err),
+                "global_setting" | "global_settings" => {
+                    yaml_to_setting!(a, v, global_setting, "AppSetting", err)
+                }
+                "name" => continue,
+                s => {
+                    if !has_metadata {
+                        panic!("Unknown setting '{}' in YAML file for {}", s, err)
+                    }
+                    continue;
+                }
             }
         }
 

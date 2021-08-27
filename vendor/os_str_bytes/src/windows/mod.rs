@@ -19,8 +19,8 @@ if_raw! {
 }
 
 mod wtf8;
+use wtf8::encode_wide;
 use wtf8::DecodeWide;
-use wtf8::EncodeWide;
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum EncodingError {
@@ -60,16 +60,8 @@ impl Error for EncodingError {}
 
 type Result<T> = result::Result<T, EncodingError>;
 
-pub(crate) fn os_str_from_bytes(string: &[u8]) -> Result<Cow<'_, OsStr>> {
-    Ok(Cow::Owned(os_string_from_bytes(string)?))
-}
-
-pub(crate) fn os_str_to_bytes(os_string: &OsStr) -> Cow<'_, [u8]> {
-    Cow::Owned(DecodeWide::new(OsStrExt::encode_wide(os_string)).collect())
-}
-
-pub(crate) fn os_string_from_bytes(string: &[u8]) -> Result<OsString> {
-    let encoder = EncodeWide::new(string.iter().map(|&x| x));
+fn from_bytes(string: &[u8]) -> Result<OsString> {
+    let encoder = encode_wide(string);
 
     // Collecting an iterator into a result ignores the size hint:
     // https://github.com/rust-lang/rust/issues/48994
@@ -80,12 +72,24 @@ pub(crate) fn os_string_from_bytes(string: &[u8]) -> Result<OsString> {
     Ok(OsStringExt::from_wide(&encoded_string))
 }
 
+fn to_bytes(os_string: &OsStr) -> Vec<u8> {
+    DecodeWide::new(OsStrExt::encode_wide(os_string)).collect()
+}
+
+pub(crate) fn os_str_from_bytes(string: &[u8]) -> Result<Cow<'_, OsStr>> {
+    from_bytes(string).map(Cow::Owned)
+}
+
+pub(crate) fn os_str_to_bytes(os_string: &OsStr) -> Cow<'_, [u8]> {
+    Cow::Owned(to_bytes(os_string))
+}
+
 pub(crate) fn os_string_from_vec(string: Vec<u8>) -> Result<OsString> {
-    os_string_from_bytes(&string)
+    from_bytes(&string)
 }
 
 pub(crate) fn os_string_into_vec(os_string: OsString) -> Vec<u8> {
-    os_str_to_bytes(&os_string).into_owned()
+    to_bytes(&os_string)
 }
 
 #[cfg(test)]
@@ -142,7 +146,7 @@ mod tests {
 
             assert_eq!(
                 Err(error),
-                OsStr::from_bytes(string).map_err(|EncodingError(x)| x),
+                OsStr::from_raw_bytes(string).map_err(|EncodingError(x)| x),
             );
         }
     }

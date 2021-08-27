@@ -4,7 +4,7 @@ mod shells;
 use std::io::Write;
 
 // Internal
-use clap::{App, AppSettings, Arg};
+use clap::{App, Arg};
 pub use shells::*;
 
 /// Generator trait which can be used to write generators
@@ -29,12 +29,12 @@ pub trait Generator {
     /// ```
     fn file_name(name: &str) -> String;
 
-    /// Generates output out of [`clap::App`](../clap/struct.App.html).
+    /// Generates output out of [`clap::App`](App).
     ///
     /// # Examples
     ///
-    /// The following example generator displays the [`clap::App`](../clap/struct.App.html)
-    /// as if it is printed using [`std::println`](https://doc.rust-lang.org/std/macro.println.html).
+    /// The following example generator displays the [`clap::App`](App)
+    /// as if it is printed using [`std::println`].
     ///
     /// ```
     /// use std::{io::Write, fmt::write};
@@ -61,18 +61,16 @@ pub trait Generator {
     fn all_subcommands(app: &App) -> Vec<(String, String)> {
         let mut subcmds: Vec<_> = Self::subcommands(app);
 
-        for sc_v in app.get_subcommands().map(|s| Self::all_subcommands(&s)) {
+        for sc_v in app.get_subcommands().map(|s| Self::all_subcommands(s)) {
             subcmds.extend(sc_v);
         }
 
         subcmds
     }
 
-    /// Finds the subcommand [`clap::App`][clap] from the given [`clap::App`][clap] with the given path.
+    /// Finds the subcommand [`clap::App`] from the given [`clap::App`] with the given path.
     ///
     /// **NOTE:** `path` should not contain the root `bin_name`.
-    ///
-    /// [clap]: ../clap/struct.App.html
     fn find_subcommand_with_path<'help, 'app>(
         p: &'app App<'help>,
         path: Vec<&str>,
@@ -86,7 +84,7 @@ pub trait Generator {
         app
     }
 
-    /// Gets subcommands of [`clap::App`](../clap/struct.App.html) in the form of `("name", "bin_name")`.
+    /// Gets subcommands of [`clap::App`] in the form of `("name", "bin_name")`.
     ///
     /// Subcommand `rustup toolchain install` would be converted to
     /// `("install", "rustup toolchain install")`.
@@ -115,13 +113,12 @@ pub trait Generator {
         subcmds
     }
 
-    /// Gets all the short options, their visible aliases and flags of a [`clap::App`](../clap/struct.App.html).
-    /// Includes `h` and `V` depending on the [`clap::AppSettings`](../clap/enum.AppSettings.html).
-    fn shorts_and_visible_aliases<'help>(p: &App<'help>) -> Vec<char> {
+    /// Gets all the short options, their visible aliases and flags of a [`clap::App`].
+    /// Includes `h` and `V` depending on the [`clap::AppSettings`].
+    fn shorts_and_visible_aliases(p: &App) -> Vec<char> {
         debug!("shorts: name={}", p.get_name());
 
-        let mut shorts_and_visible_aliases: Vec<char> = p
-            .get_arguments()
+        p.get_arguments()
             .filter_map(|a| {
                 if a.get_index().is_none() {
                     if a.get_visible_short_aliases().is_some() && a.get_short().is_some() {
@@ -138,76 +135,44 @@ pub trait Generator {
                 }
             })
             .flatten()
-            .collect();
-
-        if !shorts_and_visible_aliases.iter().any(|&x| x == 'h') {
-            shorts_and_visible_aliases.push('h');
-        }
-
-        if !p.is_set(AppSettings::DisableVersion)
-            && !shorts_and_visible_aliases.iter().any(|&x| x == 'V')
-        {
-            shorts_and_visible_aliases.push('V');
-        }
-
-        shorts_and_visible_aliases
+            .collect()
     }
 
-    /// Gets all the long options and flags of a [`clap::App`](../clap/struct.App.html).
-    /// Includes `help` and `version` depending on the [`clap::AppSettings`](../clap/enum.AppSettings.html).
-    fn longs<'help>(p: &App<'help>) -> Vec<String> {
+    /// Gets all the long options, their visible aliases and flags of a [`clap::App`].
+    /// Includes `help` and `version` depending on the [`clap::AppSettings`].
+    fn longs_and_visible_aliases(p: &App) -> Vec<String> {
         debug!("longs: name={}", p.get_name());
 
-        let mut longs: Vec<String> = p
-            .get_arguments()
+        p.get_arguments()
             .filter_map(|a| {
-                if a.get_index().is_none() && a.get_long().is_some() {
-                    Some(a.get_long().unwrap().to_string())
+                if a.get_index().is_none() {
+                    if a.get_visible_aliases().is_some() && a.get_long().is_some() {
+                        let mut visible_aliases: Vec<_> = a
+                            .get_visible_aliases()
+                            .unwrap()
+                            .into_iter()
+                            .map(|s| s.to_string())
+                            .collect();
+                        visible_aliases.push(a.get_long().unwrap().to_string());
+                        Some(visible_aliases)
+                    } else if a.get_visible_aliases().is_none() && a.get_long().is_some() {
+                        Some(vec![a.get_long().unwrap().to_string()])
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
             })
-            .collect();
-
-        if !longs.iter().any(|x| *x == "help") {
-            longs.push(String::from("help"));
-        }
-
-        if !p.is_set(AppSettings::DisableVersion) && !longs.iter().any(|x| *x == "version") {
-            longs.push(String::from("version"));
-        }
-
-        longs
+            .flatten()
+            .collect()
     }
 
-    /// Gets all the flags of a [`clap::App`](../clap/struct.App.html).
-    /// Includes `help` and `version` depending on the [`clap::AppSettings`](../clap/enum.AppSettings.html).
+    /// Gets all the flags of a [`clap::App`](App).
+    /// Includes `help` and `version` depending on the [`clap::AppSettings`].
     fn flags<'help>(p: &App<'help>) -> Vec<Arg<'help>> {
         debug!("flags: name={}", p.get_name());
-
-        let mut flags: Vec<_> = p.get_flags_with_no_heading().cloned().collect();
-
-        if !flags.iter().any(|x| x.get_name() == "help") {
-            flags.push(
-                Arg::new("help")
-                    .short('h')
-                    .long("help")
-                    .about("Prints help information"),
-            );
-        }
-
-        if !p.is_set(AppSettings::DisableVersion)
-            && !flags.iter().any(|x| x.get_name() == "version")
-        {
-            flags.push(
-                Arg::new("version")
-                    .short('V')
-                    .long("version")
-                    .about("Prints version information"),
-            );
-        }
-
-        flags
+        p.get_flags().cloned().collect()
     }
 }
 
@@ -234,7 +199,8 @@ mod tests {
                         .short('f')
                         .short_alias('c')
                         .visible_short_alias('p')
-                        .long("file"),
+                        .long("file")
+                        .visible_alias("path"),
                 ),
             )
             .subcommand(App::new("hello"))
@@ -321,17 +287,19 @@ mod tests {
     #[test]
     fn test_longs() {
         let app = common();
-        let longs = Foo::longs(&app);
+        let longs = Foo::longs_and_visible_aliases(&app);
 
         assert_eq!(longs.len(), 2);
         assert_eq!(longs[0], "help");
         assert_eq!(longs[1], "version");
 
-        let sc_longs = Foo::longs(Foo::find_subcommand_with_path(&app, vec!["test"]));
+        let sc_longs =
+            Foo::longs_and_visible_aliases(Foo::find_subcommand_with_path(&app, vec!["test"]));
 
-        assert_eq!(sc_longs.len(), 3);
-        assert_eq!(sc_longs[0], "file");
-        assert_eq!(sc_longs[1], "help");
-        assert_eq!(sc_longs[2], "version");
+        assert_eq!(sc_longs.len(), 4);
+        assert_eq!(sc_longs[0], "path");
+        assert_eq!(sc_longs[1], "file");
+        assert_eq!(sc_longs[2], "help");
+        assert_eq!(sc_longs[3], "version");
     }
 }

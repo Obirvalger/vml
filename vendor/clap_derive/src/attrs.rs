@@ -25,7 +25,7 @@ use proc_macro_error::abort;
 use quote::{quote, quote_spanned, ToTokens};
 use syn::{
     self, ext::IdentExt, spanned::Spanned, Attribute, Expr, Field, Ident, LitStr, MetaNameValue,
-    Type,
+    Type, Variant,
 };
 
 /// Default casing style for generated arguments.
@@ -38,6 +38,7 @@ pub const DEFAULT_ENV_CASING: CasingStyle = CasingStyle::ScreamingSnake;
 #[derive(Clone)]
 pub enum Kind {
     Arg(Sp<Ty>),
+    FromGlobal(Sp<Ty>),
     Subcommand(Sp<Ty>),
     Flatten,
     Skip(Option<Expr>),
@@ -106,19 +107,12 @@ pub struct Attrs {
     kind: Sp<Kind>,
 }
 
-/// Output for the gen_xxx() methods were we need more than a simple stream of tokens.
-///
-/// The output of a generation method is not only the stream of new tokens but also the attribute
-/// information of the current element. These attribute information may contain valuable information
-/// for any kind of child arguments.
-pub type GenOutput = (TokenStream, Attrs);
-
 impl Method {
     pub fn new(name: Ident, args: TokenStream) -> Self {
         Method { name, args }
     }
 
-    fn from_lit_or_env(ident: Ident, lit: Option<LitStr>, env_var: &str) -> Option<Self> {
+    fn from_lit_or_env(ident: Ident, lit: Option<LitStr>, env_var: &str) -> Self {
         let mut lit = match lit {
             Some(lit) => lit,
 
@@ -139,7 +133,7 @@ impl Method {
             lit = LitStr::new(&edited, lit.span());
         }
 
-        Some(Method::new(ident, quote!(#lit)))
+        Method::new(ident, quote!(#lit))
     }
 }
 
@@ -316,6 +310,12 @@ impl Attrs {
 
                 ArgEnum(_) => self.is_enum = true,
 
+                FromGlobal(ident) => {
+                    let ty = Sp::call_site(Ty::Other);
+                    let kind = Sp::new(Kind::FromGlobal(ty), ident.span());
+                    self.set_kind(kind);
+                }
+
                 Subcommand(ident) => {
                     let ty = Sp::call_site(Ty::Other);
                     let kind = Sp::new(Kind::Subcommand(ty), ident.span());
@@ -339,50 +339,51 @@ impl Attrs {
 
                 VerbatimDocComment(ident) => self.verbatim_doc_comment = Some(ident),
 
-                DefaultValue(ident, lit) => {
-                    let val = if let Some(lit) = lit {
-                        quote!(#lit)
+                DefaultValueT(ident, expr) => {
+                    let val = if let Some(expr) = expr {
+                        quote!(#expr)
                     } else {
                         let ty = if let Some(ty) = self.ty.as_ref() {
                             ty
                         } else {
                             abort!(
                                 ident,
-                                "#[clap(default_value)] (without an argument) can be used \
+                                "#[clap(default_value_t)] (without an argument) can be used \
                                 only on field level";
 
                                 note = "see \
                                     https://docs.rs/structopt/0.3.5/structopt/#magical-methods")
                         };
-
-                        quote_spanned!(ident.span()=> {
-                            ::clap::lazy_static::lazy_static! {
-                                static ref DEFAULT_VALUE: &'static str = {
-                                    let val = <#ty as ::std::default::Default>::default();
-                                    let s = ::std::string::ToString::to_string(&val);
-                                    ::std::boxed::Box::leak(s.into_boxed_str())
-                                };
-                            }
-                            *DEFAULT_VALUE
-                        })
+                        quote!(<#ty as ::std::default::Default>::default())
                     };
 
-                    self.methods.push(Method::new(ident, val));
+                    let val = quote_spanned!(ident.span()=> {
+                        clap::lazy_static::lazy_static! {
+                            static ref DEFAULT_VALUE: &'static str = {
+                                let val = #val;
+                                let s = ::std::string::ToString::to_string(&val);
+                                ::std::boxed::Box::leak(s.into_boxed_str())
+                            };
+                        }
+                        *DEFAULT_VALUE
+                    });
+
+                    let raw_ident = Ident::new("default_value", ident.span());
+                    self.methods.push(Method::new(raw_ident, val));
                 }
 
                 About(ident, about) => {
                     let method = Method::from_lit_or_env(ident, about, "CARGO_PKG_DESCRIPTION");
-                    if let Some(m) = method {
-                        self.methods.push(m);
-                    }
+                    self.methods.push(method);
                 }
 
                 Author(ident, author) => {
-                    self.author = Method::from_lit_or_env(ident, author, "CARGO_PKG_AUTHORS");
+                    self.author = Some(Method::from_lit_or_env(ident, author, "CARGO_PKG_AUTHORS"));
                 }
 
                 Version(ident, version) => {
-                    self.version = Method::from_lit_or_env(ident, version, "CARGO_PKG_VERSION");
+                    self.version =
+                        Some(Method::from_lit_or_env(ident, version, "CARGO_PKG_VERSION"));
                 }
 
                 NameLitStr(name, lit) => {
@@ -453,7 +454,146 @@ impl Attrs {
         match &*res.kind {
             Kind::Subcommand(_) => abort!(res.kind.span(), "subcommand is only allowed on fields"),
             Kind::Skip(_) => abort!(res.kind.span(), "skip is only allowed on fields"),
-            Kind::Arg(_) | Kind::Flatten | Kind::ExternalSubcommand => res,
+            Kind::Arg(_) => res,
+            Kind::FromGlobal(_) => abort!(res.kind.span(), "from_global is only allowed on fields"),
+            Kind::Flatten => abort!(res.kind.span(), "flatten is only allowed on fields"),
+            Kind::ExternalSubcommand => abort!(
+                res.kind.span(),
+                "external_subcommand is only allowed on fields"
+            ),
+        }
+    }
+
+    pub fn from_variant(
+        variant: &Variant,
+        struct_casing: Sp<CasingStyle>,
+        env_casing: Sp<CasingStyle>,
+    ) -> Self {
+        let name = variant.ident.clone();
+        let mut res = Self::new(
+            variant.span(),
+            Name::Derived(name),
+            None,
+            struct_casing,
+            env_casing,
+        );
+        res.push_attrs(&variant.attrs);
+        res.push_doc_comment(&variant.attrs, "about");
+
+        match &*res.kind {
+            Kind::Flatten => {
+                if res.has_custom_parser {
+                    abort!(
+                        res.parser.span(),
+                        "parse attribute is not allowed for flattened entry"
+                    );
+                }
+                if res.has_explicit_methods() {
+                    abort!(
+                        res.kind.span(),
+                        "methods are not allowed for flattened entry"
+                    );
+                }
+
+                // ignore doc comments
+                res.doc_comment = vec![];
+            }
+
+            Kind::ExternalSubcommand => (),
+
+            Kind::Subcommand(_) => {
+                if res.has_custom_parser {
+                    abort!(
+                        res.parser.span(),
+                        "parse attribute is not allowed for subcommand"
+                    );
+                }
+                if res.has_explicit_methods() {
+                    abort!(
+                        res.kind.span(),
+                        "methods in attributes are not allowed for subcommand"
+                    );
+                }
+                use syn::Fields::*;
+                use syn::FieldsUnnamed;
+
+                let field_ty = match variant.fields {
+                    Named(_) => {
+                        abort!(variant.span(), "structs are not allowed for subcommand");
+                    }
+                    Unit => abort!(variant.span(), "unit-type is not allowed for subcommand"),
+                    Unnamed(FieldsUnnamed { ref unnamed, .. }) if unnamed.len() == 1 => {
+                        &unnamed[0].ty
+                    }
+                    Unnamed(..) => {
+                        abort!(
+                            variant,
+                            "non single-typed tuple is not allowed for subcommand"
+                        )
+                    }
+                };
+                let ty = Ty::from_syn_ty(field_ty);
+                match *ty {
+                    Ty::OptionOption => {
+                        abort!(
+                            field_ty,
+                            "Option<Option<T>> type is not allowed for subcommand"
+                        );
+                    }
+                    Ty::OptionVec => {
+                        abort!(
+                            field_ty,
+                            "Option<Vec<T>> type is not allowed for subcommand"
+                        );
+                    }
+                    _ => (),
+                }
+
+                res.kind = Sp::new(Kind::Subcommand(ty), res.kind.span());
+            }
+            Kind::Skip(_) => {
+                abort!(res.kind.span(), "skip is not supported on variants");
+            }
+            Kind::FromGlobal(_) => {
+                abort!(res.kind.span(), "from_global is not supported on variants");
+            }
+            Kind::Arg(_) => (),
+        }
+
+        res
+    }
+
+    pub fn from_arg_enum_variant(
+        variant: &Variant,
+        argument_casing: Sp<CasingStyle>,
+        env_casing: Sp<CasingStyle>,
+    ) -> Self {
+        let mut res = Self::new(
+            variant.span(),
+            Name::Derived(variant.ident.clone()),
+            None,
+            argument_casing,
+            env_casing,
+        );
+        res.push_attrs(&variant.attrs);
+        res.push_doc_comment(&variant.attrs, "about");
+
+        if res.has_custom_parser {
+            abort!(
+                res.parser.span(),
+                "`parse` attribute is only allowed on fields"
+            );
+        }
+        match &*res.kind {
+            Kind::Subcommand(_) => abort!(res.kind.span(), "subcommand is only allowed on fields"),
+            Kind::Skip(_) => res,
+            Kind::Arg(_) => res,
+            Kind::FromGlobal(_) => abort!(res.kind.span(), "from_global is only allowed on fields"),
+            Kind::Flatten => abort!(res.kind.span(), "flatten is only allowed on fields"),
+            Kind::ExternalSubcommand => abort!(
+                res.kind.span(),
+                "external_subcommand is only allowed on fields"
+            ),
         }
     }
 
@@ -538,6 +678,10 @@ impl Attrs {
                         "methods are not allowed for skipped fields"
                     );
                 }
+            }
+            Kind::FromGlobal(orig_ty) => {
+                let ty = Ty::from_syn_ty(&field.ty);
+                res.kind = Sp::new(Kind::FromGlobal(ty), orig_ty.span());
             }
             Kind::Arg(orig_ty) => {
                 let mut ty = Ty::from_syn_ty(&field.ty);
@@ -647,6 +791,10 @@ impl Attrs {
 
     pub fn cased_name(&self) -> TokenStream {
         self.name.clone().translate(*self.casing)
+    }
+
+    pub fn value_name(&self) -> TokenStream {
+        self.name.clone().translate(CasingStyle::ScreamingSnake)
     }
 
     pub fn parser(&self) -> &Sp<Parser> {

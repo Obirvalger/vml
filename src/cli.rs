@@ -25,7 +25,7 @@ pub fn build_cli() -> clap::App<'static> {
     App::new("vml")
         .about("virtual machines manage utility")
         .version("0.1.2")
-        .setting(AppSettings::VersionlessSubcommands)
+        .setting(AppSettings::NoAutoVersion)
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .global_setting(AppSettings::InferSubcommands)
         .arg(Arg::new("all-vms").long("all-vms").about("Specify all vms"))
@@ -64,7 +64,7 @@ pub fn build_cli() -> clap::App<'static> {
                                 .long("images")
                                 .short('i')
                                 .takes_value(true)
-                                .multiple(true),
+                                .multiple_values(true),
                         )
                         .arg(Arg::new("IMAGE").takes_value(true)),
                 )
@@ -78,7 +78,7 @@ pub fn build_cli() -> clap::App<'static> {
                                 // .long("images")
                                 // .short('i')
                                 .takes_value(true)
-                                .multiple(true),
+                                .multiple_values(true),
                         )
                         .arg(Arg::new("exists").long("exists").short('e'))
                         .group(
@@ -109,21 +109,21 @@ pub fn build_cli() -> clap::App<'static> {
                                 .long("names")
                                 .short('n')
                                 .takes_value(true)
-                                .multiple(true),
+                                .multiple_values(true),
                         )
                         .arg(
                             Arg::new("parents")
                                 .long("parents")
                                 .short('p')
                                 .takes_value(true)
-                                .multiple(true),
+                                .multiple_values(true),
                         )
                         .arg(
                             Arg::new("tags")
                                 .long("tags")
                                 .short('t')
                                 .takes_value(true)
-                                .multiple(true),
+                                .multiple_values(true),
                         ),
                 ),
         )
@@ -132,7 +132,13 @@ pub fn build_cli() -> clap::App<'static> {
             App::new("create")
                 .about("create virtual machine")
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
                 .arg(Arg::new("memory").long("memory").short('m').takes_value(true))
                 .arg(
@@ -160,7 +166,7 @@ pub fn build_cli() -> clap::App<'static> {
                     Arg::new("net-nameservers")
                         .long("net-nameservers")
                         .takes_value(true)
-                        .multiple(true)
+                        .multiple_values(true)
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
@@ -187,32 +193,62 @@ pub fn build_cli() -> clap::App<'static> {
             App::new("start")
                 .about("start virtual machines")
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
-                .arg(Arg::new("drives").long("drives").short('d').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("drives")
+                        .long("drives")
+                        .short('d')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(
                     Arg::new("parents")
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"])),
         )
         .subcommand(
             App::new("run")
                 .about("shortcut to create and start")
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
-                .arg(Arg::new("drives").long("drives").short('d').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("drives")
+                        .long("drives")
+                        .short('d')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
                 .arg(Arg::new("memory").long("memory").short('m').takes_value(true))
                 .arg(
@@ -240,7 +276,7 @@ pub fn build_cli() -> clap::App<'static> {
                     Arg::new("net-nameservers")
                         .long("net-nameservers")
                         .takes_value(true)
-                        .multiple(true)
+                        .multiple_values(true)
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
@@ -266,16 +302,28 @@ pub fn build_cli() -> clap::App<'static> {
                 .about("stop virtual machines")
                 .arg(Arg::new("force").long("force").short('f'))
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                ),
         )
         .subcommand(
             App::new("ssh")
@@ -285,10 +333,16 @@ pub fn build_cli() -> clap::App<'static> {
                         .long("ssh-options")
                         .takes_value(true)
                         .default_values(&[])
-                        .multiple(true),
+                        .multiple_values(true),
                 )
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("A").short('A').about("pass -A to ssh command"))
                 .arg(Arg::new("N").short('N').about("pass -N to ssh command"))
                 .arg(Arg::new("Y").short('Y').about("pass -Y to ssh command"))
@@ -317,7 +371,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .long("cmd")
                         .short('c')
                         .takes_value(true)
-                        .multiple(true)
+                        .multiple_values(true)
                         .value_hint(ValueHint::CommandString),
                 )
                 .arg(
@@ -325,7 +379,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
                 .arg(
                     Arg::new("user")
@@ -334,20 +388,32 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .value_hint(ValueHint::Username),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                ),
         )
         .subcommand(
             App::new("rsync-to")
                 .about("rsync to a virtual machine, default destination is home")
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(
                     Arg::new("rsync-options")
                         .long("rsync-options")
                         .takes_value(true)
                         .default_values(&[])
                         .allow_hyphen_values(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
                 .arg(
                     Arg::new("archive")
@@ -367,7 +433,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
                 .arg(
                     Arg::new("user")
@@ -376,7 +442,13 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .value_hint(ValueHint::Username),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(
                     Arg::new("destination")
                         .long("destination")
@@ -391,7 +463,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .short('s')
                         .value_hint(ValueHint::AnyPath)
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
                 .arg(
                     Arg::new("template")
@@ -406,14 +478,20 @@ pub fn build_cli() -> clap::App<'static> {
             App::new("rsync-from")
                 .about("rsync from a virtual machine, default destination is CWD")
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(
                     Arg::new("rsync-options")
                         .long("rsync-options")
                         .takes_value(true)
                         .default_values(&[])
                         .allow_hyphen_values(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
                 .arg(
                     Arg::new("archive")
@@ -433,7 +511,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
                 .arg(
                     Arg::new("user")
@@ -442,7 +520,13 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .value_hint(ValueHint::Username),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(
                     Arg::new("destination")
                         .long("destination")
@@ -457,7 +541,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .short('s')
                         .value_hint(ValueHint::AnyPath)
                         .takes_value(true)
-                        .multiple(true)
+                        .multiple_values(true)
                         .required(true),
                 )
                 .group(ArgGroup::new("action").args(&["destination", "list"])),
@@ -466,16 +550,28 @@ pub fn build_cli() -> clap::App<'static> {
             App::new("show")
                 .about("show virtual machines")
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("running").long("running").short('r'))
                 .group(ArgGroup::new("all_running").args(&["all", "running"])),
         )
@@ -484,7 +580,13 @@ pub fn build_cli() -> clap::App<'static> {
                 .about("list virtual machines")
                 .visible_alias("ls")
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(Arg::new("fold").long("fold").short('f'))
                 .arg(Arg::new("unfold").long("unfold").short('u'))
                 .arg(Arg::new("all").long("all").short('a'))
@@ -494,9 +596,15 @@ pub fn build_cli() -> clap::App<'static> {
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .group(ArgGroup::new("all_running").args(&["all", "running"]))
                 .group(ArgGroup::new("fold_group").args(&["fold", "unfold"])),
         )
@@ -505,15 +613,27 @@ pub fn build_cli() -> clap::App<'static> {
                 .about("acces to qemu monitor")
                 .arg(Arg::new("command").long("command").short('c').takes_value(true))
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(
                     Arg::new("parents")
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                ),
         )
         .subcommand(
             App::new("remove")
@@ -523,15 +643,27 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("verbose").long("verbose").short('v'))
                 .arg(Arg::new("interactive").long("interactive").short('i'))
                 .arg(Arg::new("NAME").takes_value(true))
-                .arg(Arg::new("names").long("names").short('n').takes_value(true).multiple(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
                 .arg(
                     Arg::new("parents")
                         .long("parents")
                         .short('p')
                         .takes_value(true)
-                        .multiple(true),
+                        .multiple_values(true),
                 )
-                .arg(Arg::new("tags").long("tags").short('t').takes_value(true).multiple(true)),
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
+                ),
         )
         .subcommand(App::new("completion").arg(
             Arg::new("SHELL").about("generate completions").required(true).possible_values(&[

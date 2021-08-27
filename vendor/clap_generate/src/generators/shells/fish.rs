@@ -44,33 +44,34 @@ fn gen_fish_inner(root_command: &str, app: &App, buffer: &mut String) {
     //      -n "__fish_use_subcommand"               # complete for command "myprog"
     //      -n "__fish_seen_subcommand_from subcmd1" # complete for command "myprog subcmd1"
 
-    let mut basic_template = format!("complete -c {} -n ", root_command);
+    let mut basic_template = format!("complete -c {}", root_command);
     let mut bin_name = app.get_bin_name().unwrap();
 
     if root_command == bin_name {
-        basic_template.push_str("\"__fish_use_subcommand\"");
+        if app.has_subcommands() {
+            basic_template.push_str(" -n \"__fish_use_subcommand\"");
+        }
     } else {
-        bin_name = &app.get_name();
-        basic_template.push_str(format!("\"__fish_seen_subcommand_from {}\"", bin_name).as_str());
+        bin_name = app.get_name();
+        basic_template
+            .push_str(format!(" -n \"__fish_seen_subcommand_from {}\"", bin_name).as_str());
     }
 
     debug!("gen_fish_inner: bin_name={}", bin_name);
 
-    for option in app.get_opts_with_no_heading() {
+    for option in app.get_opts() {
         let mut template = basic_template.clone();
 
-        if let Some(data) = option.get_short() {
-            template.push_str(format!(" -s {}", data).as_str());
-
-            if let Some(short_aliases) = option.get_visible_short_aliases() {
-                for data in short_aliases {
-                    template.push_str(format!(" -s {}", data).as_str());
-                }
+        if let Some(shorts) = option.get_short_and_visible_aliases() {
+            for short in shorts {
+                template.push_str(format!(" -s {}", short).as_str());
             }
         }
 
-        if let Some(data) = option.get_long() {
-            template.push_str(format!(" -l {}", data).as_str());
+        if let Some(longs) = option.get_long_and_visible_aliases() {
+            for long in longs {
+                template.push_str(format!(" -l {}", escape_string(long)).as_str());
+            }
         }
 
         if let Some(data) = option.get_about() {
@@ -80,24 +81,22 @@ fn gen_fish_inner(root_command: &str, app: &App, buffer: &mut String) {
         template.push_str(value_completion(option).as_str());
 
         buffer.push_str(template.as_str());
-        buffer.push_str("\n");
+        buffer.push('\n');
     }
 
     for flag in Fish::flags(app) {
         let mut template = basic_template.clone();
 
-        if let Some(data) = flag.get_short() {
-            template.push_str(format!(" -s {}", data).as_str());
-
-            if let Some(short_aliases) = flag.get_visible_short_aliases() {
-                for data in short_aliases {
-                    template.push_str(format!(" -s {}", data).as_str());
-                }
+        if let Some(shorts) = flag.get_short_and_visible_aliases() {
+            for short in shorts {
+                template.push_str(format!(" -s {}", short).as_str());
             }
         }
 
-        if let Some(data) = flag.get_long() {
-            template.push_str(format!(" -l {}", data).as_str());
+        if let Some(longs) = flag.get_long_and_visible_aliases() {
+            for long in longs {
+                template.push_str(format!(" -l {}", escape_string(long)).as_str());
+            }
         }
 
         if let Some(data) = flag.get_about() {
@@ -105,7 +104,7 @@ fn gen_fish_inner(root_command: &str, app: &App, buffer: &mut String) {
         }
 
         buffer.push_str(template.as_str());
-        buffer.push_str("\n");
+        buffer.push('\n');
     }
 
     for subcommand in app.get_subcommands() {
@@ -119,7 +118,7 @@ fn gen_fish_inner(root_command: &str, app: &App, buffer: &mut String) {
         }
 
         buffer.push_str(template.as_str());
-        buffer.push_str("\n");
+        buffer.push('\n');
     }
 
     // generate options of subcommands
@@ -133,7 +132,7 @@ fn value_completion(option: &Arg) -> String {
         return "".to_string();
     }
 
-    if let Some(ref data) = option.get_possible_values() {
+    if let Some(data) = option.get_possible_values() {
         format!(" -r -f -a \"{}\"", data.join(" "))
     } else {
         // NB! If you change this, please also update the table in `ValueHint` documentation.

@@ -18,13 +18,36 @@ macro_rules! yaml_tuple2 {
 }
 
 #[cfg(feature = "yaml")]
+macro_rules! yaml_array_tuple2 {
+    ($a:ident, $v:ident, $c:ident) => {{
+        if let Some(vec) = $v.as_vec() {
+            for ys in vec {
+                if let Some(tup) = ys.as_vec() {
+                    debug_assert_eq!(2, tup.len());
+                    $a = $a.$c(&[(yaml_str!(tup[0]), yaml_str!(tup[1]))]);
+                } else {
+                    panic!("Failed to convert YAML value to vec");
+                }
+            }
+        } else {
+            panic!("Failed to convert YAML value to vec");
+        }
+        $a
+    }};
+}
+
+#[cfg(feature = "yaml")]
 macro_rules! yaml_tuple3 {
     ($a:ident, $v:ident, $c:ident) => {{
         if let Some(vec) = $v.as_vec() {
             for ys in vec {
                 if let Some(tup) = ys.as_vec() {
                     debug_assert_eq!(3, tup.len());
-                    $a = $a.$c(yaml_str!(tup[0]), yaml_opt_str!(tup[1]), yaml_str!(tup[2]));
+                    $a = $a.$c(
+                        yaml_str!(tup[0]),
+                        yaml_opt_str!(tup[1]),
+                        yaml_opt_str!(tup[2]),
+                    );
                 } else {
                     panic!("Failed to convert YAML value to vec");
                 }
@@ -179,21 +202,38 @@ macro_rules! yaml_to_bool {
 }
 
 #[cfg(feature = "yaml")]
-macro_rules! yaml_to_u64 {
-    ($a:ident, $v:ident, $c:ident) => {{
-        $a.$c($v
-            .as_i64()
-            .unwrap_or_else(|| panic!("failed to convert YAML {:?} value to a string", $v))
-            as u64)
-    }};
-}
-
-#[cfg(feature = "yaml")]
 macro_rules! yaml_to_usize {
     ($a:ident, $v:ident, $c:ident) => {{
         $a.$c($v
             .as_i64()
             .unwrap_or_else(|| panic!("failed to convert YAML {:?} value to a string", $v))
             as usize)
+    }};
+}
+
+#[cfg(feature = "yaml")]
+macro_rules! yaml_to_setting {
+    ($a:ident, $v:ident, $c:ident, $t:literal, $n:expr) => {{
+        if let Some(v) = $v.as_vec() {
+            for ys in v {
+                if let Some(s) = ys.as_str() {
+                    $a = $a.$c(s.parse().unwrap_or_else(|_| {
+                        panic!("Unknown {} '{}' found in YAML file for {}", $t, s, $n)
+                    }));
+                } else {
+                    panic!(
+                        "Failed to convert YAML {:?} value to an array of strings",
+                        $v
+                    );
+                }
+            }
+        } else if let Some(v) = $v.as_str() {
+            $a = $a.$c(v
+                .parse()
+                .unwrap_or_else(|_| panic!("Unknown {} '{}' found in YAML file for {}", $t, v, $n)))
+        } else {
+            panic!("Failed to convert YAML {:?} value to a string", $v);
+        }
+        $a
     }};
 }

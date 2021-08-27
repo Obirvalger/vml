@@ -1,7 +1,5 @@
 use std::char;
 use std::char::DecodeUtf16;
-use std::char::DecodeUtf16Error;
-use std::result;
 
 use super::CodePoints;
 use super::Result;
@@ -15,19 +13,22 @@ const MIN_LOW_SURROGATE: u16 = 0xDC00;
 
 const MIN_SURROGATE_CODE: u32 = (u16::max_value() as u32) + 1;
 
-pub(in super::super) struct DecodeWide<TIter> {
-    iter: TIter,
+pub(in super::super) struct DecodeWide<I>
+where
+    I: Iterator<Item = u16>,
+{
+    iter: DecodeUtf16<I>,
     code_point: Option<u32>,
     shift: u8,
 }
 
-impl<TIter> DecodeWide<DecodeUtf16<TIter>>
+impl<I> DecodeWide<I>
 where
-    TIter: Iterator<Item = u16>,
+    I: Iterator<Item = u16>,
 {
-    pub(in super::super) fn new<TString>(string: TString) -> Self
+    pub(in super::super) fn new<S>(string: S) -> Self
     where
-        TString: IntoIterator<IntoIter = TIter, Item = TIter::Item>,
+        S: IntoIterator<IntoIter = I, Item = I::Item>,
     {
         Self {
             iter: char::decode_utf16(string),
@@ -37,9 +38,9 @@ where
     }
 }
 
-impl<TIter> Iterator for DecodeWide<TIter>
+impl<I> Iterator for DecodeWide<I>
 where
-    TIter: Iterator<Item = result::Result<char, DecodeUtf16Error>>,
+    I: Iterator<Item = u16>,
 {
     type Item = u8;
 
@@ -79,18 +80,21 @@ where
     }
 }
 
-pub(in super::super) struct EncodeWide<TIter> {
-    iter: TIter,
+struct EncodeWide<I>
+where
+    I: Iterator<Item = u8>,
+{
+    iter: CodePoints<I>,
     surrogate: Option<u16>,
 }
 
-impl<TIter> EncodeWide<CodePoints<TIter>>
+impl<I> EncodeWide<I>
 where
-    TIter: Iterator<Item = u8>,
+    I: Iterator<Item = u8>,
 {
-    pub(in super::super) fn new<TString>(string: TString) -> Self
+    pub(in super::super) fn new<S>(string: S) -> Self
     where
-        TString: IntoIterator<IntoIter = TIter, Item = TIter::Item>,
+        S: IntoIterator<IntoIter = I, Item = I::Item>,
     {
         Self {
             iter: CodePoints::new(string),
@@ -99,9 +103,9 @@ where
     }
 }
 
-impl<TIter> Iterator for EncodeWide<CodePoints<TIter>>
+impl<I> Iterator for EncodeWide<I>
 where
-    TIter: Iterator<Item = u8>,
+    I: Iterator<Item = u8>,
 {
     type Item = Result<u16>;
 
@@ -125,7 +129,14 @@ where
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let size_hint = self.iter.inner_iter().size_hint();
-        (size_hint.0.saturating_add(2) / 3, size_hint.1)
+        let (low, high) = self.iter.inner_size_hint();
+        (low.saturating_add(2) / 3, high)
     }
+}
+
+pub(in super::super) fn encode_wide(
+    string: &[u8],
+) -> impl '_ + Iterator<Item = Result<u16>> {
+    #[allow(clippy::map_clone)]
+    EncodeWide::new(string.iter().map(|&x| x))
 }

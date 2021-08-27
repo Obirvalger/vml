@@ -63,7 +63,7 @@ fn escape_string(string: &str) -> String {
 
 fn get_tooltip<T: ToString>(help: Option<&str>, data: T) -> String {
     match help {
-        Some(help) => escape_string(&help),
+        Some(help) => escape_string(help),
         _ => data.to_string(),
     }
 }
@@ -84,85 +84,63 @@ fn generate_inner<'help>(
     let mut completions = String::new();
     let preamble = String::from("\n            [CompletionResult]::new(");
 
-    for option in p.get_opts_with_no_heading() {
-        if let Some(data) = option.get_short() {
-            let tooltip = get_tooltip(option.get_about(), data);
-
-            completions.push_str(&preamble);
-            completions.push_str(
-                format!(
-                    "'-{}', '{}', {}, '{}')",
-                    data, data, "[CompletionResultType]::ParameterName", tooltip
-                )
-                .as_str(),
-            );
-
-            if let Some(short_aliases) = option.get_visible_short_aliases() {
-                for data in short_aliases {
-                    completions.push_str(&preamble);
-                    completions.push_str(
-                        format!(
-                            "'-{}', '{}', {}, '{}')",
-                            data, data, "[CompletionResultType]::ParameterName", tooltip
-                        )
-                        .as_str(),
-                    );
-                }
+    for option in p.get_opts() {
+        if let Some(shorts) = option.get_short_and_visible_aliases() {
+            let tooltip = get_tooltip(option.get_about(), shorts[0]);
+            for short in shorts {
+                completions.push_str(&preamble);
+                completions.push_str(
+                    format!(
+                        "'-{}', '{}', {}, '{}')",
+                        short, short, "[CompletionResultType]::ParameterName", tooltip
+                    )
+                    .as_str(),
+                );
             }
         }
 
-        if let Some(data) = option.get_long() {
-            let tooltip = get_tooltip(option.get_about(), data);
-
-            completions.push_str(&preamble);
-            completions.push_str(
-                format!(
-                    "'--{}', '{}', {}, '{}')",
-                    data, data, "[CompletionResultType]::ParameterName", tooltip
-                )
-                .as_str(),
-            );
+        if let Some(longs) = option.get_long_and_visible_aliases() {
+            let tooltip = get_tooltip(option.get_about(), longs[0]);
+            for long in longs {
+                completions.push_str(&preamble);
+                completions.push_str(
+                    format!(
+                        "'--{}', '{}', {}, '{}')",
+                        long, long, "[CompletionResultType]::ParameterName", tooltip
+                    )
+                    .as_str(),
+                );
+            }
         }
     }
 
     for flag in PowerShell::flags(p) {
-        if let Some(data) = flag.get_short() {
-            let tooltip = get_tooltip(flag.get_about(), data);
-
-            completions.push_str(&preamble);
-            completions.push_str(
-                format!(
-                    "'-{}', '{}', {}, '{}')",
-                    data, data, "[CompletionResultType]::ParameterName", tooltip
-                )
-                .as_str(),
-            );
-
-            if let Some(short_aliases) = flag.get_visible_short_aliases() {
-                for data in short_aliases {
-                    completions.push_str(&preamble);
-                    completions.push_str(
-                        format!(
-                            "'-{}', '{}', {}, '{}')",
-                            data, data, "[CompletionResultType]::ParameterName", tooltip
-                        )
-                        .as_str(),
-                    );
-                }
+        if let Some(shorts) = flag.get_short_and_visible_aliases() {
+            let tooltip = get_tooltip(flag.get_about(), shorts[0]);
+            for short in shorts {
+                completions.push_str(&preamble);
+                completions.push_str(
+                    format!(
+                        "'-{}', '{}', {}, '{}')",
+                        short, short, "[CompletionResultType]::ParameterName", tooltip
+                    )
+                    .as_str(),
+                );
             }
         }
 
-        if let Some(data) = flag.get_long() {
-            let tooltip = get_tooltip(flag.get_about(), data);
-
-            completions.push_str(&preamble);
-            completions.push_str(
-                format!(
-                    "'--{}', '{}', {}, '{}')",
-                    data, data, "[CompletionResultType]::ParameterName", tooltip
-                )
-                .as_str(),
-            );
+        if let Some(longs) = flag.get_long_and_visible_aliases() {
+            let tooltip = get_tooltip(flag.get_about(), longs[0]);
+            for long in longs {
+                completions.push_str(&preamble);
+                completions.push_str(
+                    format!(
+                        "'--{}', '{}', {}, '{}')",
+                        long, long, "[CompletionResultType]::ParameterName", tooltip
+                    )
+                    .as_str(),
+                );
+            }
         }
     }
 
@@ -189,7 +167,7 @@ fn generate_inner<'help>(
     );
 
     for subcommand in p.get_subcommands() {
-        let subcommand_subcommands_cases = generate_inner(&subcommand, &command_name, names);
+        let subcommand_subcommands_cases = generate_inner(subcommand, &command_name, names);
         subcommands_cases.push_str(&subcommand_subcommands_cases);
     }
 

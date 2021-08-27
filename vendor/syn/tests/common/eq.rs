@@ -8,7 +8,7 @@ use rustc_ast::ast::{
     BinOpKind, BindingMode, Block, BlockCheckMode, BorrowKind, CaptureBy, Const, Crate, CrateSugar,
     Defaultness, EnumDef, Expr, ExprField, ExprKind, Extern, FieldDef, FloatTy, FnDecl, FnHeader,
     FnKind, FnRetTy, FnSig, ForeignItemKind, ForeignMod, GenericArg, GenericArgs, GenericBound,
-    GenericParam, GenericParamKind, Generics, GlobalAsm, ImplKind, ImplPolarity, Inline, InlineAsm,
+    GenericParam, GenericParamKind, Generics, ImplKind, ImplPolarity, Inline, InlineAsm,
     InlineAsmOperand, InlineAsmOptions, InlineAsmRegOrRegClass, InlineAsmTemplatePiece, IntTy,
     IsAuto, Item, ItemKind, Label, Lifetime, Lit, LitFloatType, LitIntType, LitKind,
     LlvmAsmDialect, LlvmInlineAsm, LlvmInlineAsmOutput, Local, MacArgs, MacCall, MacCallStmt,
@@ -22,7 +22,10 @@ use rustc_ast::ast::{
 };
 use rustc_ast::ptr::P;
 use rustc_ast::token::{self, CommentKind, DelimToken, Nonterminal, Token, TokenKind};
-use rustc_ast::tokenstream::{DelimSpan, LazyTokenStream, TokenStream, TokenTree};
+use rustc_ast::tokenstream::{
+    AttrAnnotatedTokenStream, AttrAnnotatedTokenTree, AttributesData, DelimSpan, LazyTokenStream,
+    Spacing, TokenStream, TokenTree,
+};
 use rustc_data_structures::sync::Lrc;
 use rustc_data_structures::thin_vec::ThinVec;
 use rustc_span::source_map::Spanned;
@@ -110,6 +113,7 @@ spanless_eq_true!(DelimSpan);
 spanless_eq_true!(AttrId);
 spanless_eq_true!(NodeId);
 spanless_eq_true!(SyntaxContext);
+spanless_eq_true!(Spacing);
 
 macro_rules! spanless_eq_partial_eq {
     ($name:ty) => {
@@ -285,8 +289,10 @@ spanless_eq_struct!(AngleBracketedArgs; span args);
 spanless_eq_struct!(AnonConst; id value);
 spanless_eq_struct!(Arm; attrs pat guard body span id is_placeholder);
 spanless_eq_struct!(AssocTyConstraint; id ident gen_args kind span);
+spanless_eq_struct!(AttrAnnotatedTokenStream; 0);
 spanless_eq_struct!(AttrItem; path args tokens);
 spanless_eq_struct!(Attribute; kind id style span);
+spanless_eq_struct!(AttributesData; attrs tokens);
 spanless_eq_struct!(BareFnTy; unsafety ext generic_params decl);
 spanless_eq_struct!(Block; stmts id rules span tokens);
 spanless_eq_struct!(Crate; attrs items span proc_macros);
@@ -301,9 +307,8 @@ spanless_eq_struct!(FnSig; header decl span);
 spanless_eq_struct!(ForeignMod; unsafety abi items);
 spanless_eq_struct!(GenericParam; id ident attrs bounds is_placeholder kind);
 spanless_eq_struct!(Generics; params where_clause span);
-spanless_eq_struct!(GlobalAsm; asm);
 spanless_eq_struct!(ImplKind; unsafety polarity defaultness constness generics of_trait self_ty items);
-spanless_eq_struct!(InlineAsm; template operands options line_spans);
+spanless_eq_struct!(InlineAsm; template operands clobber_abi options line_spans);
 spanless_eq_struct!(Item<K>; attrs id span vis ident kind !tokens);
 spanless_eq_struct!(Label; ident);
 spanless_eq_struct!(Lifetime; id ident);
@@ -324,7 +329,7 @@ spanless_eq_struct!(PolyTraitRef; bound_generic_params trait_ref span);
 spanless_eq_struct!(QSelf; ty path_span position);
 spanless_eq_struct!(Stmt; id kind span);
 spanless_eq_struct!(StrLit; style symbol suffix span symbol_unescaped);
-spanless_eq_struct!(StructExpr; path fields rest);
+spanless_eq_struct!(StructExpr; qself path fields rest);
 spanless_eq_struct!(Token; kind span);
 spanless_eq_struct!(TraitKind; 0 1 2 3 4);
 spanless_eq_struct!(TraitRef; path ref_id);
@@ -342,6 +347,7 @@ spanless_eq_enum!(AngleBracketedArg; Arg(0) Constraint(0));
 spanless_eq_enum!(AssocItemKind; Const(0 1 2) Fn(0) TyAlias(0) MacCall(0));
 spanless_eq_enum!(AssocTyConstraintKind; Equality(ty) Bound(bounds));
 spanless_eq_enum!(Async; Yes(span closure_id return_impl_trait_id) No);
+spanless_eq_enum!(AttrAnnotatedTokenTree; Token(0) Delimited(0 1 2) Attributes(0));
 spanless_eq_enum!(AttrStyle; Outer Inner);
 spanless_eq_enum!(BinOpKind; Add Sub Mul Div Rem And Or BitXor BitAnd BitOr Shl Shr Eq Lt Le Ne Ge Gt);
 spanless_eq_enum!(BindingMode; ByRef(0) ByValue(0));
@@ -392,26 +398,27 @@ spanless_eq_enum!(VisibilityKind; Public Crate(0) Restricted(path id) Inherited)
 spanless_eq_enum!(WherePredicate; BoundPredicate(0) RegionPredicate(0) EqPredicate(0));
 spanless_eq_enum!(ExprKind; Box(0) Array(0) ConstBlock(0) Call(0 1)
     MethodCall(0 1 2) Tup(0) Binary(0 1 2) Unary(0 1) Lit(0) Cast(0 1) Type(0 1)
-    Let(0 1) If(0 1 2) While(0 1 2) ForLoop(0 1 2 3) Loop(0 1) Match(0 1)
+    Let(0 1 2) If(0 1 2) While(0 1 2) ForLoop(0 1 2 3) Loop(0 1) Match(0 1)
     Closure(0 1 2 3 4 5) Block(0 1) Async(0 1 2) Await(0) TryBlock(0)
     Assign(0 1 2) AssignOp(0 1 2) Field(0 1) Index(0 1) Underscore Range(0 1 2)
     Path(0 1) AddrOf(0 1 2) Break(0 1) Continue(0) Ret(0) InlineAsm(0)
     LlvmInlineAsm(0) MacCall(0) Struct(0) Repeat(0 1) Paren(0) Try(0) Yield(0)
     Err);
 spanless_eq_enum!(InlineAsmOperand; In(reg expr) Out(reg late expr)
-    InOut(reg late expr) SplitInOut(reg late in_expr out_expr) Const(expr)
+    InOut(reg late expr) SplitInOut(reg late in_expr out_expr) Const(anon_const)
     Sym(expr));
 spanless_eq_enum!(ItemKind; ExternCrate(0) Use(0) Static(0 1 2) Const(0 1 2)
     Fn(0) Mod(0 1) ForeignMod(0) GlobalAsm(0) TyAlias(0) Enum(0 1) Struct(0 1)
     Union(0 1) Trait(0) TraitAlias(0 1) Impl(0) MacCall(0) MacroDef(0));
 spanless_eq_enum!(LitKind; Str(0 1) ByteStr(0) Byte(0) Char(0) Int(0 1)
     Float(0 1) Bool(0) Err(0));
-spanless_eq_enum!(PatKind; Wild Ident(0 1 2) Struct(0 1 2) TupleStruct(0 1)
+spanless_eq_enum!(PatKind; Wild Ident(0 1 2) Struct(0 1 2 3) TupleStruct(0 1 2)
     Or(0) Path(0 1) Tuple(0) Box(0) Ref(0 1) Lit(0) Range(0 1 2) Slice(0) Rest
     Paren(0) MacCall(0));
 spanless_eq_enum!(TyKind; Slice(0) Array(0 1) Ptr(0) Rptr(0 1) BareFn(0) Never
-    Tup(0) Path(0 1) TraitObject(0 1) ImplTrait(0 1) Paren(0) Typeof(0) Infer
-    ImplicitSelf MacCall(0) Err CVarArgs);
+    Tup(0) AnonymousStruct(0 1) AnonymousUnion(0 1) Path(0 1) TraitObject(0 1)
+    ImplTrait(0 1) Paren(0) Typeof(0) Infer ImplicitSelf MacCall(0) Err
+    CVarArgs);
 
 impl SpanlessEq for Ident {
     fn eq(&self, other: &Self) -> bool {
@@ -478,8 +485,8 @@ impl SpanlessEq for TokenKind {
 
 impl SpanlessEq for TokenStream {
     fn eq(&self, other: &Self) -> bool {
-        let mut this_trees = self.trees_ref();
-        let mut other_trees = other.trees_ref();
+        let mut this_trees = self.trees();
+        let mut other_trees = other.trees();
         loop {
             let this = match this_trees.next() {
                 None => return other_trees.next().is_none(),
@@ -489,7 +496,7 @@ impl SpanlessEq for TokenStream {
                 None => return false,
                 Some(tree) => tree,
             };
-            if SpanlessEq::eq(this, other) {
+            if SpanlessEq::eq(&this, &other) {
                 continue;
             }
             if let (TokenTree::Token(this), TokenTree::Token(other)) = (this, other) {
@@ -516,7 +523,7 @@ impl SpanlessEq for TokenStream {
 fn doc_comment<'a>(
     style: AttrStyle,
     unescaped: Symbol,
-    trees: &mut impl Iterator<Item = &'a TokenTree>,
+    trees: &mut impl Iterator<Item = TokenTree>,
 ) -> bool {
     if match style {
         AttrStyle::Outer => false,
@@ -534,12 +541,12 @@ fn doc_comment<'a>(
         Some(TokenTree::Delimited(_span, DelimToken::Bracket, stream)) => stream,
         _ => return false,
     };
-    let mut trees = stream.trees_ref();
+    let mut trees = stream.trees();
     match trees.next() {
         Some(TokenTree::Token(Token {
             kind: TokenKind::Ident(symbol, false),
             span: _,
-        })) if *symbol == sym::doc => {}
+        })) if symbol == sym::doc => {}
         _ => return false,
     }
     match trees.next() {
@@ -551,7 +558,7 @@ fn doc_comment<'a>(
     }
     match trees.next() {
         Some(TokenTree::Token(token)) => {
-            is_escaped_literal(token, unescaped) && trees.next().is_none()
+            is_escaped_literal(&token, unescaped) && trees.next().is_none()
         }
         _ => false,
     }
