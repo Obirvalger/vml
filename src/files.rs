@@ -13,7 +13,9 @@ use crate::{Error, Result};
 struct Asset;
 
 pub fn get_file<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
-    Asset::get(path.as_ref()).ok_or_else(|| Error::GetWrongEmbeddedFile(path.as_ref().to_string()))
+    Asset::get(path.as_ref())
+        .map(|f| f.data)
+        .ok_or_else(|| Error::GetWrongEmbeddedFile(path.as_ref().to_string()))
 }
 
 fn install_config(filename: &str) -> Result<()> {
@@ -27,7 +29,7 @@ fn install_config(filename: &str) -> Result<()> {
             fs::copy(etc_config, config)?;
         } else {
             let content = Asset::get(filename).unwrap();
-            fs::write(&config, content)?;
+            fs::write(&config, content.data)?;
         }
     }
 

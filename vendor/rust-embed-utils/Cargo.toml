@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "rust-embed-utils"
-version = "5.1.0"
+version = "6.0.0"
 authors = ["pyros2097 <pyros2097@gmail.com>"]
 description = "Utilities for rust-embed"
 documentation = "https://docs.rs/rust-embed"
@@ -22,6 +22,9 @@ keywords = ["http", "rocket", "static", "web", "server"]
 categories = ["web-programming::http-server"]
 license = "MIT"
 repository = "https://github.com/pyros2097/rust-embed"
+[dependencies.sha2]
+version = "0.9"
+
 [dependencies.walkdir]
 version = "2.3.1"
 

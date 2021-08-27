@@ -13,6 +13,7 @@ pub type speed_t = ::c_uint;
 pub type nl_item = ::c_int;
 pub type id_t = i64;
 pub type vm_size_t = ::uintptr_t;
+pub type key_t = ::c_long;
 
 // elf.h
 
@@ -31,6 +32,8 @@ pub type Elf64_Sword = i32;
 pub type Elf64_Sxword = i64;
 pub type Elf64_Word = u32;
 pub type Elf64_Xword = u64;
+
+pub type iconv_t = *mut ::c_void;
 
 cfg_if! {
     if #[cfg(target_pointer_width = "64")] {
@@ -270,6 +273,42 @@ s! {
         pub piod_len: ::size_t,
     }
 
+    // bpf.h
+
+    pub struct bpf_program {
+        pub bf_len: ::c_uint,
+        pub bf_insns: *mut bpf_insn,
+    }
+
+    pub struct bpf_stat {
+        pub bs_recv: ::c_uint,
+        pub bs_drop: ::c_uint,
+    }
+
+    pub struct bpf_version {
+        pub bv_major: ::c_ushort,
+        pub bv_minor: ::c_ushort,
+    }
+
+    pub struct bpf_hdr {
+        pub bh_tstamp: ::timeval,
+        pub bh_caplen: u32,
+        pub bh_datalen: u32,
+        pub bh_hdrlen: ::c_ushort,
+    }
+
+    pub struct bpf_insn {
+        pub code: ::c_ushort,
+        pub jt: ::c_uchar,
+        pub jf: ::c_uchar,
+        pub k: u32,
+    }
+
+    pub struct bpf_dltlist {
+        bfl_len: ::c_uint,
+        bfl_list: *mut ::c_uint,
+    }
+
     // elf.h
 
     pub struct Elf32_Phdr {
@@ -305,6 +344,16 @@ s! {
         pub dlpi_subs: ::c_ulonglong,
         pub dlpi_tls_modid: usize,
         pub dlpi_tls_data: *mut ::c_void,
+    }
+
+    pub struct ipc_perm {
+        pub cuid: ::uid_t,
+        pub cgid: ::gid_t,
+        pub uid: ::uid_t,
+        pub gid: ::gid_t,
+        pub mode: ::mode_t,
+        pub seq: ::c_ushort,
+        pub key: ::key_t,
     }
 }
 
@@ -354,6 +403,17 @@ cfg_if! {
                 self.__ss_pad2.hash(state);
             }
         }
+    }
+}
+
+// Non-public helper constant
+cfg_if! {
+    if #[cfg(all(not(libc_const_size_of), target_pointer_width = "32"))] {
+        const SIZEOF_LONG: usize = 4;
+    } else if #[cfg(all(not(libc_const_size_of), target_pointer_width = "64"))] {
+        const SIZEOF_LONG: usize = 8;
+    } else if #[cfg(libc_const_size_of)] {
+        const SIZEOF_LONG: usize = ::mem::size_of::<::c_long>();
     }
 }
 
@@ -542,6 +602,18 @@ pub const MAP_FAILED: *mut ::c_void = !0 as *mut ::c_void;
 
 pub const MCL_CURRENT: ::c_int = 0x0001;
 pub const MCL_FUTURE: ::c_int = 0x0002;
+
+pub const MNT_NOATIME: ::c_int = 0x10000000;
+pub const MNT_NOCLUSTERR: ::c_int = 0x40000000;
+pub const MNT_NOCLUSTERW: ::c_int = 0x80000000;
+pub const MNT_NOSYMFOLLOW: ::c_int = 0x00400000;
+pub const MNT_SOFTDEP: ::c_int = 0x00200000;
+pub const MNT_SUIDDIR: ::c_int = 0x00100000;
+pub const MNT_EXRDONLY: ::c_int = 0x00000080;
+pub const MNT_DEFEXPORTED: ::c_int = 0x00000200;
+pub const MNT_EXPORTANON: ::c_int = 0x00000400;
+pub const MNT_EXKERB: ::c_int = 0x00000800;
+pub const MNT_DELEXPORT: ::c_int = 0x00020000;
 
 pub const MS_SYNC: ::c_int = 0x0000;
 pub const MS_ASYNC: ::c_int = 0x0001;
@@ -901,6 +973,8 @@ pub const SO_RCVTIMEO: ::c_int = 0x1006;
 pub const SO_ERROR: ::c_int = 0x1007;
 pub const SO_TYPE: ::c_int = 0x1008;
 
+pub const LOCAL_PEERCRED: ::c_int = 1;
+
 pub const SHUT_RD: ::c_int = 0;
 pub const SHUT_WR: ::c_int = 1;
 pub const SHUT_RDWR: ::c_int = 2;
@@ -1087,6 +1161,9 @@ pub const ST_NOSUID: ::c_ulong = 2;
 
 pub const NI_MAXHOST: ::size_t = 1025;
 
+pub const XU_NGROUPS: ::c_int = 16;
+pub const XUCRED_VERSION: ::c_uint = 0;
+
 pub const RTLD_LOCAL: ::c_int = 0;
 pub const RTLD_NODELETE: ::c_int = 0x1000;
 pub const RTLD_NOLOAD: ::c_int = 0x2000;
@@ -1214,8 +1291,7 @@ pub const ONLRET: ::tcflag_t = 0x40;
 pub const CMGROUP_MAX: usize = 16;
 
 // https://github.com/freebsd/freebsd/blob/master/sys/net/bpf.h
-// sizeof(long)
-pub const BPF_ALIGNMENT: ::c_int = 8;
+pub const BPF_ALIGNMENT: usize = SIZEOF_LONG;
 
 // Values for rtprio struct (prio field) and syscall (function argument)
 pub const RTP_PRIO_MIN: ::c_ushort = 0;
@@ -1293,6 +1369,22 @@ pub const TIME_ERROR: ::c_int = 5;
 pub const REG_ENOSYS: ::c_int = -1;
 pub const REG_ILLSEQ: ::c_int = 17;
 
+pub const IPC_PRIVATE: ::key_t = 0;
+pub const IPC_CREAT: ::c_int = 0o1000;
+pub const IPC_EXCL: ::c_int = 0o2000;
+pub const IPC_NOWAIT: ::c_int = 0o4000;
+pub const IPC_RMID: ::c_int = 0;
+pub const IPC_SET: ::c_int = 1;
+pub const IPC_STAT: ::c_int = 2;
+pub const IPC_R: ::c_int = 0o400;
+pub const IPC_W: ::c_int = 0o200;
+pub const IPC_M: ::c_int = 0o10000;
+
+pub const SHM_RDONLY: ::c_int = 0o10000;
+pub const SHM_RND: ::c_int = 0o20000;
+pub const SHM_R: ::c_int = 0o400;
+pub const SHM_W: ::c_int = 0o200;
+
 safe_f! {
     pub {const} fn WIFCONTINUED(status: ::c_int) -> bool {
         status == 0x13
@@ -1309,11 +1401,7 @@ safe_f! {
 
 extern "C" {
     pub fn sem_destroy(sem: *mut sem_t) -> ::c_int;
-    pub fn sem_init(
-        sem: *mut sem_t,
-        pshared: ::c_int,
-        value: ::c_uint,
-    ) -> ::c_int;
+    pub fn sem_init(sem: *mut sem_t, pshared: ::c_int, value: ::c_uint) -> ::c_int;
 
     pub fn daemon(nochdir: ::c_int, noclose: ::c_int) -> ::c_int;
     pub fn gettimeofday(tp: *mut ::timeval, tz: *mut ::timezone) -> ::c_int;
@@ -1333,14 +1421,8 @@ extern "C" {
 
     pub fn clock_getres(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
     pub fn clock_gettime(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
-    pub fn clock_settime(
-        clk_id: ::clockid_t,
-        tp: *const ::timespec,
-    ) -> ::c_int;
-    pub fn clock_getcpuclockid(
-        pid: ::pid_t,
-        clk_id: *mut ::clockid_t,
-    ) -> ::c_int;
+    pub fn clock_settime(clk_id: ::clockid_t, tp: *const ::timespec) -> ::c_int;
+    pub fn clock_getcpuclockid(pid: ::pid_t, clk_id: *mut ::clockid_t) -> ::c_int;
 
     pub fn dirfd(dirp: *mut ::DIR) -> ::c_int;
     pub fn duplocale(base: ::locale_t) -> ::locale_t;
@@ -1394,16 +1476,8 @@ extern "C" {
     ) -> ::c_int;
     pub fn lchflags(path: *const ::c_char, flags: ::c_ulong) -> ::c_int;
     pub fn lutimes(file: *const ::c_char, times: *const ::timeval) -> ::c_int;
-    pub fn memrchr(
-        cx: *const ::c_void,
-        c: ::c_int,
-        n: ::size_t,
-    ) -> *mut ::c_void;
-    pub fn mkfifoat(
-        dirfd: ::c_int,
-        pathname: *const ::c_char,
-        mode: ::mode_t,
-    ) -> ::c_int;
+    pub fn memrchr(cx: *const ::c_void, c: ::c_int, n: ::size_t) -> *mut ::c_void;
+    pub fn mkfifoat(dirfd: ::c_int, pathname: *const ::c_char, mode: ::mode_t) -> ::c_int;
     #[cfg_attr(
         all(target_os = "freebsd", any(freebsd11, freebsd10)),
         link_name = "mknodat@FBSD_1.1"
@@ -1414,18 +1488,9 @@ extern "C" {
         mode: ::mode_t,
         dev: dev_t,
     ) -> ::c_int;
-    pub fn mincore(
-        addr: *const ::c_void,
-        len: ::size_t,
-        vec: *mut ::c_char,
-    ) -> ::c_int;
-    pub fn newlocale(
-        mask: ::c_int,
-        locale: *const ::c_char,
-        base: ::locale_t,
-    ) -> ::locale_t;
-    pub fn nl_langinfo_l(item: ::nl_item, locale: ::locale_t)
-        -> *mut ::c_char;
+    pub fn mincore(addr: *const ::c_void, len: ::size_t, vec: *mut ::c_char) -> ::c_int;
+    pub fn newlocale(mask: ::c_int, locale: *const ::c_char, base: ::locale_t) -> ::locale_t;
+    pub fn nl_langinfo_l(item: ::nl_item, locale: ::locale_t) -> *mut ::c_char;
     pub fn pipe2(fds: *mut ::c_int, flags: ::c_int) -> ::c_int;
     pub fn ppoll(
         fds: *mut ::pollfd,
@@ -1433,16 +1498,8 @@ extern "C" {
         timeout: *const ::timespec,
         sigmask: *const sigset_t,
     ) -> ::c_int;
-    pub fn preadv(
-        fd: ::c_int,
-        iov: *const ::iovec,
-        iovcnt: ::c_int,
-        offset: ::off_t,
-    ) -> ::ssize_t;
-    pub fn pthread_attr_get_np(
-        tid: ::pthread_t,
-        attr: *mut ::pthread_attr_t,
-    ) -> ::c_int;
+    pub fn preadv(fd: ::c_int, iov: *const ::iovec, iovcnt: ::c_int, offset: ::off_t) -> ::ssize_t;
+    pub fn pthread_attr_get_np(tid: ::pthread_t, attr: *mut ::pthread_attr_t) -> ::c_int;
     pub fn pthread_attr_getguardsize(
         attr: *const ::pthread_attr_t,
         guardsize: *mut ::size_t,
@@ -1464,10 +1521,7 @@ extern "C" {
         attr: *mut pthread_condattr_t,
         clock_id: ::clockid_t,
     ) -> ::c_int;
-    pub fn pthread_condattr_setpshared(
-        attr: *mut pthread_condattr_t,
-        pshared: ::c_int,
-    ) -> ::c_int;
+    pub fn pthread_condattr_setpshared(attr: *mut pthread_condattr_t, pshared: ::c_int) -> ::c_int;
     pub fn pthread_main_np() -> ::c_int;
     pub fn pthread_mutex_timedlock(
         lock: *mut pthread_mutex_t,
@@ -1485,30 +1539,33 @@ extern "C" {
         attr: *const pthread_rwlockattr_t,
         val: *mut ::c_int,
     ) -> ::c_int;
-    pub fn pthread_rwlockattr_setpshared(
-        attr: *mut pthread_rwlockattr_t,
-        val: ::c_int,
+    pub fn pthread_rwlockattr_setpshared(attr: *mut pthread_rwlockattr_t, val: ::c_int) -> ::c_int;
+    pub fn pthread_barrierattr_init(attr: *mut ::pthread_barrierattr_t) -> ::c_int;
+    pub fn pthread_barrierattr_destroy(attr: *mut ::pthread_barrierattr_t) -> ::c_int;
+    pub fn pthread_barrierattr_getpshared(
+        attr: *const ::pthread_barrierattr_t,
+        shared: *mut ::c_int,
     ) -> ::c_int;
+    pub fn pthread_barrierattr_setpshared(
+        attr: *mut ::pthread_barrierattr_t,
+        shared: ::c_int,
+    ) -> ::c_int;
+    pub fn pthread_barrier_init(
+        barrier: *mut pthread_barrier_t,
+        attr: *const ::pthread_barrierattr_t,
+        count: ::c_uint,
+    ) -> ::c_int;
+    pub fn pthread_barrier_destroy(barrier: *mut pthread_barrier_t) -> ::c_int;
+    pub fn pthread_barrier_wait(barrier: *mut pthread_barrier_t) -> ::c_int;
     pub fn pthread_set_name_np(tid: ::pthread_t, name: *const ::c_char);
-    pub fn ptrace(
-        request: ::c_int,
-        pid: ::pid_t,
-        addr: *mut ::c_char,
-        data: ::c_int,
-    ) -> ::c_int;
+    pub fn ptrace(request: ::c_int, pid: ::pid_t, addr: *mut ::c_char, data: ::c_int) -> ::c_int;
     pub fn pututxline(ut: *const utmpx) -> *mut utmpx;
-    pub fn pwritev(
-        fd: ::c_int,
-        iov: *const ::iovec,
-        iovcnt: ::c_int,
-        offset: ::off_t,
-    ) -> ::ssize_t;
+    pub fn pwritev(fd: ::c_int, iov: *const ::iovec, iovcnt: ::c_int, offset: ::off_t)
+        -> ::ssize_t;
     pub fn querylocale(mask: ::c_int, loc: ::locale_t) -> *const ::c_char;
-    pub fn rtprio(
-        function: ::c_int,
-        pid: ::pid_t,
-        rtp: *mut rtprio,
-    ) -> ::c_int;
+    pub fn rtprio(function: ::c_int, pid: ::pid_t, rtp: *mut rtprio) -> ::c_int;
+    pub fn sched_getparam(pid: ::pid_t, param: *mut sched_param) -> ::c_int;
+    pub fn sched_setparam(pid: ::pid_t, param: *const sched_param) -> ::c_int;
     pub fn sched_getscheduler(pid: ::pid_t) -> ::c_int;
     pub fn sched_setscheduler(
         pid: ::pid_t,
@@ -1516,10 +1573,7 @@ extern "C" {
         param: *const ::sched_param,
     ) -> ::c_int;
     pub fn sem_getvalue(sem: *mut sem_t, sval: *mut ::c_int) -> ::c_int;
-    pub fn sem_timedwait(
-        sem: *mut sem_t,
-        abstime: *const ::timespec,
-    ) -> ::c_int;
+    pub fn sem_timedwait(sem: *mut sem_t, abstime: *const ::timespec) -> ::c_int;
     pub fn sendfile(
         fd: ::c_int,
         s: ::c_int,
@@ -1531,20 +1585,12 @@ extern "C" {
     ) -> ::c_int;
     pub fn setdomainname(name: *const ::c_char, len: ::c_int) -> ::c_int;
     pub fn sethostname(name: *const ::c_char, len: ::c_int) -> ::c_int;
-    pub fn setpriority(which: ::c_int, who: ::c_int, prio: ::c_int)
-        -> ::c_int;
+    pub fn setpriority(which: ::c_int, who: ::c_int, prio: ::c_int) -> ::c_int;
     pub fn setresgid(rgid: ::gid_t, egid: ::gid_t, sgid: ::gid_t) -> ::c_int;
     pub fn setresuid(ruid: ::uid_t, euid: ::uid_t, suid: ::uid_t) -> ::c_int;
-    pub fn settimeofday(
-        tv: *const ::timeval,
-        tz: *const ::timezone,
-    ) -> ::c_int;
+    pub fn settimeofday(tv: *const ::timeval, tz: *const ::timezone) -> ::c_int;
     pub fn setutxent();
-    pub fn shm_open(
-        name: *const ::c_char,
-        oflag: ::c_int,
-        mode: ::mode_t,
-    ) -> ::c_int;
+    pub fn shm_open(name: *const ::c_char, oflag: ::c_int, mode: ::mode_t) -> ::c_int;
     pub fn sigtimedwait(
         set: *const sigset_t,
         info: *mut siginfo_t,
@@ -1593,14 +1639,31 @@ extern "C" {
         >,
         data: *mut ::c_void,
     ) -> ::c_int;
+
+    pub fn iconv_open(tocode: *const ::c_char, fromcode: *const ::c_char) -> iconv_t;
+    pub fn iconv(
+        cd: iconv_t,
+        inbuf: *mut *mut ::c_char,
+        inbytesleft: *mut ::size_t,
+        outbuf: *mut *mut ::c_char,
+        outbytesleft: *mut ::size_t,
+    ) -> ::size_t;
+    pub fn iconv_close(cd: iconv_t) -> ::c_int;
+
+    // Added in `FreeBSD` 11.0
+    // Added in `DragonFly BSD` 5.4
+    pub fn explicit_bzero(s: *mut ::c_void, len: ::size_t);
+    // ISO/IEC 9899:2011 ("ISO C11") K.3.7.4.1
+    pub fn memset_s(s: *mut ::c_void, smax: ::size_t, c: ::c_int, n: ::size_t) -> ::c_int;
+    pub fn gethostid() -> ::c_long;
+    pub fn sethostid(hostid: ::c_long);
 }
 
 #[link(name = "rt")]
 extern "C" {
     pub fn mq_close(mqd: ::mqd_t) -> ::c_int;
     pub fn mq_getattr(mqd: ::mqd_t, attr: *mut ::mq_attr) -> ::c_int;
-    pub fn mq_notify(mqd: ::mqd_t, notification: *const ::sigevent)
-        -> ::c_int;
+    pub fn mq_notify(mqd: ::mqd_t, notification: *const ::sigevent) -> ::c_int;
     pub fn mq_open(name: *const ::c_char, oflag: ::c_int, ...) -> ::mqd_t;
     pub fn mq_receive(
         mqd: ::mqd_t,
@@ -1614,11 +1677,7 @@ extern "C" {
         msg_len: ::size_t,
         msg_prio: ::c_uint,
     ) -> ::c_int;
-    pub fn mq_setattr(
-        mqd: ::mqd_t,
-        newattr: *const ::mq_attr,
-        oldattr: *mut ::mq_attr,
-    ) -> ::c_int;
+    pub fn mq_setattr(mqd: ::mqd_t, newattr: *const ::mq_attr, oldattr: *mut ::mq_attr) -> ::c_int;
     pub fn mq_timedreceive(
         mqd: ::mqd_t,
         msg_ptr: *mut ::c_char,
@@ -1652,6 +1711,17 @@ extern "C" {
         winp: *mut ::winsize,
     ) -> ::pid_t;
     pub fn login_tty(fd: ::c_int) -> ::c_int;
+}
+
+#[link(name = "execinfo")]
+extern "C" {
+    pub fn backtrace(addrlist: *mut *mut ::c_void, len: ::size_t) -> ::size_t;
+    pub fn backtrace_symbols(addrlist: *const *mut ::c_void, len: ::size_t) -> *mut *mut ::c_char;
+    pub fn backtrace_symbols_fd(
+        addrlist: *const *mut ::c_void,
+        len: ::size_t,
+        fd: ::c_int,
+    ) -> ::c_int;
 }
 
 cfg_if! {

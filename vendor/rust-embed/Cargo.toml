@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "rust-embed"
-version = "5.9.0"
+version = "6.0.1"
 authors = ["pyros2097 <pyros2097@gmail.com>"]
 description = "Rust Custom Derive Macro which loads files into the rust binary at compile time during release and loads the file from the fs during dev"
 documentation = "https://docs.rs/rust-embed"
@@ -62,10 +62,10 @@ optional = true
 default-features = false
 
 [dependencies.rust-embed-impl]
-version = "5.9.0"
+version = "6.0.1"
 
 [dependencies.rust-embed-utils]
-version = "5.1.0"
+version = "6.0.0"
 
 [dependencies.tokio]
 version = "0.2"
@@ -79,6 +79,8 @@ version = "2.3.1"
 version = "0.2"
 optional = true
 default-features = false
+[dev-dependencies.sha2]
+version = "0.9"
 
 [features]
 actix = ["actix-web", "mime_guess"]

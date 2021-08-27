@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #[cfg(feature = "compression")]
 #[cfg_attr(feature = "compression", doc(hidden))]
 pub use include_flate::flate;
@@ -7,14 +8,16 @@ pub use include_flate::flate;
 extern crate rust_embed_impl;
 pub use rust_embed_impl::*;
 
+pub use rust_embed_utils::{EmbeddedFile, Metadata};
+
 #[doc(hidden)]
-#[cfg(all(debug_assertions, not(feature = "debug-embed")))]
 pub extern crate rust_embed_utils as utils;
 
 /// A directory of binary assets.
 ///
-/// They should be embedded into the executable for release builds,
-/// but can be read from the filesystem for debug builds.
+/// The files in the specified folder will be embedded into the executable in
+/// release builds. Debug builds will read the data from the file system at
+/// runtime.
 ///
 /// This trait is meant to be derived like so:
 /// ```
@@ -26,39 +29,38 @@ pub extern crate rust_embed_utils as utils;
 ///
 /// fn main() {}
 /// ```
-
 pub trait RustEmbed {
-  /// Given a relative path from the assets folder, returns the bytes if found.
+  /// Get an embedded file and its metadata.
   ///
-  /// If the feature `debug-embed` is enabled or the binary is compiled in
-  /// release mode, the bytes have been embeded in the binary and a
-  /// `Cow::Borrowed(&'static [u8])` is returned.
+  /// If the feature `debug-embed` is enabled or the binary was compiled in
+  /// release mode, the file information is embedded in the binary and the file
+  /// data is returned as a `Cow::Borrowed(&'static [u8])`.
   ///
-  /// Otherwise, the bytes are read from the file system on each call and a
-  /// `Cow::Owned(Vec<u8>)` is returned.
-  fn get(file_path: &str) -> Option<std::borrow::Cow<'static, [u8]>>;
+  /// Otherwise, the information is read from the file system on each call and
+  /// the file data is returned as a `Cow::Owned(Vec<u8>)`.
+  fn get(file_path: &str) -> Option<EmbeddedFile>;
 
-  /// Iterates the files in this assets folder.
+  /// Iterates over the file paths in the folder.
   ///
   /// If the feature `debug-embed` is enabled or the binary is compiled in
-  /// release mode, a static array to the list of relative paths to the files
+  /// release mode, a static array containing the list of relative file paths
   /// is used.
   ///
   /// Otherwise, the files are listed from the file system on each call.
   fn iter() -> Filenames;
 }
 
-/// An iterator type over filenames.
+/// An iterator over filenames.
 ///
 /// This enum exists for optimization purposes, to avoid boxing the iterator in
 /// some cases. Do not try and match on it, as different variants will exist
 /// depending on the compilation context.
 pub enum Filenames {
-  /// Release builds use a nameable iterator type, which can be stack-allocated.
+  /// Release builds use a named iterator type, which can be stack-allocated.
   #[cfg(any(not(debug_assertions), feature = "debug-embed"))]
   Embedded(std::slice::Iter<'static, &'static str>),
 
-  /// The debug iterator type is currently unnamable and still needs to be
+  /// The debug iterator type is currently unnameable and still needs to be
   /// boxed.
   #[cfg(all(debug_assertions, not(feature = "debug-embed")))]
   Dynamic(Box<dyn Iterator<Item = std::borrow::Cow<'static, str>>>),
