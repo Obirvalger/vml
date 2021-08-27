@@ -51,11 +51,11 @@ pub fn create<S: AsRef<str>>(
     } else {
         let mut images_dirs = vec![&config.images.directory];
         images_dirs.extend(config.images.other_directories_ro.iter());
-        match images::find(&images_dirs, &image) {
+        match images::find(&images_dirs, image) {
             Ok(image_path) => image_path,
             Err(error) => {
                 if matches!(error, Error::ImageDoesNotExists(_)) && config.commands.create.pull {
-                    images::pull(&config.images.directory, &image)?
+                    images::pull(&config.images.directory, image)?
                 } else {
                     return Err(error);
                 }
@@ -465,7 +465,7 @@ impl VM {
             }
         }
 
-        let user_host = self_ssh.user_host(&user);
+        let user_host = self_ssh.user_host(user);
 
         let mut rsync = Command::new("rsync");
         rsync.arg("-e").arg(ssh_cmd.join(" "));

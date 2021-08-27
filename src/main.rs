@@ -92,7 +92,7 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
     }
 
     for name in names {
-        vml::create_vm(&config, &vm_config, name, image, exists)?;
+        vml::create_vm(config, &vm_config, name, image, exists)?;
     }
 
     Ok(())
@@ -283,7 +283,7 @@ fn main() -> Result<()> {
                         };
 
                     for image in images {
-                        vml::images::remove(&images_dir, &image)?;
+                        vml::images::remove(images_dir, &image)?;
                     }
                 }
 
@@ -312,7 +312,7 @@ fn main() -> Result<()> {
                             available_images
                         } else if pull_images_matches.is_present("exists") {
                             let exists_images =
-                                vml::images::list(&[&images_dir])?.into_iter().collect();
+                                vml::images::list(&[images_dir])?.into_iter().collect();
                             available_images.intersection(&exists_images).cloned().collect()
                         } else {
                             BTreeSet::new()
@@ -327,13 +327,13 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(("create", create_matches)) => create(&config, &create_matches)?,
+        Some(("create", create_matches)) => create(&config, create_matches)?,
 
-        Some(("start", start_matches)) => start(&config, &start_matches, &mut vmc)?,
+        Some(("start", start_matches)) => start(&config, start_matches, &mut vmc)?,
 
         Some(("run", run_matches)) => {
-            create(&config, &run_matches)?;
-            start(&config, &run_matches, &mut vmc)?;
+            create(&config, run_matches)?;
+            start(&config, run_matches, &mut vmc)?;
         }
 
         Some(("stop", stop_matches)) => {

@@ -21,7 +21,7 @@ impl Keys {
     pub fn authorized_keys(&self) -> Vec<String> {
         let mut authorized_keys = self.authorized_keys.to_owned();
         if let Some(key) = &self.key {
-            let authorized_key = fs::read_to_string(public(&key)).expect("pub key should exists");
+            let authorized_key = fs::read_to_string(public(key)).expect("pub key should exists");
             authorized_keys.push(authorized_key.trim_end().to_string());
         }
 
@@ -166,7 +166,7 @@ impl Ssh {
         let mut options = Vec::with_capacity(self.options.len() * 2);
         for option in &self.options {
             options.push("-o");
-            options.push(&option);
+            options.push(option);
         }
         options
     }
@@ -179,7 +179,7 @@ impl Ssh {
 fn generate_key(work_dir: &Path) -> Result<String> {
     let key_type = "ed25519";
     let pvt_key = work_dir.join(key_type);
-    let pub_key = work_dir.join(public(&key_type));
+    let pub_key = work_dir.join(public(key_type));
     let pvt_exists = pvt_key.exists();
     let pub_exists = pub_key.exists();
 

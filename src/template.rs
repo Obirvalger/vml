@@ -6,7 +6,7 @@ use tera::{Context, Tera};
 use crate::{Error, Result};
 
 pub fn render<S: AsRef<str>>(context: &Context, template: S, place: &str) -> Result<String> {
-    Tera::one_off(template.as_ref(), &context, false)
+    Tera::one_off(template.as_ref(), context, false)
         .map_err(|e| Error::template(place, &e.to_string()))
 }
 
