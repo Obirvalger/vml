@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs;
 use std::path::Path;
 
@@ -5,11 +6,15 @@ use rust_embed::RustEmbed;
 
 use crate::config::Config;
 use crate::config_dir;
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(RustEmbed)]
 #[folder = "files/"]
 struct Asset;
+
+pub fn get_file<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
+    Asset::get(path.as_ref()).ok_or_else(|| Error::GetWrongEmbeddedFile(path.as_ref().to_string()))
+}
 
 fn install_config(filename: &str) -> Result<()> {
     let directory = config_dir();

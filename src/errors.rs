@@ -10,6 +10,7 @@ pub enum Error {
     DownloadImage(String),
     EmptyVMsList,
     Executable { name: String, error: String },
+    GetWrongEmbeddedFile(String),
     ImageDoesNotExists(String),
     Other(String, String),
     ParseConfig(String),

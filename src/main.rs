@@ -13,6 +13,7 @@ use vml::cli;
 use vml::config::Config;
 use vml::config::CreateExistsAction;
 use vml::files;
+use vml::images;
 use vml::net::ConfigNet;
 use vml::template;
 use vml::vm_config::VMConfig;
@@ -231,6 +232,8 @@ fn main() -> Result<()> {
     }
 
     files::install_all(&config)?;
+    let embedded_iamges_toml = files::get_file("images.toml")?;
+    images::update_images_file(embedded_iamges_toml)?;
     let mut vmc = VMsCreator::new(&config);
     if matches.is_present("all-vms") {
         vmc.all();

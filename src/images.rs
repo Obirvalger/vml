@@ -1,9 +1,10 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config_dir;
 use crate::{Error, Result};
@@ -46,19 +47,70 @@ impl Images {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 struct DeserializeImage {
     pub description: Option<String>,
     pub url: String,
+    #[serde(default)]
+    change: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(transparent)]
 struct DeserializeImages {
     pub images: BTreeMap<String, DeserializeImage>,
+}
+
+pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()> {
+    let mut embedded_images = toml::from_slice::<DeserializeImages>(&embedded_iamges_toml)
+        .expect("Bad embedded images.toml")
+        .images
+        .into_iter();
+    let images_str = &fs::read_to_string(images_file_path())?;
+    let mut config_images = toml::from_str::<DeserializeImages>(images_str)
+        .map_err(|e| {
+            Error::parse_images_file(&images_file_path().to_string_lossy(), &e.to_string())
+        })?
+        .images
+        .into_iter();
+
+    let mut embedded_image = embedded_images.next();
+    let mut config_image = config_images.next();
+    let mut images: BTreeMap<String, DeserializeImage> = BTreeMap::new();
+
+    while let (Some(ei), Some(ci)) = (&embedded_image, &config_image) {
+        // .0 gets name of the image
+        // .1 gets other information of the image
+        match ei.0.cmp(&ci.0) {
+            Ordering::Greater => {
+                if !ci.1.change.contains(&"delete".to_string()) {
+                    images.insert(ci.0.to_owned(), ci.1.to_owned());
+                };
+                config_image = config_images.next();
+            }
+            Ordering::Less => {
+                images.insert(ei.0.to_owned(), ei.1.to_owned());
+                embedded_image = embedded_images.next();
+            }
+            Ordering::Equal => {
+                if ci.1.change.contains(&"update".to_string()) {
+                    images.insert(ei.0.to_owned(), ei.1.to_owned());
+                } else {
+                    images.insert(ci.0.to_owned(), ci.1.to_owned());
+                }
+                embedded_image = embedded_images.next();
+                config_image = config_images.next();
+            }
+        }
+    }
+
+    let images_file = toml::to_string(&images).expect("Bad internal images representation");
+    fs::write(images_file_path(), images_file)?;
+
+    Ok(())
 }
 
 fn images_file_path() -> PathBuf {
