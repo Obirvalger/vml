@@ -3,11 +3,14 @@ use std::cmp::Ordering;
 use std::collections::btree_map;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::config_dir;
+use crate::files;
 use crate::{Error, Result};
 
 #[derive(Clone, Debug)]
@@ -138,8 +141,11 @@ pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()
 
     let images = update_images(&mut embedded_images, &mut config_images);
 
-    let images_file = toml::to_string(&images).expect("Bad internal images representation");
-    fs::write(images_file_path(), images_file)?;
+    let mut images_file = OpenOptions::new().truncate(true).write(true).open(images_file_path())?;
+    let header = files::get_file("images-header")?;
+    images_file.write_all(&header)?;
+    let images_string = toml::to_string(&images).expect("Bad internal images representation");
+    images_file.write_all(images_string.as_bytes())?;
 
     Ok(())
 }
