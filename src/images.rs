@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::btree_map;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -64,6 +65,64 @@ struct DeserializeImages {
     pub images: BTreeMap<String, DeserializeImage>,
 }
 
+fn update_images(
+    embedded_images: &mut btree_map::IntoIter<String, DeserializeImage>,
+    config_images: &mut btree_map::IntoIter<String, DeserializeImage>,
+) -> BTreeMap<String, DeserializeImage> {
+    let mut embedded_image = embedded_images.next();
+    let mut config_image = config_images.next();
+    let mut images: BTreeMap<String, DeserializeImage> = BTreeMap::new();
+
+    while let (Some(ei), Some(ci)) = (&embedded_image, &config_image) {
+        let old_name = &ci.0;
+        let new_name = &ei.0;
+        let old = &ci.1;
+        let new = &ei.1;
+        let change_set: HashSet<&str> = old.change.iter().map(AsRef::as_ref).collect();
+        match new_name.cmp(old_name) {
+            Ordering::Greater => {
+                if !change_set.contains("delete") {
+                    images.insert(old_name.to_owned(), old.to_owned());
+                };
+                config_image = config_images.next();
+            }
+            Ordering::Less => {
+                images.insert(new_name.to_owned(), new.to_owned());
+                embedded_image = embedded_images.next();
+            }
+            Ordering::Equal => {
+                let update_all = change_set.contains("update-all");
+                let url = if change_set.contains("keep-url")
+                    || !update_all && !change_set.contains("update-url")
+                {
+                    old.url.to_owned()
+                } else {
+                    new.url.to_owned()
+                };
+                let description = if change_set.contains("keep-description")
+                    || !update_all && !change_set.contains("update-description")
+                {
+                    old.description.to_owned()
+                } else {
+                    new.description.to_owned()
+                };
+                let change = if change_set.contains("keep-change")
+                    || !update_all && !change_set.contains("update-change")
+                {
+                    old.change.to_owned()
+                } else {
+                    new.change.to_owned()
+                };
+                images.insert(old_name.to_owned(), DeserializeImage { url, description, change });
+                embedded_image = embedded_images.next();
+                config_image = config_images.next();
+            }
+        }
+    }
+
+    images
+}
+
 pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()> {
     let mut embedded_images = toml::from_slice::<DeserializeImages>(&embedded_iamges_toml)
         .expect("Bad embedded images.toml")
@@ -77,35 +136,7 @@ pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()
         .images
         .into_iter();
 
-    let mut embedded_image = embedded_images.next();
-    let mut config_image = config_images.next();
-    let mut images: BTreeMap<String, DeserializeImage> = BTreeMap::new();
-
-    while let (Some(ei), Some(ci)) = (&embedded_image, &config_image) {
-        // .0 gets name of the image
-        // .1 gets other information of the image
-        match ei.0.cmp(&ci.0) {
-            Ordering::Greater => {
-                if !ci.1.change.contains(&"delete".to_string()) {
-                    images.insert(ci.0.to_owned(), ci.1.to_owned());
-                };
-                config_image = config_images.next();
-            }
-            Ordering::Less => {
-                images.insert(ei.0.to_owned(), ei.1.to_owned());
-                embedded_image = embedded_images.next();
-            }
-            Ordering::Equal => {
-                if ci.1.change.contains(&"update".to_string()) {
-                    images.insert(ei.0.to_owned(), ei.1.to_owned());
-                } else {
-                    images.insert(ci.0.to_owned(), ci.1.to_owned());
-                }
-                embedded_image = embedded_images.next();
-                config_image = config_images.next();
-            }
-        }
-    }
+    let images = update_images(&mut embedded_images, &mut config_images);
 
     let images_file = toml::to_string(&images).expect("Bad internal images representation");
     fs::write(images_file_path(), images_file)?;
