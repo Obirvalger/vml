@@ -93,8 +93,10 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         vm_config.display = Some("none".to_string())
     }
 
+    let available_images = vml::images::available(&config.images).unwrap_or_default().images;
+
     for name in names {
-        vml::create_vm(config, &vm_config, name, image, exists)?;
+        vml::create_vm(config, &vm_config, name, image, exists, &available_images)?;
     }
 
     Ok(())
@@ -263,11 +265,11 @@ fn main() -> Result<()> {
                 }
 
                 Some(("available", _)) => {
-                    for image in vml::images::available()?.images {
+                    for (image_name, image) in vml::images::available(&config.images)?.images {
                         if let Some(description) = &image.description {
-                            println!("{} - {}", &image.name, description);
+                            println!("{} - {}", &image_name, description);
                         } else {
-                            println!("{}", &image.name);
+                            println!("{}", &image_name);
                         }
                     }
                 }
@@ -309,7 +311,7 @@ fn main() -> Result<()> {
                     let images = if let Some(images) = pull_images_matches.values_of("IMAGES") {
                         images.map(|image| image.to_string()).collect()
                     } else {
-                        let available_images = vml::images::available()?.names();
+                        let available_images = vml::images::available(&config.images)?.names();
                         if pull_images_matches.is_present("available") {
                             available_images
                         } else if pull_images_matches.is_present("exists") {

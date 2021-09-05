@@ -6,48 +6,73 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::Images as ConfigImages;
 use crate::config_dir;
 use crate::files;
 use crate::{Error, Result};
 
 #[derive(Clone, Debug)]
-pub struct Image {
+pub struct Image<'a> {
     pub description: Option<String>,
     pub name: String,
     pub url: String,
+    config: &'a ConfigImages,
+    update_after_days: Option<u64>,
 }
 
-impl PartialEq for Image {
+impl Image<'_> {
+    fn path(&self) -> PathBuf {
+        self.config.directory.join(&self.name)
+    }
+
+    fn outdate_option(&self, default_update_after_days: Option<u64>) -> Option<bool> {
+        let image_path = self.path();
+        let modified_time = fs::metadata(image_path).and_then(|m| m.modified()).ok()?;
+        let sys_time = SystemTime::now();
+        let duration = sys_time.duration_since(modified_time).ok()?;
+        let update_after_days = self.update_after_days.or(default_update_after_days);
+        let update_after = Duration::from_secs(update_after_days? * 60 * 60 * 24);
+
+        Some(duration > update_after)
+    }
+
+    pub fn outdate(&self, default_update_after_days: Option<u64>) -> bool {
+        self.outdate_option(default_update_after_days).unwrap_or(false)
+    }
+}
+
+impl PartialEq for Image<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Eq for Image {}
+impl Eq for Image<'_> {}
 
-impl PartialOrd for Image {
+impl PartialOrd for Image<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Image {
+impl Ord for Image<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.name.cmp(&other.name)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Images {
-    pub images: BTreeSet<Image>,
+#[derive(Clone, Debug, Default)]
+pub struct Images<'a> {
+    pub images: BTreeMap<String, Image<'a>>,
 }
 
-impl Images {
+impl Images<'_> {
     pub fn names(&self) -> BTreeSet<String> {
-        self.images.iter().map(|i| i.name.to_string()).collect()
+        self.images.iter().map(|(name, _)| name.to_string()).collect()
     }
 }
 
@@ -59,6 +84,7 @@ struct DeserializeImage {
     pub url: String,
     #[serde(default)]
     change: Vec<String>,
+    update_after_days: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -116,7 +142,17 @@ fn update_images(
                 } else {
                     new.change.to_owned()
                 };
-                images.insert(old_name.to_owned(), DeserializeImage { url, description, change });
+                let update_after_days = if change_set.contains("keep-update-after-days")
+                    || !update_all && !change_set.contains("update-update-after-days")
+                {
+                    old.update_after_days.to_owned()
+                } else {
+                    new.update_after_days.to_owned()
+                };
+                images.insert(
+                    old_name.to_owned(),
+                    DeserializeImage { url, description, change, update_after_days },
+                );
                 embedded_image = embedded_images.next();
                 config_image = config_images.next();
             }
@@ -196,11 +232,22 @@ pub fn list(images_dirs: &[&PathBuf]) -> Result<Vec<String>> {
     Ok(images.into_iter().collect())
 }
 
-pub fn available() -> Result<Images> {
+pub fn available(config: &ConfigImages) -> Result<Images> {
     let images = parse(&images_file_path())?.images;
     let images = images
         .into_iter()
-        .map(|(k, v)| Image { name: k, url: v.url, description: v.description })
+        .map(|(k, v)| {
+            (
+                k.to_owned(),
+                Image {
+                    name: k,
+                    url: v.url,
+                    description: v.description,
+                    config,
+                    update_after_days: v.update_after_days,
+                },
+            )
+        })
         .collect();
 
     Ok(Images { images })

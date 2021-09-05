@@ -156,6 +156,7 @@ pub struct Images {
     pub directory: PathBuf,
     pub other_directories_ro: Vec<PathBuf>,
     pub default: String,
+    pub update_after_days: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -14,6 +14,7 @@ use crate::cloud_init;
 use crate::config::Config;
 use crate::config::CreateExistsAction;
 use crate::images;
+use crate::images::Image;
 use crate::net::{ConfigNet, Net};
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
@@ -34,6 +35,7 @@ pub fn create<S: AsRef<str>>(
     name: S,
     image: Option<&str>,
     exists_action: CreateExistsAction,
+    available_images: &BTreeMap<String, Image>,
 ) -> Result<()> {
     let name = name.as_ref();
     if exists(config, name) {
@@ -44,18 +46,26 @@ pub fn create<S: AsRef<str>>(
         }
     }
 
-    let image = image.unwrap_or(&config.images.default);
+    let image_name = image.unwrap_or(&config.images.default);
     let vm_dir = config.vms_dir.join(name);
-    let image_path = if image.starts_with('/') {
-        PathBuf::from(image)
+    let image_path = if image_name.starts_with('/') {
+        PathBuf::from(image_name)
     } else {
         let mut images_dirs = vec![&config.images.directory];
         images_dirs.extend(config.images.other_directories_ro.iter());
-        match images::find(&images_dirs, image) {
-            Ok(image_path) => image_path,
+        match images::find(&images_dirs, image_name) {
+            Ok(image_path) => {
+                if let Some(image) = available_images.get(image_name) {
+                    if image.outdate(config.images.update_after_days) {
+                        println!("Update {} image", &image.name);
+                        images::pull(&config.images.directory, image_name)?;
+                    }
+                }
+                image_path
+            }
             Err(error) => {
                 if matches!(error, Error::ImageDoesNotExists(_)) && config.commands.create.pull {
-                    images::pull(&config.images.directory, image)?
+                    images::pull(&config.images.directory, image_name)?
                 } else {
                     return Err(error);
                 }
