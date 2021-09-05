@@ -75,8 +75,6 @@ pub fn build_cli() -> clap::App<'static> {
                         .arg(Arg::new("available").long("available").short('a'))
                         .arg(
                             Arg::new("IMAGES")
-                                // .long("images")
-                                // .short('i')
                                 .takes_value(true)
                                 .multiple_values(true),
                         )
