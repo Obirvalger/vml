@@ -72,13 +72,19 @@ pub fn build_cli() -> clap::App<'static> {
                 .subcommand(
                     App::new("pull")
                         .about("pull vm images")
-                        .arg(Arg::new("available").long("available").short('a'))
                         .arg(
-                            Arg::new("IMAGES")
-                                .takes_value(true)
-                                .multiple_values(true),
+                            Arg::new("available")
+                                .long("available")
+                                .short('a')
+                                .about("pull all available images"),
                         )
-                        .arg(Arg::new("exists").long("exists").short('e'))
+                        .arg(Arg::new("IMAGES").takes_value(true).multiple_values(true))
+                        .arg(
+                            Arg::new("exists")
+                                .long("exists")
+                                .short('e')
+                                .about("pull all existing in images directory images"),
+                        )
                         .group(
                             ArgGroup::new("specified_by")
                                 .args(&["IMAGES", "available", "exists"])
