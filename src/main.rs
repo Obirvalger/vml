@@ -311,13 +311,11 @@ fn main() -> Result<()> {
                     let images = if let Some(images) = pull_images_matches.values_of("IMAGES") {
                         images.map(|image| image.to_string()).collect()
                     } else {
-                        let available_images = vml::images::available(&config.images)?.names();
+                        let available_images = vml::images::available(&config.images)?;
                         if pull_images_matches.is_present("available") {
-                            available_images
+                            available_images.names()
                         } else if pull_images_matches.is_present("exists") {
-                            let exists_images =
-                                vml::images::list(&[images_dir])?.into_iter().collect();
-                            available_images.intersection(&exists_images).cloned().collect()
+                            available_images.exists().names()
                         } else {
                             BTreeSet::new()
                         }

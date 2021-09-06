@@ -43,6 +43,10 @@ impl Image<'_> {
     pub fn outdate(&self, default_update_after_days: Option<u64>) -> bool {
         self.outdate_option(default_update_after_days).unwrap_or(false)
     }
+
+    pub fn exists(&self) -> bool {
+        self.path().is_file()
+    }
 }
 
 impl PartialEq for Image<'_> {
@@ -71,6 +75,12 @@ pub struct Images<'a> {
 }
 
 impl Images<'_> {
+    pub fn exists(self) -> Self {
+        let images = self.images.into_iter().filter(|(_, i)| i.exists()).collect();
+
+        Images { images }
+    }
+
     pub fn names(&self) -> BTreeSet<String> {
         self.images.iter().map(|(name, _)| name.to_string()).collect()
     }
