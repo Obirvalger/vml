@@ -97,6 +97,7 @@ pub fn build_cli() -> clap::App<'static> {
                                 .required(true),
                         ),
                 )
+                .replace("update", &["pull", "--outdate"])
                 .subcommand(
                     App::new("store")
                         .about("store vm disk as image")
