@@ -14,8 +14,8 @@ json = "0.12.4"
 procfs = "0.10.1"
 rand = "0.8.4"
 reqwest = { version = "0.11.4", features = ["blocking"] }
-rust-embed = "6.0.1"
-serde = { version = "1.0.129", features = ["derive"] }
+rust-embed = "6.2.0"
+serde = { version = "1.0.130", features = ["derive"] }
 shellexpand = "2.1.0"
 tempfile = "3.2.0"
 tera = "1.12.1"
