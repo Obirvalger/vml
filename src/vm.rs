@@ -55,10 +55,12 @@ pub fn create<S: AsRef<str>>(
         images_dirs.extend(config.images.other_directories_ro.iter());
         match images::find(&images_dirs, image_name) {
             Ok(image_path) => {
-                if let Some(image) = available_images.get(image_name) {
-                    if image.outdate() {
-                        println!("Update {} image", &image.name);
-                        image.pull()?;
+                if config.images.update_on_create {
+                    if let Some(image) = available_images.get(image_name) {
+                        if image.outdate() {
+                            println!("Update {} image", &image.name);
+                            image.pull()?;
+                        }
                     }
                 }
                 image_path

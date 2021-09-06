@@ -80,5 +80,6 @@ directory = "~/.local/share/vml/images"
 # List of read only directories with images
 other-directories-ro = []
 
+update-after-days = 60
 # Uncomment to enable automatically update images when creating new vm
-# update-after-days = 60
+# update-on-create = true

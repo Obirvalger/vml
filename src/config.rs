@@ -156,6 +156,8 @@ pub struct Images {
     pub directory: PathBuf,
     pub other_directories_ro: Vec<PathBuf>,
     pub default: String,
+    #[serde(default)]
+    pub update_on_create: bool,
     pub update_after_days: Option<u64>,
 }
 
