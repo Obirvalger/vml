@@ -11,11 +11,6 @@ in the offline mode.
 cargo build --release --offline
 ```
 
-Or just download release binary.
-```
-wget https://github.com/Obirvalger/vml/releases/download/v0.1.2/vml
-```
-
 Then copy created executable to appropriate path, e.g. `~/bin/vml`, if
 `~/bin` is in your PATH.
 ```
