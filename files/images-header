@@ -17,4 +17,15 @@
 # like this.
 # change: ["update-all", "keep-description", "keep-change"]
 
-
+# Images identifies by name and stores the following data:
+#  description - optional,
+#  url - mandatory,
+#  change: optional,
+#  update-after-days: optional,
+#
+# For example:
+# [alt]
+# description = "ALT Linux Sisyphus"
+# url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/alt-sisyphus-cloud-x86_64.qcow2"
+# change = ["update-all", "delete", "keep-change", "keep-update-after-days"]
+# update-after-days = 60
