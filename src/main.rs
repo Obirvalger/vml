@@ -316,6 +316,8 @@ fn main() -> Result<()> {
                             available_images.names()
                         } else if pull_images_matches.is_present("exists") {
                             available_images.exists().names()
+                        } else if pull_images_matches.is_present("outdate") {
+                            available_images.outdate().names()
                         } else {
                             BTreeSet::new()
                         }

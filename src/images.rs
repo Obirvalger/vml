@@ -29,7 +29,8 @@ impl Image<'_> {
         self.config.directory.join(&self.name)
     }
 
-    fn outdate_option(&self, default_update_after_days: Option<u64>) -> Option<bool> {
+    fn outdate_option(&self) -> Option<bool> {
+        let default_update_after_days = self.config.update_after_days;
         let image_path = self.path();
         let modified_time = fs::metadata(image_path).and_then(|m| m.modified()).ok()?;
         let sys_time = SystemTime::now();
@@ -40,8 +41,8 @@ impl Image<'_> {
         Some(duration > update_after)
     }
 
-    pub fn outdate(&self, default_update_after_days: Option<u64>) -> bool {
-        self.outdate_option(default_update_after_days).unwrap_or(false)
+    pub fn outdate(&self) -> bool {
+        self.outdate_option().unwrap_or(false)
     }
 
     pub fn exists(&self) -> bool {
@@ -77,6 +78,12 @@ pub struct Images<'a> {
 impl Images<'_> {
     pub fn exists(self) -> Self {
         let images = self.images.into_iter().filter(|(_, i)| i.exists()).collect();
+
+        Images { images }
+    }
+
+    pub fn outdate(self) -> Self {
+        let images = self.images.into_iter().filter(|(_, i)| i.outdate()).collect();
 
         Images { images }
     }

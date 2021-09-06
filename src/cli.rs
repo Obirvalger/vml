@@ -85,9 +85,15 @@ pub fn build_cli() -> clap::App<'static> {
                                 .short('e')
                                 .about("pull all existing in images directory images"),
                         )
+                        .arg(
+                            Arg::new("outdate")
+                                .long("outdate")
+                                .short('o')
+                                .about("pull all outdate images"),
+                        )
                         .group(
                             ArgGroup::new("specified_by")
-                                .args(&["IMAGES", "available", "exists"])
+                                .args(&["IMAGES", "available", "exists", "outdate"])
                                 .required(true),
                         ),
                 )

@@ -56,7 +56,7 @@ pub fn create<S: AsRef<str>>(
         match images::find(&images_dirs, image_name) {
             Ok(image_path) => {
                 if let Some(image) = available_images.get(image_name) {
-                    if image.outdate(config.images.update_after_days) {
+                    if image.outdate() {
                         println!("Update {} image", &image.name);
                         images::pull(&config.images.directory, image_name)?;
                     }
