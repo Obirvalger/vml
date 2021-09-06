@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -14,7 +14,7 @@ use crate::cloud_init;
 use crate::config::Config;
 use crate::config::CreateExistsAction;
 use crate::images;
-use crate::images::Image;
+use crate::images::Images;
 use crate::net::{ConfigNet, Net};
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
@@ -35,7 +35,7 @@ pub fn create<S: AsRef<str>>(
     name: S,
     image: Option<&str>,
     exists_action: CreateExistsAction,
-    available_images: &BTreeMap<String, Image>,
+    available_images: &Images,
 ) -> Result<()> {
     let name = name.as_ref();
     if exists(config, name) {
@@ -58,14 +58,15 @@ pub fn create<S: AsRef<str>>(
                 if let Some(image) = available_images.get(image_name) {
                     if image.outdate() {
                         println!("Update {} image", &image.name);
-                        images::pull(&config.images.directory, image_name)?;
+                        image.pull()?;
                     }
                 }
                 image_path
             }
             Err(error) => {
                 if matches!(error, Error::ImageDoesNotExists(_)) && config.commands.create.pull {
-                    images::pull(&config.images.directory, image_name)?
+                    let image = available_images.get_result(image_name)?;
+                    image.pull()?
                 } else {
                     return Err(error);
                 }

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::env;
 use std::fs;
 use std::io;
@@ -93,7 +93,7 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         vm_config.display = Some("none".to_string())
     }
 
-    let available_images = vml::images::available(&config.images).unwrap_or_default().images;
+    let available_images = vml::images::available(&config.images).unwrap_or_default();
 
     for name in names {
         vml::create_vm(config, &vm_config, name, image, exists, &available_images)?;
@@ -265,11 +265,11 @@ fn main() -> Result<()> {
                 }
 
                 Some(("available", _)) => {
-                    for (image_name, image) in vml::images::available(&config.images)?.images {
+                    for image in vml::images::available(&config.images)? {
                         if let Some(description) = &image.description {
-                            println!("{} - {}", &image_name, description);
+                            println!("{} - {}", &image.name, description);
                         } else {
-                            println!("{}", &image_name);
+                            println!("{}", &image.name);
                         }
                     }
                 }
@@ -308,23 +308,23 @@ fn main() -> Result<()> {
                 }
 
                 Some(("pull", pull_images_matches)) => {
+                    let available_images = vml::images::available(&config.images)?;
                     let images = if let Some(images) = pull_images_matches.values_of("IMAGES") {
-                        images.map(|image| image.to_string()).collect()
+                        let names =
+                            images.map(|image| image.to_string()).collect::<HashSet<String>>();
+                        available_images.filter(|i| names.contains(&i.name))
+                    } else if pull_images_matches.is_present("available") {
+                        available_images
+                    } else if pull_images_matches.is_present("exists") {
+                        available_images.exists()
+                    } else if pull_images_matches.is_present("outdate") {
+                        available_images.outdate()
                     } else {
-                        let available_images = vml::images::available(&config.images)?;
-                        if pull_images_matches.is_present("available") {
-                            available_images.names()
-                        } else if pull_images_matches.is_present("exists") {
-                            available_images.exists().names()
-                        } else if pull_images_matches.is_present("outdate") {
-                            available_images.outdate().names()
-                        } else {
-                            BTreeSet::new()
-                        }
+                        panic!("Unknown image pull options {:?}", &pull_images_matches)
                     };
 
                     for image in images {
-                        vml::images::pull(images_dir, &image)?;
+                        image.pull()?;
                     }
                 }
                 _ => println!("Unexpected images command"),

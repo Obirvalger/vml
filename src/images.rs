@@ -24,7 +24,21 @@ pub struct Image<'a> {
     update_after_days: Option<u64>,
 }
 
-impl Image<'_> {
+impl<'a> Image<'a> {
+    fn from_deserialize(
+        image: DeserializeImage,
+        name: impl AsRef<str>,
+        config: &'a ConfigImages,
+    ) -> Self {
+        Image {
+            name: name.as_ref().to_string(),
+            url: image.url,
+            description: image.description,
+            config,
+            update_after_days: image.update_after_days,
+        }
+    }
+
     fn path(&self) -> PathBuf {
         self.config.directory.join(&self.name)
     }
@@ -47,6 +61,21 @@ impl Image<'_> {
 
     pub fn exists(&self) -> bool {
         self.path().is_file()
+    }
+
+    pub fn pull(&self) -> Result<PathBuf> {
+        let mut body =
+            reqwest::blocking::get(&self.url).map_err(|e| Error::DownloadImage(e.to_string()))?;
+        let image_path = self.path();
+        let images_dir = &self.config.directory;
+        let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;
+
+        println!("Downloading image {} {}", &self.name, &self.url);
+        body.copy_to(&mut tmp).map_err(|e| Error::DownloadImage(e.to_string()))?;
+
+        fs::rename(tmp.path(), &image_path)?;
+
+        Ok(image_path)
     }
 }
 
@@ -72,7 +101,7 @@ impl Ord for Image<'_> {
 
 #[derive(Clone, Debug, Default)]
 pub struct Images<'a> {
-    pub images: BTreeMap<String, Image<'a>>,
+    images: BTreeMap<String, Image<'a>>,
 }
 
 impl Images<'_> {
@@ -88,8 +117,45 @@ impl Images<'_> {
         Images { images }
     }
 
+    pub fn filter(self, predicate: impl Fn(&Image) -> bool) -> Self {
+        let images = self.images.into_iter().filter(|(_, i)| predicate(i)).collect();
+
+        Images { images }
+    }
+
     pub fn names(&self) -> BTreeSet<String> {
         self.images.iter().map(|(name, _)| name.to_string()).collect()
+    }
+
+    pub fn get<'a>(&'a self, name: impl AsRef<str>) -> Option<&'a Image> {
+        self.images.get(name.as_ref())
+    }
+
+    pub fn get_result<'a>(&'a self, name: impl AsRef<str>) -> Result<&'a Image> {
+        self.images
+            .get(name.as_ref())
+            .ok_or_else(|| Error::UnknownImage(name.as_ref().to_string()))
+    }
+}
+
+impl<'a> IntoIterator for Images<'a> {
+    type Item = Image<'a>;
+    type IntoIter = ImagesIntoIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ImagesIntoIter { images_iter: self.images.into_iter() }
+    }
+}
+
+pub struct ImagesIntoIter<'a> {
+    images_iter: btree_map::IntoIter<String, Image<'a>>,
+}
+
+impl<'a> Iterator for ImagesIntoIter<'a> {
+    type Item = Image<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.images_iter.next().map(|(_, i)| i)
     }
 }
 
@@ -253,18 +319,7 @@ pub fn available(config: &ConfigImages) -> Result<Images> {
     let images = parse(&images_file_path())?.images;
     let images = images
         .into_iter()
-        .map(|(k, v)| {
-            (
-                k.to_owned(),
-                Image {
-                    name: k,
-                    url: v.url,
-                    description: v.description,
-                    config,
-                    update_after_days: v.update_after_days,
-                },
-            )
-        })
+        .map(|(k, v)| (k.to_owned(), Image::from_deserialize(v, &k, config)))
         .collect();
 
     Ok(Images { images })
@@ -274,24 +329,4 @@ pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {
     let image_path = images_dir.join(image_name);
     fs::remove_file(&image_path)?;
     Ok(())
-}
-
-pub fn pull(images_dir: &Path, image_name: &str) -> Result<PathBuf> {
-    let images = parse(&images_file_path())?.images;
-
-    if let Some(image) = images.get(image_name) {
-        let mut body =
-            reqwest::blocking::get(&image.url).map_err(|e| Error::DownloadImage(e.to_string()))?;
-        let image_path = images_dir.join(image_name);
-        let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;
-
-        println!("Downloading image {} {}", image_name, image.url);
-        body.copy_to(&mut tmp).map_err(|e| Error::DownloadImage(e.to_string()))?;
-
-        fs::rename(tmp.path(), &image_path)?;
-
-        Ok(image_path)
-    } else {
-        Err(Error::UnknownImage(image_name.to_string()))
-    }
 }
