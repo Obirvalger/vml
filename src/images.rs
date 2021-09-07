@@ -100,41 +100,37 @@ impl Ord for Image<'_> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Images<'a> {
-    images: BTreeMap<String, Image<'a>>,
-}
+pub struct Images<'a>(BTreeMap<String, Image<'a>>);
 
 impl Images<'_> {
     pub fn exists(self) -> Self {
-        let images = self.images.into_iter().filter(|(_, i)| i.exists()).collect();
+        let images = self.0.into_iter().filter(|(_, i)| i.exists()).collect();
 
-        Images { images }
+        Images(images)
     }
 
     pub fn outdate(self) -> Self {
-        let images = self.images.into_iter().filter(|(_, i)| i.outdate()).collect();
+        let images = self.0.into_iter().filter(|(_, i)| i.outdate()).collect();
 
-        Images { images }
+        Images(images)
     }
 
     pub fn filter(self, predicate: impl Fn(&Image) -> bool) -> Self {
-        let images = self.images.into_iter().filter(|(_, i)| predicate(i)).collect();
+        let images = self.0.into_iter().filter(|(_, i)| predicate(i)).collect();
 
-        Images { images }
+        Images(images)
     }
 
     pub fn names(&self) -> BTreeSet<String> {
-        self.images.iter().map(|(name, _)| name.to_string()).collect()
+        self.0.iter().map(|(name, _)| name.to_string()).collect()
     }
 
     pub fn get<'a>(&'a self, name: impl AsRef<str>) -> Option<&'a Image> {
-        self.images.get(name.as_ref())
+        self.0.get(name.as_ref())
     }
 
     pub fn get_result<'a>(&'a self, name: impl AsRef<str>) -> Result<&'a Image> {
-        self.images
-            .get(name.as_ref())
-            .ok_or_else(|| Error::UnknownImage(name.as_ref().to_string()))
+        self.0.get(name.as_ref()).ok_or_else(|| Error::UnknownImage(name.as_ref().to_string()))
     }
 }
 
@@ -143,19 +139,17 @@ impl<'a> IntoIterator for Images<'a> {
     type IntoIter = ImagesIntoIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        ImagesIntoIter { images_iter: self.images.into_iter() }
+        ImagesIntoIter(self.0.into_iter())
     }
 }
 
-pub struct ImagesIntoIter<'a> {
-    images_iter: btree_map::IntoIter<String, Image<'a>>,
-}
+pub struct ImagesIntoIter<'a>(btree_map::IntoIter<String, Image<'a>>);
 
 impl<'a> Iterator for ImagesIntoIter<'a> {
     type Item = Image<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.images_iter.next().map(|(_, i)| i)
+        self.0.next().map(|(_, i)| i)
     }
 }
 
@@ -173,9 +167,7 @@ struct DeserializeImage {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(transparent)]
-struct DeserializeImages {
-    pub images: BTreeMap<String, DeserializeImage>,
-}
+struct DeserializeImages(BTreeMap<String, DeserializeImage>);
 
 fn update_images(
     embedded_images: &mut btree_map::IntoIter<String, DeserializeImage>,
@@ -248,14 +240,14 @@ fn update_images(
 pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()> {
     let mut embedded_images = toml::from_slice::<DeserializeImages>(&embedded_iamges_toml)
         .expect("Bad embedded images.toml")
-        .images
+        .0
         .into_iter();
     let images_str = &fs::read_to_string(images_file_path())?;
     let mut config_images = toml::from_str::<DeserializeImages>(images_str)
         .map_err(|e| {
             Error::parse_images_file(&images_file_path().to_string_lossy(), &e.to_string())
         })?
-        .images
+        .0
         .into_iter();
 
     let images = update_images(&mut embedded_images, &mut config_images);
@@ -316,13 +308,13 @@ pub fn list(images_dirs: &[&PathBuf]) -> Result<Vec<String>> {
 }
 
 pub fn available(config: &ConfigImages) -> Result<Images> {
-    let images = parse(&images_file_path())?.images;
+    let images = parse(&images_file_path())?.0;
     let images = images
         .into_iter()
         .map(|(k, v)| (k.to_owned(), Image::from_deserialize(v, &k, config)))
         .collect();
 
-    Ok(Images { images })
+    Ok(Images(images))
 }
 
 pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {
