@@ -5,14 +5,13 @@ use crate::Result;
 
 #[derive(Clone, Debug)]
 pub struct Cache {
-    name: String,
     dir: PathBuf,
 }
 
 impl Cache {
-    pub fn new(name: &str, dir: &Path) -> Result<Cache> {
+    pub fn new(dir: &Path) -> Result<Cache> {
         fs::create_dir_all(&dir)?;
-        Ok(Cache { name: name.to_string(), dir: dir.to_owned() })
+        Ok(Cache { dir: dir.to_owned() })
     }
 
     pub fn store(&self, key: &str, value: &str) -> Result<()> {

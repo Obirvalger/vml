@@ -161,7 +161,7 @@ impl VM {
         let name_path = PathBuf::from(&name);
         let names: Vec<String> =
             name_path.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
-        let cache = Cache::new(&name, &vml_directory.join("cache"))?;
+        let cache = Cache::new(&vml_directory.join("cache"))?;
         let monitor = vml_directory.join("monitor.socket");
 
         let specified_by = SpecifiedBy::All;
