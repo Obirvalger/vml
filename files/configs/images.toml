@@ -18,6 +18,12 @@ url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/
 description = "ALT Linux Sisyphus"
 change = ["update-all", "delete"]
 
+[arch]
+description = "Archlinux"
+url = ""
+get-url-prog = "vml-get-arch"
+change = ["update-all", "delete"]
+
 [ubuntu]
 url = "https://cloud-images.ubuntu.com/hirsute/current/hirsute-server-cloudimg-amd64.img"
 description = "latest Ubuntu release (21.04)"
