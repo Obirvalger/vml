@@ -9,11 +9,11 @@ use crate::config_dir;
 use crate::{Error, Result};
 
 #[derive(RustEmbed)]
-#[folder = "files/"]
-struct Asset;
+#[folder = "files/configs"]
+struct AssetConfigs;
 
-pub fn get_file<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
-    Asset::get(path.as_ref())
+pub fn get_config<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
+    AssetConfigs::get(path.as_ref())
         .map(|f| f.data)
         .ok_or_else(|| Error::GetWrongEmbeddedFile(path.as_ref().to_string()))
 }
@@ -28,7 +28,7 @@ fn install_config(filename: &str) -> Result<()> {
         if etc_config.exists() {
             fs::copy(etc_config, config)?;
         } else {
-            let content = Asset::get(filename).unwrap();
+            let content = AssetConfigs::get(filename).unwrap();
             fs::write(&config, content.data)?;
         }
     }

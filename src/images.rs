@@ -253,7 +253,7 @@ pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()
     let images = update_images(&mut embedded_images, &mut config_images);
 
     let mut images_file = OpenOptions::new().truncate(true).write(true).open(images_file_path())?;
-    let header = files::get_file("images-header")?;
+    let header = files::get_config("images-header")?;
     images_file.write_all(&header)?;
     let images_string = toml::to_string(&images).expect("Bad internal images representation");
     images_file.write_all(images_string.as_bytes())?;

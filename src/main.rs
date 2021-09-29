@@ -236,7 +236,7 @@ fn main() -> Result<()> {
     }
 
     files::install_all(&config)?;
-    let embedded_iamges_toml = files::get_file("images.toml")?;
+    let embedded_iamges_toml = files::get_config("images.toml")?;
     images::update_images_file(embedded_iamges_toml)?;
     let mut vmc = VMsCreator::new(&config);
     if matches.is_present("all-vms") {
