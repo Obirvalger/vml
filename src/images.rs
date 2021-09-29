@@ -8,6 +8,7 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use cmd_lib::run_fun;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Images as ConfigImages;
@@ -19,7 +20,8 @@ use crate::{Error, Result};
 pub struct Image<'a> {
     pub description: Option<String>,
     pub name: String,
-    pub url: String,
+    url: String,
+    get_url_prog: Option<PathBuf>,
     config: &'a ConfigImages,
     update_after_days: Option<u64>,
 }
@@ -33,6 +35,7 @@ impl<'a> Image<'a> {
         Image {
             name: name.as_ref().to_string(),
             url: image.url,
+            get_url_prog: image.get_url_prog,
             description: image.description,
             config,
             update_after_days: image.update_after_days,
@@ -63,14 +66,36 @@ impl<'a> Image<'a> {
         self.path().is_file()
     }
 
+    fn url(&self) -> String {
+        let mut url = self.url.to_string();
+        let name = &self.name;
+
+        if let Some(get_url_prog) = &self.get_url_prog {
+            let prog = if get_url_prog.is_absolute() {
+                get_url_prog.to_owned()
+            } else {
+                config_dir().join("get-url-progs").join(get_url_prog)
+            };
+
+            if let Ok(output) = run_fun!($prog $name) {
+                if !output.is_empty() {
+                    url = output
+                }
+            }
+        };
+
+        url
+    }
+
     pub fn pull(&self) -> Result<PathBuf> {
+        let url = &self.url();
         let mut body =
-            reqwest::blocking::get(&self.url).map_err(|e| Error::DownloadImage(e.to_string()))?;
+            reqwest::blocking::get(url).map_err(|e| Error::DownloadImage(e.to_string()))?;
         let image_path = self.path();
         let images_dir = &self.config.directory;
         let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;
 
-        println!("Downloading image {} {}", &self.name, &self.url);
+        println!("Downloading image {} {}", &self.name, url);
         body.copy_to(&mut tmp).map_err(|e| Error::DownloadImage(e.to_string()))?;
 
         fs::rename(tmp.path(), &image_path)?;
@@ -159,6 +184,7 @@ impl<'a> Iterator for ImagesIntoIter<'a> {
 struct DeserializeImage {
     pub description: Option<String>,
     pub url: String,
+    pub get_url_prog: Option<PathBuf>,
     #[serde(default)]
     change: Vec<String>,
     update_after_days: Option<u64>,
@@ -203,6 +229,13 @@ fn update_images(
                 } else {
                     new.url.to_owned()
                 };
+                let get_url_prog = if change_set.contains("keep-get-url-prog")
+                    || !update_all && !change_set.contains("update-get-url-prog")
+                {
+                    old.get_url_prog.to_owned()
+                } else {
+                    new.get_url_prog.to_owned()
+                };
                 let description = if change_set.contains("keep-description")
                     || !update_all && !change_set.contains("update-description")
                 {
@@ -226,7 +259,7 @@ fn update_images(
                 };
                 images.insert(
                     old_name.to_owned(),
-                    DeserializeImage { url, description, change, update_after_days },
+                    DeserializeImage { url, get_url_prog, description, change, update_after_days },
                 );
                 embedded_image = embedded_images.next();
                 config_image = config_images.next();

@@ -195,6 +195,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmd_lib"
+version = "1.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cec29c3408d0feb28eaaf5c202af443f4b3fe07e8f48fa4429872dd8a545e80"
+dependencies = [
+ "cmd_lib_macros",
+ "faccess",
+ "lazy_static",
+ "log",
+ "os_pipe",
+]
+
+[[package]]
+name = "cmd_lib_macros"
+version = "1.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a778463836327b1be7427e4113412a854957589a81f30acce9027b4ebbec5f86"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -291,6 +316,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80df024fbc5ac80f87dfef0d9f5209a252f2a497f7f42944cff24d8253cac065"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "faccess"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e039175679baf763ddddf4f76900b92d4dae9411ee88cf42d2f11b976b09e07c"
+dependencies = [
+ "bitflags",
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -848,6 +884,16 @@ dependencies = [
  "libc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "os_pipe"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb233f06c2307e1f5ce2ecad9f8121cffbbee2c95428f44ea85222e460d0d213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -1724,6 +1770,7 @@ dependencies = [
  "byte-unit",
  "clap",
  "clap_generate",
+ "cmd_lib",
  "json",
  "procfs",
  "rand",

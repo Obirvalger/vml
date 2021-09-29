@@ -98,6 +98,12 @@ url = "https://download.fedoraproject.org/pub/fedora/linux/releases/34/Cloud/x86
 description = "latest Fedora release (34)"
 change = ["update-all", "delete"]
 
+[fedora-rawhide]
+url = ""
+get-url-prog = "vml-get-fedora-rawhide"
+description = "Fedora Rawhide"
+change = ["update-all", "delete"]
+
 [fedora-34]
 url = "https://download.fedoraproject.org/pub/fedora/linux/releases/34/Cloud/x86_64/images/Fedora-Cloud-Base-34-1.2.x86_64.qcow2"
 description = "Fedora 34"
