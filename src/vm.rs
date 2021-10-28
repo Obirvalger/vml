@@ -402,6 +402,16 @@ impl VM {
         Ok(key)
     }
 
+    fn get_ssh_port(&self) -> Result<Option<String>> {
+        if let Some(self_ssh) = &self.ssh {
+            let port = self_ssh.port().to_string();
+            let port = if port == "random" { self.cache.load("port")? } else { port };
+            Ok(Some(port))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn ssh<U: AsRef<str>, O: AsRef<OsStr>, F: AsRef<OsStr>, C: AsRef<str>>(
         &self,
         user: &Option<U>,
@@ -419,9 +429,9 @@ impl VM {
 
         ssh_cmd.args(self_ssh.options());
 
-        let port = self_ssh.port().to_string();
-        let port = if port == "random" { self.cache.load("port")? } else { port };
-        ssh_cmd.args(&["-p", &port]);
+        if let Some(port) = self.get_ssh_port()? {
+            ssh_cmd.args(&["-p", &port]);
+        }
 
         for option in ssh_options {
             ssh_cmd.arg("-o").arg(option.as_ref());
