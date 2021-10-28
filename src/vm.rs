@@ -387,6 +387,21 @@ impl VM {
         Ok(())
     }
 
+    fn get_ssh_private_key(&self) -> Result<Option<String>> {
+        let mut key = None;
+
+        if let Some(self_ssh) = &self.ssh {
+            if self_ssh.has_key() {
+                let keys = self_ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
+                if let Some(pvt_key) = keys.private() {
+                    key = Some(pvt_key);
+                }
+            }
+        }
+
+        Ok(key)
+    }
+
     pub fn ssh<U: AsRef<str>, O: AsRef<OsStr>, F: AsRef<OsStr>, C: AsRef<str>>(
         &self,
         user: &Option<U>,
@@ -415,12 +430,10 @@ impl VM {
         ssh_cmd.args(ssh_flags);
 
         ssh_cmd.arg(self_ssh.user_host(user));
-        if self_ssh.has_key() {
-            let keys = self_ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
-            if let Some(pvt_key) = keys.private() {
-                ssh_cmd.args(&["-o", "IdentitiesOnly=yes"]);
-                ssh_cmd.arg("-i").arg(pvt_key);
-            }
+
+        if let Some(pvt_key) = self.get_ssh_private_key()? {
+            ssh_cmd.args(&["-o", "IdentitiesOnly=yes"]);
+            ssh_cmd.arg("-i").arg(pvt_key);
         }
 
         if let Some(cmd) = cmd {
