@@ -700,7 +700,7 @@ impl VM {
 
             let options = ssh.options();
             if !options.is_empty() {
-                info.insert("ssh_option", ssh.options().join(" "));
+                info.insert("ssh_options", ssh.options().join(" "));
             }
         };
 
