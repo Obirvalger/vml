@@ -571,6 +571,8 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple_values(true),
                 )
                 .arg(Arg::new("all").long("all").short('a'))
+                .arg(Arg::new("format-debug").long("format-debug").short('d'))
+                .arg(Arg::new("format-json").long("format-json").short('j'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -586,7 +588,8 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple_values(true),
                 )
                 .arg(Arg::new("running").long("running").short('r'))
-                .group(ArgGroup::new("all_running").args(&["all", "running"])),
+                .group(ArgGroup::new("all_running").args(&["all", "running"]))
+                .group(ArgGroup::new("format").args(&["format-debug", "format-json"])),
         )
         .subcommand(
             App::new("list")

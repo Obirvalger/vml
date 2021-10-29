@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -656,6 +656,55 @@ impl VM {
         fs::copy(&self.disk, to)?;
 
         Ok(())
+    }
+
+    pub fn info(&self) -> Result<BTreeMap<&'static str, String>> {
+        let mut info = BTreeMap::from([
+            ("memory", self.memory.to_string()),
+            ("name", self.name.to_string()),
+            ("nproc", self.nproc.to_string()),
+        ]);
+
+        if let Some(pid) = &self.pid {
+            info.insert("pid", pid.to_string());
+        }
+
+        if let Some(net) = &self.net {
+            match net {
+                Net::User => {
+                    info.insert("network", "user".to_string());
+                }
+                Net::Tap { address, tap, .. } => {
+                    info.insert("network", format!("tap:{}", &tap));
+                    if let Some(address) = address {
+                        info.insert("network_address", address.to_string());
+                    }
+                }
+            }
+        }
+
+        if let Some(ssh) = &self.ssh {
+            info.insert("ssh_host", ssh.host().to_string());
+
+            if let Some(port) = self.get_ssh_port()? {
+                info.insert("ssh_port", port);
+            }
+
+            if let Some(key) = self.get_ssh_private_key()? {
+                info.insert("ssh_key", key);
+            }
+
+            if let Some(user) = ssh.user() {
+                info.insert("ssh_user", user);
+            }
+
+            let options = ssh.options();
+            if !options.is_empty() {
+                info.insert("ssh_option", ssh.options().join(" "));
+            }
+        };
+
+        Ok(info)
     }
 }
 

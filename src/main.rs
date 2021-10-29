@@ -504,6 +504,8 @@ fn main() -> Result<()> {
                 vmc.all();
             }
 
+            let format_debug = show_matches.is_present("format-debug");
+
             set_specifications(&mut vmc, show_matches);
 
             if show_matches.is_present("running") {
@@ -511,10 +513,17 @@ fn main() -> Result<()> {
             } else {
                 vmc.with_pid(WithPid::Option);
             }
-            vmc.error_on_empty();
-
-            for vm in vmc.create()? {
-                println!("{:#?}", vm);
+            if format_debug {
+                vmc.error_on_empty();
+                for vm in vmc.create()? {
+                    println!("{:#?}", vm);
+                }
+            } else {
+                let mut infos = vec![];
+                for vm in vmc.create()? {
+                    infos.push(vm.info()?);
+                }
+                println!("{:}", json::stringify_pretty(infos, 2));
             }
         }
 
