@@ -521,7 +521,7 @@ fn main() -> Result<()> {
             } else {
                 let mut infos = vec![];
                 for vm in vmc.create()? {
-                    infos.push(vm.info()?);
+                    infos.push(vm.info());
                 }
                 println!("{:}", json::stringify_pretty(infos, 2));
             }

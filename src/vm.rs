@@ -658,7 +658,7 @@ impl VM {
         Ok(())
     }
 
-    pub fn info(&self) -> Result<BTreeMap<&'static str, String>> {
+    pub fn info(&self) -> BTreeMap<&'static str, String> {
         let mut info = BTreeMap::from([
             ("memory", self.memory.to_string()),
             ("name", self.name.to_string()),
@@ -686,11 +686,11 @@ impl VM {
         if let Some(ssh) = &self.ssh {
             info.insert("ssh_host", ssh.host().to_string());
 
-            if let Some(port) = self.get_ssh_port()? {
+            if let Ok(Some(port)) = self.get_ssh_port() {
                 info.insert("ssh_port", port);
             }
 
-            if let Some(key) = self.get_ssh_private_key()? {
+            if let Ok(Some(key)) = self.get_ssh_private_key() {
                 info.insert("ssh_key", key);
             }
 
@@ -704,7 +704,7 @@ impl VM {
             }
         };
 
-        Ok(info)
+        info
     }
 }
 
