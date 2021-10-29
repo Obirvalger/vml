@@ -684,6 +684,7 @@ impl VM {
         }
 
         if let Some(ssh) = &self.ssh {
+            let mut options = "".to_string();
             info.insert("ssh_host", ssh.host().to_string());
 
             if let Ok(Some(port)) = self.get_ssh_port() {
@@ -692,15 +693,17 @@ impl VM {
 
             if let Ok(Some(key)) = self.get_ssh_private_key() {
                 info.insert("ssh_key", key);
+                options.push_str(" -o IdentitiesOnly=yes");
             }
 
             if let Some(user) = ssh.user() {
                 info.insert("ssh_user", user);
             }
 
-            let options = ssh.options();
+            options.push(' ');
+            options.push_str(&ssh.options().join(" "));
             if !options.is_empty() {
-                info.insert("ssh_options", ssh.options().join(" "));
+                info.insert("ssh_options", options);
             }
         };
 
