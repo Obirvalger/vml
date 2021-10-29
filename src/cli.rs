@@ -588,7 +588,6 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple_values(true),
                 )
                 .arg(Arg::new("running").long("running").short('r'))
-                .group(ArgGroup::new("all_running").args(&["all", "running"]))
                 .group(ArgGroup::new("format").args(&["format-debug", "format-json"])),
         )
         .subcommand(
