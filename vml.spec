@@ -19,9 +19,9 @@ Requires: rsync socat openssh-clients /usr/bin/kvm cloud-utils
 
 %description
 VML is a tool for easily and transparently work with qemu virtual machines.
-Virtaul machines presend as directories with vml.toml files in it. VML is able
-to initialize images with cloud-init. Virtual machines with ALT, Centos, Debian
-and Ubuntu could be created with just one command.
+Virtual machines present as directories with vml.toml files in it. VML is able
+to initialize images with cloud-init. Virtual machines with ALT, Centos,
+Debian, Fedora, openSUSE and Ubuntu could be created with just one command.
 
 %prep
 %setup
