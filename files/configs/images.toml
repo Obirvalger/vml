@@ -25,13 +25,18 @@ get-url-prog = "vml-get-arch"
 change = ["update-all", "delete"]
 
 [ubuntu]
-url = "https://cloud-images.ubuntu.com/hirsute/current/hirsute-server-cloudimg-amd64.img"
-description = "latest Ubuntu release (21.04)"
+url = "https://cloud-images.ubuntu.com/impish/current/impish-server-cloudimg-amd64.img"
+description = "latest Ubuntu release (21.10)"
 change = ["update-all", "delete"]
 
 [ubuntu-lts]
 url = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
 description = "latest LTS Ubuntu release (20.04)"
+change = ["update-all", "delete"]
+
+[ubuntu-impish]
+url = "https://cloud-images.ubuntu.com/impish/current/impish-server-cloudimg-amd64.img"
+description = "Ubuntu 21.10 Impish Indri"
 change = ["update-all", "delete"]
 
 [ubuntu-hirsute]
