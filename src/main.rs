@@ -500,19 +500,16 @@ fn main() -> Result<()> {
         }
 
         Some(("show", show_matches)) => {
-            if show_matches.is_present("all") {
-                vmc.all();
+            vmc.all();
+
+            if !show_matches.is_present("all") {
+                vmc.with_pid(WithPid::Filter);
             }
 
             let format_debug = show_matches.is_present("format-debug");
 
             set_specifications(&mut vmc, show_matches);
 
-            if show_matches.is_present("running") {
-                vmc.with_pid(WithPid::Filter);
-            } else {
-                vmc.with_pid(WithPid::Option);
-            }
             if format_debug {
                 vmc.error_on_empty();
                 for vm in vmc.create()? {
