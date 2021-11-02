@@ -1,0 +1,75 @@
+---
+- name: Save global variables
+  hosts: all
+  vars_prompt:
+    - name: task_number
+      private: no
+      when: not task_number
+  tasks:
+  - name: Add dummy host to save global vars
+    run_once: true
+    add_host:
+      name: DUMMY_GLOBAL_VARS
+      task_number: "{{ task_number }}"
+
+- name: Prepare all bb
+  hosts: ans/bb
+  strategy: free
+  tasks:
+  - name: Install apt-repo
+    apt_rpm:
+      name: apt-repo
+      update_cache: true
+    when: hostvars.DUMMY_GLOBAL_VARS.task_number
+  - name: Add task
+    apt_repo:
+      repo: "{{ hostvars.DUMMY_GLOBAL_VARS.task_number }}"
+    when: hostvars.DUMMY_GLOBAL_VARS.task_number
+
+- name: Setup buildbot master
+  hosts: ans/bb/master
+  tasks:
+  - name: Install buildbot master
+    apt_rpm:
+      name: buildbot
+      update_cache: true
+  - name: Create master
+    command: buildbot create-master master
+    args:
+      creates: master
+  - name: Move config
+    command: mv master/master.cfg.sample master/master.cfg
+    args:
+      creates: master/master.cfg
+      removes: master/master.cfg.sample
+  - name: Update address
+    ansible.builtin.replace:
+      path: master/master.cfg
+      regexp: localhost
+      replace: "{{ network_address }}"
+      validate: "buildbot checkconfig %s"
+  - name: Start master
+    command: buildbot restart master
+
+- name: Setup buildbot worker
+  hosts: ans/bb/worker
+  vars:
+    master_address: "{{ hostvars['ans/bb/master'].network_address }}"
+  tasks:
+  - name: Install buildbot worker
+    apt_rpm:
+      name: buildbot-worker
+      update_cache: true
+  - name: Create worker
+    command:
+      argv:
+      - buildbot-worker
+      - create-worker
+      - worker
+      - "{{ master_address }}"
+      - example-worker
+      - pass
+    args:
+      creates: worker
+  - name: Start worker
+    command: buildbot-worker restart worker
