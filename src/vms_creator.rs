@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
@@ -106,7 +106,7 @@ impl<'a> VMsCreator<'a> {
     }
 
     pub fn create(&self) -> Result<Vec<VM>> {
-        let mut vms: HashMap<PathBuf, VM> = HashMap::new();
+        let mut vms: BTreeMap<PathBuf, VM> = BTreeMap::new();
         let vms_dir = &self.config.vms_dir;
 
         for entry in WalkDir::new(vms_dir).into_iter().filter_map(|e| e.ok()) {
