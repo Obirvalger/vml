@@ -1,17 +1,18 @@
 use std::char;
 use std::char::DecodeUtf16;
 
+use crate::util::BYTE_SHIFT;
+use crate::util::CONT_MASK;
+use crate::util::CONT_TAG;
+
 use super::CodePoints;
 use super::Result;
-use super::BYTE_SHIFT;
-use super::CONT_MASK;
-use super::CONT_TAG;
 
 const MIN_HIGH_SURROGATE: u16 = 0xD800;
 
 const MIN_LOW_SURROGATE: u16 = 0xDC00;
 
-const MIN_SURROGATE_CODE: u32 = (u16::max_value() as u32) + 1;
+const MIN_SURROGATE_CODE: u32 = (u16::MAX as u32) + 1;
 
 pub(in super::super) struct DecodeWide<I>
 where
@@ -137,6 +138,5 @@ where
 pub(in super::super) fn encode_wide(
     string: &[u8],
 ) -> impl '_ + Iterator<Item = Result<u16>> {
-    #[allow(clippy::map_clone)]
-    EncodeWide::new(string.iter().map(|&x| x))
+    EncodeWide::new(string.iter().copied())
 }

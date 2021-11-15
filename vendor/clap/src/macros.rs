@@ -295,6 +295,10 @@ macro_rules! app_from_crate {
 /// [`Arg::max_values(max)`]: crate::Arg::max_values()
 /// [`Arg::validator`]: crate::Arg::validator()
 /// [`Arg::conflicts_with`]: crate::Arg::conflicts_with()
+#[deprecated(
+    since = "3.0.0",
+    note = "Replaced with `App` builder API (with `From::from` for parsing usage) or `Parser` derive API (Issue #2835)"
+)]
 #[macro_export]
 macro_rules! clap_app {
     (@app ($builder:expr)) => { $builder };
@@ -532,6 +536,18 @@ macro_rules! impl_settings {
         ),+
     ) => {
         impl $flags {
+            pub(crate) fn empty() -> Self {
+                $flags(Flags::empty())
+            }
+
+            pub(crate) fn insert(&mut self, rhs: Self) {
+                self.0.insert(rhs.0);
+            }
+
+            pub(crate) fn remove(&mut self, rhs: Self) {
+                self.0.remove(rhs.0);
+            }
+
             pub(crate) fn set(&mut self, s: $settings) {
                 match s {
                     $(
@@ -557,6 +573,43 @@ macro_rules! impl_settings {
                         $settings::$setting => self.0.contains($flag),
                     )*
                 }
+            }
+        }
+
+        impl BitOr for $flags {
+            type Output = Self;
+
+            fn bitor(mut self, rhs: Self) -> Self::Output {
+                self.0.insert(rhs.0);
+                self
+            }
+        }
+
+        impl From<$settings> for $flags {
+            fn from(setting: $settings) -> Self {
+                let mut flags = $flags::empty();
+                flags.set(setting);
+                flags
+            }
+        }
+
+        impl BitOr<$settings> for $flags {
+            type Output = Self;
+
+            fn bitor(mut self, rhs: $settings) -> Self::Output {
+                self.set(rhs);
+                self
+            }
+        }
+
+        impl BitOr for $settings {
+            type Output = $flags;
+
+            fn bitor(self, rhs: Self) -> Self::Output {
+                let mut flags = $flags::empty();
+                flags.set(self);
+                flags.set(rhs);
+                flags
             }
         }
 
@@ -596,4 +649,58 @@ macro_rules! debug {
 #[cfg(not(feature = "debug"))]
 macro_rules! debug {
     ($($arg:tt)*) => {};
+}
+
+/// Deprecated, see [`ArgMatches::value_of_t`]
+#[macro_export]
+#[deprecated(since = "3.0.0", note = "Replaced with `ArgMatches::value_of_t`")]
+macro_rules! value_t {
+    ($m:ident, $v:expr, $t:ty) => {
+        clap::value_t!($m.value_of($v), $t)
+    };
+    ($m:ident.value_of($v:expr), $t:ty) => {
+        $m.value_of_t::<$t>($v)
+    };
+}
+
+/// Deprecated, see [`ArgMatches::value_of_t_or_exit`]
+#[macro_export]
+#[deprecated(
+    since = "3.0.0",
+    note = "Replaced with `ArgMatches::value_of_t_or_exit`"
+)]
+macro_rules! value_t_or_exit {
+    ($m:ident, $v:expr, $t:ty) => {
+        value_t_or_exit!($m.value_of($v), $t)
+    };
+    ($m:ident.value_of($v:expr), $t:ty) => {
+        $m.value_of_t_or_exit::<$t>($v)
+    };
+}
+
+/// Deprecated, see [`ArgMatches::values_of_t`]
+#[macro_export]
+#[deprecated(since = "3.0.0", note = "Replaced with `ArgMatches::values_of_t`")]
+macro_rules! values_t {
+    ($m:ident, $v:expr, $t:ty) => {
+        values_t!($m.values_of($v), $t)
+    };
+    ($m:ident.values_of($v:expr), $t:ty) => {
+        $m.values_of_t::<$t>($v)
+    };
+}
+
+/// Deprecated, see [`ArgMatches::values_of_t_or_exit`]
+#[macro_export]
+#[deprecated(
+    since = "3.0.0",
+    note = "Replaced with `ArgMatches::values_of_t_or_exit`"
+)]
+macro_rules! values_t_or_exit {
+    ($m:ident, $v:expr, $t:ty) => {
+        values_t_or_exit!($m.values_of($v), $t)
+    };
+    ($m:ident.values_of($v:expr), $t:ty) => {
+        $m.values_of_t_or_exit::<$t>($v)
+    };
 }

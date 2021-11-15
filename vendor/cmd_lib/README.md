@@ -168,8 +168,9 @@ Right now piping and stdin, stdout, stderr redirection are supported. Most parts
 
 #### Logging
 
-This library provides convenient macros and builtin commands for logging. It also automatically logs
-command execution failures, along with messages which were printed to stderr originally.
+This library provides convenient macros and builtin commands for logging. All messages which
+are printed to stderr will be logged. Since it is returning result type, you can also log the
+errors if command execution fails.
 
 ```rust
 // this code snppit is using a builtin simple logger, you can replace it with a real logger
@@ -179,7 +180,6 @@ assert!(run_cmd!(mkdir /tmp/$dir; ls /tmp/$dir).is_ok());
 assert!(run_cmd!(mkdir /tmp/"$dir"; ls /tmp/"$dir"; rmdir /tmp/"$dir").is_err());
 // output:
 // INFO - mkdir: cannot create directory ‘/tmp/folder with spaces’: File exists
-// ERROR - Running ["mkdir", "/tmp/folder with spaces"] failed, Error: ["mkdir", "/tmp/folder with spaces"] exited with error; status code: 1
 ```
 
 It is using rust [log crate](https://crates.io/crates/log), and you can use your actual favorite
@@ -235,21 +235,31 @@ println!("get result: {}", run_fun!(my_cmd)?);
 
 `spawn!` macro executes the whole command as a child process, returning a handle to it. By
 default, stdin, stdout and stderr are inherited from the parent. The process will run in the
-background, so you can run other stuff concurrently. You can call `wait_cmd_result()` to wait
+background, so you can run other stuff concurrently. You can call `wait()` to wait
 for the process to finish.
 
-With `spawn_with_output!` you can get output result by calling `wait_fun_result()`.
+With `spawn_with_output!` you can get output by calling `wait_with_output()`, or even do stream
+processing with `wait_with_pipe()`.
 
 ```rust
 let mut proc = spawn!(ping -c 10 192.168.0.1)?;
 // do other stuff
 // ...
-proc.wait_cmd_result()?;
+proc.wait()?;
 
 let mut proc = spawn_with_output!(/bin/cat file.txt | sed s/a/b/)?;
 // do other stuff
 // ...
-let output = proc.wait_fun_result()?;
+let output = proc.wait_with_output()?;
+
+spawn_with_output!(journalctl)?.wait_with_pipe(&mut |pipe| {
+    BufReader::new(pipe)
+        .lines()
+        .filter_map(|line| line.ok())
+        .filter(|line| line.find("usb").is_some())
+        .take(10)
+        .for_each(|line| println!("{}", line));
+})?;
 ```
 
 

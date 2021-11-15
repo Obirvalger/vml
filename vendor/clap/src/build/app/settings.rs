@@ -11,7 +11,6 @@ bitflags! {
         const ARG_REQUIRED_ELSE_HELP         = 1 << 2;
         const PROPAGATE_VERSION              = 1 << 3;
         const DISABLE_VERSION_FOR_SC         = 1 << 4;
-        const UNIFIED_HELP                   = 1 << 5;
         const WAIT_ON_ERROR                  = 1 << 6;
         const SC_REQUIRED_ELSE_HELP          = 1 << 7;
         const NO_AUTO_HELP                   = 1 << 8;
@@ -21,52 +20,43 @@ bitflags! {
         const TRAILING_VARARG                = 1 << 12;
         const NO_BIN_NAME                    = 1 << 13;
         const ALLOW_UNK_SC                   = 1 << 14;
-        const UTF8_STRICT                    = 1 << 15;
-        const UTF8_NONE                      = 1 << 16;
-        const LEADING_HYPHEN                 = 1 << 17;
-        const NO_POS_VALUES                  = 1 << 18;
-        const NEXT_LINE_HELP                 = 1 << 19;
-        const DERIVE_DISP_ORDER              = 1 << 20;
-        const COLORED_HELP                   = 1 << 21;
-        const COLOR_ALWAYS                   = 1 << 22;
-        const COLOR_AUTO                     = 1 << 23;
-        const COLOR_NEVER                    = 1 << 24;
-        const DONT_DELIM_TRAIL               = 1 << 25;
-        const ALLOW_NEG_NUMS                 = 1 << 26;
-        const DISABLE_HELP_SC                = 1 << 28;
-        const DONT_COLLAPSE_ARGS             = 1 << 29;
-        const ARGS_NEGATE_SCS                = 1 << 30;
-        const PROPAGATE_VALS_DOWN            = 1 << 31;
-        const ALLOW_MISSING_POS              = 1 << 32;
-        const TRAILING_VALUES                = 1 << 33;
-        const BUILT                          = 1 << 34;
-        const BIN_NAME_BUILT                 = 1 << 35;
-        const VALID_ARG_FOUND                = 1 << 36;
-        const INFER_SUBCOMMANDS              = 1 << 37;
-        const CONTAINS_LAST                  = 1 << 38;
-        const ARGS_OVERRIDE_SELF             = 1 << 39;
-        const HELP_REQUIRED                  = 1 << 40;
-        const SUBCOMMAND_PRECEDENCE_OVER_ARG = 1 << 41;
-        const DISABLE_HELP_FLAG              = 1 << 42;
-        const USE_LONG_FORMAT_FOR_HELP_SC    = 1 << 43;
-        const INFER_LONG_ARGS                = 1 << 44;
-        const IGNORE_ERRORS                  = 1 << 45;
+        const SC_UTF8_NONE                   = 1 << 15;
+        const LEADING_HYPHEN                 = 1 << 16;
+        const NO_POS_VALUES                  = 1 << 17;
+        const NEXT_LINE_HELP                 = 1 << 18;
+        const DERIVE_DISP_ORDER              = 1 << 19;
+        const DONT_DELIM_TRAIL               = 1 << 24;
+        const ALLOW_NEG_NUMS                 = 1 << 25;
+        const DISABLE_HELP_SC                = 1 << 27;
+        const DONT_COLLAPSE_ARGS             = 1 << 28;
+        const ARGS_NEGATE_SCS                = 1 << 29;
+        const PROPAGATE_VALS_DOWN            = 1 << 30;
+        const ALLOW_MISSING_POS              = 1 << 31;
+        const TRAILING_VALUES                = 1 << 32;
+        const BUILT                          = 1 << 33;
+        const BIN_NAME_BUILT                 = 1 << 34;
+        const VALID_ARG_FOUND                = 1 << 35;
+        const INFER_SUBCOMMANDS              = 1 << 36;
+        const CONTAINS_LAST                  = 1 << 37;
+        const ARGS_OVERRIDE_SELF             = 1 << 38;
+        const HELP_REQUIRED                  = 1 << 39;
+        const SUBCOMMAND_PRECEDENCE_OVER_ARG = 1 << 40;
+        const DISABLE_HELP_FLAG              = 1 << 41;
+        const USE_LONG_FORMAT_FOR_HELP_SC    = 1 << 42;
+        const INFER_LONG_ARGS                = 1 << 43;
+        const IGNORE_ERRORS                  = 1 << 44;
+        #[cfg(feature = "unstable-multicall")]
+        const MULTICALL                      = 1 << 45;
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct AppFlags(Flags);
-
-impl BitOr for AppFlags {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        AppFlags(self.0 | rhs.0)
-    }
-}
+pub struct AppFlags(Flags);
 
 impl Default for AppFlags {
     fn default() -> Self {
-        AppFlags(Flags::UTF8_NONE | Flags::COLOR_AUTO)
+        Self::empty()
     }
 }
 
@@ -79,22 +69,14 @@ impl_settings! { AppSettings, AppFlags,
         => Flags::ARGS_NEGATE_SCS,
     AllowExternalSubcommands("allowexternalsubcommands")
         => Flags::ALLOW_UNK_SC,
-    AllowInvalidUtf8("allowinvalidutf8")
-        => Flags::UTF8_NONE,
+    AllowInvalidUtf8ForExternalSubcommands("allowinvalidutf8forexternalsubcommands")
+        => Flags::SC_UTF8_NONE,
     AllowLeadingHyphen("allowleadinghyphen")
         => Flags::LEADING_HYPHEN,
     AllowNegativeNumbers("allownegativenumbers")
         => Flags::ALLOW_NEG_NUMS,
     AllowMissingPositional("allowmissingpositional")
         => Flags::ALLOW_MISSING_POS,
-    ColoredHelp("coloredhelp")
-        => Flags::COLORED_HELP,
-    ColorAlways("coloralways")
-        => Flags::COLOR_ALWAYS,
-    ColorAuto("colorauto")
-        => Flags::COLOR_AUTO,
-    ColorNever("colornever")
-        => Flags::COLOR_NEVER,
     DontDelimitTrailingValues("dontdelimittrailingvalues")
         => Flags::DONT_DELIM_TRAIL,
     DontCollapseArgsInUsage("dontcollapseargsinusage")
@@ -115,14 +97,15 @@ impl_settings! { AppSettings, AppFlags,
         => Flags::HELP_REQUIRED,
     Hidden("hidden")
         => Flags::HIDDEN,
+    #[cfg(feature = "unstable-multicall")]
+    Multicall("multicall")
+        => Flags::MULTICALL,
     NoAutoHelp("noautohelp")
         => Flags::NO_AUTO_HELP,
     NoAutoVersion("noautoversion")
         => Flags::NO_AUTO_VERSION,
     NoBinaryName("nobinaryname")
         => Flags::NO_BIN_NAME,
-    StrictUtf8("strictutf8")
-        => Flags::UTF8_STRICT,
     SubcommandsNegateReqs("subcommandsnegatereqs")
         => Flags::SC_NEGATE_REQS,
     SubcommandRequired("subcommandrequired")
@@ -133,14 +116,10 @@ impl_settings! { AppSettings, AppFlags,
         => Flags::USE_LONG_FORMAT_FOR_HELP_SC,
     TrailingVarArg("trailingvararg")
         => Flags::TRAILING_VARARG,
-    UnifiedHelpMessage("unifiedhelpmessage")
-        => Flags::UNIFIED_HELP,
     NextLineHelp("nextlinehelp")
         => Flags::NEXT_LINE_HELP,
     IgnoreErrors("ignoreerrors")
         => Flags::IGNORE_ERRORS,
-    DisableVersionForSubcommands("disableversionforsubcommands")
-        => Flags::DISABLE_VERSION_FOR_SC,
     WaitOnError("waitonerror")
         => Flags::WAIT_ON_ERROR,
     Built("built")
@@ -163,16 +142,13 @@ impl_settings! { AppSettings, AppFlags,
 /// [`App`]: crate::App
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum AppSettings {
-    /// Specifies that any invalid UTF-8 code points should *not* be treated as an error.
-    /// This is the default behavior of `clap`.
+    /// Specifies that external subcommands that are invalid UTF-8 should *not* be treated as an error.
     ///
-    /// **NOTE:** Using argument values with invalid UTF-8 code points requires using
-    /// [`ArgMatches::value_of_os`], [`ArgMatches::values_of_os`], [`ArgMatches::value_of_lossy`],
-    /// or [`ArgMatches::values_of_lossy`] for those particular arguments which may contain invalid
-    /// UTF-8 values
+    /// **NOTE:** Using external subcommand argument values with invalid UTF-8 requires using
+    /// [`ArgMatches::values_of_os`] or [`ArgMatches::values_of_lossy`] for those particular
+    /// arguments which may contain invalid UTF-8 values
     ///
-    /// **NOTE:** This rule only applies to argument values. Flags, options, and
-    /// [`subcommands`] themselves only allow valid UTF-8 code points.
+    /// **NOTE:** Setting this requires [`AppSettings::AllowExternalSubcommands`]
     ///
     /// # Platform Specific
     ///
@@ -183,29 +159,30 @@ pub enum AppSettings {
     #[cfg_attr(not(unix), doc = " ```ignore")]
     #[cfg_attr(unix, doc = " ```")]
     /// # use clap::{App, AppSettings};
-    /// use std::ffi::OsString;
-    /// use std::os::unix::ffi::{OsStrExt,OsStringExt};
+    /// // Assume there is an external subcommand named "subcmd"
+    /// let m = App::new("myprog")
+    ///     .setting(AppSettings::AllowInvalidUtf8ForExternalSubcommands)
+    ///     .setting(AppSettings::AllowExternalSubcommands)
+    ///     .get_matches_from(vec![
+    ///         "myprog", "subcmd", "--option", "value", "-fff", "--flag"
+    ///     ]);
     ///
-    /// let r = App::new("myprog")
-    ///   //.setting(AppSettings::AllowInvalidUtf8)
-    ///     .arg("<arg> 'some positional arg'")
-    ///     .try_get_matches_from(
-    ///         vec![
-    ///             OsString::from("myprog"),
-    ///             OsString::from_vec(vec![0xe9])]);
-    ///
-    /// assert!(r.is_ok());
-    /// let m = r.unwrap();
-    /// assert_eq!(m.value_of_os("arg").unwrap().as_bytes(), &[0xe9]);
+    /// // All trailing arguments will be stored under the subcommand's sub-matches using an empty
+    /// // string argument name
+    /// match m.subcommand() {
+    ///     Some((external, ext_m)) => {
+    ///          let ext_args: Vec<&std::ffi::OsStr> = ext_m.values_of_os("").unwrap().collect();
+    ///          assert_eq!(external, "subcmd");
+    ///          assert_eq!(ext_args, ["--option", "value", "-fff", "--flag"]);
+    ///     },
+    ///     _ => {},
+    /// }
     /// ```
     ///
-    /// [`ArgMatches::value_of_os`]: crate::ArgMatches::value_of_os()
     /// [`ArgMatches::values_of_os`]: crate::ArgMatches::values_of_os()
-    /// [`ArgMatches::value_of_lossy`]: crate::ArgMatches::value_of_lossy()
     /// [`ArgMatches::values_of_lossy`]: crate::ArgMatches::values_of_lossy()
     /// [`subcommands`]: crate::App::subcommand()
-    // TODO: Either this or StrictUtf8
-    AllowInvalidUtf8,
+    AllowInvalidUtf8ForExternalSubcommands,
 
     /// Specifies that leading hyphens are allowed in all argument *values*, such as negative numbers
     /// like `-10`. (which would otherwise be parsed as another flag or option)
@@ -506,80 +483,6 @@ pub enum AppSettings {
     /// ```
     SubcommandPrecedenceOverArg,
 
-    /// Uses colorized help messages.
-    ///
-    /// **NOTE:** Must be compiled with the `color` cargo feature
-    ///
-    /// # Platform Specific
-    ///
-    /// This setting only applies to Unix, Linux, and OSX (i.e. non-Windows platforms)
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use clap::{App, Arg, AppSettings};
-    /// App::new("myprog")
-    ///     .setting(AppSettings::ColoredHelp)
-    ///     .get_matches();
-    /// ```
-    ColoredHelp,
-
-    /// Enables colored output only when the output is going to a terminal or TTY.
-    ///
-    /// **NOTE:** This is the default behavior of `clap`.
-    ///
-    /// **NOTE:** Must be compiled with the `color` cargo feature.
-    ///
-    /// # Platform Specific
-    ///
-    /// This setting only applies to Unix, Linux, and OSX (i.e. non-Windows platforms).
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use clap::{App, Arg, AppSettings};
-    /// App::new("myprog")
-    ///     .setting(AppSettings::ColorAuto)
-    ///     .get_matches();
-    /// ```
-    ColorAuto,
-
-    /// Enables colored output regardless of whether or not the output is going to a terminal/TTY.
-    ///
-    /// **NOTE:** Must be compiled with the `color` cargo feature.
-    ///
-    /// # Platform Specific
-    ///
-    /// This setting only applies to Unix, Linux, and OSX (i.e. non-Windows platforms).
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use clap::{App, Arg, AppSettings};
-    /// App::new("myprog")
-    ///     .setting(AppSettings::ColorAlways)
-    ///     .get_matches();
-    /// ```
-    ColorAlways,
-
-    /// Disables colored output no matter if the output is going to a terminal/TTY, or not.
-    ///
-    /// **NOTE:** Must be compiled with the `color` cargo feature
-    ///
-    /// # Platform Specific
-    ///
-    /// This setting only applies to Unix, Linux, and OSX (i.e. non-Windows platforms)
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use clap::{App, Arg, AppSettings};
-    /// App::new("myprog")
-    ///     .setting(AppSettings::ColorNever)
-    ///     .get_matches();
-    /// ```
-    ColorNever,
-
     /// Disables the automatic collapsing of positional args into `[ARGS]` inside the usage string
     ///
     /// # Examples
@@ -664,27 +567,6 @@ pub enum AppSettings {
     /// ```
     DisableVersionFlag,
 
-    /// Disables `-V` and `--version` for all [`subcommands`] of this [`App`].
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use clap::{App, AppSettings, ErrorKind};
-    /// let res = App::new("myprog")
-    ///     .version("v1.1")
-    ///     .setting(AppSettings::DisableVersionForSubcommands)
-    ///     .subcommand(App::new("test"))
-    ///     .try_get_matches_from(vec![
-    ///         "myprog", "test", "-V"
-    ///     ]);
-    /// assert!(res.is_err());
-    /// assert_eq!(res.unwrap_err().kind, ErrorKind::UnknownArgument);
-    /// ```
-    ///
-    /// [`subcommands`]: crate::App::subcommand()
-    /// [`App`]: crate::App
-    DisableVersionForSubcommands,
-
     /// Displays the arguments and [`subcommands`] in the help message in the order that they were
     /// declared in, and not alphabetically which is the default.
     ///
@@ -699,6 +581,89 @@ pub enum AppSettings {
     ///
     /// [`subcommands`]: crate::App::subcommand()
     DeriveDisplayOrder,
+
+    /// Parse the bin name (argv[0]) as a subcommand
+    ///
+    /// This adds a small performance penalty to startup
+    /// as it requires comparing the bin name against every subcommand name.
+    ///
+    /// A "multicall" executable is a single executable
+    /// that contains a variety of applets,
+    /// and decides which applet to run based on the name of the file.
+    /// The executable can be called from different names by creating hard links
+    /// or symbolic links to it.
+    ///
+    /// This is desirable when it is convenient to store code
+    /// for many programs in the same file,
+    /// such as deduplicating code across multiple programs
+    /// without loading a shared library at runtime.
+    ///
+    /// Multicall can't be used with [`NoBinaryName`] since they interpret
+    /// the command name in incompatible ways.
+    ///
+    /// # Examples
+    ///
+    /// Multicall applets are defined as subcommands
+    /// to an app which has the Multicall setting enabled.
+    ///
+    /// Busybox is a common example of a "multicall" executable
+    /// with a subcommmand for each applet that can be run directly,
+    /// e.g. with the `cat` applet being run by running `busybox cat`,
+    /// or with `cat` as a link to the `busybox` binary.
+    ///
+    /// This is desirable when the launcher program has additional options
+    /// or it is useful to run the applet without installing a symlink
+    /// e.g. to test the applet without installing it
+    /// or there may already be a command of that name installed.
+    ///
+    /// ```rust
+    /// # use clap::{App, AppSettings};
+    /// let mut app = App::new("busybox")
+    ///     .setting(AppSettings::Multicall)
+    ///     .subcommand(App::new("true"))
+    ///     .subcommand(App::new("false"));
+    /// // When called from the executable's canonical name
+    /// // its applets can be matched as subcommands.
+    /// let m = app.try_get_matches_from_mut(&["busybox", "true"]).unwrap();
+    /// assert_eq!(m.subcommand_name(), Some("true"));
+    /// // When called from a link named after an applet that applet is matched.
+    /// let m = app.get_matches_from(&["true"]);
+    /// assert_eq!(m.subcommand_name(), Some("true"));
+    /// ```
+    ///
+    /// `hostname` is another example of a multicall executable.
+    /// It differs from busybox by not supporting running applets via subcommand
+    /// and is instead only runnable via links.
+    ///
+    /// This is desirable when the executable has a primary purpose
+    /// rather than being a collection of varied applets,
+    /// so it is appropriate to name the executable after its purpose,
+    /// but there is other related functionality that would be convenient to provide
+    /// and it is convenient for the code to implement it to be in the same executable.
+    ///
+    /// This behaviour can be opted-into
+    /// by naming a subcommand with the same as the program
+    /// as applet names take priority.
+    ///
+    /// ```rust
+    /// # use clap::{App, AppSettings, ErrorKind};
+    /// let mut app = App::new("hostname")
+    ///     .setting(AppSettings::Multicall)
+    ///     .subcommand(App::new("hostname"))
+    ///     .subcommand(App::new("dnsdomainname"));
+    /// let m = app.try_get_matches_from_mut(&["hostname", "dnsdomainname"]);
+    /// assert!(m.is_err());
+    /// assert_eq!(m.unwrap_err().kind, ErrorKind::UnknownArgument);
+    /// let m = app.get_matches_from(&["hostname"]);
+    /// assert_eq!(m.subcommand_name(), Some("hostname"));
+    /// ```
+    ///
+    /// [`subcommands`]: crate::App::subcommand()
+    /// [`panic!`]: https://doc.rust-lang.org/std/macro.panic!.html
+    /// [`NoBinaryName`]: crate::AppSettings::NoBinaryName
+    /// [`try_get_matches_from_mut`]: crate::App::try_get_matches_from_mut()
+    #[cfg(feature = "unstable-multicall")]
+    Multicall,
 
     /// Specifies to use the version of the current command for all [`subcommands`].
     ///
@@ -865,6 +830,7 @@ pub enum AppSettings {
     /// let cmds: Vec<&str> = m.values_of("cmd").unwrap().collect();
     /// assert_eq!(cmds, ["command", "set"]);
     /// ```
+    /// [`try_get_matches_from_mut`]: crate::App::try_get_matches_from_mut()
     NoBinaryName,
 
     /// Places the help string for all arguments on the line after the argument.
@@ -968,40 +934,6 @@ pub enum AppSettings {
     /// [long format]: crate::App::long_about
     UseLongFormatForHelpSubcommand,
 
-    /// Specifies that any invalid UTF-8 code points should be treated as an error and fail
-    /// with a [`ErrorKind::InvalidUtf8`] error.
-    ///
-    /// **NOTE:** This rule only applies to argument values; Things such as flags, options, and
-    /// [`subcommands`] themselves only allow valid UTF-8 code points.
-    ///
-    /// # Platform Specific
-    ///
-    /// Non Windows systems only
-    ///
-    /// # Examples
-    ///
-    #[cfg_attr(not(unix), doc = " ```ignore")]
-    #[cfg_attr(unix, doc = " ```")]
-    /// # use clap::{App, AppSettings, ErrorKind};
-    /// use std::ffi::OsString;
-    /// use std::os::unix::ffi::OsStringExt;
-    ///
-    /// let m = App::new("myprog")
-    ///     .setting(AppSettings::StrictUtf8)
-    ///     .arg("<arg> 'some positional arg'")
-    ///     .try_get_matches_from(
-    ///         vec![
-    ///             OsString::from("myprog"),
-    ///             OsString::from_vec(vec![0xe9])]);
-    ///
-    /// assert!(m.is_err());
-    /// assert_eq!(m.unwrap_err().kind, ErrorKind::InvalidUtf8);
-    /// ```
-    ///
-    /// [`subcommands`]: crate::App::subcommand()
-    /// [`ErrorKind::InvalidUtf8`]: crate::ErrorKind::InvalidUtf8
-    StrictUtf8,
-
     /// Allows specifying that if no [`subcommand`] is present at runtime,
     /// error and exit gracefully.
     ///
@@ -1046,25 +978,6 @@ pub enum AppSettings {
     /// [`Arg::multiple_values(true)`]: crate::Arg::multiple_values()
     TrailingVarArg,
 
-    /// Groups flags and options together, presenting a more unified help message
-    /// (a la `getopts` or `docopt` style).
-    ///
-    /// The default is that the auto-generated help message will group flags, and options
-    /// separately.
-    ///
-    /// **NOTE:** This setting is cosmetic only and does not affect any functionality.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use clap::{App, Arg, AppSettings};
-    /// App::new("myprog")
-    ///     .setting(AppSettings::UnifiedHelpMessage)
-    ///     .get_matches();
-    /// // running `myprog --help` will display a unified "docopt" or "getopts" style help message
-    /// ```
-    UnifiedHelpMessage,
-
     /// Will display a message "Press \[ENTER\]/\[RETURN\] to continue..." and wait for user before
     /// exiting
     ///
@@ -1081,10 +994,45 @@ pub enum AppSettings {
     /// ```
     WaitOnError,
 
-    /// @TODO-v3: @docs write them...maybe rename
+    /// Tells clap to treat the auto-generated `-h, --help` flags just like any other flag, and
+    /// *not* print the help message. This allows one to handle printing of the help message
+    /// manually.
+    ///
+    /// ```rust
+    /// # use clap::{App, AppSettings};
+    /// let result = App::new("myprog")
+    ///     .setting(AppSettings::NoAutoHelp)
+    ///     .try_get_matches_from("myprog --help".split(" "));
+    ///
+    /// // Normally, if `--help` is used clap prints the help message and returns an
+    /// // ErrorKind::DisplayHelp
+    /// //
+    /// // However, `--help` was treated like a normal flag
+    ///
+    /// assert!(result.is_ok());
+    /// assert!(result.unwrap().is_present("help"));
+    /// ```
     NoAutoHelp,
 
-    /// @TODO-v3: @docs write them...maybe rename
+    /// Tells clap to treat the auto-generated `-V, --version` flags just like any other flag, and
+    /// *not* print the version message. This allows one to handle printing of the version message
+    /// manually.
+    ///
+    /// ```rust
+    /// # use clap::{App, AppSettings};
+    /// let result = App::new("myprog")
+    ///     .version("3.0")
+    ///     .setting(AppSettings::NoAutoVersion)
+    ///     .try_get_matches_from("myprog --version".split(" "));
+    ///
+    /// // Normally, if `--version` is used clap prints the version message and returns an
+    /// // ErrorKind::DisplayVersion
+    /// //
+    /// // However, `--version` was treated like a normal flag
+    ///
+    /// assert!(result.is_ok());
+    /// assert!(result.unwrap().is_present("version"));
+    /// ```
     NoAutoVersion,
 
     #[doc(hidden)]
@@ -1126,8 +1074,10 @@ mod test {
             AppSettings::AllowExternalSubcommands
         );
         assert_eq!(
-            "allowinvalidutf8".parse::<AppSettings>().unwrap(),
-            AppSettings::AllowInvalidUtf8
+            "allowinvalidutf8forexternalsubcommands"
+                .parse::<AppSettings>()
+                .unwrap(),
+            AppSettings::AllowInvalidUtf8ForExternalSubcommands
         );
         assert_eq!(
             "allowleadinghyphen".parse::<AppSettings>().unwrap(),
@@ -1136,22 +1086,6 @@ mod test {
         assert_eq!(
             "allownegativenumbers".parse::<AppSettings>().unwrap(),
             AppSettings::AllowNegativeNumbers
-        );
-        assert_eq!(
-            "coloredhelp".parse::<AppSettings>().unwrap(),
-            AppSettings::ColoredHelp
-        );
-        assert_eq!(
-            "colorauto".parse::<AppSettings>().unwrap(),
-            AppSettings::ColorAuto
-        );
-        assert_eq!(
-            "coloralways".parse::<AppSettings>().unwrap(),
-            AppSettings::ColorAlways
-        );
-        assert_eq!(
-            "colornever".parse::<AppSettings>().unwrap(),
-            AppSettings::ColorNever
         );
         assert_eq!(
             "disablehelpsubcommand".parse::<AppSettings>().unwrap(),
@@ -1216,22 +1150,8 @@ mod test {
             AppSettings::UseLongFormatForHelpSubcommand
         );
         assert_eq!(
-            "strictutf8".parse::<AppSettings>().unwrap(),
-            AppSettings::StrictUtf8
-        );
-        assert_eq!(
             "trailingvararg".parse::<AppSettings>().unwrap(),
             AppSettings::TrailingVarArg
-        );
-        assert_eq!(
-            "unifiedhelpmessage".parse::<AppSettings>().unwrap(),
-            AppSettings::UnifiedHelpMessage
-        );
-        assert_eq!(
-            "disableversionforsubcommands"
-                .parse::<AppSettings>()
-                .unwrap(),
-            AppSettings::DisableVersionForSubcommands
         );
         assert_eq!(
             "waitonerror".parse::<AppSettings>().unwrap(),

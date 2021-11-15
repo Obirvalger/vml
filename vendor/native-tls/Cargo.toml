@@ -12,7 +12,7 @@
 
 [package]
 name = "native-tls"
-version = "0.2.7"
+version = "0.2.8"
 authors = ["Steven Fackler <sfackler@gmail.com>"]
 description = "A wrapper over a platform's native TLS implementation"
 readme = "README.md"

@@ -3,17 +3,16 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g., crates.io) dependencies
+# to registry (e.g., crates.io) dependencies.
 #
-# If you believe there's an error in this file please file an
-# issue against the rust-lang/cargo repository. If you're
-# editing this file be aware that the upstream Cargo.toml
-# will likely look very different (and much more reasonable)
+# If you are reading this file be aware that the original Cargo.toml
+# will likely look very different (and much more reasonable).
+# See Cargo.toml.orig for the original contents.
 
 [package]
 edition = "2018"
 name = "clap"
-version = "3.0.0-beta.4"
+version = "3.0.0-beta.5"
 authors = ["Kevin K. <kbknapp@gmail.com>", "Clap Maintainers"]
 include = ["src/**/*", "Cargo.toml", "README.md"]
 description = "A simple to use, efficient, and full-featured Command Line Argument Parser"
@@ -25,7 +24,7 @@ categories = ["command-line-interface"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/clap-rs/clap"
 [package.metadata.docs.rs]
-features = ["yaml", "regex"]
+features = ["yaml", "regex", "unstable-replace", "unstable-multicall"]
 targets = ["x86_64-unknown-linux-gnu"]
 [profile.bench]
 lto = true
@@ -36,6 +35,14 @@ opt-level = 1
 
 [lib]
 bench = false
+
+[[example]]
+name = "busybox"
+path = "examples/24a_multicall_busybox.rs"
+
+[[example]]
+name = "hostname"
+path = "examples/24b_multicall_hostname.rs"
 
 [[bench]]
 name = "01_default"
@@ -70,11 +77,15 @@ harness = false
 version = "0.2"
 optional = true
 
+[dependencies.backtrace]
+version = "0.3"
+optional = true
+
 [dependencies.bitflags]
 version = "1.2"
 
 [dependencies.clap_derive]
-version = "3.0.0-beta.4"
+version = "=3.0.0-beta.5"
 optional = true
 
 [dependencies.indexmap]
@@ -85,8 +96,7 @@ version = "1"
 optional = true
 
 [dependencies.os_str_bytes]
-version = "3.0"
-features = ["raw"]
+version = "4.1"
 
 [dependencies.regex]
 version = "1.0"
@@ -109,8 +119,9 @@ version = "0.14.0"
 features = []
 default-features = false
 
-[dependencies.vec_map]
-version = "0.8"
+[dependencies.unicase]
+version = "2.6"
+optional = true
 
 [dependencies.yaml-rust]
 version = "0.4.1"
@@ -130,12 +141,14 @@ version = "0.9"
 [features]
 cargo = ["lazy_static"]
 color = ["atty", "termcolor"]
-debug = ["clap_derive/debug"]
-default = ["std", "derive", "cargo", "color", "env", "suggestions", "unicode_help"]
+debug = ["clap_derive/debug", "backtrace"]
+default = ["std", "derive", "cargo", "color", "env", "suggestions", "unicode"]
 derive = ["clap_derive", "lazy_static"]
 env = []
 std = ["indexmap/std"]
 suggestions = ["strsim"]
-unicode_help = ["textwrap/unicode-width"]
+unicode = ["textwrap/unicode-width", "unicase"]
+unstable-multicall = []
+unstable-replace = []
 wrap_help = ["terminal_size", "textwrap/terminal_size"]
 yaml = ["yaml-rust"]

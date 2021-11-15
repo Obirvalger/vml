@@ -1,19 +1,22 @@
 // Std
-use std::io::Write;
+use std::{fmt::Write as _, io::Write};
 
 // Internal
+use crate::utils;
 use crate::Generator;
+
 use clap::*;
 
 /// Generate bash completion file
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Bash;
 
 impl Generator for Bash {
-    fn file_name(name: &str) -> String {
+    fn file_name(&self, name: &str) -> String {
         format!("{}.bash", name)
     }
 
-    fn generate(app: &App, buf: &mut dyn Write) {
+    fn generate(&self, app: &App, buf: &mut dyn Write) {
         let bin_name = app.get_bin_name().unwrap();
 
         w!(
@@ -32,8 +35,7 @@ impl Generator for Bash {
         case \"${{i}}\" in
             {name})
                 cmd=\"{cmd}\"
-                ;;
-            {subcmds}
+                ;;{subcmds}
             *)
                 ;;
         esac
@@ -46,16 +48,14 @@ impl Generator for Bash {
                 COMPREPLY=( $(compgen -W \"${{opts}}\" -- \"${{cur}}\") )
                 return 0
             fi
-            case \"${{prev}}\" in
-                {name_opts_details}
+            case \"${{prev}}\" in{name_opts_details}
                 *)
                     COMPREPLY=()
                     ;;
             esac
             COMPREPLY=( $(compgen -W \"${{opts}}\" -- \"${{cur}}\") )
             return 0
-            ;;
-        {subcmd_details}
+            ;;{subcmd_details}
     esac
 }}
 
@@ -76,8 +76,8 @@ complete -F _{name} -o bashdefault -o default {name}
 fn all_subcommands(app: &App) -> String {
     debug!("all_subcommands");
 
-    let mut subcmds = String::new();
-    let mut scs = Bash::all_subcommands(app)
+    let mut subcmds = vec![String::new()];
+    let mut scs = utils::all_subcommands(app)
         .iter()
         .map(|x| x.0.clone())
         .collect::<Vec<_>>();
@@ -85,43 +85,39 @@ fn all_subcommands(app: &App) -> String {
     scs.sort();
     scs.dedup();
 
-    for sc in &scs {
-        subcmds = format!(
-            "{}
-            {name})
+    subcmds.extend(scs.iter().map(|sc| {
+        format!(
+            "{name})
                 cmd+=\"__{fn_name}\"
                 ;;",
-            subcmds,
             name = sc,
             fn_name = sc.replace("-", "__")
-        );
-    }
+        )
+    }));
 
-    subcmds
+    subcmds.join("\n            ")
 }
 
 fn subcommand_details(app: &App) -> String {
     debug!("subcommand_details");
 
-    let mut subcmd_dets = String::new();
-    let mut scs = Bash::all_subcommands(app)
+    let mut subcmd_dets = vec![String::new()];
+    let mut scs = utils::all_subcommands(app)
         .iter()
         .map(|x| x.1.replace(" ", "__"))
         .collect::<Vec<_>>();
 
     scs.sort();
 
-    for sc in &scs {
-        subcmd_dets = format!(
-            "{}
-        {subcmd})
+    subcmd_dets.extend(scs.iter().map(|sc| {
+        format!(
+            "{subcmd})
             opts=\"{sc_opts}\"
             if [[ ${{cur}} == -* || ${{COMP_CWORD}} -eq {level} ]] ; then
                 COMPREPLY=( $(compgen -W \"${{opts}}\" -- \"${{cur}}\") )
                 return 0
             fi
-            case \"${{prev}}\" in
-                {opts_details}
+            case \"${{prev}}\" in{opts_details}
                 *)
                     COMPREPLY=()
                     ;;
@@ -129,63 +125,64 @@ fn subcommand_details(app: &App) -> String {
             COMPREPLY=( $(compgen -W \"${{opts}}\" -- \"${{cur}}\") )
             return 0
             ;;",
-            subcmd_dets,
             subcmd = sc.replace("-", "__"),
             sc_opts = all_options_for_path(app, &*sc),
             level = sc.split("__").map(|_| 1).sum::<u64>(),
             opts_details = option_details_for_path(app, &*sc)
-        );
-    }
+        )
+    }));
 
-    subcmd_dets
+    subcmd_dets.join("\n        ")
 }
 
 fn option_details_for_path(app: &App, path: &str) -> String {
     debug!("option_details_for_path: path={}", path);
 
-    let p = Bash::find_subcommand_with_path(app, path.split("__").skip(1).collect());
-    let mut opts = String::new();
+    let p = utils::find_subcommand_with_path(app, path.split("__").skip(1).collect());
+    let mut opts = vec![String::new()];
 
     for o in p.get_opts() {
         if let Some(longs) = o.get_long_and_visible_aliases() {
-            for long in longs {
-                opts = format!(
-                    "{}
-                --{})
+            opts.extend(longs.iter().map(|long| {
+                format!(
+                    "--{})
                     COMPREPLY=({})
                     return 0
                     ;;",
-                    opts,
                     long,
                     vals_for(o)
-                );
-            }
+                )
+            }));
         }
 
         if let Some(shorts) = o.get_short_and_visible_aliases() {
-            for short in shorts {
-                opts = format!(
-                    "{}
-                -{})
+            opts.extend(shorts.iter().map(|short| {
+                format!(
+                    "-{})
                     COMPREPLY=({})
                     return 0
                     ;;",
-                    opts,
                     short,
                     vals_for(o)
-                );
-            }
+                )
+            }));
         }
     }
 
-    opts
+    opts.join("\n                ")
 }
 
 fn vals_for(o: &Arg) -> String {
     debug!("vals_for: o={}", o.get_name());
 
     if let Some(vals) = o.get_possible_values() {
-        format!("$(compgen -W \"{}\" -- \"${{cur}}\")", vals.join(" "))
+        format!(
+            "$(compgen -W \"{}\" -- \"${{cur}}\")",
+            vals.iter()
+                .filter_map(ArgValue::get_visible_name)
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
     } else {
         String::from("$(compgen -f \"${cur}\")")
     }
@@ -194,22 +191,28 @@ fn vals_for(o: &Arg) -> String {
 fn all_options_for_path(app: &App, path: &str) -> String {
     debug!("all_options_for_path: path={}", path);
 
-    let p = Bash::find_subcommand_with_path(app, path.split("__").skip(1).collect());
-    let scs: Vec<_> = Bash::subcommands(p).iter().map(|x| x.0.clone()).collect();
+    let p = utils::find_subcommand_with_path(app, path.split("__").skip(1).collect());
 
-    let opts = format!(
-        "{shorts} {longs} {pos} {subcmds}",
-        shorts = Bash::shorts_and_visible_aliases(p)
-            .iter()
-            .fold(String::new(), |acc, s| format!("{} -{}", acc, s)),
-        longs = Bash::longs_and_visible_aliases(p)
-            .iter()
-            .fold(String::new(), |acc, l| format!("{} --{}", acc, l)),
-        pos = p
-            .get_positionals()
-            .fold(String::new(), |acc, p| format!("{} {}", acc, p)),
-        subcmds = scs.join(" "),
-    );
+    let mut opts = String::new();
+    for short in utils::shorts_and_visible_aliases(p) {
+        write!(&mut opts, "-{} ", short).unwrap();
+    }
+    for long in utils::longs_and_visible_aliases(p) {
+        write!(&mut opts, "--{} ", long).unwrap();
+    }
+    for pos in p.get_positionals() {
+        if let Some(vals) = pos.get_possible_values() {
+            for value in vals {
+                write!(&mut opts, "{} ", value.get_name()).unwrap();
+            }
+        } else {
+            write!(&mut opts, "{} ", pos).unwrap();
+        }
+    }
+    for (sc, _) in utils::subcommands(p) {
+        write!(&mut opts, "{} ", sc).unwrap();
+    }
+    opts.pop();
 
     opts
 }

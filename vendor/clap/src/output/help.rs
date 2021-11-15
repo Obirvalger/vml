@@ -9,11 +9,9 @@ use std::{
 
 // Internal
 use crate::{
-    build::{App, AppSettings, Arg, ArgSettings},
+    build::{arg::display_arg_val, App, AppSettings, Arg, ArgSettings},
     output::{fmt::Colorizer, Usage},
     parse::Parser,
-    util::VecMap,
-    INTERNAL_ERROR_MSG,
 };
 
 // Third party
@@ -110,19 +108,14 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
                 .app
                 .get_positionals()
                 .any(|arg| should_show_arg(self.use_long, arg));
-            let flags = self
+            let non_pos = self
                 .parser
                 .app
-                .get_flags()
-                .any(|arg| should_show_arg(self.use_long, arg));
-            let opts = self
-                .parser
-                .app
-                .get_opts()
+                .get_non_positionals()
                 .any(|arg| should_show_arg(self.use_long, arg));
             let subcmds = self.parser.app.has_visible_subcommands();
 
-            if flags || opts || pos || subcmds {
+            if non_pos || pos || subcmds {
                 self.write_templated_help(Self::DEFAULT_TEMPLATE)?;
             } else {
                 self.write_templated_help(Self::DEFAULT_NO_ARGS_TEMPLATE)?;
@@ -203,7 +196,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
         debug!("Help::write_args");
         // The shortest an arg can legally be is 2 (i.e. '-x')
         let mut longest = 2;
-        let mut ord_m = VecMap::new();
+        let mut ord_m = BTreeMap::new();
 
         // Determine the longest
         for arg in args.iter().filter(|arg| {
@@ -217,7 +210,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
                 longest = longest.max(display_width(arg.to_string().as_str()));
                 debug!("Help::write_args: New Longest...{}", longest);
             }
-            let btm = ord_m.entry(arg.disp_ord).or_insert(BTreeMap::new());
+            let btm = ord_m.entry(arg.disp_ord).or_insert_with(BTreeMap::new);
 
             // Formatting key like this to ensure that:
             // 1. Argument has long flags are printed just after short flags.
@@ -323,63 +316,11 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
     /// Writes argument's possible values to the wrapped stream.
     fn val(&mut self, arg: &Arg<'help>, next_line_help: bool, longest: usize) -> io::Result<()> {
         debug!("Help::val: arg={}", arg.name);
-        let mult =
-            arg.is_set(ArgSettings::MultipleValues) || arg.is_set(ArgSettings::MultipleOccurrences);
-        if arg.is_set(ArgSettings::TakesValue) || arg.index.is_some() {
-            let delim = if arg.is_set(ArgSettings::RequireDelimiter) {
-                arg.val_delim.expect(INTERNAL_ERROR_MSG)
-            } else {
-                ' '
-            };
-            if !arg.val_names.is_empty() {
-                match (arg.val_names.len(), arg.num_vals) {
-                    (1, Some(num)) if num > 1 => {
-                        let arg_name = format!("<{}>", arg.val_names.get(0).unwrap());
-                        let mut it = (0..num).peekable();
-                        while it.next().is_some() {
-                            self.good(&arg_name)?;
-                            if it.peek().is_some() {
-                                self.none(&delim.to_string())?;
-                            }
-                        }
-                        if mult && num == 1 {
-                            self.good("...")?;
-                        }
-                    }
-                    _ => {
-                        let mut it = arg.val_names.iter().peekable();
-                        while let Some(val) = it.next() {
-                            self.good(&format!("<{}>", val))?;
-                            if it.peek().is_some() {
-                                self.none(&delim.to_string())?;
-                            }
-                        }
-                        let num = arg.val_names.len();
-                        if mult && num == 1 {
-                            self.good("...")?;
-                        }
-                    }
-                }
-            } else if let Some(num) = arg.num_vals {
-                let arg_name = format!("<{}>", arg.name);
-                let mut it = (0..num).peekable();
-                while it.next().is_some() {
-                    self.good(&arg_name)?;
-                    if it.peek().is_some() {
-                        self.none(&delim.to_string())?;
-                    }
-                }
-                if mult && num == 1 {
-                    self.good("...")?;
-                }
-            } else if !arg.is_positional() {
-                self.good(&format!("<{}>", arg.name))?;
-                if mult {
-                    self.good("...")?;
-                }
-            } else {
-                self.good(&arg.to_string())?;
-            }
+        if arg.is_set(ArgSettings::TakesValue) || arg.is_positional() {
+            display_arg_val(
+                arg,
+                |s, good| if good { self.good(s) } else { self.none(s) },
+            )?;
         }
 
         debug!("Help::val: Has switch...");
@@ -649,11 +590,13 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             let pvs = a
                 .possible_vals
                 .iter()
-                .map(|&pv| {
-                    if pv.contains(char::is_whitespace) {
-                        format!("{:?}", pv)
+                .filter_map(|value| {
+                    if value.is_hidden() {
+                        None
+                    } else if value.get_name().contains(char::is_whitespace) {
+                        Some(format!("{:?}", value.get_name()))
                     } else {
-                        pv.to_string()
+                        Some(value.get_name().to_string())
                     }
                 })
                 .collect::<Vec<_>>()
@@ -661,12 +604,17 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
 
             spec_vals.push(format!("[possible values: {}]", pvs));
         }
+        let connector = if self.use_long { "\n" } else { " " };
         let prefix = if !spec_vals.is_empty() && !a.get_about().unwrap_or("").is_empty() {
-            " "
+            if self.use_long {
+                "\n\n"
+            } else {
+                " "
+            }
         } else {
             ""
         };
-        prefix.to_string() + &spec_vals.join(" ")
+        prefix.to_string() + &spec_vals.join(connector)
     }
 
     fn write_about(&mut self, before_new_line: bool, after_new_line: bool) -> io::Result<()> {
@@ -799,16 +747,10 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             .get_positionals_with_no_heading()
             .filter(|arg| should_show_arg(self.use_long, arg))
             .collect::<Vec<_>>();
-        let flags = self
+        let non_pos = self
             .parser
             .app
-            .get_flags_with_no_heading()
-            .filter(|arg| should_show_arg(self.use_long, arg))
-            .collect::<Vec<_>>();
-        let opts = self
-            .parser
-            .app
-            .get_opts_with_no_heading()
+            .get_non_positionals_with_no_heading()
             .filter(|arg| should_show_arg(self.use_long, arg))
             .collect::<Vec<_>>();
         let subcmds = self.parser.app.has_visible_subcommands();
@@ -818,7 +760,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             .app
             .args
             .args()
-            .filter_map(|arg| arg.help_heading)
+            .filter_map(|arg| arg.get_help_heading())
             .collect::<IndexSet<_>>();
 
         let mut first = if !pos.is_empty() {
@@ -830,63 +772,37 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             true
         };
 
-        let unified_help = self.parser.is_set(AppSettings::UnifiedHelpMessage);
-
-        if unified_help && (!flags.is_empty() || !opts.is_empty()) {
-            let opts_flags = self
-                .parser
-                .app
-                .args
-                .args()
-                .filter(|a| !a.is_positional())
-                .collect::<Vec<_>>();
+        if !non_pos.is_empty() {
             if !first {
                 self.none("\n\n")?;
             }
             self.warning("OPTIONS:\n")?;
-            self.write_args(&*opts_flags)?;
+            self.write_args(&non_pos)?;
             first = false;
-        } else {
-            if !flags.is_empty() {
-                if !first {
-                    self.none("\n\n")?;
-                }
-                self.warning("FLAGS:\n")?;
-                self.write_args(&flags)?;
-                first = false;
-            }
-            if !opts.is_empty() {
-                if !first {
-                    self.none("\n\n")?;
-                }
-                self.warning("OPTIONS:\n")?;
-                self.write_args(&opts)?;
-                first = false;
-            }
-            if !custom_headings.is_empty() {
-                for heading in custom_headings {
-                    let args = self
-                        .parser
-                        .app
-                        .args
-                        .args()
-                        .filter(|a| {
-                            if let Some(help_heading) = a.help_heading {
-                                return help_heading == heading;
-                            }
-                            false
-                        })
-                        .filter(|arg| should_show_arg(self.use_long, arg))
-                        .collect::<Vec<_>>();
-
-                    if !args.is_empty() {
-                        if !first {
-                            self.none("\n\n")?;
+        }
+        if !custom_headings.is_empty() {
+            for heading in custom_headings {
+                let args = self
+                    .parser
+                    .app
+                    .args
+                    .args()
+                    .filter(|a| {
+                        if let Some(help_heading) = a.get_help_heading() {
+                            return help_heading == heading;
                         }
-                        self.warning(&*format!("{}:\n", heading))?;
-                        self.write_args(&*args)?;
-                        first = false
+                        false
+                    })
+                    .filter(|arg| should_show_arg(self.use_long, arg))
+                    .collect::<Vec<_>>();
+
+                if !args.is_empty() {
+                    if !first {
+                        self.none("\n\n")?;
                     }
+                    self.warning(&*format!("{}:\n", heading))?;
+                    self.write_args(&*args)?;
+                    first = false
                 }
             }
         }
@@ -921,13 +837,15 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
         debug!("Help::write_subcommands");
         // The shortest an arg can legally be is 2 (i.e. '-x')
         let mut longest = 2;
-        let mut ord_m = VecMap::new();
+        let mut ord_m = BTreeMap::new();
         for subcommand in app
             .subcommands
             .iter()
             .filter(|subcommand| should_show_subcommand(subcommand))
         {
-            let btm = ord_m.entry(subcommand.disp_ord).or_insert(BTreeMap::new());
+            let btm = ord_m
+                .entry(subcommand.disp_ord)
+                .or_insert_with(BTreeMap::new);
             let mut sc_str = String::new();
             sc_str.push_str(
                 &subcommand
@@ -1062,21 +980,10 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
                     "all-args" => {
                         self.write_all_args()?;
                     }
-                    "unified" => {
-                        let opts_flags = self
-                            .parser
-                            .app
-                            .args
-                            .args()
-                            .filter(|a| !a.is_positional())
-                            .collect::<Vec<_>>();
-                        self.write_args(&opts_flags)?;
-                    }
-                    "flags" => {
-                        self.write_args(&self.parser.app.get_flags_with_no_heading().collect::<Vec<_>>())?;
-                    }
                     "options" => {
-                        self.write_args(&self.parser.app.get_opts_with_no_heading().collect::<Vec<_>>())?;
+                        // Include even those with a heading as we don't have a good way of
+                        // handling help_heading in the template.
+                        self.write_args(&self.parser.app.get_non_positionals().collect::<Vec<_>>())?;
                     }
                     "positionals" => {
                         self.write_args(&self.parser.app.get_positionals().collect::<Vec<_>>())?;

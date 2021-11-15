@@ -13,11 +13,11 @@
 // MIT/Apache 2.0 license.
 
 #![doc(html_logo_url = "https://clap.rs/images/media/clap.png")]
-#![doc(html_root_url = "https://docs.rs/clap_derive/3.0.0-beta.4")]
+#![doc(html_root_url = "https://docs.rs/clap_derive/3.0.0-beta.5")]
 
 //! This crate is custom derive for clap. It should not be used
-//! directly. See [clap documentation](clap)
-//! for the usage of `#[derive(Clap)]`.
+//! directly. See [clap documentation](http://docs.rs/clap)
+//! for the usage of `#[derive(Parser)]`.
 
 #![forbid(unsafe_code)]
 
@@ -41,17 +41,17 @@ pub fn arg_enum(input: TokenStream) -> TokenStream {
     derives::derive_arg_enum(&input).into()
 }
 
-/// Generates the `Clap` implementation.
+/// Generates the `Parser` implementation.
 ///
 /// This is far less verbose than defining the `clap::App` struct manually,
 /// receiving an instance of `clap::ArgMatches` from conducting parsing, and then
 /// implementing a conversion code to instantiate an instance of the user
 /// context struct.
-#[proc_macro_derive(Clap, attributes(clap))]
+#[proc_macro_derive(Parser, attributes(clap))]
 #[proc_macro_error]
-pub fn clap(input: TokenStream) -> TokenStream {
+pub fn parser(input: TokenStream) -> TokenStream {
     let input: DeriveInput = parse_macro_input!(input);
-    derives::derive_clap(&input).into()
+    derives::derive_parser(&input).into()
 }
 
 /// Generates the `IntoApp` impl.

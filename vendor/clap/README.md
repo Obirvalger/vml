@@ -5,7 +5,7 @@
 [![Crates.io](https://img.shields.io/crates/d/clap?style=flat-square)](https://crates.io/crates/clap)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](https://github.com/clap-rs/clap/blob/master/LICENSE-APACHE)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](https://github.com/clap-rs/clap/blob/master/LICENSE-MIT)
-[![Build Status](https://img.shields.io/github/workflow/status/clap-rs/clap/CI/master?style=flat-square)](https://github.com/clap-rs/clap/actions/workflows/ci.yml?query=branch%3Amaster)
+[![Build Status](https://img.shields.io/github/workflow/status/clap-rs/clap/CI/staging?style=flat-square)](https://github.com/clap-rs/clap/actions/workflows/ci.yml?query=branch%3Astaging)
 [![Coverage Status](https://img.shields.io/coveralls/github/clap-rs/clap/master?style=flat-square)](https://coveralls.io/github/clap-rs/clap?branch=master)
 [![Contributors](https://img.shields.io/github/contributors/clap-rs/clap?style=flat-square)](https://github.com/clap-rs/clap/graphs/contributors)
 
@@ -17,7 +17,7 @@ It is a simple-to-use, efficient, and full-featured library for parsing command 
 * [Questions & Discussions](https://github.com/clap-rs/clap/discussions)
 * [Website](https://clap.rs/)
 
-We are currently hard at work trying to release `3.0`. We have a `3.0.0-beta.4` prerelease out but we do not give any guarantees that its API is stable. We do not have a changelog yet which will be written down after we are sure about the API stability. We recommend users to not update to the prerelease version yet and to wait for the official `3.0`.
+We are currently hard at work trying to release `3.0`. We have a `3.0.0-beta.5` prerelease out but we do not give any guarantees that its API is stable. We do not have a changelog yet which will be written down after we are sure about the API stability. We recommend users to not update to the prerelease version yet and to wait for the official `3.0`.
 
 > If you're looking for the readme & examples for `clap v2.33` - find it on [github](https://github.com/clap-rs/clap/tree/v2.33.0), [crates.io](https://crates.io/crates/clap/2.33.0), [docs.rs](https://docs.rs/clap/2.33.0/clap/).
 
@@ -28,8 +28,7 @@ We are currently hard at work trying to release `3.0`. We have a `3.0.0-beta.4` 
       1. [Using Derive Macros](#using-derive-macros)
       2. [Using Builder Pattern](#using-builder-pattern)
       3. [Using YAML](#using-yaml)
-      4. [Using Macros](#using-macros)
-      5. [Running it](#running-it)
+      4. [Running it](#running-it)
 5. [Try it!](#try-it)
    1. [Pre-Built Test](#pre-built-test)
    2. [Build Your Own Binary](#build-your-own-binary)
@@ -37,6 +36,7 @@ We are currently hard at work trying to release `3.0`. We have a `3.0.0-beta.4` 
    1. [Optional Dependencies / Features](#optional-dependencies--features)
       1. [Features enabled by default](#features-enabled-by-default)
       2. [Opt-in features](#opt-in-features)
+      3. [Experimental features](#experimental-features)
    2. [More Information](#more-information)
 7. [Sponsors](#sponsors)
 8. [Contributing](#contributing)
@@ -67,7 +67,7 @@ Below are a few of the features which `clap` supports, full descriptions and usa
 * Generate a CLI simply by defining a struct!
 * **Auto-generated Help, Version, and Usage information**
   - Can optionally be fully, or partially overridden if you want a custom help, version, or usage statements
-* **Auto-generated completion scripts (Bash, Zsh, Fish, Elvish and PowerShell)**
+* **Auto-generated completion scripts (Bash, Zsh, Fish, Fig, Elvish and PowerShell)**
   - Using [`clap_generate`](https://github.com/clap-rs/clap/tree/master/clap_generate)
   - Even works through many multiple levels of subcommands
   - Works with options which only accept certain values
@@ -125,7 +125,7 @@ Add `clap` to your `Cargo.toml`
 
 ```toml
 [dependencies]
-clap = "3.0.0-beta.4"
+clap = "3.0.0-beta.5"
 ```
 
 #### Using Derive Macros
@@ -137,13 +137,12 @@ The first example shows the simplest way to use `clap`, by defining a struct. If
 //
 // This example demonstrates clap's full 'custom derive' style of creating arguments which is the
 // simplest method of use, but sacrifices some flexibility.
-use clap::{AppSettings, Clap};
+use clap::{AppSettings, Parser};
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version = "1.0", author = "Kevin K. <kbknapp@gmail.com>")]
-#[clap(setting = AppSettings::ColoredHelp)]
 struct Opts {
     /// Sets a custom config file. Could have been an Option<T> with no default too
     #[clap(short, long, default_value = "default.conf")]
@@ -157,14 +156,14 @@ struct Opts {
     subcmd: SubCommand,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum SubCommand {
     #[clap(version = "1.3", author = "Someone E. <someone_else@other.com>")]
     Test(Test),
 }
 
 /// A subcommand for controlling testing
-#[derive(Clap)]
+#[derive(Parser)]
 struct Test {
     /// Print debug info
     #[clap(short)]
@@ -330,7 +329,7 @@ args:
         index: 1
     - verbose:
         short: v
-        multiple: true
+        multiple_occurrences: true
         about: Sets the level of verbosity
 subcommands:
     - test:
@@ -340,7 +339,8 @@ subcommands:
         args:
             - debug:
                 short: d
-                about: print debug information
+                long: debug
+                about: Print debug information
 ```
 
 Since this feature requires additional dependencies that not everyone may want, it is *not* compiled in by default and we need to enable a feature flag in Cargo.toml:
@@ -349,7 +349,7 @@ Simply add the `yaml` feature flag to your `Cargo.toml`.
 
 ```toml
 [dependencies]
-clap = { version = "3.0.0-beta.4", features = ["yaml"] }
+clap = { version = "3.0.0-beta.5", features = ["yaml"] }
 ```
 
 Finally we create our `main.rs` file just like we would have with the previous two examples:
@@ -370,34 +370,6 @@ fn main() {
 }
 ```
 
-#### Using Macros
-
-Finally there is a macro version, which is like a hybrid approach offering the speed of the
-builder pattern (the first example), but without all the verbosity.
-
-```rust,no_run
-use clap::clap_app;
-
-fn main() {
-    let matches = clap_app!(myapp =>
-        (version: "1.0")
-        (author: "Kevin K. <kbknapp@gmail.com>")
-        (about: "Does awesome things")
-        (@arg CONFIG: -c --config +takes_value "Sets a custom config file")
-        (@arg INPUT: +required "Sets the input file to use")
-        (@arg verbose: -v --verbose "Print test information verbosely")
-        (@subcommand test =>
-            (about: "controls testing features")
-            (version: "1.3")
-            (author: "Someone E. <someone_else@other.com>")
-            (@arg debug: -d ... "Sets the level of debugging information")
-        )
-    ).get_matches();
-
-    // Same as previous examples...
-}
-```
-
 #### Running it
 
 If you were to compile any of the above programs and run them with the flag `--help` or `-h` (or `help` subcommand, since we defined `test` as a subcommand) the following would be output (except the first example where the help message sort of explains the Rust code).
@@ -412,15 +384,13 @@ ARGS:
     INPUT    The input file to use
 
 USAGE:
-    MyApp [FLAGS] [OPTIONS] <INPUT> [SUBCOMMAND]
-
-FLAGS:
-    -h, --help       Print help information
-    -v               Sets the level of verbosity
-    -V, --version    Print version information
+    MyApp [OPTIONS] <INPUT> [SUBCOMMAND]
 
 OPTIONS:
     -c, --config <FILE>    Sets a custom config file
+    -h, --help             Print help information
+    -v                     Sets the level of verbosity
+    -V, --version          Print version information
 
 SUBCOMMANDS:
     help    Print this message or the help of the given subcommand(s)
@@ -455,7 +425,7 @@ For full usage, add `clap` as a dependency in your `Cargo.toml` to use from crat
 
 ```toml
 [dependencies]
-clap = "3.0.0-beta.4"
+clap = "3.0.0-beta.5"
 ```
 
 Define a list of valid arguments for your program (see the [documentation][docs] or [examples][examples] directory of this repo)
@@ -469,18 +439,18 @@ Disabling optional features can decrease the binary size of `clap` and decrease 
 #### Features enabled by default
 
 * **std**: _Not Currently Used._ Placeholder for supporting `no_std` environments in a backwards compatible manner.
-* **derive**: Enables the custom derive (i.e. `#[derive(Clap)]`). Without this you must use one of the other methods of creating a `clap` CLI listed above. (builds dependency `clap_derive`)
+* **derive**: Enables the custom derive (i.e. `#[derive(Parser)]`). Without this you must use one of the other methods of creating a `clap` CLI listed above. (builds dependency `clap_derive`)
 * **cargo**: Turns on macros that read values from `CARGO_*` environment variables.
-* **color**: Turns on colored error messages. You still have to turn on colored help by setting `AppSettings::ColoredHelp`. (builds dependency `termcolor`)
+* **color**: Turns on colored error messages. (builds dependency `atty`, `termcolor`)
 * **env**: Turns on the usage of environment variables during parsing.
 * **suggestions**: Turns on the `Did you mean '--myoption'?` feature for when users make typos. (builds dependency `strsim`)
-* **unicode_help**: Turns on support for unicode characters in help messages. (builds dependency `textwrap`)
+* **unicode**: Turns on support for unicode characters in arguments and help messages. (builds dependency `textwrap`, `unicase`)
 
 To disable these, add this to your `Cargo.toml`:
 
 ```toml
 [dependencies.clap]
-version = "3.0.0-beta.4"
+version = "3.0.0-beta.5"
 default-features = false
 features = ["std"]
 ```
@@ -489,7 +459,7 @@ You can also selectively enable only the features you'd like to include, by addi
 
 ```toml
 [dependencies.clap]
-version = "3.0.0-beta.4"
+version = "3.0.0-beta.5"
 default-features = false
 
 # Cherry-pick the features you'd like to use
@@ -498,9 +468,16 @@ features = ["std", "suggestions", "color"]
 
 #### Opt-in features
 
-* **"regex"**: Enables regex validators. (builds dependency `regex`)
-* **"wrap_help"**: Turns on the help text wrapping feature, based on the terminal size. (builds dependency `term-size`)
-* **"yaml"**: Enables building CLIs from YAML documents. (builds dependency `yaml-rust`)
+* **regex**: Enables regex validators. (builds dependency `regex`)
+* **wrap_help**: Turns on the help text wrapping feature, based on the terminal size. (builds dependency `term-size`)
+* **yaml**: Enables building CLIs from YAML documents. (builds dependency `yaml-rust`)
+
+#### Experimental features
+
+These features are opt-in. But be wary that they can contain breaking changes between minor releases.
+
+* **unstable-replace**: Enable [`App::replace`](https://github.com/clap-rs/clap/issues/2836)
+* **unstable-multicall**: Enable [`AppSettings::Multicall`](https://github.com/clap-rs/clap/issues/2861)
 
 ### More Information
 
@@ -544,7 +521,7 @@ In order to keep from being surprised of breaking changes, it is **highly** reco
 
 ```toml
 [dependencies]
-clap = "~3.0.0-beta.4"
+clap = "~3.0.0-beta.5"
 ```
 
 This will cause *only* the patch version to be updated upon a `cargo update` call, and therefore cannot break due to new features, or bumped minimum versions of Rust.

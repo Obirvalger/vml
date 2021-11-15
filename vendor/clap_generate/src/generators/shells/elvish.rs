@@ -2,19 +2,21 @@
 use std::io::Write;
 
 // Internal
+use crate::utils;
 use crate::Generator;
 use crate::INTERNAL_ERROR_MSG;
 use clap::*;
 
 /// Generate elvish completion file
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Elvish;
 
 impl Generator for Elvish {
-    fn file_name(name: &str) -> String {
+    fn file_name(&self, name: &str) -> String {
         format!("{}.elv", name)
     }
 
-    fn generate(app: &App, buf: &mut dyn Write) {
+    fn generate(&self, app: &App, buf: &mut dyn Write) {
         let bin_name = app.get_bin_name().unwrap();
 
         let mut names = vec![];
@@ -25,21 +27,21 @@ impl Generator for Elvish {
 use builtin;
 use str;
 
-edit:completion:arg-completer[{bin_name}] = [@words]{{
+set edit:completion:arg-completer[{bin_name}] = [@words]{{
     fn spaces [n]{{
         builtin:repeat $n ' ' | str:join ''
     }}
     fn cand [text desc]{{
-        edit:complex-candidate $text &display-suffix=' '(spaces (- 14 (wcswidth $text)))$desc
+        edit:complex-candidate $text &display=$text' '(spaces (- 14 (wcswidth $text)))$desc
     }}
-    command = '{bin_name}'
+    var command = '{bin_name}'
     for word $words[1..-1] {{
         if (str:has-prefix $word '-') {{
             break
         }}
-        command = $command';'$word
+        set command = $command';'$word
     }}
-    completions = [{subcommands_cases}
+    var completions = [{subcommands_cases}
     ]
     $completions[$command]
 }}
@@ -98,7 +100,7 @@ fn generate_inner<'help>(
         }
     }
 
-    for flag in Elvish::flags(p) {
+    for flag in utils::flags(p) {
         if let Some(shorts) = flag.get_short_and_visible_aliases() {
             let tooltip = get_tooltip(flag.get_about(), shorts[0]);
             for short in shorts {

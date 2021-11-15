@@ -1,3 +1,4 @@
+mod arg_value;
 #[cfg(debug_assertions)]
 pub mod debug_asserts;
 mod settings;
@@ -5,7 +6,8 @@ mod settings;
 mod tests;
 mod value_hint;
 
-pub use self::settings::ArgSettings;
+pub use self::arg_value::ArgValue;
+pub use self::settings::{ArgFlags, ArgSettings};
 pub use self::value_hint::ValueHint;
 
 // Std
@@ -15,7 +17,7 @@ use std::{
     error::Error,
     ffi::OsStr,
     fmt::{self, Display, Formatter},
-    str,
+    iter, str,
     sync::{Arc, Mutex},
 };
 #[cfg(feature = "env")]
@@ -30,8 +32,7 @@ use yaml_rust::Yaml;
 
 // Internal
 use crate::{
-    build::{arg::settings::ArgFlags, usage_parser::UsageParser},
-    util::VecMap,
+    build::usage_parser::UsageParser,
     util::{Id, Key},
     INTERNAL_ERROR_MSG,
 };
@@ -101,7 +102,7 @@ pub struct Arg<'help> {
     pub(crate) short_aliases: Vec<(char, bool)>, // (name, visible)
     pub(crate) disp_ord: usize,
     pub(crate) unified_ord: usize,
-    pub(crate) possible_vals: Vec<&'help str>,
+    pub(crate) possible_vals: Vec<ArgValue<'help>>,
     pub(crate) val_names: Vec<&'help str>,
     pub(crate) num_vals: Option<usize>,
     pub(crate) max_occurs: Option<usize>,
@@ -111,13 +112,13 @@ pub struct Arg<'help> {
     pub(crate) validator_os: Option<Arc<Mutex<ValidatorOs<'help>>>>,
     pub(crate) val_delim: Option<char>,
     pub(crate) default_vals: Vec<&'help OsStr>,
-    pub(crate) default_vals_ifs: VecMap<(Id, Option<&'help OsStr>, Option<&'help OsStr>)>,
+    pub(crate) default_vals_ifs: Vec<(Id, Option<&'help OsStr>, Option<&'help OsStr>)>,
     pub(crate) default_missing_vals: Vec<&'help OsStr>,
     #[cfg(feature = "env")]
     pub(crate) env: Option<(&'help OsStr, Option<OsString>)>,
     pub(crate) terminator: Option<&'help str>,
     pub(crate) index: Option<usize>,
-    pub(crate) help_heading: Option<&'help str>,
+    pub(crate) help_heading: Option<Option<&'help str>>,
     pub(crate) global: bool,
     pub(crate) exclusive: bool,
     pub(crate) value_hint: ValueHint,
@@ -155,7 +156,7 @@ impl<'help> Arg<'help> {
     /// Get the help heading specified for this argument, if any
     #[inline]
     pub fn get_help_heading(&self) -> Option<&str> {
-        self.help_heading
+        self.help_heading.unwrap_or_default()
     }
 
     /// Get the short option name for this argument, if any
@@ -230,12 +231,28 @@ impl<'help> Arg<'help> {
 
     /// Get the list of the possible values for this argument, if any
     #[inline]
-    pub fn get_possible_values(&self) -> Option<&[&str]> {
+    pub fn get_possible_values(&self) -> Option<&[ArgValue]> {
         if self.possible_vals.is_empty() {
             None
         } else {
             Some(&self.possible_vals)
         }
+    }
+
+    /// Get the names of values for this argument.
+    #[inline]
+    pub fn get_value_names(&self) -> Option<&[&str]> {
+        if self.val_names.is_empty() {
+            None
+        } else {
+            Some(&self.val_names)
+        }
+    }
+
+    /// Get the number of values for this argument.
+    #[inline]
+    pub fn get_num_vals(&self) -> Option<usize> {
+        self.num_vals
     }
 
     /// Get the index of this argument, if any
@@ -281,6 +298,22 @@ impl<'help> Arg<'help> {
     pub fn get_default_values(&self) -> &[&OsStr] {
         &self.default_vals
     }
+
+    /// Checks whether this argument is a positional or not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use clap::Arg;
+    /// let arg = Arg::new("foo");
+    /// assert_eq!(true, arg.is_positional());
+    ///
+    /// let arg = Arg::new("foo").long("foo");
+    /// assert_eq!(false, arg.is_positional());
+    /// ```
+    pub fn is_positional(&self) -> bool {
+        self.long.is_none() && self.short.is_none()
+    }
 }
 
 impl<'help> Arg<'help> {
@@ -309,6 +342,25 @@ impl<'help> Arg<'help> {
             unified_ord: 999,
             ..Default::default()
         }
+    }
+
+    /// Deprecated, see [`Arg::new`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::new`")]
+    pub fn with_name<S: Into<&'help str>>(n: S) -> Self {
+        Self::new(n)
+    }
+
+    /// Deprecated, see [`Arg::from`]
+    #[cfg(feature = "yaml")]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::from`")]
+    pub fn from_yaml(y: &'help Yaml) -> Self {
+        Self::from(y)
+    }
+
+    /// Deprecated, see [`Arg::from`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::from`")]
+    pub fn from_usage(u: &'help str) -> Self {
+        Self::from(u)
     }
 
     pub(crate) fn generated(mut self) -> Self {
@@ -351,9 +403,7 @@ impl<'help> Arg<'help> {
     /// [`short`]: Arg::short()
     #[inline]
     pub fn short(mut self, s: char) -> Self {
-        if s == '-' {
-            panic!("short option name cannot be `-`");
-        }
+        assert!(s != '-', "short option name cannot be `-`");
 
         self.short = Some(s);
         self
@@ -446,9 +496,7 @@ impl<'help> Arg<'help> {
     /// assert_eq!(m.value_of("test"), Some("cool"));
     /// ```
     pub fn short_alias(mut self, name: char) -> Self {
-        if name == '-' {
-            panic!("short alias name cannot be `-`");
-        }
+        assert!(name != '-', "short alias name cannot be `-`");
 
         self.short_aliases.push((name, false));
         self
@@ -501,9 +549,7 @@ impl<'help> Arg<'help> {
     /// ```
     pub fn short_aliases(mut self, names: &[char]) -> Self {
         for s in names {
-            if s == &'-' {
-                panic!("short alias name cannot be `-`");
-            }
+            assert!(s != &'-', "short alias name cannot be `-`");
             self.short_aliases.push((*s, false));
         }
         self
@@ -553,9 +599,7 @@ impl<'help> Arg<'help> {
     /// ```
     /// [`App::alias`]: Arg::short_alias()
     pub fn visible_short_alias(mut self, name: char) -> Self {
-        if name == '-' {
-            panic!("short alias name cannot be `-`");
-        }
+        assert!(name != '-', "short alias name cannot be `-`");
 
         self.short_aliases.push((name, true));
         self
@@ -602,9 +646,7 @@ impl<'help> Arg<'help> {
     /// [`App::aliases`]: Arg::short_aliases()
     pub fn visible_short_aliases(mut self, names: &[char]) -> Self {
         for n in names {
-            if n == &'-' {
-                panic!("short alias name cannot be `-`");
-            }
+            assert!(n != &'-', "short alias name cannot be `-`");
             self.short_aliases.push((*n, true));
         }
         self
@@ -652,9 +694,9 @@ impl<'help> Arg<'help> {
     /// helptest
     ///
     /// USAGE:
-    ///    helptest [FLAGS]
+    ///    helptest [OPTIONS]
     ///
-    /// FLAGS:
+    /// OPTIONS:
     ///     --config     Some help text describing the --config arg
     /// -h, --help       Print help information
     /// -V, --version    Print version information
@@ -664,6 +706,12 @@ impl<'help> Arg<'help> {
     pub fn about(mut self, h: &'help str) -> Self {
         self.about = Some(h);
         self
+    }
+
+    /// Deprecated, see [`Arg::about`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::about`")]
+    pub fn help(self, h: &'help str) -> Self {
+        self.about(h)
     }
 
     /// Sets the long help text of the argument that will be displayed to the user when they print
@@ -716,9 +764,9 @@ impl<'help> Arg<'help> {
     /// prog
     ///
     /// USAGE:
-    ///     prog [FLAGS]
+    ///     prog [OPTIONS]
     ///
-    /// FLAGS:
+    /// OPTIONS:
     ///         --config
     ///             The config file used by the myprog must be in JSON format
     ///             with only valid keys and may not contain other nonsense
@@ -736,6 +784,12 @@ impl<'help> Arg<'help> {
     pub fn long_about(mut self, h: &'help str) -> Self {
         self.long_about = Some(h);
         self
+    }
+
+    /// Deprecated, see [`Arg::long_about`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::long_about`")]
+    pub fn long_help(self, h: &'help str) -> Self {
+        self.long_about(h)
     }
 
     /// Set this arg as [required] as long as the specified argument is not present at runtime.
@@ -793,6 +847,12 @@ impl<'help> Arg<'help> {
     pub fn required_unless_present<T: Key>(mut self, arg_id: T) -> Self {
         self.r_unless.push(arg_id.into());
         self
+    }
+
+    /// Deprecated, see [`Arg::required_unless_present`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::required_unless_present`")]
+    pub fn required_unless<T: Key>(self, arg_id: T) -> Self {
+        self.required_unless_present(arg_id)
     }
 
     /// Sets this arg as [required] unless *all* of the specified arguments are present at runtime.
@@ -869,6 +929,19 @@ impl<'help> Arg<'help> {
         self.setting(ArgSettings::RequiredUnlessAll)
     }
 
+    /// Deprecated, see [`Arg::required_unless_present_all`]
+    #[deprecated(
+        since = "3.0.0",
+        note = "Replaced with `Arg::required_unless_present_all`"
+    )]
+    pub fn required_unless_all<T, I>(self, names: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Key,
+    {
+        self.required_unless_present_all(names)
+    }
+
     /// Sets this arg as [required] unless *any* of the specified arguments are present at runtime.
     ///
     /// In other words, parsing will succeed only if user either
@@ -943,6 +1016,19 @@ impl<'help> Arg<'help> {
     {
         self.r_unless.extend(names.into_iter().map(Id::from));
         self
+    }
+
+    /// Deprecated, see [`Arg::required_unless_present_any`]
+    #[deprecated(
+        since = "3.0.0",
+        note = "Replaced with `Arg::required_unless_present_any`"
+    )]
+    pub fn required_unless_any<T, I>(self, names: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Key,
+    {
+        self.required_unless_present_any(names)
     }
 
     /// Sets a conflicting argument by name. I.e. when using this argument,
@@ -1511,6 +1597,12 @@ impl<'help> Arg<'help> {
         self
     }
 
+    /// Deprecated, see [`Arg::required_if_eq`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::required_if_eq`")]
+    pub fn required_if<T: Key>(self, arg_id: T, val: &'help str) -> Self {
+        self.required_if_eq(arg_id, val)
+    }
+
     /// Allows specifying that this argument is [required] based on multiple conditions. The
     /// conditions are set up in a `(arg, val)` style tuple. The requirement will only become valid
     /// if one of the specified `arg`'s value equals its corresponding `val`.
@@ -1595,6 +1687,12 @@ impl<'help> Arg<'help> {
         self.r_ifs
             .extend(ifs.iter().map(|(id, val)| (Id::from_ref(id), *val)));
         self
+    }
+
+    /// Deprecated, see [`Arg::required_if_eq_any`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::required_if_eq_any`")]
+    pub fn required_ifs<T: Key>(self, ifs: &[(T, &'help str)]) -> Self {
+        self.required_if_eq_any(ifs)
     }
 
     /// Allows specifying that this argument is [required] based on multiple conditions. The
@@ -1861,13 +1959,29 @@ impl<'help> Arg<'help> {
     ///
     /// **NOTE:** This setting only applies to [options] and [positional arguments]
     ///
+    /// **NOTE:** You can use both strings directly or use [`ArgValue`] if you want more control
+    /// over single possible values.
+    ///
     /// # Examples
     ///
     /// ```rust
     /// # use clap::{App, Arg};
     /// Arg::new("mode")
     ///     .takes_value(true)
-    ///     .possible_values(&["fast", "slow", "medium"])
+    ///     .possible_values(["fast", "slow", "medium"])
+    /// # ;
+    /// ```
+    /// The same using [`ArgValue`]:
+    ///
+    /// ```rust
+    /// # use clap::{App, Arg, ArgValue};
+    /// Arg::new("mode").takes_value(true).possible_values([
+    ///     ArgValue::new("fast"),
+    /// // value with a help text
+    ///     ArgValue::new("slow").about("not that fast"),
+    /// // value that is hidden from completion and help text
+    ///     ArgValue::new("medium").hidden(true),
+    /// ])
     /// # ;
     /// ```
     ///
@@ -1877,7 +1991,7 @@ impl<'help> Arg<'help> {
     ///     .arg(Arg::new("mode")
     ///         .long("mode")
     ///         .takes_value(true)
-    ///         .possible_values(&["fast", "slow", "medium"]))
+    ///         .possible_values(["fast", "slow", "medium"]))
     ///     .get_matches_from(vec![
     ///         "prog", "--mode", "fast"
     ///     ]);
@@ -1894,7 +2008,7 @@ impl<'help> Arg<'help> {
     ///     .arg(Arg::new("mode")
     ///         .long("mode")
     ///         .takes_value(true)
-    ///         .possible_values(&["fast", "slow", "medium"]))
+    ///         .possible_values(["fast", "slow", "medium"]))
     ///     .try_get_matches_from(vec![
     ///         "prog", "--mode", "wrong"
     ///     ]);
@@ -1903,8 +2017,13 @@ impl<'help> Arg<'help> {
     /// ```
     /// [options]: Arg::takes_value()
     /// [positional arguments]: Arg::index()
-    pub fn possible_values(mut self, names: &[&'help str]) -> Self {
-        self.possible_vals.extend(names);
+    pub fn possible_values<I, T>(mut self, values: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<ArgValue<'help>>,
+    {
+        self.possible_vals
+            .extend(values.into_iter().map(|value| value.into()));
         self.takes_value(true)
     }
 
@@ -1912,6 +2031,9 @@ impl<'help> Arg<'help> {
     /// that only one of the specified values was used, or fails with error message.
     ///
     /// **NOTE:** This setting only applies to [options] and [positional arguments]
+    ///
+    /// **NOTE:** You can use both strings directly or use [`ArgValue`] if you want more controll
+    /// over single possible values.
     ///
     /// # Examples
     ///
@@ -1924,6 +2046,18 @@ impl<'help> Arg<'help> {
     ///     .possible_value("medium")
     /// # ;
     /// ```
+    /// The same using [`ArgValue`]:
+    ///
+    /// ```rust
+    /// # use clap::{App, Arg, ArgValue};
+    /// Arg::new("mode").takes_value(true)
+    ///     .possible_value(ArgValue::new("fast"))
+    /// // value with a help text
+    ///     .possible_value(ArgValue::new("slow").about("not that fast"))
+    /// // value that is hidden from completion and help text
+    ///     .possible_value(ArgValue::new("medium").hidden(true))
+    /// # ;
+    /// ```
     ///
     /// ```rust
     /// # use clap::{App, Arg};
@@ -1961,8 +2095,11 @@ impl<'help> Arg<'help> {
     /// ```
     /// [options]: Arg::takes_value()
     /// [positional arguments]: Arg::index()
-    pub fn possible_value(mut self, name: &'help str) -> Self {
-        self.possible_vals.push(name);
+    pub fn possible_value<T>(mut self, value: T) -> Self
+    where
+        T: Into<ArgValue<'help>>,
+    {
+        self.possible_vals.push(value.into());
         self.takes_value(true)
     }
 
@@ -2082,6 +2219,46 @@ impl<'help> Arg<'help> {
         self.takes_value(true).multiple_values(true)
     }
 
+    /// Specifies that option values that are invalid UTF-8 should *not* be treated as an error.
+    ///
+    /// **NOTE:** Using argument values with invalid UTF-8 code points requires using
+    /// [`ArgMatches::value_of_os`], [`ArgMatches::values_of_os`], [`ArgMatches::value_of_lossy`],
+    /// or [`ArgMatches::values_of_lossy`] for those particular arguments which may contain invalid
+    /// UTF-8 values.
+    ///
+    /// **NOTE:** Setting this requires [`ArgSettings::TakesValue`]
+    ///
+    /// # Examples
+    ///
+    #[cfg_attr(not(unix), doc = " ```ignore")]
+    #[cfg_attr(unix, doc = " ```rust")]
+    /// # use clap::{App, Arg};
+    /// use std::ffi::OsString;
+    /// use std::os::unix::ffi::{OsStrExt,OsStringExt};
+    /// let r = App::new("myprog")
+    ///     .arg(Arg::new("arg").allow_invalid_utf8(true))
+    ///     .try_get_matches_from(vec![
+    ///         OsString::from("myprog"),
+    ///         OsString::from_vec(vec![0xe9])
+    ///     ]);
+    ///
+    /// assert!(r.is_ok());
+    /// let m = r.unwrap();
+    /// assert_eq!(m.value_of_os("arg").unwrap().as_bytes(), &[0xe9]);
+    /// ```
+    /// [`ArgMatches::value_of_os`]: crate::ArgMatches::value_of_os()
+    /// [`ArgMatches::values_of_os`]: crate::ArgMatches::values_of_os()
+    /// [`ArgMatches::value_of_lossy`]: crate::ArgMatches::value_of_lossy()
+    /// [`ArgMatches::values_of_lossy`]: crate::ArgMatches::values_of_lossy()
+    #[inline]
+    pub fn allow_invalid_utf8(self, tv: bool) -> Self {
+        if tv {
+            self.setting(ArgSettings::AllowInvalidUtf8)
+        } else {
+            self.unset_setting(ArgSettings::AllowInvalidUtf8)
+        }
+    }
+
     /// Allows one to perform a custom validation on the argument value. You provide a closure
     /// which accepts a [`String`] value, and return a [`Result`] where the [`Err(String)`] is a
     /// message displayed to the user.
@@ -2180,6 +2357,7 @@ impl<'help> Arg<'help> {
     /// automatically via [`RegexRef`]'s `Into` implementation.
     ///
     /// **NOTE:** If using YAML then a single vector with two entries should be provided:
+    ///
     /// ```yaml
     /// validator_regex: [remove-all-files, needs the exact phrase 'remove-all-files' to continue]
     /// ```
@@ -2190,7 +2368,9 @@ impl<'help> Arg<'help> {
     /// provided regular expression.
     ///
     /// # Examples
+    ///
     /// You can use the classical `"\d+"` regular expression to match digits only:
+    ///
     /// ```rust
     /// # use clap::{App, Arg};
     /// use regex::Regex;
@@ -2207,7 +2387,9 @@ impl<'help> Arg<'help> {
     /// assert!(res.is_ok());
     /// assert_eq!(res.unwrap().value_of("digits"), Some("12345"));
     /// ```
+    ///
     /// However, any valid `Regex` can be used:
+    ///
     /// ```rust
     /// # use clap::{App, Arg, ErrorKind};
     /// use regex::Regex;
@@ -2489,14 +2671,12 @@ impl<'help> Arg<'help> {
     /// valnames
     ///
     /// USAGE:
-    ///    valnames [FLAGS] [OPTIONS]
-    ///
-    /// FLAGS:
-    ///     -h, --help       Print help information
-    ///     -V, --version    Print version information
+    ///    valnames [OPTIONS]
     ///
     /// OPTIONS:
+    ///     -h, --help                       Print help information
     ///     --io-files <INFILE> <OUTFILE>    Some help text
+    ///     -V, --version                    Print version information
     /// ```
     /// [`Arg::next_line_help(true)`]: Arg::next_line_help()
     /// [`Arg::number_of_values`]: Arg::number_of_values()
@@ -2542,14 +2722,12 @@ impl<'help> Arg<'help> {
     /// valnames
     ///
     /// USAGE:
-    ///    valnames [FLAGS] [OPTIONS]
-    ///
-    /// FLAGS:
-    ///     -h, --help       Print help information
-    ///     -V, --version    Print version information
+    ///    valnames [OPTIONS]
     ///
     /// OPTIONS:
     ///     --config <FILE>     Some help text
+    ///     -h, --help          Print help information
+    ///     -V, --version       Print version information
     /// ```
     /// [option]: Arg::takes_value()
     /// [positional]: Arg::index()
@@ -2681,7 +2859,7 @@ impl<'help> Arg<'help> {
     ///         App::new("prog")
     ///             .arg(Arg::new("color").long("color")
     ///                 .value_name("WHEN")
-    ///                 .possible_values(&["always", "auto", "never"])
+    ///                 .possible_values(["always", "auto", "never"])
     ///                 .default_value("auto")
     ///                 .overrides_with("color")
     ///                 .min_values(0)
@@ -2898,9 +3076,7 @@ impl<'help> Arg<'help> {
         val: Option<&'help OsStr>,
         default: Option<&'help OsStr>,
     ) -> Self {
-        let l = self.default_vals_ifs.len();
-        self.default_vals_ifs
-            .insert(l, (arg_id.into(), val, default));
+        self.default_vals_ifs.push((arg_id.into(), val, default));
         self.takes_value(true)
     }
 
@@ -3209,13 +3385,11 @@ impl<'help> Arg<'help> {
     /// cust-ord
     ///
     /// USAGE:
-    ///     cust-ord [FLAGS] [OPTIONS]
-    ///
-    /// FLAGS:
-    ///     -h, --help       Print help information
-    ///     -V, --version    Print version information
+    ///     cust-ord [OPTIONS]
     ///
     /// OPTIONS:
+    ///     -h, --help                Print help information
+    ///     -V, --version             Print version information
     ///     -O, --other-option <b>    I should be first!
     ///     -o, --long-option <a>     Some help and text
     /// ```
@@ -3234,14 +3408,13 @@ impl<'help> Arg<'help> {
     /// allows one to access this arg early using the `--` syntax. Accessing an arg early, even with
     /// the `--` syntax is otherwise not possible.
     ///
-    /// **NOTE:** This will change the usage string to look like `$ prog [FLAGS] [-- <ARG>]` if
+    /// **NOTE:** This will change the usage string to look like `$ prog [OPTIONS] [-- <ARG>]` if
     /// `ARG` is marked as `.last(true)`.
     ///
     /// **NOTE:** This setting will imply [`crate::AppSettings::DontCollapseArgsInUsage`] because failing
     /// to set this can make the usage string very confusing.
     ///
-    /// **NOTE**: This setting only applies to positional arguments, and has no affect on FLAGS /
-    /// OPTIONS
+    /// **NOTE**: This setting only applies to positional arguments, and has no affect on OPTIONS
     ///
     /// **NOTE:** Setting this requires [`crate::ArgSettings::TakesValue`]
     ///
@@ -3704,7 +3877,7 @@ impl<'help> Arg<'help> {
     /// let m = App::new("prog")
     ///     .arg(Arg::new("mode")
     ///         .long("mode")
-    ///         .possible_values(&["fast", "slow"])
+    ///         .possible_values(["fast", "slow"])
     ///         .setting(ArgSettings::TakesValue)
     ///         .setting(ArgSettings::HidePossibleValues));
     /// ```
@@ -3789,9 +3962,9 @@ impl<'help> Arg<'help> {
     /// helptest
     ///
     /// USAGE:
-    ///    helptest [FLAGS]
+    ///    helptest [OPTIONS]
     ///
-    /// FLAGS:
+    /// OPTIONS:
     /// -h, --help       Print help information
     /// -V, --version    Print version information
     /// ```
@@ -3927,8 +4100,6 @@ impl<'help> Arg<'help> {
     ///
     /// This is useful when the variable option is explained elsewhere in the help text.
     ///
-    /// **NOTE:** Setting this requires [`ArgSettings::TakesValue`]
-    ///
     /// # Examples
     ///
     /// ```rust
@@ -3966,8 +4137,6 @@ impl<'help> Arg<'help> {
     /// displayed in the help text.
     ///
     /// This is useful when ENV vars contain sensitive values.
-    ///
-    /// **NOTE:** Setting this requires [`ArgSettings::TakesValue`]
     ///
     /// # Examples
     ///
@@ -4034,13 +4203,11 @@ impl<'help> Arg<'help> {
     /// nlh
     ///
     /// USAGE:
-    ///     nlh [FLAGS] [OPTIONS]
-    ///
-    /// FLAGS:
-    ///     -h, --help       Print help information
-    ///     -V, --version    Print version information
+    ///     nlh [OPTIONS]
     ///
     /// OPTIONS:
+    ///     -h, --help       Print help information
+    ///     -V, --version    Print version information
     ///     -o, --long-option-flag <value1> <value2>
     ///         Some really long help and complex
     ///         help that makes more sense to be
@@ -4115,6 +4282,12 @@ impl<'help> Arg<'help> {
         } else {
             self.unset_setting(ArgSettings::ForbidEmptyValues)
         }
+    }
+
+    /// Deprecated, see [`Arg::forbid_empty_values`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::forbid_empty_values`")]
+    pub fn empty_values(self, empty: bool) -> Self {
+        self.forbid_empty_values(!empty)
     }
 
     /// Specifies that the argument may have an unknown number of multiple values. Without any other
@@ -4356,6 +4529,16 @@ impl<'help> Arg<'help> {
         }
     }
 
+    /// Deprecated, see [`Arg::multiple_occurrences`] (most likely what you want) and
+    /// [`Arg::multiple_values`]
+    #[deprecated(
+        since = "3.0.0",
+        note = "Split into `Arg::multiple_occurrences` (most likely what you want)  and `Arg::multiple_values`"
+    )]
+    pub fn multiple(self, multi: bool) -> Self {
+        self.multiple_occurrences(multi).multiple_values(multi)
+    }
+
     /// Indicates that all parameters passed after this should not be parsed
     /// individually, but rather passed in their entirety. It is worth noting
     /// that setting this requires all values to come after a `--` to indicate they
@@ -4419,9 +4602,9 @@ impl<'help> Arg<'help> {
     /// helptest
     ///
     /// USAGE:
-    ///    helptest [FLAGS]
+    ///    helptest [OPTIONS]
     ///
-    /// FLAGS:
+    /// OPTIONS:
     /// -h, --help       Print help information
     /// -V, --version    Print version information
     /// ```
@@ -4446,9 +4629,9 @@ impl<'help> Arg<'help> {
     /// helptest
     ///
     /// USAGE:
-    ///    helptest [FLAGS]
+    ///    helptest [OPTIONS]
     ///
-    /// FLAGS:
+    /// OPTIONS:
     ///     --config     Some help text describing the --config arg
     /// -h, --help       Print help information
     /// -V, --version    Print version information
@@ -4497,9 +4680,9 @@ impl<'help> Arg<'help> {
     /// helptest
     ///
     /// USAGE:
-    ///    helptest [FLAGS]
+    ///    helptest [OPTIONS]
     ///
-    /// FLAGS:
+    /// OPTIONS:
     /// -h, --help       Print help information
     /// -V, --version    Print version information
     /// ```
@@ -4524,9 +4707,9 @@ impl<'help> Arg<'help> {
     /// helptest
     ///
     /// USAGE:
-    ///    helptest [FLAGS]
+    ///    helptest [OPTIONS]
     ///
-    /// FLAGS:
+    /// OPTIONS:
     ///     --config     Some help text describing the --config arg
     /// -h, --help       Print help information
     /// -V, --version    Print version information
@@ -4561,10 +4744,26 @@ impl<'help> Arg<'help> {
     ///     .setting(ArgSettings::TakesValue)
     /// # ;
     /// ```
+    ///
+    /// ```no_run
+    /// # use clap::{Arg, ArgSettings};
+    /// Arg::new("config")
+    ///     .setting(ArgSettings::Required | ArgSettings::TakesValue)
+    /// # ;
+    /// ```
     #[inline]
-    pub fn setting(mut self, setting: ArgSettings) -> Self {
-        self.settings.set(setting);
+    pub fn setting<F>(mut self, setting: F) -> Self
+    where
+        F: Into<ArgFlags>,
+    {
+        self.settings.insert(setting.into());
         self
+    }
+
+    /// Deprecated, see [`Arg::setting`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::setting`")]
+    pub fn set(self, s: ArgSettings) -> Self {
+        self.setting(s)
     }
 
     /// Disables a single setting for the current (this `Arg` instance) argument.
@@ -4577,18 +4776,38 @@ impl<'help> Arg<'help> {
     /// # use clap::{Arg, ArgSettings};
     /// Arg::new("config")
     ///     .unset_setting(ArgSettings::Required)
+    ///     .unset_setting(ArgSettings::TakesValue)
+    /// # ;
+    /// ```
+    ///
+    /// ```no_run
+    /// # use clap::{Arg, ArgSettings};
+    /// Arg::new("config")
+    ///     .unset_setting(ArgSettings::Required | ArgSettings::TakesValue)
     /// # ;
     /// ```
     #[inline]
-    pub fn unset_setting(mut self, setting: ArgSettings) -> Self {
-        self.settings.unset(setting);
+    pub fn unset_setting<F>(mut self, setting: F) -> Self
+    where
+        F: Into<ArgFlags>,
+    {
+        self.settings.remove(setting.into());
         self
+    }
+
+    /// Deprecated, see [`Arg::unset_setting`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::unset_setting`")]
+    pub fn unset(self, s: ArgSettings) -> Self {
+        self.unset_setting(s)
     }
 
     /// Set a custom heading for this arg to be printed under
     #[inline]
-    pub fn help_heading(mut self, s: Option<&'help str>) -> Self {
-        self.help_heading = s;
+    pub fn help_heading<O>(mut self, heading: O) -> Self
+    where
+        O: Into<Option<&'help str>>,
+    {
+        self.help_heading = Some(heading.into());
         self
     }
 
@@ -4651,10 +4870,6 @@ impl<'help> Arg<'help> {
 
     pub(crate) fn longest_filter(&self) -> bool {
         self.is_set(ArgSettings::TakesValue) || self.long.is_some() || self.short.is_none()
-    }
-
-    pub(crate) fn is_positional(&self) -> bool {
-        self.long.is_none() && self.short.is_none()
     }
 
     // Used for positionals when printing
@@ -4779,6 +4994,7 @@ impl<'help> From<&'help Yaml> for Arg<'help> {
                 "conflicts_with" => yaml_vec_or_str!(a, v, conflicts_with),
                 "exclusive" => yaml_to_bool!(a, v, exclusive),
                 "last" => yaml_to_bool!(a, v, last),
+                "help_heading" => yaml_to_str!(a, v, help_heading),
                 "value_hint" => yaml_str_parse!(a, v, value_hint),
                 "hide_default_value" => yaml_to_bool!(a, v, hide_default_value),
                 #[cfg(feature = "env")]
@@ -4815,7 +5031,14 @@ impl<'help> From<&'help Yaml> for Arg<'help> {
                     }
                 }
                 "setting" | "settings" => {
-                    yaml_to_setting!(a, v, setting, "ArgSetting", format!("arg '{}'", name_str))
+                    yaml_to_setting!(
+                        a,
+                        v,
+                        setting,
+                        ArgSettings,
+                        "ArgSetting",
+                        format!("arg '{}'", name_str)
+                    )
                 }
                 s => {
                     if !has_metadata {
@@ -4851,104 +5074,92 @@ impl<'help> PartialEq for Arg<'help> {
     }
 }
 
+/// Write the values such as <name1> <name2>
+pub(crate) fn display_arg_val<F, T, E>(arg: &Arg, mut write: F) -> Result<(), E>
+where
+    F: FnMut(&str, bool) -> Result<T, E>,
+{
+    let mult_val = arg.is_set(ArgSettings::MultipleValues);
+    let mult_occ = arg.is_set(ArgSettings::MultipleOccurrences);
+    let delim = if arg.is_set(ArgSettings::RequireDelimiter) {
+        arg.val_delim.expect(INTERNAL_ERROR_MSG)
+    } else {
+        ' '
+    };
+    if !arg.val_names.is_empty() {
+        // If have val_name.
+        match (arg.val_names.len(), arg.num_vals) {
+            (1, Some(num_vals)) => {
+                // If single value name with multiple num_of_vals, display all
+                // the values with the single value name.
+                let arg_name = format!("<{}>", arg.val_names.get(0).unwrap());
+                let mut it = iter::repeat(arg_name).take(num_vals).peekable();
+                while let Some(arg_name) = it.next() {
+                    write(&arg_name, true)?;
+                    if it.peek().is_some() {
+                        write(&delim.to_string(), false)?;
+                    }
+                }
+            }
+            (num_val_names, _) => {
+                // If multiple value names, display them sequentially(ignore num of vals).
+                let mut it = arg.val_names.iter().peekable();
+                while let Some(val) = it.next() {
+                    write(&format!("<{}>", val), true)?;
+                    if it.peek().is_some() {
+                        write(&delim.to_string(), false)?;
+                    }
+                }
+                if num_val_names == 1 && mult_val {
+                    write("...", true)?;
+                }
+            }
+        }
+    } else if let Some(num_vals) = arg.num_vals {
+        // If number_of_values is sepcified, display the value multiple times.
+        let arg_name = format!("<{}>", arg.name);
+        let mut it = iter::repeat(&arg_name).take(num_vals).peekable();
+        while let Some(arg_name) = it.next() {
+            write(arg_name, true)?;
+            if it.peek().is_some() {
+                write(&delim.to_string(), false)?;
+            }
+        }
+    } else if arg.is_positional() {
+        // Value of positional argument with no num_vals and val_names.
+        write(&format!("<{}>", arg.name), true)?;
+
+        if mult_val || mult_occ {
+            write("...", true)?;
+        }
+    } else {
+        // value of flag argument with no num_vals and val_names.
+        write(&format!("<{}>", arg.name), true)?;
+        if mult_val {
+            write("...", true)?;
+        }
+    }
+    Ok(())
+}
+
 impl<'help> Display for Arg<'help> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        if self.index.is_some() || self.is_positional() {
-            // Positional
-            let mut delim = String::new();
-
-            delim.push(if self.is_set(ArgSettings::RequireDelimiter) {
-                self.val_delim.expect(INTERNAL_ERROR_MSG)
-            } else {
-                ' '
-            });
-
-            if !self.val_names.is_empty() {
-                write!(
-                    f,
-                    "{}",
-                    self.val_names
-                        .iter()
-                        .map(|n| format!("<{}>", n))
-                        .collect::<Vec<_>>()
-                        .join(&*delim)
-                )?;
-            } else {
-                write!(f, "<{}>", self.name)?;
-            }
-
-            write!(f, "{}", self.multiple_str())?;
-
-            return Ok(());
-        } else if !self.is_set(ArgSettings::TakesValue) {
-            // Flag
-            if let Some(l) = self.long {
-                write!(f, "--{}", l)?;
-            } else if let Some(s) = self.short {
-                write!(f, "-{}", s)?;
-            }
-
-            return Ok(());
-        }
-
-        let sep = if self.is_set(ArgSettings::RequireEquals) {
-            "="
-        } else {
-            " "
-        };
-
         // Write the name such --long or -l
         if let Some(l) = self.long {
-            write!(f, "--{}{}", l, sep)?;
-        } else {
-            write!(f, "-{}{}", self.short.unwrap(), sep)?;
+            write!(f, "--{}", l)?;
+        } else if let Some(s) = self.short {
+            write!(f, "-{}", s)?;
         }
-
-        let delim = if self.is_set(ArgSettings::RequireDelimiter) {
-            self.val_delim.expect(INTERNAL_ERROR_MSG)
-        } else {
-            ' '
-        };
-
-        // Write the values such as <name1> <name2>
-        if !self.val_names.is_empty() {
-            let num = self.val_names.len();
-            let mut it = self.val_names.iter().peekable();
-
-            while let Some(val) = it.next() {
-                write!(f, "<{}>", val)?;
-                if it.peek().is_some() {
-                    write!(f, "{}", delim)?;
-                }
-            }
-
-            if self.is_set(ArgSettings::MultipleValues) && num == 1 {
-                write!(f, "...")?;
-            }
-        } else if let Some(num) = self.num_vals {
-            let mut it = (0..num).peekable();
-
-            while let Some(_) = it.next() {
-                write!(f, "<{}>", self.name)?;
-                if it.peek().is_some() {
-                    write!(f, "{}", delim)?;
-                }
-            }
-
-            if self.is_set(ArgSettings::MultipleValues) && num == 1 {
-                write!(f, "...")?;
-            }
-        } else {
-            write!(
-                f,
-                "<{}>{}",
-                self.name,
-                if self.is_set(ArgSettings::MultipleValues) {
-                    "..."
-                } else {
-                    ""
-                }
-            )?;
+        if !self.is_positional() && self.is_set(ArgSettings::TakesValue) {
+            let sep = if self.is_set(ArgSettings::RequireEquals) {
+                "="
+            } else {
+                " "
+            };
+            write!(f, "{}", sep)?;
+        }
+        if self.is_set(ArgSettings::TakesValue) || self.is_positional() {
+            display_arg_val(self, |s, _| write!(f, "{}", s))?;
         }
 
         Ok(())

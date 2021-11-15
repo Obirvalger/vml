@@ -12,7 +12,7 @@
 
 [package]
 name = "chrono-tz"
-version = "0.5.3"
+version = "0.6.0"
 authors = ["Djzin"]
 build = "build.rs"
 description = "TimeZone implementations for rust-chrono from the IANA database"
@@ -20,13 +20,23 @@ documentation = "https://docs.rs/chrono-tz"
 readme = "README.md"
 keywords = ["date", "time", "timezone", "zone", "calendar"]
 license = "MIT/Apache-2.0"
-repository = "https://github.com/djzin/chrono-tz"
+repository = "https://github.com/chronotope/chrono-tz"
 [dependencies.chrono]
 version = "0.4"
 default-features = false
 
+[dependencies.phf]
+version = "0.10"
+features = ["uncased"]
+default-features = false
+
 [dependencies.serde]
 version = "1"
+optional = true
+default-features = false
+
+[dependencies.uncased]
+version = "0.9"
 optional = true
 default-features = false
 [dev-dependencies.chrono]
@@ -36,9 +46,11 @@ default-features = false
 
 [dev-dependencies.serde_test]
 version = "1"
-[build-dependencies.parse-zoneinfo]
-version = "0.3"
+[build-dependencies.chrono-tz-build]
+version = "0.0.2"
 
 [features]
+case-insensitive = ["uncased", "chrono-tz-build/case-insensitive"]
 default = ["std"]
+filter-by-regex = ["chrono-tz-build/filter-by-regex"]
 std = []

@@ -20,7 +20,7 @@ use crate::{
 
 use proc_macro2::{Ident, Span, TokenStream};
 use proc_macro_error::{abort, abort_call_site};
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
 use syn::{
     punctuated::Punctuated, spanned::Spanned, token::Comma, Attribute, Data, DataStruct,
     DeriveInput, Field, Fields, Type,
@@ -198,9 +198,20 @@ pub fn gen_augment(
             | Kind::ExternalSubcommand => None,
             Kind::Flatten => {
                 let ty = &field.ty;
-                Some(quote_spanned! { kind.span()=>
-                    let #app_var = <#ty as clap::Args>::augment_args(#app_var);
-                })
+                let old_heading_var = format_ident!("old_heading");
+                if override_required {
+                    Some(quote_spanned! { kind.span()=>
+                        let #old_heading_var = #app_var.get_help_heading();
+                        let #app_var = <#ty as clap::Args>::augment_args_for_update(#app_var);
+                        let #app_var = #app_var.help_heading(#old_heading_var);
+                    })
+                } else {
+                    Some(quote_spanned! { kind.span()=>
+                        let #old_heading_var = #app_var.get_help_heading();
+                        let #app_var = <#ty as clap::Args>::augment_args(#app_var);
+                        let #app_var = #app_var.help_heading(#old_heading_var);
+                    })
+                }
             }
             Kind::Arg(ty) => {
                 let convert_type = match **ty {
@@ -228,7 +239,22 @@ pub fn gen_augment(
                     ParserKind::TryFromOsStr => quote_spanned! { func.span()=>
                         .validator_os(|s| #func(s).map(|_: #convert_type| ()))
                     },
-                    _ => quote!(),
+                    ParserKind::FromStr
+                    | ParserKind::FromOsStr
+                    | ParserKind::FromFlag
+                    | ParserKind::FromOccurrences => quote!(),
+                };
+                let allow_invalid_utf8 = match *parser.kind {
+                    _ if attrs.is_enum() => quote!(),
+                    ParserKind::FromOsStr | ParserKind::TryFromOsStr => {
+                        quote_spanned! { func.span()=>
+                            .allow_invalid_utf8(true)
+                        }
+                    }
+                    ParserKind::FromStr
+                    | ParserKind::TryFromStr
+                    | ParserKind::FromFlag
+                    | ParserKind::FromOccurrences => quote!(),
                 };
 
                 let value_name = attrs.value_name();
@@ -250,6 +276,7 @@ pub fn gen_augment(
                             .value_name(#value_name)
                             #possible_values
                             #validator
+                            #allow_invalid_utf8
                         }
                     }
 
@@ -260,6 +287,7 @@ pub fn gen_augment(
                         .max_values(1)
                         .multiple_values(false)
                         #validator
+                            #allow_invalid_utf8
                     },
 
                     Ty::OptionVec => quote_spanned! { ty.span()=>
@@ -268,6 +296,7 @@ pub fn gen_augment(
                         .multiple_values(true)
                         .min_values(0)
                         #validator
+                            #allow_invalid_utf8
                     },
 
                     Ty::Vec => {
@@ -285,6 +314,7 @@ pub fn gen_augment(
                             .multiple_values(true)
                             #possible_values
                             #validator
+                            #allow_invalid_utf8
                         }
                     }
 
@@ -311,6 +341,7 @@ pub fn gen_augment(
                             .required(#required)
                             #possible_values
                             #validator
+                            #allow_invalid_utf8
                         }
                     }
                 };
@@ -329,19 +360,19 @@ pub fn gen_augment(
         }
     });
 
-    let app_methods = parent_attribute.top_level_methods();
-    let version = parent_attribute.version();
+    let initial_app_methods = parent_attribute.initial_top_level_methods();
+    let final_app_methods = parent_attribute.final_top_level_methods();
     quote! {{
+        let #app_var = #app_var #initial_app_methods;
         #( #args )*
-        let #app_var = #app_var#app_methods;
         #subcmd
-        #app_var#version
+        #app_var #final_app_methods
     }}
 }
 
 fn gen_arg_enum_possible_values(ty: &Type) -> TokenStream {
     quote_spanned! { ty.span()=>
-        .possible_values(&<#ty as clap::ArgEnum>::VARIANTS)
+        .possible_values(<#ty as clap::ArgEnum>::value_variants().iter().filter_map(clap::ArgEnum::to_arg_value))
     }
 }
 
@@ -354,7 +385,7 @@ pub fn gen_constructor(fields: &Punctuated<Field, Comma>, parent_attribute: &Att
         );
         let field_name = field.ident.as_ref().unwrap();
         let kind = attrs.kind();
-        let arg_matches = quote! { arg_matches };
+        let arg_matches = format_ident!("arg_matches");
         match &*kind {
             Kind::ExternalSubcommand => {
                 abort! { kind.span(),
@@ -420,7 +451,7 @@ pub fn gen_updater(
         } else {
             quote!()
         };
-        let arg_matches = quote! { arg_matches };
+        let arg_matches = format_ident!("arg_matches");
 
         match &*kind {
             Kind::ExternalSubcommand => {
@@ -522,10 +553,17 @@ fn gen_parsers(
     let flag = *attrs.parser().kind == ParserKind::FromFlag;
     let occurrences = *attrs.parser().kind == ParserKind::FromOccurrences;
     let name = attrs.cased_name();
-    // Use `quote!` to give this identifier the same hygiene
+    let convert_type = match **ty {
+        Ty::Vec | Ty::Option => sub_type(&field.ty).unwrap_or(&field.ty),
+        Ty::OptionOption | Ty::OptionVec => {
+            sub_type(&field.ty).and_then(sub_type).unwrap_or(&field.ty)
+        }
+        _ => &field.ty,
+    };
+    // Give this identifier the same hygiene
     // as the `arg_matches` parameter definition. This
     // allows us to refer to `arg_matches` within a `quote_spanned` block
-    let arg_matches = quote! { arg_matches };
+    let arg_matches = format_ident!("arg_matches");
 
     let field_value = match **ty {
         Ty::Bool => {
@@ -564,7 +602,7 @@ fn gen_parsers(
         Ty::OptionVec => quote_spanned! { ty.span()=>
             if #arg_matches.is_present(#name) {
                 Some(#arg_matches.#values_of(#name)
-                     .map(|v| v.map(#parse).collect())
+                     .map(|v| v.map::<#convert_type, _>(#parse).collect())
                      .unwrap_or_else(Vec::new))
             } else {
                 None
@@ -580,7 +618,7 @@ fn gen_parsers(
 
             quote_spanned! { ty.span()=>
                 #arg_matches.#values_of(#name)
-                    .map(|v| v.map(#parse).collect())
+                    .map(|v| v.map::<#convert_type, _>(#parse).collect())
                     .unwrap_or_else(Vec::new)
             }
         }

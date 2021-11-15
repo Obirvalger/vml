@@ -1,7 +1,7 @@
 //! This module contains traits that are usable with the `#[derive(...)].`
 //! macros in [`clap_derive`].
 
-use crate::{App, ArgMatches, Error};
+use crate::{App, ArgMatches, ArgValue, Error};
 
 use std::ffi::OsString;
 
@@ -25,10 +25,10 @@ use std::ffi::OsString;
 /// throughout the application representing the normalized values coming from
 /// the CLI.
 ///
-/// ```rust
-/// # use clap::{Clap};
+#[cfg_attr(not(feature = "derive"), doc = " ```ignore")]
+#[cfg_attr(feature = "derive", doc = " ```")]
 /// /// My super CLI
-/// #[derive(Clap)]
+/// #[derive(clap::Parser)]
 /// #[clap(name = "demo")]
 /// struct Context {
 ///     /// More verbose output
@@ -70,7 +70,7 @@ use std::ffi::OsString;
 /// }
 /// ```
 ///
-pub trait Clap: FromArgMatches + IntoApp + Sized {
+pub trait Parser: FromArgMatches + IntoApp + Sized {
     /// Parse from `std::env::args_os()`, exit on error
     fn parse() -> Self {
         let matches = <Self as IntoApp>::into_app().get_matches();
@@ -151,7 +151,8 @@ pub trait FromArgMatches: Sized {
     /// Motivation: If our application had two CLI options, `--name
     /// <STRING>` and the flag `--debug`, we may create a struct as follows:
     ///
-    /// ```no_run
+    #[cfg_attr(not(feature = "derive"), doc = " ```ignore")]
+    #[cfg_attr(feature = "derive", doc = " ```no_run")]
     /// struct Context {
     ///     name: String,
     ///     debug: bool
@@ -161,7 +162,8 @@ pub trait FromArgMatches: Sized {
     /// We then need to convert the `ArgMatches` that `clap` generated into our struct.
     /// `from_arg_matches` serves as the equivalent of:
     ///
-    /// ```no_run
+    #[cfg_attr(not(feature = "derive"), doc = " ```ignore")]
+    #[cfg_attr(feature = "derive", doc = " ```no_run")]
     /// # use clap::ArgMatches;
     /// # struct Context {
     /// #   name: String,
@@ -193,8 +195,9 @@ pub trait FromArgMatches: Sized {
 ///
 /// # Example
 ///
-/// ```rust
-/// #[derive(clap::Clap)]
+#[cfg_attr(not(feature = "derive"), doc = " ```ignore")]
+#[cfg_attr(feature = "derive", doc = " ```")]
+/// #[derive(clap::Parser)]
 /// struct Args {
 ///     #[clap(flatten)]
 ///     logging: LogArgs,
@@ -221,7 +224,7 @@ pub trait Args: FromArgMatches + Sized {
 
 /// Parse a sub-command into a user-defined enum.
 ///
-/// Implementing this trait let's a parent container delegate subcommand behavior to `Self`.
+/// Implementing this trait lets a parent container delegate subcommand behavior to `Self`.
 /// with:
 /// - `#[clap(subcommand)] field: SubCmd`: Attribute can be used with either struct fields or enum
 ///   variants that impl `Subcommand`.
@@ -230,8 +233,9 @@ pub trait Args: FromArgMatches + Sized {
 ///
 /// # Example
 ///
-/// ```rust
-/// #[derive(clap::Clap)]
+#[cfg_attr(not(feature = "derive"), doc = " ```ignore")]
+#[cfg_attr(feature = "derive", doc = " ```")]
+/// #[derive(clap::Parser)]
 /// struct Args {
 ///     #[clap(subcommand)]
 ///     action: Action,
@@ -260,20 +264,21 @@ pub trait Subcommand: FromArgMatches + Sized {
 
 /// Parse arguments into enums.
 ///
-/// When deriving [`Clap`], a field whose type implements `ArgEnum` can have the attribute
+/// When deriving [`Parser`], a field whose type implements `ArgEnum` can have the attribute
 /// `#[clap(arg_enum)]`.  In addition to parsing, help and error messages may report possible
 /// variants.
 ///
 /// # Example
 ///
-/// ```rust
-/// #[derive(clap::Clap)]
+#[cfg_attr(not(feature = "derive"), doc = " ```ignore")]
+#[cfg_attr(feature = "derive", doc = " ```")]
+/// #[derive(clap::Parser)]
 /// struct Args {
 ///     #[clap(arg_enum)]
 ///     level: Level,
 /// }
 ///
-/// #[derive(clap::ArgEnum)]
+/// #[derive(clap::ArgEnum, Clone)]
 /// enum Level {
 ///     Debug,
 ///     Info,
@@ -281,26 +286,36 @@ pub trait Subcommand: FromArgMatches + Sized {
 ///     Error,
 /// }
 /// ```
-pub trait ArgEnum: Sized {
-    /// All possible argument choices, in display order.
-    const VARIANTS: &'static [&'static str];
+pub trait ArgEnum: Sized + Clone {
+    /// All possible argument values, in display order.
+    fn value_variants<'a>() -> &'a [Self];
 
     /// Parse an argument into `Self`.
-    fn from_str(input: &str, case_insensitive: bool) -> Result<Self, String>;
+    fn from_str(input: &str, case_insensitive: bool) -> Result<Self, String> {
+        Self::value_variants()
+            .iter()
+            .find(|v| {
+                v.to_arg_value()
+                    .expect("ArgEnum::value_variants contains only values with a corresponding ArgEnum::to_arg_value")
+                    .matches(input, case_insensitive)
+            })
+            .cloned()
+            .ok_or_else(|| format!("Invalid variant: {}", input))
+    }
 
     /// The canonical argument value.
     ///
     /// The value is `None` for skipped variants.
-    fn as_arg(&self) -> Option<&'static str>;
+    fn to_arg_value<'a>(&self) -> Option<ArgValue<'a>>;
 }
 
-impl<T: Clap> Clap for Box<T> {
+impl<T: Parser> Parser for Box<T> {
     fn parse() -> Self {
-        Box::new(<T as Clap>::parse())
+        Box::new(<T as Parser>::parse())
     }
 
     fn try_parse() -> Result<Self, Error> {
-        <T as Clap>::try_parse().map(Box::new)
+        <T as Parser>::try_parse().map(Box::new)
     }
 
     fn parse_from<I, It>(itr: I) -> Self
@@ -309,7 +324,7 @@ impl<T: Clap> Clap for Box<T> {
         // TODO (@CreepySkeleton): discover a way to avoid cloning here
         It: Into<OsString> + Clone,
     {
-        Box::new(<T as Clap>::parse_from(itr))
+        Box::new(<T as Parser>::parse_from(itr))
     }
 
     fn try_parse_from<I, It>(itr: I) -> Result<Self, Error>
@@ -318,7 +333,7 @@ impl<T: Clap> Clap for Box<T> {
         // TODO (@CreepySkeleton): discover a way to avoid cloning here
         It: Into<OsString> + Clone,
     {
-        <T as Clap>::try_parse_from(itr).map(Box::new)
+        <T as Parser>::try_parse_from(itr).map(Box::new)
     }
 }
 

@@ -3,17 +3,16 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g., crates.io) dependencies
+# to registry (e.g., crates.io) dependencies.
 #
-# If you believe there's an error in this file please file an
-# issue against the rust-lang/cargo repository. If you're
-# editing this file be aware that the upstream Cargo.toml
-# will likely look very different (and much more reasonable)
+# If you are reading this file be aware that the original Cargo.toml
+# will likely look very different (and much more reasonable).
+# See Cargo.toml.orig for the original contents.
 
 [package]
 edition = "2018"
 name = "clap_generate"
-version = "3.0.0-beta.4"
+version = "3.0.0-beta.5"
 authors = ["Kevin K. <kbknapp@gmail.com>", "Clap Maintainers"]
 include = ["src/**/*", "Cargo.toml", "README.md"]
 description = "A generator library used with clap for shell completion scripts, manpage, etc."
@@ -30,7 +29,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 [lib]
 bench = false
 [dependencies.clap]
-version = "3.0.0-beta.4"
+version = "=3.0.0-beta.5"
+features = ["std"]
+default-features = false
 [dev-dependencies.pretty_assertions]
 version = "0.7"
 

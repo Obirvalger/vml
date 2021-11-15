@@ -14,7 +14,7 @@ use std::os::windows::ffi::OsStringExt;
 use std::result;
 use std::str;
 
-if_raw! {
+if_raw_str! {
     pub(super) mod raw;
 }
 
@@ -31,16 +31,12 @@ pub(super) enum EncodingError {
 
 impl EncodingError {
     fn position(&self) -> Cow<'_, str> {
-        // Variants are not recognized on type aliases in older versions:
-        // https://github.com/rust-lang/rust/pull/61682
         match self {
-            EncodingError::Byte(byte) => {
-                Cow::Owned(format!("byte b'\\x{:02X}'", byte))
-            }
-            EncodingError::CodePoint(code_point) => {
+            Self::Byte(byte) => Cow::Owned(format!("byte b'\\x{:02X}'", byte)),
+            Self::CodePoint(code_point) => {
                 Cow::Owned(format!("code point U+{:04X}", code_point))
             }
-            EncodingError::End() => Cow::Borrowed("end of string"),
+            Self::End() => Cow::Borrowed("end of string"),
         }
     }
 }
@@ -76,19 +72,19 @@ fn to_bytes(os_string: &OsStr) -> Vec<u8> {
     DecodeWide::new(OsStrExt::encode_wide(os_string)).collect()
 }
 
-pub(crate) fn os_str_from_bytes(string: &[u8]) -> Result<Cow<'_, OsStr>> {
+pub(super) fn os_str_from_bytes(string: &[u8]) -> Result<Cow<'_, OsStr>> {
     from_bytes(string).map(Cow::Owned)
 }
 
-pub(crate) fn os_str_to_bytes(os_string: &OsStr) -> Cow<'_, [u8]> {
+pub(super) fn os_str_to_bytes(os_string: &OsStr) -> Cow<'_, [u8]> {
     Cow::Owned(to_bytes(os_string))
 }
 
-pub(crate) fn os_string_from_vec(string: Vec<u8>) -> Result<OsString> {
+pub(super) fn os_string_from_vec(string: Vec<u8>) -> Result<OsString> {
     from_bytes(&string)
 }
 
-pub(crate) fn os_string_into_vec(os_string: OsString) -> Vec<u8> {
+pub(super) fn os_string_into_vec(os_string: OsString) -> Vec<u8> {
     to_bytes(&os_string)
 }
 
@@ -130,6 +126,7 @@ mod tests {
         test_error(End(), b"\xF1\x80");
         test_error(End(), b"\xF1\x80\x80");
         test_error(Byte(b'\xF1'), b"\xF1\x80\x80\xF1");
+        test_error(CodePoint(0x11_09CC), b"\xF4\x90\xA7\x8C");
         test_error(CodePoint(0x15_EC46), b"\xF5\x9E\xB1\x86");
         test_error(End(), b"\xFB");
         test_error(End(), b"\xFB\x80");
@@ -142,11 +139,9 @@ mod tests {
         test_error(CodePoint(0x3C_6143), b"\xFF\x86\x85\x83");
 
         fn test_error(error: EncodingError, string: &[u8]) {
-            use crate::EncodingError;
-
             assert_eq!(
                 Err(error),
-                OsStr::from_raw_bytes(string).map_err(|EncodingError(x)| x),
+                OsStr::from_raw_bytes(string).map_err(|x| x.0),
             );
         }
     }

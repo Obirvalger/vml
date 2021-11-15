@@ -80,6 +80,10 @@ pub enum CasingStyle {
     ScreamingSnake,
     /// Keep all letters lowercase and indicate word boundaries with underscores.
     Snake,
+    /// Keep all letters lowercase and remove word boundaries.
+    Lower,
+    /// Keep all letters uppercase and remove word boundaries.
+    Upper,
     /// Use the original attribute name defined in the code.
     Verbatim,
 }
@@ -102,6 +106,7 @@ pub struct Attrs {
     author: Option<Method>,
     version: Option<Method>,
     verbatim_doc_comment: Option<Ident>,
+    help_heading: Option<Method>,
     is_enum: bool,
     has_custom_parser: bool,
     kind: Sp<Kind>,
@@ -206,6 +211,8 @@ impl CasingStyle {
             "pascal" | "pascalcase" => cs(Pascal),
             "screamingsnake" | "screamingsnakecase" => cs(ScreamingSnake),
             "snake" | "snakecase" => cs(Snake),
+            "lower" | "lowercase" => cs(Lower),
+            "upper" | "uppercase" => cs(Upper),
             "verbatim" | "verbatimcase" => cs(Verbatim),
             s => abort!(name, "unsupported casing: `{}`", s),
         }
@@ -226,6 +233,8 @@ impl Name {
                     Camel => s.to_mixed_case(),
                     ScreamingSnake => s.to_shouty_snake_case(),
                     Snake => s.to_snake_case(),
+                    Lower => s.to_snake_case().replace("_", ""),
+                    Upper => s.to_shouty_snake_case().replace("_", ""),
                     Verbatim => s,
                 };
                 quote_spanned!(ident.span()=> #s)
@@ -246,6 +255,8 @@ impl Name {
                     Camel => s.to_mixed_case(),
                     ScreamingSnake => s.to_shouty_snake_case(),
                     Snake => s.to_snake_case(),
+                    Lower => s.to_snake_case(),
+                    Upper => s.to_shouty_snake_case(),
                     Verbatim => s,
                 };
 
@@ -275,6 +286,7 @@ impl Attrs {
             author: None,
             version: None,
             verbatim_doc_comment: None,
+            help_heading: None,
             is_enum: false,
             has_custom_parser: false,
             kind: Sp::new(Kind::Arg(Sp::new(Ty::Other, default_span)), default_span),
@@ -340,27 +352,28 @@ impl Attrs {
                 VerbatimDocComment(ident) => self.verbatim_doc_comment = Some(ident),
 
                 DefaultValueT(ident, expr) => {
+                    let ty = if let Some(ty) = self.ty.as_ref() {
+                        ty
+                    } else {
+                        abort!(
+                            ident,
+                            "#[clap(default_value_t)] (without an argument) can be used \
+                            only on field level";
+
+                            note = "see \
+                                https://docs.rs/structopt/0.3.5/structopt/#magical-methods")
+                    };
+
                     let val = if let Some(expr) = expr {
                         quote!(#expr)
                     } else {
-                        let ty = if let Some(ty) = self.ty.as_ref() {
-                            ty
-                        } else {
-                            abort!(
-                                ident,
-                                "#[clap(default_value_t)] (without an argument) can be used \
-                                only on field level";
-
-                                note = "see \
-                                    https://docs.rs/structopt/0.3.5/structopt/#magical-methods")
-                        };
                         quote!(<#ty as ::std::default::Default>::default())
                     };
 
                     let val = quote_spanned!(ident.span()=> {
                         clap::lazy_static::lazy_static! {
                             static ref DEFAULT_VALUE: &'static str = {
-                                let val = #val;
+                                let val: #ty = #val;
                                 let s = ::std::string::ToString::to_string(&val);
                                 ::std::boxed::Box::leak(s.into_boxed_str())
                             };
@@ -370,6 +383,10 @@ impl Attrs {
 
                     let raw_ident = Ident::new("default_value", ident.span());
                     self.methods.push(Method::new(raw_ident, val));
+                }
+
+                HelpHeading(ident, expr) => {
+                    self.help_heading = Some(Method::new(ident, quote!(#expr)));
                 }
 
                 About(ident, about) => {
@@ -551,9 +568,7 @@ impl Attrs {
 
                 res.kind = Sp::new(Kind::Subcommand(ty), res.kind.span());
             }
-            Kind::Skip(_) => {
-                abort!(res.kind.span(), "skip is not supported on variants");
-            }
+            Kind::Skip(_) => (),
             Kind::FromGlobal(_) => {
                 abort!(res.kind.span(), "from_global is not supported on variants");
             }
@@ -717,9 +732,6 @@ impl Attrs {
                         if let Some(m) = res.find_method("default_value") {
                             abort!(m.name, "default_value is meaningless for Option")
                         }
-                        if let Some(m) = res.find_method("required") {
-                            abort!(m.name, "required is meaningless for Option")
-                        }
                     }
                     Ty::OptionOption => {
                         if res.is_positional() {
@@ -767,26 +779,26 @@ impl Attrs {
     }
 
     /// generate methods from attributes on top of struct or enum
-    pub fn top_level_methods(&self) -> TokenStream {
+    pub fn initial_top_level_methods(&self) -> TokenStream {
+        let help_heading = self.help_heading.as_ref().into_iter();
+        quote!( #(#help_heading)* )
+    }
+
+    pub fn final_top_level_methods(&self) -> TokenStream {
+        let version = &self.version;
         let author = &self.author;
         let methods = &self.methods;
         let doc_comment = &self.doc_comment;
 
-        quote!( #(#doc_comment)* #author #(#methods)*)
+        quote!( #(#doc_comment)* #author #version #(#methods)*)
     }
 
     /// generate methods on top of a field
     pub fn field_methods(&self) -> proc_macro2::TokenStream {
         let methods = &self.methods;
         let doc_comment = &self.doc_comment;
-        quote!( #(#doc_comment)* #(#methods)* )
-    }
-
-    pub fn version(&self) -> TokenStream {
-        self.version
-            .clone()
-            .map(|m| m.to_token_stream())
-            .unwrap_or_default()
+        let help_heading = self.help_heading.as_ref().into_iter();
+        quote!( #(#doc_comment)* #(#help_heading)* #(#methods)* )
     }
 
     pub fn cased_name(&self) -> TokenStream {
@@ -817,14 +829,6 @@ impl Attrs {
         } else {
             quote! { false }
         }
-    }
-
-    pub fn enum_aliases(&self) -> Vec<TokenStream> {
-        self.methods
-            .iter()
-            .filter(|m| m.name == "alias")
-            .map(|m| m.args.clone())
-            .collect()
     }
 
     pub fn casing(&self) -> Sp<CasingStyle> {

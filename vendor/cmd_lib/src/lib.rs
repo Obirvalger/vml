@@ -143,7 +143,7 @@
 //! converted to string as an atomic component, so you don't need to quote them. The parameters will be
 //! like `$a` or `${a}` in `run_cmd!` or `run_fun!` macros.
 //!
-//! ```
+//! ```no_run
 //! # use cmd_lib::run_cmd;
 //! let dir = "my folder";
 //! run_cmd!(echo "Creating $dir at /tmp")?;
@@ -185,8 +185,9 @@
 //!
 //! ### Logging
 //!
-//! This library provides convenient macros and builtin commands for logging. It also automatically logs
-//! command execution failures, along with messages which were printed to stderr originally.
+//! This library provides convenient macros and builtin commands for logging. All messages which
+//! are printed to stderr will be logged. Since it is returning result type, you can also log the
+//! errors if command execution fails.
 //!
 //! ```no_run
 //! # use cmd_lib::*;
@@ -197,7 +198,6 @@
 //! assert!(run_cmd!(mkdir /tmp/"$dir"; ls /tmp/"$dir"; rmdir /tmp/"$dir").is_err());
 //! // output:
 //! // INFO - mkdir: cannot create directory ‘/tmp/folder with spaces’: File exists
-//! // ERROR - Running ["mkdir", "/tmp/folder with spaces"] failed, Error: ["mkdir", "/tmp/folder with spaces"] exited with error; status code: 1
 //! ```
 //!
 //! It is using rust [log crate](https://crates.io/crates/log), and you can use your actual favorite
@@ -260,22 +260,33 @@
 //!
 //! `spawn!` macro executes the whole command as a child process, returning a handle to it. By
 //! default, stdin, stdout and stderr are inherited from the parent. The process will run in the
-//! background, so you can run other stuff concurrently. You can call `wait_cmd_result()` to wait
+//! background, so you can run other stuff concurrently. You can call `wait()` to wait
 //! for the process to finish.
 //!
-//! With `spawn_with_output!` you can get output result by calling `wait_fun_result()`.
+//! With `spawn_with_output!` you can get output by calling `wait_with_output()`, or even do stream
+//! processing with `wait_with_pipe()`.
 //!
 //! ```no_run
 //! # use cmd_lib::*;
+//! # use std::io::{BufRead, BufReader};
 //! let mut proc = spawn!(ping -c 10 192.168.0.1)?;
 //! // do other stuff
 //! // ...
-//! proc.wait_cmd_result()?;
+//! proc.wait()?;
 //!
 //! let mut proc = spawn_with_output!(/bin/cat file.txt | sed s/a/b/)?;
 //! // do other stuff
 //! // ...
-//! let output = proc.wait_fun_result()?;
+//! let output = proc.wait_with_output()?;
+//!
+//! spawn_with_output!(journalctl)?.wait_with_pipe(&mut |pipe| {
+//!     BufReader::new(pipe)
+//!         .lines()
+//!         .filter_map(|line| line.ok())
+//!         .filter(|line| line.find("usb").is_some())
+//!         .take(10)
+//!         .for_each(|line| println!("{}", line));
+//! })?;
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
@@ -348,7 +359,7 @@ pub use builtins::{
     builtin_cat, builtin_debug, builtin_die, builtin_echo, builtin_error, builtin_info,
     builtin_trace, builtin_warn,
 };
-pub use child::CmdChildren;
+pub use child::{CmdChildren, FunChildren};
 #[doc(hidden)]
 pub use log;
 pub use logger::init_builtin_logger;

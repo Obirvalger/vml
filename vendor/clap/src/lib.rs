@@ -4,7 +4,7 @@
 // notice may not be copied, modified, or distributed except according to those terms.
 
 #![doc(html_logo_url = "https://clap.rs/images/media/clap.png")]
-#![doc(html_root_url = "https://docs.rs/clap/3.0.0-beta.4")]
+#![doc(html_root_url = "https://docs.rs/clap/3.0.0-beta.5")]
 #![doc = include_str!("../README.md")]
 //! <https://github.com/clap-rs/clap>
 #![crate_type = "lib"]
@@ -24,13 +24,15 @@
 compile_error!("`std` feature is currently required to build `clap`");
 
 pub use crate::{
-    build::{App, AppSettings, Arg, ArgGroup, ArgSettings, ValueHint},
+    build::{
+        App, AppFlags, AppSettings, Arg, ArgFlags, ArgGroup, ArgSettings, ArgValue, ValueHint,
+    },
     parse::errors::{Error, ErrorKind, Result},
     parse::{ArgMatches, Indices, OsValues, Values},
+    util::color::ColorChoice,
 };
 
-#[cfg(feature = "derive")]
-pub use crate::derive::{ArgEnum, Args, Clap, FromArgMatches, IntoApp, Subcommand};
+pub use crate::derive::{ArgEnum, Args, FromArgMatches, IntoApp, Parser, Subcommand};
 
 #[cfg(feature = "yaml")]
 #[doc(hidden)]
@@ -48,7 +50,6 @@ pub use lazy_static;
 #[allow(missing_docs)]
 mod macros;
 
-#[cfg(feature = "derive")]
 mod derive;
 
 #[cfg(feature = "regex")]
@@ -63,3 +64,22 @@ mod util;
 const INTERNAL_ERROR_MSG: &str = "Fatal internal error. Please consider filing a bug \
                                   report at https://github.com/clap-rs/clap/issues";
 const INVALID_UTF8: &str = "unexpected invalid UTF-8 code point";
+
+/// Deprecated, see [`App`]
+#[derive(Debug, Copy, Clone)]
+pub struct SubCommand {}
+
+impl SubCommand {
+    /// Deprecated, see [`App::new`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `App::new`)")]
+    pub fn with_name<'help>(name: &str) -> App<'help> {
+        App::new(name)
+    }
+
+    /// Deprecated, see [`App::from`]
+    #[cfg(feature = "yaml")]
+    #[deprecated(since = "3.0.0", note = "Replaced with `App::from`)")]
+    pub fn from_yaml(yaml: &yaml_rust::Yaml) -> App {
+        App::from(yaml)
+    }
+}

@@ -1,11 +1,12 @@
 use std::iter::Peekable;
 use std::mem;
 
-use super::is_continuation;
+use crate::util::is_continuation;
+use crate::util::BYTE_SHIFT;
+use crate::util::CONT_MASK;
+
 use super::EncodingError;
 use super::Result;
-use super::BYTE_SHIFT;
-use super::CONT_MASK;
 
 pub(in super::super) struct CodePoints<I>
 where
@@ -19,7 +20,7 @@ impl<I> CodePoints<I>
 where
     I: Iterator<Item = u8>,
 {
-    pub(super) fn new<S>(string: S) -> Self
+    pub(in super::super) fn new<S>(string: S) -> Self
     where
         S: IntoIterator<IntoIter = I, Item = I::Item>,
     {
@@ -79,7 +80,7 @@ where
                 r#continue!();
 
                 if byte >= 0xF0 {
-                    if code_point.wrapping_sub(0x10) > 0x100 {
+                    if code_point.wrapping_sub(0x10) >= 0x100 {
                         invalid = true;
                     }
                     r#continue!();

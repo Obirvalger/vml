@@ -1,9 +1,9 @@
-use crate::child::{CmdChild, CmdChildren};
+use crate::child::{CmdChild, CmdChildHandle, CmdChildren, FunChildren};
 use crate::io::{CmdIn, CmdOut};
 use crate::{CmdResult, FunResult};
 use faccess::{AccessMode, PathExt};
 use lazy_static::lazy_static;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use os_pipe::{self, PipeReader, PipeWriter};
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
@@ -13,6 +13,10 @@ use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
+use std::thread;
+
+const CD_CMD: &str = "cd";
+const IGNORE_CMD: &str = "ignore";
 
 /// Environment for builtin or custom commands
 pub struct CmdEnv {
@@ -108,8 +112,9 @@ impl GroupCmds {
     pub fn run_cmd(&mut self) -> CmdResult {
         for cmds in self.group_cmds.iter_mut() {
             if let Err(e) = cmds.run_cmd(&mut self.current_dir) {
-                error!("Running {} failed, Error: {}", cmds.get_full_cmds(), e);
-                return Err(e);
+                if !cmds.ignore_error {
+                    return Err(e);
+                }
             }
         }
         Ok(())
@@ -121,8 +126,8 @@ impl GroupCmds {
         self.run_cmd()?;
         // run last function command
         let ret = last_cmd.run_fun(&mut self.current_dir);
-        if let Err(ref e) = ret {
-            error!("Running {} failed, Error: {}", last_cmd.get_full_cmds(), e);
+        if ret.is_err() && last_cmd.ignore_error {
+            return Ok("".into());
         }
         ret
     }
@@ -131,10 +136,20 @@ impl GroupCmds {
         assert_eq!(self.group_cmds.len(), 1);
         let mut cmds = self.group_cmds.pop().unwrap();
         let ret = cmds.spawn(&mut self.current_dir, with_output);
+        // spawning error contains no command information, attach it here
         if let Err(ref e) = ret {
-            error!("Spawning {} failed, Error: {}", cmds.get_full_cmds(), e);
+            if !cmds.ignore_error {
+                return Err(Error::new(
+                    e.kind(),
+                    format!("Spawning {} failed: {}", cmds.get_full_cmds(), e),
+                ));
+            }
         }
         ret
+    }
+
+    pub fn spawn_with_output(self) -> Result<FunChildren> {
+        self.spawn(true).map(CmdChildren::into_fun_children)
     }
 }
 
@@ -148,19 +163,20 @@ pub struct Cmds {
 
 impl Cmds {
     pub fn pipe(mut self, cmd: Cmd) -> Self {
-        let mut ignore_error = false;
         if !self.full_cmds.is_empty() {
             self.full_cmds += " | ";
         }
-        self.full_cmds += &cmd.debug_str();
-        self.cmds.push(Some(cmd.gen_command(&mut ignore_error)));
+        self.full_cmds += &cmd.cmd_str();
+        let (ignore_error, cmd) = cmd.gen_command();
         if ignore_error {
-            if self.cmds.len() == 1 {
+            if self.cmds.is_empty() {
+                // first command in the pipe
                 self.ignore_error = true;
             } else {
                 warn!("Builtin \"ignore\" command at wrong position");
             }
         }
+        self.cmds.push(Some(cmd));
         self
     }
 
@@ -191,15 +207,20 @@ impl Cmds {
             children.push(child);
         }
 
-        Ok(CmdChildren::from(children, self.ignore_error))
+        Ok(CmdChildren::new(children, self.ignore_error))
+    }
+
+    fn spawn_with_output(&mut self, current_dir: &mut PathBuf) -> Result<FunChildren> {
+        self.spawn(current_dir, true)
+            .map(CmdChildren::into_fun_children)
     }
 
     fn run_cmd(&mut self, current_dir: &mut PathBuf) -> CmdResult {
-        self.spawn(current_dir, false)?.wait_cmd_result_nolog()
+        self.spawn(current_dir, false)?.wait()
     }
 
     fn run_fun(&mut self, current_dir: &mut PathBuf) -> FunResult {
-        self.spawn(current_dir, true)?.wait_fun_result_nolog()
+        self.spawn_with_output(current_dir)?.wait_with_output()
     }
 }
 
@@ -272,7 +293,7 @@ impl Default for Cmd {
 impl Cmd {
     pub fn add_arg(mut self, arg: OsString) -> Self {
         let arg_str = arg.to_string_lossy().to_string();
-        if self.args.is_empty() {
+        if arg_str != IGNORE_CMD && !self.args.iter().any(|cmd| *cmd != IGNORE_CMD) {
             let v: Vec<&str> = arg_str.split('=').collect();
             if v.len() == 2 && v[0].chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                 self.vars.insert(v[0].into(), v[1].into());
@@ -297,14 +318,14 @@ impl Cmd {
     }
 
     fn arg0(&self) -> OsString {
-        if self.args.is_empty() {
-            "".into()
-        } else {
-            self.args[0].clone()
+        let mut args = self.args.iter().skip_while(|cmd| *cmd == IGNORE_CMD);
+        if let Some(arg) = args.next() {
+            return arg.into();
         }
+        "".into()
     }
 
-    fn debug_str(&self) -> String {
+    fn cmd_str(&self) -> String {
         let mut ret = format!("{:?}", self.args);
         let mut extra = String::new();
         if !self.vars.is_empty() {
@@ -322,39 +343,42 @@ impl Cmd {
         ret
     }
 
-    fn gen_command(mut self, ignore_error: &mut bool) -> Self {
+    fn gen_command(mut self) -> (bool, Self) {
+        let args: Vec<OsString> = self
+            .args
+            .iter()
+            .skip_while(|cmd| *cmd == IGNORE_CMD)
+            .map(|s| s.into())
+            .collect();
         if !self.in_cmd_map {
-            let mut start = 0;
-            if self.args[0] == "ignore" {
-                start = 1;
-                *ignore_error = true;
-            }
-            let mut cmd = Command::new(&self.args[start]);
-            cmd.args(&self.args[start + 1..]);
+            let mut cmd = Command::new(&args[0]);
+            cmd.args(&args[1..]);
             for (k, v) in self.vars.iter() {
                 cmd.env(k, v);
             }
             self.std_cmd = Some(cmd);
         }
-        self
+        (self.args.len() > args.len(), self)
     }
 
     fn spawn(mut self, current_dir: &mut PathBuf, with_output: bool) -> Result<CmdChild> {
         let arg0 = self.arg0();
-        let full_cmd = self.debug_str();
-        if arg0 == "cd" {
-            self.run_cd_cmd(current_dir)?;
-            Ok(CmdChild::SyncFn {
-                cmd: full_cmd,
-                stdout: None,
-                stderr: None,
-            })
+        if arg0 == CD_CMD {
+            let child = self.run_cd_cmd(current_dir);
+            Ok(CmdChild::new(
+                CmdChildHandle::SyncFn(child),
+                self.cmd_str(),
+                self.stdout_logging,
+                self.stderr_logging,
+            ))
         } else if self.in_cmd_map {
+            let cmd_str = self.cmd_str();
             let pipe_out = self.stdout_logging.is_none();
             let mut env = CmdEnv {
                 args: self
                     .args
                     .into_iter()
+                    .skip_while(|cmd| *cmd == IGNORE_CMD)
                     .map(|s| s.to_string_lossy().to_string())
                     .collect(),
                 vars: self.vars,
@@ -382,20 +406,21 @@ impl Cmd {
 
             let internal_cmd = CMD_MAP.lock().unwrap()[&arg0];
             if pipe_out || with_output {
-                let handle = std::thread::spawn(move || internal_cmd(&mut env));
-                Ok(CmdChild::ThreadFn {
-                    child: handle,
-                    stdout: self.stdout_logging,
-                    stderr: self.stderr_logging,
-                    cmd: full_cmd,
-                })
+                let handle = thread::Builder::new().spawn(move || internal_cmd(&mut env));
+                Ok(CmdChild::new(
+                    CmdChildHandle::Thread(handle),
+                    cmd_str,
+                    self.stdout_logging,
+                    self.stderr_logging,
+                ))
             } else {
-                internal_cmd(&mut env)?;
-                Ok(CmdChild::SyncFn {
-                    cmd: full_cmd,
-                    stdout: self.stdout_logging,
-                    stderr: self.stderr_logging,
-                })
+                let child = internal_cmd(&mut env);
+                Ok(CmdChild::new(
+                    CmdChildHandle::SyncFn(child),
+                    cmd_str,
+                    self.stdout_logging,
+                    self.stderr_logging,
+                ))
             }
         } else {
             let mut cmd = self.std_cmd.take().unwrap();
@@ -421,13 +446,13 @@ impl Cmd {
             }
 
             // spawning process
-            let child = cmd.spawn()?;
-            Ok(CmdChild::Proc {
-                cmd: full_cmd,
-                stdout: self.stdout_logging,
-                stderr: self.stderr_logging,
-                child,
-            })
+            let child = cmd.spawn();
+            Ok(CmdChild::new(
+                CmdChildHandle::Proc(child),
+                self.cmd_str(),
+                self.stdout_logging,
+                self.stderr_logging,
+            ))
         }
     }
 
@@ -435,22 +460,17 @@ impl Cmd {
         if self.args.len() == 1 {
             return Err(Error::new(ErrorKind::Other, "cd: missing directory"));
         } else if self.args.len() > 2 {
-            let err_msg = format!("cd: too many arguments: {}", self.debug_str());
+            let err_msg = format!("cd: too many arguments: {}", self.cmd_str());
             return Err(Error::new(ErrorKind::Other, err_msg));
         }
 
         let dir = PathBuf::from(&self.args[1]);
         if !dir.is_dir() {
             let err_msg = format!("cd {}: No such file or directory", dir.display());
-            error!("{}", err_msg);
             return Err(Error::new(ErrorKind::Other, err_msg));
         }
 
-        if let Err(e) = dir.access(AccessMode::EXECUTE) {
-            error!("cd {}: {}", dir.display(), e);
-            return Err(e);
-        }
-
+        dir.access(AccessMode::EXECUTE)?;
         *current_dir = dir;
         Ok(())
     }

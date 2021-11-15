@@ -1,6 +1,6 @@
 // Internal
 use crate::{
-    build::{AppSettings as AS, Arg, ArgSettings},
+    build::{arg::ArgValue, AppSettings as AS, Arg, ArgSettings},
     output::Usage,
     parse::{
         errors::{Error, ErrorKind, Result as ClapResult},
@@ -51,9 +51,9 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             };
             if should_err {
                 return Err(Error::empty_value(
+                    self.p.app,
                     o,
                     Usage::new(self.p).create_usage_with_title(&[]),
-                    self.p.app.color(),
                 ));
             }
         }
@@ -63,12 +63,10 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             && self.p.is_set(AS::ArgRequiredElseHelp)
         {
             let message = self.p.write_help_err()?;
-            return Err(Error {
+            return Err(Error::new(
                 message,
-                kind: ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand,
-                info: vec![],
-                source: None,
-            });
+                ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand,
+            ));
         }
         self.validate_conflicts(matcher)?;
         if !(self.p.is_set(AS::SubcommandsNegateReqs) && is_subcmd || reqs_validated) {
@@ -88,14 +86,14 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
     ) -> ClapResult<()> {
         debug!("Validator::validate_arg_values: arg={:?}", arg.name);
         for val in ma.vals_flatten() {
-            if self.p.is_set(AS::StrictUtf8) && val.to_str().is_none() {
+            if !arg.is_set(ArgSettings::AllowInvalidUtf8) && val.to_str().is_none() {
                 debug!(
                     "Validator::validate_arg_values: invalid UTF-8 found in val {:?}",
                     val
                 );
                 return Err(Error::invalid_utf8(
+                    self.p.app,
                     Usage::new(self.p).create_usage_with_title(&[]),
-                    self.p.app.color(),
                 ));
             }
             if !arg.possible_vals.is_empty() {
@@ -104,13 +102,10 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                     arg.possible_vals
                 );
                 let val_str = val.to_string_lossy();
-                let ok = if arg.is_set(ArgSettings::IgnoreCase) {
-                    arg.possible_vals
-                        .iter()
-                        .any(|pv| pv.eq_ignore_ascii_case(&val_str))
-                } else {
-                    arg.possible_vals.contains(&&*val_str)
-                };
+                let ok = arg
+                    .possible_vals
+                    .iter()
+                    .any(|pv| pv.matches(&val_str, arg.is_set(ArgSettings::IgnoreCase)));
                 if !ok {
                     let used: Vec<Id> = matcher
                         .arg_names()
@@ -122,11 +117,14 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                         .cloned()
                         .collect();
                     return Err(Error::invalid_value(
-                        val_str.to_string(),
-                        &arg.possible_vals,
+                        self.p.app,
+                        val_str.into_owned(),
+                        &arg.possible_vals
+                            .iter()
+                            .filter_map(ArgValue::get_visible_name)
+                            .collect::<Vec<_>>(),
                         arg,
                         Usage::new(self.p).create_usage_with_title(&used),
-                        self.p.app.color(),
                     ));
                 }
             }
@@ -136,9 +134,9 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             {
                 debug!("Validator::validate_arg_values: illegal empty val found");
                 return Err(Error::empty_value(
+                    self.p.app,
                     arg,
                     Usage::new(self.p).create_usage_with_title(&[]),
-                    self.p.app.color(),
                 ));
             }
 
@@ -148,10 +146,10 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                 if let Err(e) = vtor(&*val.to_string_lossy()) {
                     debug!("error");
                     return Err(Error::value_validation(
+                        self.p.app,
                         arg.to_string(),
-                        val.to_string_lossy().to_string(),
+                        val.to_string_lossy().into_owned(),
                         e,
-                        self.p.app.color(),
                     ));
                 } else {
                     debug!("good");
@@ -163,10 +161,10 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                 if let Err(e) = vtor(val) {
                     debug!("error");
                     return Err(Error::value_validation(
+                        self.p.app,
                         arg.to_string(),
                         val.to_string_lossy().into(),
                         e,
-                        self.p.app.color(),
                     ));
                 } else {
                     debug!("good");
@@ -226,10 +224,10 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                     };
                     let usg = self.build_conflict_err_usage(matcher, former_arg, latter);
                     Err(Error::argument_conflict(
+                        self.p.app,
                         latter_arg,
                         Some(former_arg.to_string()),
                         usg,
-                        self.p.app.color(),
                     ))
                 })
         } else if let Some(g) = self.p.app.groups.iter().find(|x| x.id == *name) {
@@ -245,10 +243,10 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                 .map(|x| self.p.app[x].to_string());
             debug!("Validator::build_conflict_err: c_with={:?}:group", c_with);
             Err(Error::argument_conflict(
+                self.p.app,
                 &self.p.app[first],
                 c_with,
                 usg,
-                self.p.app.color(),
             ))
         } else {
             Ok(())
@@ -321,10 +319,10 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             // Throw an error for the first conflict found.
             .try_for_each(|arg| {
                 Err(Error::argument_conflict(
+                    self.p.app,
                     arg,
                     None,
                     Usage::new(self.p).create_usage_with_title(&[]),
-                    self.p.app.color(),
                 ))
             })
     }
@@ -450,9 +448,9 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
         if ma.occurs > 1 && !a.is_set(ArgSettings::MultipleOccurrences) && !a.is_positional() {
             // Not the first time, and we don't allow multiples
             return Err(Error::unexpected_multiple_usage(
+                self.p.app,
                 a,
                 Usage::new(self.p).create_usage_with_title(&[]),
-                self.p.app.color(),
             ));
         }
         if let Some(max_occurs) = a.max_occurs {
@@ -463,11 +461,11 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             let occurs = ma.occurs as usize;
             if occurs > max_occurs {
                 return Err(Error::too_many_occurrences(
+                    self.p.app,
                     a,
                     max_occurs,
                     occurs,
                     Usage::new(self.p).create_usage_with_title(&[]),
-                    self.p.app.color(),
                 ));
             }
         }
@@ -488,6 +486,7 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             if should_err {
                 debug!("Validator::validate_arg_num_vals: Sending error WrongNumberOfValues");
                 return Err(Error::wrong_number_of_values(
+                    self.p.app,
                     a,
                     num,
                     if a.is_set(ArgSettings::MultipleOccurrences) {
@@ -496,7 +495,6 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                         total_num
                     },
                     Usage::new(self.p).create_usage_with_title(&[]),
-                    self.p.app.color(),
                 ));
             }
         }
@@ -505,6 +503,7 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             if ma.num_vals() > num {
                 debug!("Validator::validate_arg_num_vals: Sending error TooManyValues");
                 return Err(Error::too_many_values(
+                    self.p.app,
                     ma.vals_flatten()
                         .last()
                         .expect(INTERNAL_ERROR_MSG)
@@ -513,7 +512,6 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                         .to_string(),
                     a.to_string(),
                     Usage::new(self.p).create_usage_with_title(&[]),
-                    self.p.app.color(),
                 ));
             }
         }
@@ -522,11 +520,11 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             if ma.num_vals() < num && num != 0 {
                 debug!("Validator::validate_arg_num_vals: Sending error TooFewValues");
                 return Err(Error::too_few_values(
+                    self.p.app,
                     a,
                     num,
                     ma.num_vals(),
                     Usage::new(self.p).create_usage_with_title(&[]),
-                    self.p.app.color(),
                 ));
             }
             num == 0
@@ -537,9 +535,9 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
         // Issue 1105 (https://github.com/kbknapp/clap-rs/issues/1105)
         if a.is_set(ArgSettings::TakesValue) && !min_vals_zero && ma.is_vals_empty() {
             return Err(Error::empty_value(
+                self.p.app,
                 a,
                 Usage::new(self.p).create_usage_with_title(&[]),
-                self.p.app.color(),
             ));
         }
         Ok(())
@@ -698,9 +696,9 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
             .collect();
 
         Err(Error::missing_required_argument(
+            self.p.app,
             req_args,
             usg.create_usage_with_title(&used),
-            self.p.app.color(),
         ))
     }
 }

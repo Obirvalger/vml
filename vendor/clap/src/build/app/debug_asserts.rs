@@ -1,4 +1,8 @@
-use crate::{build::arg::debug_asserts::assert_arg, App, AppSettings, ArgSettings, ValueHint};
+use crate::{
+    build::arg::{debug_asserts::assert_arg, ArgProvider},
+    util::Id,
+    App, AppSettings, ArgSettings, ValueHint,
+};
 use std::cmp::Ordering;
 
 #[derive(Eq)]
@@ -43,6 +47,26 @@ pub(crate) fn assert_app(app: &App) {
 
     let mut short_flags = vec![];
     let mut long_flags = vec![];
+
+    // Invalid version flag settings
+    if app.version.is_none() && app.long_version.is_none() {
+        // PropagateVersion is meaningless if there is no version
+        assert!(
+            !app.settings.is_set(AppSettings::PropagateVersion),
+            "No version information via App::version or App::long_version to propagate"
+        );
+
+        // Used `App::mut_arg("version", ..) but did not provide any version information to display
+        let has_mutated_version = app
+            .args
+            .args()
+            .any(|x| x.id == Id::version_hash() && x.provider == ArgProvider::GeneratedMutated);
+
+        if has_mutated_version {
+            assert!(app.settings.is_set(AppSettings::NoAutoVersion),
+                "Used App::mut_arg(\"version\", ..) without providing App::version, App::long_version or using AppSettings::NoAutoVersion");
+        }
+    }
 
     for sc in &app.subcommands {
         if let Some(s) = sc.short_flag.as_ref() {
@@ -259,7 +283,21 @@ pub(crate) fn assert_app(app: &App) {
     detect_duplicate_flags(&long_flags, "long");
     detect_duplicate_flags(&short_flags, "short");
 
+    if let Some(help_template) = app.template {
+        assert!(
+            !help_template.contains("{flags}"),
+            "{}",
+            "`{flags}` template variable was removed in clap3, they are now included in `{options}`"
+        );
+        assert!(
+            !help_template.contains("{unified}"),
+            "{}",
+            "`{unified}` template variable was removed in clap3, use `{options}` instead"
+        );
+    }
+
     app._panic_on_missing_help(app.g_settings.is_set(AppSettings::HelpRequired));
+    assert_app_flags(app);
 }
 
 fn detect_duplicate_flags(flags: &[Flag], short_or_long: &str) {
@@ -300,4 +338,45 @@ fn find_duplicates<T: PartialEq>(slice: &[T]) -> impl Iterator<Item = (&T, &T)> 
             None
         }
     })
+}
+
+fn assert_app_flags(app: &App) {
+    use AppSettings::*;
+
+    macro_rules! checker {
+        ($a:ident requires $($b:ident)|+) => {
+            if app.is_set($a) {
+                let mut s = String::new();
+
+                $(
+                    if !app.is_set($b) {
+                        s.push_str(&format!("\nAppSettings::{} is required when AppSettings::{} is set.\n", std::stringify!($b), std::stringify!($a)));
+                    }
+                )+
+
+                if !s.is_empty() {
+                    panic!("{}", s)
+                }
+            }
+        };
+        ($a:ident conflicts $($b:ident)|+) => {
+            if app.is_set($a) {
+                let mut s = String::new();
+
+                $(
+                    if app.is_set($b) {
+                        s.push_str(&format!("\nAppSettings::{} conflicts with AppSettings::{}.\n", std::stringify!($b), std::stringify!($a)));
+                    }
+                )+
+
+                if !s.is_empty() {
+                    panic!("{}", s)
+                }
+            }
+        };
+    }
+
+    checker!(AllowInvalidUtf8ForExternalSubcommands requires AllowExternalSubcommands);
+    #[cfg(feature = "unstable-multicall")]
+    checker!(Multicall conflicts NoBinaryName);
 }

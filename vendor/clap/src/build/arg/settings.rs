@@ -1,5 +1,5 @@
 // Std
-use std::str::FromStr;
+use std::{ops::BitOr, str::FromStr};
 
 // Third party
 use bitflags::bitflags;
@@ -30,11 +30,19 @@ bitflags! {
         const MULTIPLE_VALS    = 1 << 20;
         #[cfg(feature = "env")]
         const HIDE_ENV         = 1 << 21;
+        const UTF8_NONE        = 1 << 22;
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ArgFlags(Flags);
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArgFlags(Flags);
+
+impl Default for ArgFlags {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
 
 // @TODO @p6 @internal: Reorder alphabetically
 impl_settings! { ArgSettings, ArgFlags,
@@ -59,13 +67,8 @@ impl_settings! { ArgSettings, ArgFlags,
     HideEnvValues("hideenvvalues") => Flags::HIDE_ENV_VALS,
     HideDefaultValue("hidedefaultvalue") => Flags::HIDE_DEFAULT_VAL,
     HiddenShortHelp("hiddenshorthelp") => Flags::HIDDEN_SHORT_H,
-    HiddenLongHelp("hiddenlonghelp") => Flags::HIDDEN_LONG_H
-}
-
-impl Default for ArgFlags {
-    fn default() -> Self {
-        ArgFlags(Flags::empty())
-    }
+    HiddenLongHelp("hiddenlonghelp") => Flags::HIDDEN_LONG_H,
+    AllowInvalidUtf8("allowinvalidutf8") => Flags::UTF8_NONE
 }
 
 /// Various settings that apply to arguments and may be set, unset, and checked via getter/setter
@@ -121,6 +124,9 @@ pub enum ArgSettings {
     HiddenShortHelp,
     /// The argument should **not** be shown in long help text
     HiddenLongHelp,
+    /// Specifies that option values that are invalid UTF-8 should *not* be treated as an error.
+    AllowInvalidUtf8,
+
     #[doc(hidden)]
     RequiredUnlessAll,
 }
@@ -201,6 +207,10 @@ mod test {
         assert_eq!(
             "hiddenlonghelp".parse::<ArgSettings>().unwrap(),
             ArgSettings::HiddenLongHelp
+        );
+        assert_eq!(
+            "allowinvalidutf8".parse::<ArgSettings>().unwrap(),
+            ArgSettings::AllowInvalidUtf8
         );
         assert!("hahahaha".parse::<ArgSettings>().is_err());
     }

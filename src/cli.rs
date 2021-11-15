@@ -1,24 +1,23 @@
 use std::io;
 
+use anyhow::{bail, Result};
 use byte_unit::Byte;
-use clap::{App, AppSettings, Arg, ArgGroup, ValueHint};
-use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
-use clap_generate::{generate, Generator};
+use clap::{App, AppSettings, Arg, ArgEnum, ArgGroup, ValueHint};
+use clap_generate::{generate, Generator, Shell};
 
-fn print_completions<G: Generator>(app: &mut App) {
-    generate::<G, _>(app, app.get_name().to_string(), &mut io::stdout());
+fn print_completions<G: Generator>(gen: G, app: &mut App) {
+    generate(gen, app, app.get_name().to_string(), &mut io::stdout());
 }
 
-pub fn completion(shell: &str) {
+pub fn completion(shell: &str) -> Result<()> {
     let mut app = build_cli();
-    match shell {
-        "bash" => print_completions::<Bash>(&mut app),
-        "elvish" => print_completions::<Elvish>(&mut app),
-        "fish" => print_completions::<Fish>(&mut app),
-        "powershell" => print_completions::<PowerShell>(&mut app),
-        "zsh" => print_completions::<Zsh>(&mut app),
-        _ => panic!("Unknown generator"),
+    if let Ok(gen) = Shell::from_str(shell, true) {
+        print_completions(gen, &mut app)
+    } else {
+        bail!("Unknown shell `{}` for completion", shell)
     }
+
+    Ok(())
 }
 
 pub fn build_cli() -> clap::App<'static> {

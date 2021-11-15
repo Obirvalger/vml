@@ -2,24 +2,25 @@
 use std::io::Write;
 
 // Internal
+use crate::utils;
 use crate::Generator;
 use crate::INTERNAL_ERROR_MSG;
 use clap::*;
 
 /// Generate zsh completion file
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Zsh;
 
 impl Generator for Zsh {
-    fn file_name(name: &str) -> String {
+    fn file_name(&self, name: &str) -> String {
         format!("_{}", name)
     }
 
-    fn generate(app: &App, buf: &mut dyn Write) {
+    fn generate(&self, app: &App, buf: &mut dyn Write) {
         w!(
             buf,
             format!(
-                "\
-#compdef {name}
+                "#compdef {name}
 
 autoload -U is-at-least
 
@@ -35,8 +36,7 @@ _{name}() {{
     fi
 
     local context curcontext=\"$curcontext\" state line
-    {initial_args}
-    {subcommands}
+    {initial_args}{subcommands}
 }}
 
 {subcommand_details}
@@ -101,7 +101,7 @@ _{bin_name_underscore}_commands() {{
     ret.push(parent_text);
 
     // Next we start looping through all the children, grandchildren, etc.
-    let mut all_subcommands = Zsh::all_subcommands(p);
+    let mut all_subcommands = utils::all_subcommands(p);
 
     all_subcommands.sort();
     all_subcommands.dedup();
@@ -217,7 +217,7 @@ fn get_subcommands_of(parent: &App) -> String {
         return String::new();
     }
 
-    let subcommand_names = Zsh::subcommands(parent);
+    let subcommand_names = utils::subcommands(parent);
     let mut all_subcommands = vec![];
 
     for &(ref name, ref bin_name) in &subcommand_names {
@@ -249,7 +249,8 @@ fn get_subcommands_of(parent: &App) -> String {
     }
 
     format!(
-        "case $state in
+        "
+    case $state in
     ({name})
         words=($line[{pos}] \"${{words[@]}}\")
         (( CURRENT += 1 ))
@@ -344,14 +345,38 @@ fn get_args_of(parent: &App, p_global: Option<&App>) -> String {
 // Uses either `possible_vals` or `value_hint` to give hints about possible argument values
 fn value_completion(arg: &Arg) -> Option<String> {
     if let Some(values) = &arg.get_possible_values() {
-        Some(format!(
-            "({})",
-            values
-                .iter()
-                .map(|&v| escape_value(v))
-                .collect::<Vec<_>>()
-                .join(" ")
-        ))
+        if values
+            .iter()
+            .any(|value| !value.is_hidden() && value.get_about().is_some())
+        {
+            Some(format!(
+                "(({}))",
+                values
+                    .iter()
+                    .filter_map(|value| {
+                        if value.is_hidden() {
+                            None
+                        } else {
+                            Some(format!(
+                                r#"{name}\:"{about}""#,
+                                name = escape_value(value.get_name()),
+                                about = value.get_about().map(escape_help).unwrap_or_default()
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ))
+        } else {
+            Some(format!(
+                "({})",
+                values
+                    .iter()
+                    .filter_map(ArgValue::get_visible_name)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ))
+        }
     } else {
         // NB! If you change this, please also update the table in `ValueHint` documentation.
         Some(
@@ -407,19 +432,23 @@ fn write_opts_of(p: &App, p_global: Option<&App>) -> String {
         let help = o.get_about().map_or(String::new(), escape_help);
         let conflicts = arg_conflicts(p, o, p_global);
 
-        // @TODO @soundness should probably be either multiple occurrences or multiple values and
-        // not both
-        let multiple = if o.is_set(ArgSettings::MultipleOccurrences)
-            || o.is_set(ArgSettings::MultipleValues)
-        {
+        let multiple = if o.is_set(ArgSettings::MultipleOccurrences) {
             "*"
         } else {
             ""
         };
 
+        let vn = match o.get_value_names() {
+            None => " ".to_string(),
+            Some(val) => val[0].to_string(),
+        };
         let vc = match value_completion(o) {
-            Some(val) => format!(": :{}", val),
-            None => "".to_string(),
+            Some(val) => format!(":{}:{}", vn, val),
+            None => format!(":{}: ", vn),
+        };
+        let vc = match o.get_num_vals() {
+            Some(num_vals) => vc.repeat(num_vals),
+            None => vc,
         };
 
         if let Some(shorts) = o.get_short_and_visible_aliases() {
@@ -500,7 +529,7 @@ fn write_flags_of(p: &App, p_global: Option<&App>) -> String {
 
     let mut ret = vec![];
 
-    for f in Zsh::flags(p) {
+    for f in utils::flags(p) {
         debug!("write_flags_of:iter: f={}", f.get_name());
 
         let help = f.get_about().map_or(String::new(), escape_help);
