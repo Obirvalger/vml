@@ -24,3 +24,6 @@ tera = "1.15.0"
 thiserror = "1.0.30"
 toml = "0.5.8"
 walkdir = "2.3.2"
+
+[patch.crates-io]
+faccess = { git = "https://github.com/Obirvalger/faccess" }
