@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
+use anyhow::{bail, Context, Result};
 use procfs::process;
 use procfs::process::FDTarget;
 use walkdir::WalkDir;
@@ -10,8 +11,8 @@ use crate::config::Config;
 use crate::specified_by::SpecifiedBy;
 use crate::template;
 use crate::vm_config::VMConfig;
+use crate::Error;
 use crate::VM;
-use crate::{Error, Result};
 
 #[derive(Clone, Debug)]
 pub enum WithPid {
@@ -149,8 +150,8 @@ impl<'a> VMsCreator<'a> {
 
         let result_vms: Result<Vec<VM>> = if let Some(with_pid) = &self.with_pid {
             let mut with_pid_vms: HashSet<String> = HashSet::new();
-            for proc in process::all_processes()
-                .map_err(|e| Error::Other("process:".to_string(), e.to_string()))?
+            for proc in
+                process::all_processes().context("failed to read informatin from procfs")?
             {
                 if let Ok(path) = proc.exe() {
                     if path.file_name() == Some(OsStr::new("qemu-system-x86_64")) {
@@ -173,7 +174,7 @@ impl<'a> VMsCreator<'a> {
                 WithPid::Filter => Ok(vms.values().filter(|v| v.has_pid()).cloned().collect()),
                 WithPid::Error => {
                     if let Some(vm) = vms.values().find(|v| !v.has_pid()) {
-                        Err(Error::VMHasNoPid(vm.name.to_string()))
+                        Err(Error::VMHasNoPid(vm.name.to_string()).into())
                     } else {
                         Ok(vms.values().cloned().collect())
                     }
@@ -186,7 +187,7 @@ impl<'a> VMsCreator<'a> {
 
         if let Ok(result_vms) = &result_vms {
             if self.error_on_empty && result_vms.is_empty() {
-                return Err(Error::EmptyVMsList);
+                bail!(Error::EmptyVMsList);
             }
         }
 

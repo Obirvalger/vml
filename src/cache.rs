@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::Result;
+use anyhow::Result;
 
 #[derive(Clone, Debug)]
 pub struct Cache {

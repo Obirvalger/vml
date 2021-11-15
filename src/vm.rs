@@ -6,6 +6,8 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use anyhow::Context as AnyhowContext;
+use anyhow::{bail, Result};
 use rand::Rng;
 use tera::Context;
 
@@ -21,7 +23,7 @@ use crate::specified_by::SpecifiedBy;
 use crate::ssh::Ssh;
 use crate::template;
 use crate::vm_config::VMConfig;
-use crate::{Error, Result};
+use crate::Error;
 
 pub fn exists<S: AsRef<str>>(config: &Config, name: S) -> bool {
     let vm_dir = config.vms_dir.join(name.as_ref());
@@ -41,7 +43,7 @@ pub fn create<S: AsRef<str>>(
     if exists(config, name) {
         match exists_action {
             CreateExistsAction::Ignore => return Ok(()),
-            CreateExistsAction::Fail => return Err(Error::CreateExistingVM(name.to_string())),
+            CreateExistsAction::Fail => bail!(Error::CreateExistingVM(name.to_string())),
             CreateExistsAction::Replace => (),
         }
     }
@@ -66,11 +68,13 @@ pub fn create<S: AsRef<str>>(
                 image_path
             }
             Err(error) => {
-                if matches!(error, Error::ImageDoesNotExists(_)) && config.commands.create.pull {
+                let image_does_not_exist =
+                    matches!(error.downcast_ref::<Error>(), Some(Error::ImageDoesNotExists(_)));
+                if image_does_not_exist && config.commands.create.pull {
                     let image = available_images.get_result(image_name)?;
                     image.pull()?
                 } else {
-                    return Err(error);
+                    bail!(error);
                 }
             }
         }
@@ -172,7 +176,7 @@ impl VM {
         let data = vm_config.data.unwrap_or_else(HashMap::new);
         let disk = directory.join(vm_config.disk.unwrap_or_else(|| PathBuf::from("disk.qcow2")));
         if !disk.is_file() {
-            return Err(Error::disk_does_not_exists(&disk.to_string_lossy(), &name));
+            bail!("disk `{}` for vm `{}` not found", &disk.display(), &name);
         }
         let display = vm_config.display.or_else(|| config.default.display.to_owned());
         let memory = vm_config.memory.unwrap_or_else(|| config.default.memory.to_string());
@@ -320,7 +324,7 @@ impl VM {
         if cloud_init {
             let image = if let Some(image) = &self.cloud_init_image {
                 if !image.is_file() {
-                    return Err(Error::CloudInitImageDoesNotExists(image.to_owned()));
+                    bail!(Error::CloudInitImageDoesNotExists(image.to_owned()));
                 }
 
                 image.to_owned()
@@ -354,10 +358,10 @@ impl VM {
         #[cfg(debug_assertions)]
         eprintln!("{:?}", &kvm);
         let exit_status =
-            kvm.spawn().map_err(|e| Error::executable("kvm", &e.to_string()))?.wait()?;
+            kvm.spawn().context("failed to run executable executable kvm")?.wait()?;
 
         if !exit_status.success() {
-            return Err(Error::StartVmFailed(self.name.to_string()));
+            bail!(Error::StartVmFailed(self.name.to_string()));
         }
 
         Ok(())
@@ -372,7 +376,7 @@ impl VM {
                 Command::new("kill")
                     .args(&[pid.to_string()])
                     .spawn()
-                    .map_err(|e| Error::executable("kill", &e.to_string()))?;
+                    .context("failed to run executable kill")?;
                 #[cfg(debug_assertions)]
                 eprintln!("Kill {}", pid);
             } else {
@@ -381,7 +385,7 @@ impl VM {
 
             self.pid = None;
         } else {
-            return Err(Error::VMHasNoPid(self.name.to_string()));
+            bail!(Error::VMHasNoPid(self.name.to_string()));
         }
 
         Ok(())
@@ -453,8 +457,7 @@ impl VM {
 
         #[cfg(debug_assertions)]
         eprintln!("{:?}", &ssh_cmd);
-        let rc =
-            ssh_cmd.spawn().map_err(|e| Error::executable("ssh", &e.to_string()))?.wait()?.code();
+        let rc = ssh_cmd.spawn().context("failed to run executable ssh")?.wait()?.code();
 
         Ok(rc)
     }
@@ -534,7 +537,7 @@ impl VM {
 
         #[cfg(debug_assertions)]
         eprintln!("{:#?}", &rsync);
-        rsync.spawn().map_err(|e| Error::executable("rsync", &e.to_string()))?.wait()?;
+        rsync.spawn().context("failed to run executable rsync")?.wait()?;
 
         Ok(())
     }
@@ -583,7 +586,7 @@ impl VM {
             .arg("-,echo=0,icanon=0")
             .arg(&format!("unix-connect:{}", &self.monitor.to_string_lossy()))
             .spawn()
-            .map_err(|e| Error::executable("socat", &e.to_string()))?
+            .context("failed to run executable socat")?
             .wait()?;
 
         Ok(())
@@ -593,7 +596,7 @@ impl VM {
         let command = &format!("{}\n", command.as_ref());
         let reply = socket::reply(command.as_bytes(), &self.monitor)?;
         let reply =
-            String::from_utf8(reply).map_err(|e| Error::other("from_utf8", &e.to_string()))?;
+            String::from_utf8(reply).context("bad utf8 symbols in reply from qemu monitor")?;
         let lines: Vec<&str> = reply.lines().collect();
         if lines.len() > 3 {
             lines[2..lines.len() - 1].join("\n");
@@ -607,7 +610,7 @@ impl VM {
 
     pub fn remove(self) -> Result<()> {
         if self.has_pid() {
-            return Err(Error::RemoveRuuningVM(self.name));
+            bail!(Error::RemoveRuuningVM(self.name));
         }
 
         fs::remove_dir_all(self.directory)?;
@@ -646,11 +649,11 @@ impl VM {
         let to = to.as_ref();
 
         if self.has_pid() {
-            return Err(Error::StoreRunningVM(self.name.to_string()));
+            bail!(Error::StoreRunningVM(self.name.to_string()));
         }
 
         if to.exists() && !force {
-            return Err(Error::RewriteExistsPath(to.to_string_lossy().to_string()));
+            bail!(Error::RewriteExistsPath(to.to_string_lossy().to_string()));
         }
 
         fs::copy(&self.disk, to)?;
@@ -726,19 +729,25 @@ impl Hash for VM {
 }
 
 fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u64> {
-    let out =
-        Command::new("qemu-img").args(&["info", "--output=json"]).arg(image.as_ref()).output()?;
+    let mut qemu_img = Command::new("qemu-img");
+    qemu_img.args(&["info", "--output=json"]).arg(image.as_ref());
+    let out = qemu_img.output()?;
 
-    let out =
-        String::from_utf8(out.stdout).map_err(|e| Error::other("from_utf8", &e.to_string()))?;
+    let out = String::from_utf8(out.stdout)
+        .with_context(|| format!("bad utf8 symbols in {:?} command output", &qemu_img))?;
 
-    let parsed = json::parse(&out).map_err(|e| Error::other("json", &e.to_string()))?;
+    let parsed = json::parse(&out)
+        .with_context(|| format!("failed to parse `{:?}` command output as json", &qemu_img))?;
 
     if let Some(size) = parsed["virtual-size"].as_u64() {
         return Ok(size);
     }
 
-    Err(Error::other("parse qemu-img out", "can't read virtual-size as u64"))
+    bail!(
+        "failed to parse `{:?}` out\n\nCaused by:\n\t{}",
+        &qemu_img,
+        "can't read virtual-size as u64"
+    )
 }
 
 fn try_resize<S: AsRef<OsStr>>(image: S, size: u64) -> Result<()> {
@@ -751,7 +760,7 @@ fn try_resize<S: AsRef<OsStr>>(image: S, size: u64) -> Result<()> {
             .arg(image)
             .arg(&size.to_string())
             .spawn()
-            .map_err(|e| Error::executable("qemu-img", &e.to_string()))?
+            .context("failed to run executable qemu-img")?
             .wait()?;
     }
 

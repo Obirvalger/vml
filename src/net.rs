@@ -1,8 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Result};
+use crate::Error;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]

@@ -2,11 +2,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use anyhow::Context as AnyhowContext;
+use anyhow::{bail, Result};
 use tera::Context;
 
 use crate::net;
 use crate::template;
-use crate::{Error, Result};
+use crate::Error;
 
 pub fn generate_data(context: &Context, work_dir: &Path) -> Result<PathBuf> {
     let data = work_dir.join("data.img");
@@ -50,7 +52,7 @@ hostname: {{ hostname }}
 
     if let Some(address) = context.get("address").and_then(|a| a.as_str()) {
         if !net::is_cidr(address) {
-            return Err(Error::BadCidr(address.to_string()));
+            bail!(Error::BadCidr(address.to_string()));
         }
         let network_template: &str = r#"version: 2
 ethernets:
@@ -77,10 +79,7 @@ ethernets:
         cloud_localds.arg("-N").arg(&network_yaml);
     }
 
-    cloud_localds
-        .spawn()
-        .map_err(|e| Error::executable("cloud-localds", &e.to_string()))?
-        .wait()?;
+    cloud_localds.spawn().context("failed to run executable cloud-localds")?.wait()?;
 
     Ok(data)
 }

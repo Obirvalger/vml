@@ -2,12 +2,13 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::Path;
 
+use anyhow::Result;
 use cmd_lib::run_cmd;
 use rust_embed::RustEmbed;
 
 use crate::config::Config;
 use crate::config_dir;
-use crate::{Error, Result};
+use crate::Error;
 
 #[derive(RustEmbed)]
 #[folder = "files/configs"]
@@ -20,7 +21,7 @@ struct AssetGetUrlProgs;
 pub fn get_config<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
     AssetConfigs::get(path.as_ref())
         .map(|f| f.data)
-        .ok_or_else(|| Error::GetWrongEmbeddedFile(path.as_ref().to_string()))
+        .ok_or_else(|| Error::GetWrongEmbeddedFile(path.as_ref().to_string()).into())
 }
 
 fn install_get_url_progs() -> Result<()> {

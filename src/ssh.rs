@@ -2,11 +2,12 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::net::{self, ConfigNet};
 use crate::string_like::StringOrUint;
-use crate::{Error, Result};
+use crate::Error;
 
 pub struct Keys {
     authorized_keys: Vec<String>,
@@ -133,10 +134,10 @@ impl Ssh {
                 let pvt_key = key;
                 let pub_key = public(pvt_key);
                 if !Path::new(&pub_key).exists() {
-                    return Err(Error::SshPublicKeyDoesNotExists(pub_key));
+                    bail!(Error::SshPublicKeyDoesNotExists(pub_key));
                 };
                 if !Path::new(pvt_key).exists() {
-                    return Err(Error::SshPrivateKeyDoesNotExists(pub_key));
+                    bail!(Error::SshPrivateKeyDoesNotExists(pub_key));
                 };
             }
         }
@@ -193,7 +194,7 @@ fn generate_key(work_dir: &Path) -> Result<String> {
         fs::create_dir_all(&work_dir)?;
         let mut ssh_keygen = Command::new("ssh-keygen");
         ssh_keygen.args(&["-q", "-N", "", "-t", "ed25519", "-f"]).arg(&pvt_key);
-        ssh_keygen.spawn().map_err(|e| Error::executable("ssh_keygen", &e.to_string()))?.wait()?;
+        ssh_keygen.spawn().context("failed to run executable ssh_keygen")?.wait()?;
     }
 
     Ok(pvt_key.to_string_lossy().to_string())

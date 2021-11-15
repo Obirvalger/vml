@@ -2,13 +2,13 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result};
 use byte_unit::Byte;
 use serde::Deserialize;
 
 use crate::net::ConfigNet;
 use crate::ssh::ConfigSsh;
 use crate::string_like::StringOrUint;
-use crate::{Error, Result};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -186,12 +186,11 @@ pub fn config_dir() -> PathBuf {
 impl Config {
     pub fn new() -> Result<Config> {
         let config_path = config_dir().join("config.toml");
-        let config_str = &fs::read_to_string(&config_path).map_err(|e| {
-            Error::ParseConfig(format!("unable to read config `{:?}`: {}", &config_path, &e))
-        })?;
+        let config_str = &fs::read_to_string(&config_path)
+            .with_context(|| format!("failed to read config `{}`", &config_path.display()))?;
 
-        let mut config: Config =
-            toml::from_str(config_str).map_err(|e| Error::ParseConfig(e.to_string()))?;
+        let mut config: Config = toml::from_str(config_str)
+            .with_context(|| format!("failed to parse config `{}`", &config_path.display()))?;
         config.images.directory = expand_tilde(&config.images.directory);
         config.vms_dir = expand_tilde(&config.vms_dir);
         if !config.vms_dir.is_dir() {

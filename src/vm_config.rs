@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result};
 use byte_unit::Byte;
 use serde::{Deserialize, Serialize};
 
 use crate::net::ConfigNet;
 use crate::ssh::ConfigSsh;
 use crate::string_like::StringOrUint;
-use crate::{Error, Result};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -32,22 +32,16 @@ pub struct VMConfig {
 impl VMConfig {
     pub fn from_config_str(config_str: &str) -> Result<VMConfig> {
         let config = toml::from_str(config_str)
-            .map_err(|e| Error::parse_vm_config("config from str", &e.to_string()))?;
+            .with_context(|| format!("failed to parse vm config from str:\n{}", config_str))?;
 
         Ok(config)
     }
 
     pub fn new(config_path: &Path) -> Result<VMConfig> {
-        let config_str = &fs::read_to_string(config_path).map_err(|e| {
-            Error::ParseConfig(format!(
-                "unable to read config `{}`: {}",
-                config_path.to_string_lossy(),
-                e
-            ))
-        })?;
-
+        let config_str = &fs::read_to_string(config_path)
+            .with_context(|| format!("failed to read config `{}`", config_path.display()))?;
         let config = toml::from_str(config_str)
-            .map_err(|e| Error::parse_vm_config(&config_path.to_string_lossy(), &e.to_string()))?;
+            .with_context(|| format!("failed to parse vm config `{}`", &config_path.display()))?;
 
         Ok(config)
     }

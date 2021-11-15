@@ -1,13 +1,14 @@
 use std::fs;
 use std::path::Path;
 
-use tera::{Context, Tera};
-
-use crate::{Error, Result};
+use anyhow::Context as AnyhowContext;
+use anyhow::Result;
+use tera::Context;
+use tera::Tera;
 
 pub fn render<S: AsRef<str>>(context: &Context, template: S, place: &str) -> Result<String> {
     Tera::one_off(template.as_ref(), context, false)
-        .map_err(|e| Error::template(place, &e.to_string()))
+        .with_context(|| format!("failed to render template in {}", place))
 }
 
 pub fn renders<S: AsRef<str>>(

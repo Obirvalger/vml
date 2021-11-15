@@ -6,6 +6,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+use anyhow::{bail, Context, Result};
 use byte_unit::Byte;
 use clap::ArgMatches;
 
@@ -17,7 +18,7 @@ use vml::images;
 use vml::net::ConfigNet;
 use vml::template;
 use vml::vm_config::VMConfig;
-use vml::{Error, Result};
+use vml::Error;
 use vml::{VMsCreator, WithPid};
 
 fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<BTreeSet<String>> {
@@ -230,7 +231,7 @@ fn main() -> Result<()> {
         }
         ssh.arg(&host).args(&args);
 
-        ssh.spawn().map_err(|e| Error::executable("ssh", &e.to_string()))?.wait()?;
+        ssh.spawn().context("failed to run executable ssh")?.wait()?;
 
         return Ok(());
     }
@@ -283,7 +284,7 @@ fn main() -> Result<()> {
                         } else if remove_image_matches.is_present("all") {
                             vml::images::list(&[images_dir])?
                         } else {
-                            return Err(Error::EmptyVMsList);
+                            bail!(Error::EmptyVMsList);
                         };
 
                     for image in images {
@@ -398,7 +399,7 @@ fn main() -> Result<()> {
                 if vm.ssh(&user, &ssh_options, &ssh_flags, &cmd)? != Some(0)
                     && ssh_matches.is_present("check")
                 {
-                    return Err(Error::SshFailed(vm.name));
+                    bail!(Error::SshFailed(vm.name));
                 }
             }
         }

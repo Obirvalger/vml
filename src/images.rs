@@ -8,13 +8,14 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use anyhow::{bail, Context, Result};
 use cmd_lib::run_fun;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Images as ConfigImages;
 use crate::config_dir;
 use crate::files;
-use crate::{Error, Result};
+use crate::Error;
 
 #[derive(Clone, Debug)]
 pub struct Image<'a> {
@@ -155,7 +156,9 @@ impl Images<'_> {
     }
 
     pub fn get_result<'a>(&'a self, name: impl AsRef<str>) -> Result<&'a Image> {
-        self.0.get(name.as_ref()).ok_or_else(|| Error::UnknownImage(name.as_ref().to_string()))
+        self.0
+            .get(name.as_ref())
+            .ok_or_else(|| Error::UnknownImage(name.as_ref().to_string()).into())
     }
 }
 
@@ -275,17 +278,18 @@ pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()
         .expect("Bad embedded images.toml")
         .0
         .into_iter();
-    let images_str = &fs::read_to_string(images_file_path())?;
+    let images_file_path = images_file_path();
+    let images_str = &fs::read_to_string(&images_file_path).with_context(|| {
+        format!("failed to read images file `{}`", &images_file_path.display())
+    })?;
     let mut config_images = toml::from_str::<DeserializeImages>(images_str)
-        .map_err(|e| {
-            Error::parse_images_file(&images_file_path().to_string_lossy(), &e.to_string())
-        })?
+        .with_context(|| format!("failed to parse images file `{}`", &images_file_path.display()))?
         .0
         .into_iter();
 
     let images = update_images(&mut embedded_images, &mut config_images);
 
-    let mut images_file = OpenOptions::new().truncate(true).write(true).open(images_file_path())?;
+    let mut images_file = OpenOptions::new().truncate(true).write(true).open(&images_file_path)?;
     let header = files::get_config("images-header")?;
     images_file.write_all(&header)?;
     let images_string = toml::to_string(&images).expect("Bad internal images representation");
@@ -299,9 +303,10 @@ fn images_file_path() -> PathBuf {
 }
 
 fn parse(images_file_path: &Path) -> Result<DeserializeImages> {
-    let images_str = &fs::read_to_string(images_file_path)?;
-    let images = toml::from_str(images_str).map_err(|e| {
-        Error::parse_images_file(&images_file_path.to_string_lossy(), &e.to_string())
+    let images_str = &fs::read_to_string(images_file_path)
+        .with_context(|| format!("failed to read images file `{}`", images_file_path.display()))?;
+    let images = toml::from_str(images_str).with_context(|| {
+        format!("failed to parse images file `{}`", images_file_path.display())
     })?;
 
     Ok(images)
@@ -312,7 +317,7 @@ pub fn path(images_dir: &Path, image_name: &str) -> Result<PathBuf> {
     if image_path.is_file() {
         Ok(image_path)
     } else {
-        Err(Error::ImageDoesNotExists(image_name.to_string()))
+        bail!(Error::ImageDoesNotExists(image_name.to_string()))
     }
 }
 
@@ -324,7 +329,7 @@ pub fn find(images_dirs: &[&PathBuf], image_name: &str) -> Result<PathBuf> {
         }
     }
 
-    Err(Error::ImageDoesNotExists(image_name.to_string()))
+    bail!(Error::ImageDoesNotExists(image_name.to_string()))
 }
 
 pub fn list(images_dirs: &[&PathBuf]) -> Result<Vec<String>> {

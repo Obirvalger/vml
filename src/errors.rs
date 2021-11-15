@@ -1,82 +1,45 @@
-use std::io;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
+use thiserror::Error as ThisError;
+
+#[derive(Debug, ThisError)]
 pub enum Error {
+    #[error("bad cidr `{0}`")]
     BadCidr(String),
+    #[error("create existing vm `{0}`")]
     CreateExistingVM(String),
+    #[error("cloud init image `{0}` does not exist")]
     CloudInitImageDoesNotExists(PathBuf),
+    #[error("disk `{disk_path}` does not exist for vm `{vm_name}`")]
     DiskDoesNotExists { disk_path: String, vm_name: String },
+    #[error("download image `{0}` error")]
     DownloadImage(String),
+    #[error("no vm found for given criteria")]
     EmptyVMsList,
-    Executable { name: String, error: String },
+    #[error("embedded file `{0}` does not exist")]
     GetWrongEmbeddedFile(String),
+    #[error("image `{0}` does not exist")]
     ImageDoesNotExists(String),
-    Other(String, String),
-    ParseConfig(String),
-    ParseImagesFile { images_file_path: String, error: String },
-    ParseVMConfig { config_path: String, error: String },
-    ParseVMConfigField { vm_name: String, field: String },
+    #[error("try to remove running vm `{0}`")]
     RemoveRuuningVM(String),
+    #[error("try to store image to existing file `{0}`")]
     RewriteExistsPath(String),
+    #[error("can't ssh to vm `{0}`")]
     SshFailed(String),
+    #[error("can't find private ssh key for vm `{0}`")]
     SshPrivateKeyDoesNotExists(String),
+    #[error("can't find public ssh key for vm `{0}`")]
     SshPublicKeyDoesNotExists(String),
+    #[error("can't start vm `{0}`")]
     StartVmFailed(String),
+    #[error("trying to store running vm")]
     StoreRunningVM(String),
+    #[error("unset tap device for tap network")]
     TapNetworkTapUnset,
-    Template { place: String, error: String },
+    #[error("unknown image `{0}`")]
     UnknownImage(String),
+    #[error("vm `{0}` is not runnig or its pid could not be found")]
     VMHasNoPid(String),
+    #[error("no ssh options specified for vm `{0}`")]
     VMHasNoSsh(String),
 }
-
-impl Error {
-    pub fn disk_does_not_exists(disk_path: &str, vm_name: &str) -> Error {
-        let vm_name = vm_name.to_string();
-        let disk_path = disk_path.to_string();
-        Error::DiskDoesNotExists { disk_path, vm_name }
-    }
-
-    pub fn executable(name: &str, error: &str) -> Error {
-        let name = name.to_string();
-        let error = error.to_string();
-        Error::Executable { name, error }
-    }
-
-    pub fn parse_images_file(images_file_path: &str, error: &str) -> Error {
-        let images_file_path = images_file_path.to_string();
-        let error = error.to_string();
-        Error::ParseImagesFile { images_file_path, error }
-    }
-
-    pub fn parse_vm_config_field(vm_name: &str, field: &str) -> Error {
-        let vm_name = vm_name.to_string();
-        let field = field.to_string();
-        Error::ParseVMConfigField { vm_name, field }
-    }
-
-    pub fn parse_vm_config(config_path: &str, error: &str) -> Error {
-        let config_path = config_path.to_string();
-        let error = error.to_string();
-        Error::ParseVMConfig { config_path, error }
-    }
-
-    pub fn template(place: &str, error: &str) -> Error {
-        let place = place.to_string();
-        let error = error.to_string();
-        Error::Template { place, error }
-    }
-
-    pub fn other(place: &str, error: &str) -> Error {
-        Error::Other(place.to_string(), error.to_string())
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(error: io::Error) -> Self {
-        Error::Other("io".to_string(), error.to_string())
-    }
-}
-
-pub type Result<T> = std::result::Result<T, Error>;

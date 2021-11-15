@@ -2,7 +2,7 @@ use std::io::prelude::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use crate::{Error, Result};
+use anyhow::{Context, Result};
 
 pub fn reply(message: &[u8], socket_path: &Path) -> Result<Vec<u8>> {
     let socat = Command::new("socat")
@@ -11,7 +11,7 @@ pub fn reply(message: &[u8], socket_path: &Path) -> Result<Vec<u8>> {
         .stdout(Stdio::piped())
         .arg(socket_path)
         .spawn()
-        .map_err(|e| Error::executable("socat", &e.to_string()))?;
+        .context("failed to run executable socat")?;
 
     socat.stdin.unwrap().write_all(message)?;
     let mut reply = Vec::new();
