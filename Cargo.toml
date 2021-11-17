@@ -23,6 +23,7 @@ tempfile = "3.2.0"
 tera = "1.15.0"
 thiserror = "1.0.30"
 toml = "0.5.8"
+urlencoding = "2.1.0"
 walkdir = "2.3.2"
 
 [patch.crates-io]

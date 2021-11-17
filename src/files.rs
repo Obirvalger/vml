@@ -63,6 +63,19 @@ pub fn install_main_config() -> Result<()> {
     Ok(())
 }
 
+fn install_openssh_config(config: &Config) -> Result<()> {
+    let main_config = &config.openssh_config.main_config;
+    if let Some(dir) = main_config.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(
+        main_config,
+        format!("Include {}/*", &config.openssh_config.vm_configs_dir.display()),
+    )?;
+
+    Ok(())
+}
+
 pub fn install_all(config: &Config) -> Result<()> {
     if !config.vms_dir.exists() {
         fs::create_dir_all(&config.vms_dir)?;
@@ -71,6 +84,8 @@ pub fn install_all(config: &Config) -> Result<()> {
         fs::create_dir_all(&config.images.directory)?;
     }
     install_config("images.toml")?;
+
+    install_openssh_config(config)?;
 
     install_get_url_progs()?;
 

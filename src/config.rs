@@ -161,6 +161,33 @@ pub struct Images {
     pub update_after_days: Option<u64>,
 }
 
+fn default_openssh_config_main_config() -> PathBuf {
+    PathBuf::from("~/.local/share/vml/openssh/main-config")
+}
+
+fn default_openssh_config_vm_configs_dir() -> PathBuf {
+    PathBuf::from("~/.local/share/vml/openssh/vm-configs")
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct OpensshConfig {
+    #[serde(default = "default_openssh_config_main_config")]
+    pub main_config: PathBuf,
+    #[serde(default = "default_openssh_config_vm_configs_dir")]
+    pub vm_configs_dir: PathBuf,
+}
+
+impl Default for OpensshConfig {
+    fn default() -> OpensshConfig {
+        OpensshConfig {
+            main_config: default_openssh_config_main_config(),
+            vm_configs_dir: default_openssh_config_vm_configs_dir(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
@@ -168,6 +195,8 @@ pub struct Config {
     pub vms_dir: PathBuf,
     pub config_hierarchy: bool,
     pub commands: Commands,
+    #[serde(default)]
+    pub openssh_config: OpensshConfig,
     pub default: VMsDefault,
     pub images: Images,
     pub nameservers: Option<Vec<String>>,
@@ -198,6 +227,8 @@ impl Config {
         } else {
             config.vms_dir = fs::canonicalize(&config.vms_dir)?;
         }
+        config.openssh_config.main_config = expand_tilde(&config.openssh_config.main_config);
+        config.openssh_config.vm_configs_dir = expand_tilde(&config.openssh_config.vm_configs_dir);
         config.default.cloud_init_image =
             config.default.cloud_init_image.map(|i| expand_tilde(&i));
 

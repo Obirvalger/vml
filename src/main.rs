@@ -16,6 +16,7 @@ use vml::config::CreateExistsAction;
 use vml::files;
 use vml::images;
 use vml::net::ConfigNet;
+use vml::openssh_config;
 use vml::template;
 use vml::vm_config::VMConfig;
 use vml::Error;
@@ -129,6 +130,7 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
 
     for vm in &vms {
         vm.start(cloud_init, &drives)?;
+        openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
     }
 
     if wait_ssh {
@@ -354,6 +356,7 @@ fn main() -> Result<()> {
 
             for mut vm in vmc.create()? {
                 vm.stop(force)?;
+                openssh_config::rm(&config.openssh_config.vm_configs_dir, &vm.name)?;
             }
         }
 
