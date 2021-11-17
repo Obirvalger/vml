@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashSet};
-use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
@@ -154,13 +153,15 @@ impl<'a> VMsCreator<'a> {
                 process::all_processes().context("failed to read informatin from procfs")?
             {
                 if let Ok(path) = proc.exe() {
-                    if path.file_name() == Some(OsStr::new("qemu-system-x86_64")) {
-                        if let Ok(fds) = proc.fd() {
-                            for fd in fds {
-                                if let FDTarget::Path(f) = fd.target {
-                                    if let Some(vm) = vms.get_mut(&f) {
-                                        vm.set_pid(proc.pid);
-                                        with_pid_vms.insert(vm.name.to_string());
+                    if let Some(file_name) = path.file_name() {
+                        if file_name.to_string_lossy().starts_with("qemu-system-x86_64") {
+                            if let Ok(fds) = proc.fd() {
+                                for fd in fds {
+                                    if let FDTarget::Path(f) = fd.target {
+                                        if let Some(vm) = vms.get_mut(&f) {
+                                            vm.set_pid(proc.pid);
+                                            with_pid_vms.insert(vm.name.to_string());
+                                        }
                                     }
                                 }
                             }
