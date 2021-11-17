@@ -83,3 +83,10 @@ other-directories-ro = []
 update-after-days = 60
 # Uncomment to enable automatically update images when creating new vm
 # update-on-create = true
+
+
+[openssh-config]
+
+main-config = "~/.local/share/vml/openssh/main-config"
+
+vm-configs-dir = "~/.local/share/vml/openssh/vm-configs"
