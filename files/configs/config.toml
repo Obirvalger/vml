@@ -87,6 +87,12 @@ update-after-days = 60
 
 [openssh-config]
 
+# This config could be used to run programs respecting ssh config (such as ssh,
+# rsync, scp) directly with vm. For example `ssh fst` instead of `vml ssh fst`.
+# To do it include main-config in yours ssh config. Write at the beginnig of
+# the `~/.ssh/config` file following string:
+# Include ~/.local/share/vml/openssh/main-config
 main-config = "~/.local/share/vml/openssh/main-config"
 
+# Place to store individual vms ssh configs
 vm-configs-dir = "~/.local/share/vml/openssh/vm-configs"
