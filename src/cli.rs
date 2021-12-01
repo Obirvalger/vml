@@ -150,6 +150,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple_values(true),
                 )
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
+                .arg(Arg::new("nproc").long("nproc").takes_value(true))
                 .arg(Arg::new("memory").long("memory").short('m').takes_value(true))
                 .arg(
                     Arg::new("minimum-disk-size")
@@ -261,6 +262,7 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple_values(true),
                 )
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
+                .arg(Arg::new("nproc").long("nproc").takes_value(true))
                 .arg(Arg::new("memory").long("memory").short('m').takes_value(true))
                 .arg(
                     Arg::new("minimum-disk-size")

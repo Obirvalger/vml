@@ -18,6 +18,7 @@ mod vms_creator;
 
 pub use config::config_dir;
 pub use errors::Error;
+pub use string_like::StringOrUint;
 pub use vm::create as create_vm;
 pub use vm::VM;
 pub use vms_creator::{VMsCreator, WithPid};

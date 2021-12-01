@@ -20,6 +20,7 @@ use vml::openssh_config;
 use vml::template;
 use vml::vm_config::VMConfig;
 use vml::Error;
+use vml::StringOrUint;
 use vml::{VMsCreator, WithPid};
 
 fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<BTreeSet<String>> {
@@ -61,6 +62,7 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         config.commands.create.exists
     };
 
+    vm_config.nproc = create_matches.value_of("nproc").map(|m| StringOrUint::S(m.to_string()));
     vm_config.memory = create_matches.value_of("memory").map(|m| m.to_string());
     vm_config.minimum_disk_size = create_matches
         .value_of("minimum-disk-size")
