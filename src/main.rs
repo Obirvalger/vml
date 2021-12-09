@@ -505,6 +505,14 @@ fn main() -> Result<()> {
             }
         }
 
+        Some(("scp", _scp_matches)) => {
+            let line = format!("Include {}", &config.openssh_config.main_config.display());
+            println!(
+                "To use scp add the following line at the beginning of your ssh config:\n{}",
+                &line
+            );
+        }
+
         Some(("show", show_matches)) => {
             vmc.all();
 

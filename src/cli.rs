@@ -591,6 +591,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("running").long("running").short('r'))
                 .group(ArgGroup::new("format").args(&["format-debug", "format-json"])),
         )
+        .subcommand(App::new("scp").about("show how to use scp with vml vms"))
         .subcommand(
             App::new("list")
                 .about("list virtual machines")
