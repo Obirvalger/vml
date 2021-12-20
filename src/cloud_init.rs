@@ -40,7 +40,6 @@ users:
 {% endfor -%}
 {% endif -%}
 preserve_hostname: false
-manage_etc_hosts: true
 hostname: {{ hostname }}
 ";
     let user_data = template::render(context, user_data_template, "cloud-init user-data")?;
