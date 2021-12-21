@@ -22,11 +22,11 @@ pub struct VMConfig {
     pub name: Option<String>,
     pub memory: Option<String>,
     pub minimum_disk_size: Option<Byte>,
-    pub net: Option<ConfigNet>,
     pub nic_model: Option<String>,
     pub nproc: Option<StringOrUint>,
-    pub ssh: Option<ConfigSsh>,
     pub tags: Option<HashSet<String>>,
+    pub ssh: Option<ConfigSsh>,
+    pub net: Option<ConfigNet>,
 }
 
 impl VMConfig {
