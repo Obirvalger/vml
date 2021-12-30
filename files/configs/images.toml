@@ -34,6 +34,11 @@ url = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64
 description = "latest LTS Ubuntu release (20.04)"
 change = ["update-all", "delete"]
 
+[ubuntu-jammy]
+url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+description = "Ubuntu 22.04 Jammy Jellyfish"
+change = ["update-all", "delete"]
+
 [ubuntu-impish]
 url = "https://cloud-images.ubuntu.com/impish/current/impish-server-cloudimg-amd64.img"
 description = "Ubuntu 21.10 Impish Indri"
