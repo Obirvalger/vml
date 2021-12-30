@@ -3,17 +3,16 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g., crates.io) dependencies
+# to registry (e.g., crates.io) dependencies.
 #
-# If you believe there's an error in this file please file an
-# issue against the rust-lang/cargo repository. If you're
-# editing this file be aware that the upstream Cargo.toml
-# will likely look very different (and much more reasonable)
+# If you are reading this file be aware that the original Cargo.toml
+# will likely look very different (and much more reasonable).
+# See Cargo.toml.orig for the original contents.
 
 [package]
 edition = "2018"
 name = "rust-embed-utils"
-version = "7.0.0"
+version = "7.1.0"
 authors = ["pyros2097 <pyros2097@gmail.com>"]
 description = "Utilities for rust-embed"
 documentation = "https://docs.rs/rust-embed"
@@ -22,8 +21,8 @@ keywords = ["http", "rocket", "static", "web", "server"]
 categories = ["web-programming::http-server"]
 license = "MIT"
 repository = "https://github.com/pyros2097/rust-embed"
-[dependencies.glob]
-version = "0.3.0"
+[dependencies.globset]
+version = "0.4.8"
 optional = true
 
 [dependencies.sha2]
@@ -34,4 +33,4 @@ version = "2.3.1"
 
 [features]
 debug-embed = []
-include-exclude = ["glob"]
+include-exclude = ["globset"]

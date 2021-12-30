@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "procfs"
-version = "0.11.0"
+version = "0.12.0"
 authors = ["Andrew Chin <achin@eminence32.net>"]
 description = "Interface to the linux procfs pseudo-filesystem"
 documentation = "https://docs.rs/procfs/"
@@ -40,6 +40,7 @@ optional = true
 
 [dependencies.flate2]
 version = "1"
+optional = true
 
 [dependencies.hex]
 version = "0.4"
@@ -53,4 +54,4 @@ version = "0.2"
 version = "0.4.2"
 
 [features]
-default = ["chrono"]
+default = ["chrono", "flate2"]

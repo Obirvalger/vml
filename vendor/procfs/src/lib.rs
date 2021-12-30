@@ -2,6 +2,9 @@
 // The suggested fix with `strip_prefix` removes support for Rust 1.33 and 1.38
 #![allow(clippy::unknown_clippy_lints)]
 #![allow(clippy::manual_strip)]
+#![allow(clippy::from_str_radix_10)]
+// `#[non_exhaustive]` require Rust 1.40+ but procfs minimal Rust version is 1.34
+#![allow(clippy::manual_non_exhaustive)]
 // Don't throw rustc lint warnings for the deprecated name `intra_doc_link_resolution_failure`.
 // The suggested rename to `broken_intra_doc_links` removes support for Rust 1.33 and 1.38.
 #![allow(renamed_and_removed_lints)]
@@ -41,6 +44,7 @@
 //! The following cargo features are available:
 //!
 //! * `chrono` -- Default.  Optional.  This feature enables a few methods that return values as `DateTime` objects.
+//! * `flate2` -- Default.  Optional.  This feature enables parsing gzip compressed `/proc/config.gz` file via the `procfs::kernel_config` method.
 //! * `backtrace` -- Optional.  This feature lets you get a stack trace whenever an `InternalError` is raised.
 //!
 //! # Examples
@@ -134,7 +138,6 @@ impl<T, E> IntoResult<T, E> for Result<T, E> {
     }
 }
 
-#[macro_use]
 #[allow(unused_macros)]
 macro_rules! proc_panic {
     ($e:expr) => {
@@ -171,7 +174,6 @@ macro_rules! expect {
     };
 }
 
-#[macro_use]
 macro_rules! from_str {
     ($t:tt, $e:expr) => {{
         let e = $e;
@@ -266,6 +268,9 @@ pub mod process;
 mod meminfo;
 pub use crate::meminfo::*;
 
+mod sysvipc_shm;
+pub use crate::sysvipc_shm::*;
+
 pub mod net;
 
 mod cpuinfo;
@@ -275,6 +280,8 @@ mod cgroups;
 pub use crate::cgroups::*;
 
 pub mod sys;
+pub use crate::sys::kernel::BuildInfo as KernelBuildInfo;
+pub use crate::sys::kernel::Type as KernelType;
 pub use crate::sys::kernel::Version as KernelVersion;
 
 mod pressure;
@@ -480,13 +487,9 @@ impl From<std::io::Error> for ProcError {
     fn from(io: std::io::Error) -> Self {
         use std::io::ErrorKind;
         let kind = io.kind();
-        let path: Option<PathBuf> = io.get_ref().and_then(|inner| {
-            if let Some(ref inner) = inner.downcast_ref::<IoErrorWrapper>() {
-                Some(inner.path.clone())
-            } else {
-                None
-            }
-        });
+        let path: Option<PathBuf> = io
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<IoErrorWrapper>().map(|inner| inner.path.clone()));
         match kind {
             ErrorKind::PermissionDenied => ProcError::PermissionDenied(path),
             ErrorKind::NotFound => ProcError::NotFound(path),
@@ -594,7 +597,10 @@ pub fn ticks_per_second() -> std::io::Result<i64> {
     if cfg!(unix) {
         match unsafe { sysconf(_SC_CLK_TCK) } {
             -1 => Err(std::io::Error::last_os_error()),
-            x => Ok(x.into()),
+            #[cfg(target_pointer_width = "64")]
+            x => Ok(x),
+            #[cfg(target_pointer_width = "32")]
+            x => Ok(x.into())
         }
     } else {
         panic!("Not supported on non-unix platforms")
@@ -650,8 +656,10 @@ pub fn page_size() -> std::io::Result<i64> {
     if cfg!(unix) {
         match unsafe { sysconf(_SC_PAGESIZE) } {
             -1 => Err(std::io::Error::last_os_error()),
-            x => Ok(x.into()),
-        }
+            #[cfg(target_pointer_width = "64")]
+            x => Ok(x),
+            #[cfg(target_pointer_width = "32")]
+            x => Ok(x.into())        }
     } else {
         panic!("Not supported on non-unix platforms")
     }
@@ -668,13 +676,24 @@ pub enum ConfigSetting {
 ///
 /// If CONFIG_KCONFIG_PROC is available, the config is read from `/proc/config.gz`.
 /// Else look in `/boot/config-$(uname -r)` or `/boot/config` (in that order).
+///
+/// # Notes
+/// Reading the compress `/proc/config.gz` is only supported if the `flate2` feature is enabled
+/// (which it is by default).
+#[cfg_attr(feature = "flate2", doc = "The flate2 feature is currently enabled")]
+#[cfg_attr(not(feature = "flate2"), doc = "The flate2 feature is NOT currently enabled")]
 pub fn kernel_config() -> ProcResult<HashMap<String, ConfigSetting>> {
-    use flate2::read::GzDecoder;
-
-    let reader: Box<dyn BufRead> = if Path::new(PROC_CONFIG_GZ).exists() {
-        let file = FileWrapper::open(PROC_CONFIG_GZ)?;
-        let decoder = GzDecoder::new(file);
-        Box::new(BufReader::new(decoder))
+    let reader: Box<dyn BufRead> = if Path::new(PROC_CONFIG_GZ).exists() && cfg!(feature = "flate2") {
+        #[cfg(feature = "flate2")]
+        {
+            let file = FileWrapper::open(PROC_CONFIG_GZ)?;
+            let decoder = flate2::read::GzDecoder::new(file);
+            Box::new(BufReader::new(decoder))
+        }
+        #[cfg(not(feature = "flate2"))]
+        {
+            unreachable!("flate2 feature not enabled")
+        }
     } else {
         let mut kernel: libc::utsname = unsafe { mem::zeroed() };
 
@@ -868,7 +887,7 @@ impl CpuTime {
 
     /// Time spent waiting for I/O to complete
     pub fn iowait_duration(&self) -> Option<Duration> {
-        self.iowait_ms().map(|io| Duration::from_millis(io))
+        self.iowait_ms().map(Duration::from_millis)
     }
 
     /// Milliseconds spent servicing interrupts
@@ -879,7 +898,7 @@ impl CpuTime {
 
     /// Time spent servicing interrupts
     pub fn irq_duration(&self) -> Option<Duration> {
-        self.irq_ms().map(|ms| Duration::from_millis(ms))
+        self.irq_ms().map(Duration::from_millis)
     }
 
     /// Milliseconds spent servicing softirqs
@@ -890,7 +909,7 @@ impl CpuTime {
 
     /// Time spent servicing softirqs
     pub fn softirq_duration(&self) -> Option<Duration> {
-        self.softirq_ms().map(|ms| Duration::from_millis(ms))
+        self.softirq_ms().map(Duration::from_millis)
     }
 
     /// Milliseconds of stolen time
@@ -901,7 +920,7 @@ impl CpuTime {
 
     /// Amount of stolen time
     pub fn steal_duration(&self) -> Option<Duration> {
-        self.steal_ms().map(|ms| Duration::from_millis(ms))
+        self.steal_ms().map(Duration::from_millis)
     }
 
     /// Milliseconds spent running a virtual CPU for guest operating systems under control of the linux kernel
@@ -912,7 +931,7 @@ impl CpuTime {
 
     /// Time spent running a virtual CPU for guest operating systems under control of the linux kernel
     pub fn guest_duration(&self) -> Option<Duration> {
-        self.guest_ms().map(|ms| Duration::from_millis(ms))
+        self.guest_ms().map(Duration::from_millis)
     }
 
     /// Milliseconds spent running a niced guest
@@ -923,7 +942,7 @@ impl CpuTime {
 
     /// Time spent running a niced guest
     pub fn guest_nice_duration(&self) -> Option<Duration> {
-        self.guest_nice_ms().map(|ms| Duration::from_millis(ms))
+        self.guest_nice_ms().map(Duration::from_millis)
     }
 }
 

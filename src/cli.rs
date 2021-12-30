@@ -27,25 +27,25 @@ pub fn build_cli() -> clap::App<'static> {
         .setting(AppSettings::NoAutoVersion)
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .global_setting(AppSettings::InferSubcommands)
-        .arg(Arg::new("all-vms").long("all-vms").about("Specify all vms"))
+        .arg(Arg::new("all-vms").long("all-vms").help("Specify all vms"))
         .arg(
             Arg::new("host")
                 .long("host")
                 .short('H')
                 .takes_value(true)
-                .about("Run vml command on host"),
+                .help("Run vml command on host"),
         )
         .arg(
             Arg::new("vm-config")
                 .long("vm-config")
-                .about("Path to vm config replacement (use tera templates)")
+                .help("Path to vm config replacement (use tera templates)")
                 .value_hint(ValueHint::FilePath)
                 .takes_value(true),
         )
         .arg(
             Arg::new("minimal-vm-config")
                 .long("minimal-vm-config")
-                .about("Replace vm config with minimal one"),
+                .help("Replace vm config with minimal one"),
         )
         .group(ArgGroup::new("vm-config-group").args(&["vm-config", "minimal-vm-config"]))
         .subcommand(
@@ -75,20 +75,20 @@ pub fn build_cli() -> clap::App<'static> {
                             Arg::new("available")
                                 .long("available")
                                 .short('a')
-                                .about("pull all available images"),
+                                .help("pull all available images"),
                         )
                         .arg(Arg::new("IMAGES").takes_value(true).multiple_values(true))
                         .arg(
                             Arg::new("exists")
                                 .long("exists")
                                 .short('e')
-                                .about("pull all existing in images directory images"),
+                                .help("pull all existing in images directory images"),
                         )
                         .arg(
                             Arg::new("outdate")
                                 .long("outdate")
                                 .short('o')
-                                .about("pull all outdate images"),
+                                .help("pull all outdate images"),
                         )
                         .group(
                             ArgGroup::new("specified_by")
@@ -102,14 +102,14 @@ pub fn build_cli() -> clap::App<'static> {
                         .about("store vm disk as image")
                         .arg(
                             Arg::new("image")
-                                .about("stored image name (allow templates) [hyphenized vm name]")
+                                .help("stored image name (allow templates) [hyphenized vm name]")
                                 .long("image")
                                 .short('i')
                                 .takes_value(true),
                         )
                         .arg(
                             Arg::new("force")
-                                .about("rewrite existing image")
+                                .help("rewrite existing image")
                                 .long("force")
                                 .short('f'),
                         )
@@ -357,28 +357,28 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
-                .arg(Arg::new("A").short('A').about("pass -A to ssh command"))
-                .arg(Arg::new("N").short('N').about("pass -N to ssh command"))
-                .arg(Arg::new("Y").short('Y').about("pass -Y to ssh command"))
-                .arg(Arg::new("f").short('f').about("pass -f to ssh command"))
+                .arg(Arg::new("A").short('A').help("pass -A to ssh command"))
+                .arg(Arg::new("N").short('N').help("pass -N to ssh command"))
+                .arg(Arg::new("Y").short('Y').help("pass -Y to ssh command"))
+                .arg(Arg::new("f").short('f').help("pass -f to ssh command"))
                 .arg(
                     Arg::new("L")
                         .short('L')
                         .takes_value(true)
                         .value_name("address")
-                        .about("same as -L ssh option"),
+                        .help("same as -L ssh option"),
                 )
                 .arg(
                     Arg::new("R")
                         .short('R')
                         .takes_value(true)
                         .value_name("address")
-                        .about("same as -R ssh option"),
+                        .help("same as -R ssh option"),
                 )
                 .arg(
                     Arg::new("check")
                         .long("check")
-                        .about("fail on first command with non zero return code"),
+                        .help("fail on first command with non zero return code"),
                 )
                 .arg(
                     Arg::new("cmd")
@@ -433,15 +433,15 @@ pub fn build_cli() -> clap::App<'static> {
                     Arg::new("archive")
                         .long("archive")
                         .short('a')
-                        .about("pass --archive to rsync command"),
+                        .help("pass --archive to rsync command"),
                 )
                 .arg(
                     Arg::new("verbose")
                         .long("verbose")
                         .short('v')
-                        .about("pass --verbose to rsync command"),
+                        .help("pass --verbose to rsync command"),
                 )
-                .arg(Arg::new("P").short('P').about("pass -P to rsync command"))
+                .arg(Arg::new("P").short('P').help("pass -P to rsync command"))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -511,15 +511,15 @@ pub fn build_cli() -> clap::App<'static> {
                     Arg::new("archive")
                         .long("archive")
                         .short('a')
-                        .about("pass --archive to rsync command"),
+                        .help("pass --archive to rsync command"),
                 )
                 .arg(
                     Arg::new("verbose")
                         .long("verbose")
                         .short('v')
-                        .about("pass --verbose to rsync command"),
+                        .help("pass --verbose to rsync command"),
                 )
-                .arg(Arg::new("P").short('P').about("pass -P to rsync command"))
+                .arg(Arg::new("P").short('P').help("pass -P to rsync command"))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -683,7 +683,7 @@ pub fn build_cli() -> clap::App<'static> {
                 ),
         )
         .subcommand(App::new("completion").arg(
-            Arg::new("SHELL").about("generate completions").required(true).possible_values(&[
+            Arg::new("SHELL").help("generate completions").required(true).possible_values(&[
                 "bash",
                 "elvish",
                 "fish",

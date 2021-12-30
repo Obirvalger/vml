@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "reqwest"
-version = "0.11.6"
+version = "0.11.8"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 autotests = true
 description = "higher level HTTP client library"
@@ -113,11 +113,11 @@ version = "2.2"
 
 [features]
 __internal_proxy_sys_no_cache = []
-__rustls = ["hyper-rustls", "tokio-rustls", "rustls", "__tls"]
+__rustls = ["hyper-rustls", "tokio-rustls", "rustls", "__tls", "rustls-pemfile"]
 __tls = []
 blocking = ["futures-util/io", "tokio/rt-multi-thread", "tokio/sync"]
 brotli = ["async-compression", "async-compression/brotli", "tokio-util"]
-cookies = ["cookie_crate", "cookie_store", "time"]
+cookies = ["cookie_crate", "cookie_store", "proc-macro-hack"]
 default = ["default-tls"]
 default-tls = ["hyper-tls", "native-tls-crate", "__tls", "tokio-native-tls"]
 deflate = ["async-compression", "async-compression/zlib", "tokio-util"]
@@ -132,7 +132,7 @@ rustls-tls-manual-roots = ["__rustls"]
 rustls-tls-native-roots = ["rustls-native-certs", "__rustls"]
 rustls-tls-webpki-roots = ["webpki-roots", "__rustls"]
 socks = ["tokio-socks"]
-stream = []
+stream = ["tokio/fs", "tokio-util"]
 trust-dns = ["trust-dns-resolver"]
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.async-compression]
 version = "0.3.7"
@@ -172,7 +172,7 @@ features = ["tcp", "http1", "http2", "client", "runtime"]
 default-features = false
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.hyper-rustls]
-version = "0.22.1"
+version = "0.23"
 optional = true
 default-features = false
 
@@ -203,17 +203,21 @@ version = "2.1"
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.pin-project-lite]
 version = "0.2.0"
 
+[target."cfg(not(target_arch = \"wasm32\"))".dependencies.proc-macro-hack]
+version = "0.5.19"
+optional = true
+
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.rustls]
-version = "0.19"
+version = "0.20"
 features = ["dangerous_configuration"]
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.rustls-native-certs]
-version = "0.5"
+version = "0.6"
 optional = true
 
-[target."cfg(not(target_arch = \"wasm32\"))".dependencies.time]
-version = "0.2.11"
+[target."cfg(not(target_arch = \"wasm32\"))".dependencies.rustls-pemfile]
+version = "0.2"
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.tokio]
@@ -226,7 +230,7 @@ version = "0.3.0"
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.tokio-rustls]
-version = "0.22"
+version = "0.23"
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.tokio-socks]
@@ -244,7 +248,7 @@ version = "0.20"
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.webpki-roots]
-version = "0.21"
+version = "0.22"
 optional = true
 [target."cfg(not(target_arch = \"wasm32\"))".dev-dependencies.brotli_crate]
 version = "3.3.0"
@@ -286,7 +290,7 @@ version = "0.4.18"
 
 [target."cfg(target_arch = \"wasm32\")".dependencies.web-sys]
 version = "0.3.25"
-features = ["Headers", "Request", "RequestInit", "RequestMode", "Response", "Window", "FormData", "Blob", "BlobPropertyBag", "ServiceWorkerGlobalScope", "RequestCredentials"]
+features = ["Headers", "Request", "RequestInit", "RequestMode", "Response", "Window", "FormData", "Blob", "BlobPropertyBag", "ServiceWorkerGlobalScope", "RequestCredentials", "File"]
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen]
 version = "0.2.68"
 features = ["serde-serialize"]

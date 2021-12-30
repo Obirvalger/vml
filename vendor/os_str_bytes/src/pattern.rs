@@ -5,16 +5,6 @@ pub trait Encoded {
 }
 
 #[derive(Clone)]
-pub struct EncodedByte([u8; 1]);
-
-impl Encoded for EncodedByte {
-    #[inline]
-    fn __get(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-#[derive(Clone)]
 pub struct EncodedChar {
     buffer: [u8; 4],
     length: usize,
@@ -83,17 +73,5 @@ impl<'a> Pattern for &'a String {
     #[doc(hidden)]
     fn __encode(self) -> Self::__Encoded {
         (**self).__encode()
-    }
-}
-
-impl Pattern for u8 {
-    #[doc(hidden)]
-    type __Encoded = EncodedByte;
-
-    #[doc(hidden)]
-    fn __encode(self) -> Self::__Encoded {
-        assert!(self.is_ascii(), "byte pattern is not ASCII");
-
-        EncodedByte([self])
     }
 }

@@ -210,7 +210,7 @@
 //! will require an explicit `.map_err(Error::msg)` when working with a
 //! non-Anyhow error type inside a function that returns Anyhow's error type.
 
-#![doc(html_root_url = "https://docs.rs/anyhow/1.0.45")]
+#![doc(html_root_url = "https://docs.rs/anyhow/1.0.52")]
 #![cfg_attr(backtrace, feature(backtrace))]
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -225,27 +225,20 @@
     clippy::needless_doctest_main,
     clippy::new_ret_no_self,
     clippy::redundant_else,
+    clippy::return_self_not_must_use,
     clippy::unused_self,
     clippy::used_underscore_binding,
     clippy::wildcard_imports,
     clippy::wrong_self_convention
 )]
 
-mod alloc {
-    #[cfg(not(feature = "std"))]
-    pub extern crate alloc;
-
-    #[cfg(not(feature = "std"))]
-    pub use alloc::boxed::Box;
-
-    #[cfg(feature = "std")]
-    pub use std::boxed::Box;
-}
+extern crate alloc;
 
 #[macro_use]
 mod backtrace;
 mod chain;
 mod context;
+mod ensure;
 mod error;
 mod fmt;
 mod kind;
@@ -610,10 +603,40 @@ pub trait Context<T, E>: context::private::Sealed {
         F: FnOnce() -> C;
 }
 
+/// Equivalent to Ok::<_, anyhow::Error>(value).
+///
+/// This simplifies creation of an anyhow::Result in places where type inference
+/// cannot deduce the `E` type of the result &mdash; without needing to write
+/// `Ok::<_, anyhow::Error>(value)`.
+///
+/// One might think that `anyhow::Result::Ok(value)` would work in such cases
+/// but it does not.
+///
+/// ```console
+/// error[E0282]: type annotations needed for `std::result::Result<i32, E>`
+///   --> src/main.rs:11:13
+///    |
+/// 11 |     let _ = anyhow::Result::Ok(1);
+///    |         -   ^^^^^^^^^^^^^^^^^^ cannot infer type for type parameter `E` declared on the enum `Result`
+///    |         |
+///    |         consider giving this pattern the explicit type `std::result::Result<i32, E>`, where the type parameter `E` is specified
+/// ```
+#[allow(non_snake_case)]
+pub fn Ok<T>(t: T) -> Result<T> {
+    Result::Ok(t)
+}
+
 // Not public API. Referenced by macro-generated code.
 #[doc(hidden)]
 pub mod private {
+    use crate::Error;
+    use alloc::fmt;
+    use core::fmt::Arguments;
+
+    pub use crate::ensure::{BothDebug, NotBothDebug};
+    pub use alloc::format;
     pub use core::result::Result::Err;
+    pub use core::{concat, format_args, stringify};
 
     #[doc(hidden)]
     pub mod kind {
@@ -623,42 +646,21 @@ pub mod private {
         pub use crate::kind::BoxedKind;
     }
 
-    #[cfg(anyhow_no_macro_reexport)]
-    pub use crate::{
-        __anyhow_concat as concat, __anyhow_format as format, __anyhow_stringify as stringify,
-    };
-    #[cfg(not(anyhow_no_macro_reexport))]
-    pub use core::{concat, stringify};
-
-    #[cfg(all(not(anyhow_no_macro_reexport), not(feature = "std")))]
-    pub use crate::alloc::alloc::format;
-    #[cfg(all(not(anyhow_no_macro_reexport), feature = "std"))]
-    pub use std::format;
-
-    #[cfg(anyhow_no_macro_reexport)]
     #[doc(hidden)]
-    #[macro_export]
-    macro_rules! __anyhow_concat {
-        ($($tt:tt)*) => {
-            concat!($($tt)*)
-        };
-    }
+    #[inline]
+    #[cold]
+    pub fn format_err(args: Arguments) -> Error {
+        #[cfg(anyhow_no_fmt_arguments_as_str)]
+        let fmt_arguments_as_str = None::<&str>;
+        #[cfg(not(anyhow_no_fmt_arguments_as_str))]
+        let fmt_arguments_as_str = args.as_str();
 
-    #[cfg(anyhow_no_macro_reexport)]
-    #[doc(hidden)]
-    #[macro_export]
-    macro_rules! __anyhow_format {
-        ($($tt:tt)*) => {
-            format!($($tt)*)
-        };
-    }
-
-    #[cfg(anyhow_no_macro_reexport)]
-    #[doc(hidden)]
-    #[macro_export]
-    macro_rules! __anyhow_stringify {
-        ($($tt:tt)*) => {
-            stringify!($($tt)*)
-        };
+        if let Some(message) = fmt_arguments_as_str {
+            // anyhow!("literal"), can downcast to &'static str
+            Error::msg(message)
+        } else {
+            // anyhow!("interpolate {var}"), can downcast to String
+            Error::msg(fmt::format(args))
+        }
     }
 }

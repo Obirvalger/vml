@@ -1,4 +1,4 @@
-## Rust Embed [![Build Status](https://github.com/pyros2097/rust-embed/workflows/Test/badge.svg)](https://github.com/pyros2097/rust-embed/actions?query=workflow%3ATest) [![crates.io](https://meritbadge.herokuapp.com/rust-embed)](https://crates.io/crates/rust-embed)
+## Rust Embed [![Build Status](https://github.com/pyros2097/rust-embed/workflows/Test/badge.svg)](https://github.com/pyros2097/rust-embed/actions?query=workflow%3ATest) [![crates.io](https://img.shields.io/crates/v/rust-embed.svg)](https://crates.io/crates/rust-embed)
 
 Rust Custom Derive Macro which loads files into the rust binary at compile time during release and loads the file from the fs during dev.
 
@@ -8,7 +8,7 @@ You can use this to embed your css, js and images into a single executable which
 
 ```toml
 [dependencies]
-rust-embed="6.2.0"
+rust-embed="6.3.0"
 ```
 
 ## Documentation
@@ -104,7 +104,7 @@ Compress each file when embedding into the binary. Compression is done via [`inc
 
 ### `include-exclude`
 Filter files to be embedded with multiple `#[include = "*.txt"]` and `#[exclude = "*.jpg"]` attributes. 
-Matching is done on relative file paths, via [`glob`].
+Matching is done on relative file paths, via [`globset`].
 `exclude` attributes have higher priority than `include` attributes.
 Example:
 
@@ -159,6 +159,14 @@ Note: To run the `warp` example:
 
 `cargo run --example warp --features warp-ex`
 
+Note: To run the `axum` example:
+
+`cargo run --example axum --features axum-ex`
+
+Note: To run the [poem](https://github.com/poem-web/poem) example:
+
+`cargo run --example poem --features poem-ex`
+
 ## Testing
 
 debug: `cargo test --test lib`
@@ -169,4 +177,4 @@ Go Rusketeers!
 The power is yours!
 
 [`include-flate`]: https://crates.io/crates/include-flate
-[`glob`]: https://crates.io/crates/glob
+[`globset`]: https://crates.io/crates/globset
