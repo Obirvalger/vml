@@ -70,7 +70,7 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
 
     if create_matches.is_present("no-cloud-init") {
         vm_config.cloud_init = Some(false)
-    } else if create_matches.is_present("cloud_init") {
+    } else if create_matches.is_present("cloud-init") {
         vm_config.cloud_init = Some(true)
     }
 
