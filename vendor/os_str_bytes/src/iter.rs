@@ -71,11 +71,6 @@ where
 {
     type Item = &'a RawOsStr;
 
-    #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
-    }
-
     fn next(&mut self) -> Option<Self::Item> {
         impl_next!(self, split_once_raw, |x| x)
     }

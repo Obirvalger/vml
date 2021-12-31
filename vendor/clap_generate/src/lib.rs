@@ -5,9 +5,10 @@
 // See the [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) files in this repository
 // for more information.
 
-#![doc(html_logo_url = "https://raw.githubusercontent.com/clap-rs/clap/master/assets/clap.png")]
+#![doc(html_logo_url = "https://clap.rs/images/media/clap.png")]
+#![doc(html_root_url = "https://docs.rs/clap_generate/3.0.0-beta.5")]
 #![doc = include_str!("../README.md")]
-#![warn(missing_docs, trivial_casts, unused_allocation, trivial_numeric_casts)]
+#![deny(missing_docs, trivial_casts, unused_allocation, trivial_numeric_casts)]
 #![forbid(unsafe_code)]
 #![allow(clippy::needless_doctest_main)]
 
@@ -29,13 +30,13 @@
 //! fn build_cli() -> App<'static> {
 //!     App::new("example")
 //!          .arg(Arg::new("file")
-//!              .help("some input file")
+//!              .about("some input file")
 //!                 .value_hint(ValueHint::AnyPath),
 //!         )
 //!        .arg(
 //!            Arg::new("generator")
 //!                .long("generate")
-//!                .possible_values(Shell::possible_values()),
+//!                .possible_values(Shell::arg_values()),
 //!        )
 //! }
 //!
@@ -103,13 +104,13 @@ pub use shell::Shell;
 ///     App::new("compl")
 ///         .about("Tests completions")
 ///         .arg(Arg::new("file")
-///             .help("some input file"))
+///             .about("some input file"))
 ///         .subcommand(App::new("test")
 ///             .about("tests things")
 ///             .arg(Arg::new("case")
 ///                 .long("case")
 ///                 .takes_value(true)
-///                 .help("the case to test")))
+///                 .about("the case to test")))
 /// }
 /// ```
 ///

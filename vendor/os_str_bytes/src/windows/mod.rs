@@ -45,8 +45,8 @@ impl Display for EncodingError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "byte sequence is not representable in the platform encoding; \
-            error at {}",
+            "os_str_bytes: byte sequence is not representable in the platform \
+            encoding; error at {}",
             self.position(),
         )
     }
@@ -69,11 +69,7 @@ fn from_bytes(string: &[u8]) -> Result<OsString> {
 }
 
 fn to_bytes(os_string: &OsStr) -> Vec<u8> {
-    let encoder = OsStrExt::encode_wide(os_string);
-
-    let mut string = Vec::with_capacity(encoder.size_hint().0);
-    string.extend(DecodeWide::new(encoder));
-    string
+    DecodeWide::new(OsStrExt::encode_wide(os_string)).collect()
 }
 
 pub(super) fn os_str_from_bytes(string: &[u8]) -> Result<Cow<'_, OsStr>> {

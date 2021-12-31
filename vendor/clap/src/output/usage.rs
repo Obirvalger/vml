@@ -66,8 +66,8 @@ impl<'help, 'app, 'parser> Usage<'help, 'app, 'parser> {
             usage.push_str(" [OPTIONS]");
         }
 
-        let allow_missing_positional = self.p.app.is_set(AS::AllowMissingPositional);
-        if !allow_missing_positional {
+        let allow_mising_positional = self.p.app.is_set(AS::AllowMissingPositional);
+        if !allow_mising_positional {
             usage.push_str(&req_string);
         }
 
@@ -135,7 +135,7 @@ impl<'help, 'app, 'parser> Usage<'help, 'app, 'parser> {
             }
         }
 
-        if allow_missing_positional {
+        if allow_mising_positional {
             usage.push_str(&req_string);
         }
 
@@ -143,7 +143,7 @@ impl<'help, 'app, 'parser> Usage<'help, 'app, 'parser> {
         if self.p.app.has_visible_subcommands() && incl_reqs
             || self.p.is_set(AS::AllowExternalSubcommands)
         {
-            let placeholder = self.p.app.subcommand_value_name.unwrap_or("SUBCOMMAND");
+            let placeholder = self.p.app.subcommand_placeholder.unwrap_or("SUBCOMMAND");
             if self.p.is_set(AS::SubcommandsNegateReqs) || self.p.is_set(AS::ArgsNegateSubcommands)
             {
                 usage.push_str("\n    ");
@@ -194,7 +194,7 @@ impl<'help, 'app, 'parser> Usage<'help, 'app, 'parser> {
         usage.push_str(&*r_string);
         if self.p.is_set(AS::SubcommandRequired) {
             usage.push_str(" <");
-            usage.push_str(self.p.app.subcommand_value_name.unwrap_or("SUBCOMMAND"));
+            usage.push_str(self.p.app.subcommand_placeholder.unwrap_or("SUBCOMMAND"));
             usage.push('>');
         }
         usage.shrink_to_fit();
@@ -362,6 +362,8 @@ impl<'help, 'app, 'parser> Usage<'help, 'app, 'parser> {
     // `incl_last`: should we include args that are Arg::Last? (i.e. `prog [foo] -- [last]). We
     // can't do that for required usages being built for subcommands because it would look like:
     // `prog [foo] -- [last] <subcommand>` which is totally wrong.
+    // TODO: remove the allow clippy when we update the compiler version.
+    #[allow(clippy::needless_collect)]
     pub(crate) fn get_required_usage_from(
         &self,
         incls: &[Id],

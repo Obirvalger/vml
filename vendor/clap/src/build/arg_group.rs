@@ -4,9 +4,8 @@ use crate::util::{Id, Key};
 #[cfg(feature = "yaml")]
 use yaml_rust::Yaml;
 
-/// Family of related [arguments].
-///
-/// By placing arguments in a logical group, you can create easier requirement and
+/// `ArgGroup`s are a family of related [arguments] and way for you to express, "Any of these
+/// arguments". By placing arguments in a logical group, you can create easier requirement and
 /// exclusion rules instead of having to list each argument individually, or when you want a rule
 /// to apply "any but not all" arguments.
 ///
@@ -37,12 +36,12 @@ use yaml_rust::Yaml;
 /// the arguments from the specified group is present at runtime.
 ///
 /// ```rust
-/// # use clap::{App, arg, ArgGroup, ErrorKind};
+/// # use clap::{App, ArgGroup, ErrorKind};
 /// let result = App::new("app")
-///     .arg(arg!(--"set-ver" <ver> "set the version manually").required(false))
-///     .arg(arg!(--major           "auto increase major"))
-///     .arg(arg!(--minor           "auto increase minor"))
-///     .arg(arg!(--patch           "auto increase patch"))
+///     .arg("--set-ver [ver] 'set the version manually'")
+///     .arg("--major         'auto increase major'")
+///     .arg("--minor         'auto increase minor'")
+///     .arg("--patch         'auto increase patch'")
 ///     .group(ArgGroup::new("vers")
 ///          .args(&["set-ver", "major", "minor", "patch"])
 ///          .required(true))
@@ -55,12 +54,12 @@ use yaml_rust::Yaml;
 /// This next example shows a passing parse of the same scenario
 ///
 /// ```rust
-/// # use clap::{App, arg, ArgGroup};
+/// # use clap::{App, ArgGroup};
 /// let result = App::new("app")
-///     .arg(arg!(--"set-ver" <ver> "set the version manually").required(false))
-///     .arg(arg!(--major           "auto increase major"))
-///     .arg(arg!(--minor           "auto increase minor"))
-///     .arg(arg!(--patch           "auto increase patch"))
+///     .arg("--set-ver [ver] 'set the version manually'")
+///     .arg("--major         'auto increase major'")
+///     .arg("--minor         'auto increase minor'")
+///     .arg("--patch         'auto increase patch'")
 ///     .group(ArgGroup::new("vers")
 ///          .args(&["set-ver", "major", "minor","patch"])
 ///          .required(true))
@@ -72,7 +71,6 @@ use yaml_rust::Yaml;
 /// // we could also alternatively check each arg individually (not shown here)
 /// ```
 /// [`ArgGroup::multiple(true)`]: ArgGroup::multiple()
-///
 /// [`ArgGroup::multiple(false)`]: ArgGroup::multiple()
 /// [arguments]: crate::Arg
 /// [conflict]: crate::Arg::conflicts_with()
@@ -96,10 +94,8 @@ impl<'help> ArgGroup<'help> {
         }
     }
 
-    /// Create a `ArgGroup` using a unique name.
-    ///
-    /// The name will be used to get values from the group or refer to the group inside of conflict
-    /// and requirement rules.
+    /// Creates a new instance of `ArgGroup` using a unique string name. The name will be used to
+    /// get values from the group or refer to the group inside of conflict and requirement rules.
     ///
     /// # Examples
     ///
@@ -110,6 +106,19 @@ impl<'help> ArgGroup<'help> {
     /// ```
     pub fn new<S: Into<&'help str>>(n: S) -> Self {
         ArgGroup::default().name(n)
+    }
+
+    /// Deprecated, see [`ArgGroup::new`]
+    #[deprecated(since = "3.0.0", note = "Replaced with `ArgGroup::new`")]
+    pub fn with_name<S: Into<&'help str>>(n: S) -> Self {
+        Self::new(n)
+    }
+
+    /// Deprecated, see [`ArgGroup::from`]
+    #[cfg(feature = "yaml")]
+    #[deprecated(since = "3.0.0", note = "Replaced with `ArgGroup::from`")]
+    pub fn from_yaml(yaml: &'help Yaml) -> Self {
+        Self::from(yaml)
     }
 
     /// Sets the group name.
@@ -222,15 +231,15 @@ impl<'help> ArgGroup<'help> {
     ///
     /// [`Arg`]: crate::Arg
     #[inline]
-    pub fn multiple(mut self, yes: bool) -> Self {
-        self.multiple = yes;
+    pub fn multiple(mut self, m: bool) -> Self {
+        self.multiple = m;
         self
     }
 
-    /// Require an argument from the group to be present when parsing.
-    ///
-    /// This is unless conflicting with another argument.  A required group will be displayed in
-    /// the usage string of the application in the format `<arg|arg2|arg3>`.
+    /// Sets the group as required or not. A required group will be displayed in the usage string
+    /// of the application in the format `<arg|arg2|arg3>`. A required `ArgGroup` simply states
+    /// that one argument from this group *must* be present at runtime (unless
+    /// conflicting with another argument).
     ///
     /// **NOTE:** This setting only applies to the current [`App`] / [`Subcommand`]s, and not
     /// globally.
@@ -239,9 +248,6 @@ impl<'help> ArgGroup<'help> {
     /// `ArgGroup::required(true)` states, "One and *only one* arg must be used from this group.
     /// Use of more than one arg is an error." Vice setting `ArgGroup::multiple(true)` which
     /// states, '*At least* one arg from this group must be used. Using multiple is OK."
-    ///
-    /// **NOTE:** An argument is considered present when there is a
-    /// [`Arg::default_value`](crate::Arg::default_value)
     ///
     /// # Examples
     ///
@@ -266,21 +272,17 @@ impl<'help> ArgGroup<'help> {
     /// [`ArgGroup::multiple`]: ArgGroup::multiple()
     /// [`App`]: crate::App
     #[inline]
-    pub fn required(mut self, yes: bool) -> Self {
-        self.required = yes;
+    pub fn required(mut self, r: bool) -> Self {
+        self.required = r;
         self
     }
 
-    /// Specify an argument or group that must be present when this group is.
+    /// Sets the requirement rules of this group. This is not to be confused with a
+    /// [required group]. Requirement rules function just like [argument requirement rules], you
+    /// can name other arguments or groups that must be present when any one of the arguments from
+    /// this group is used.
     ///
-    /// This is not to be confused with a [required group]. Requirement rules function just like
-    /// [argument requirement rules], you can name other arguments or groups that must be present
-    /// when any one of the arguments from this group is used.
-    ///
-    /// **NOTE:** An argument is considered present when there is a
-    /// [`Arg::default_value`](crate::Arg::default_value)
-    ///
-    /// **NOTE:** The name provided may be an argument or group name
+    /// **NOTE:** The name provided may be an argument, or group name
     ///
     /// # Examples
     ///
@@ -310,16 +312,12 @@ impl<'help> ArgGroup<'help> {
         self
     }
 
-    /// Specify arguments or groups that must be present when this group is.
+    /// Sets the requirement rules of this group. This is not to be confused with a
+    /// [required group]. Requirement rules function just like [argument requirement rules], you
+    /// can name other arguments or groups that must be present when one of the arguments from this
+    /// group is used.
     ///
-    /// This is not to be confused with a [required group]. Requirement rules function just like
-    /// [argument requirement rules], you can name other arguments or groups that must be present
-    /// when one of the arguments from this group is used.
-    ///
-    /// **NOTE:** The names provided may be an argument or group name
-    ///
-    /// **NOTE:** An argument is considered present when there is a
-    /// [`Arg::default_value`](crate::Arg::default_value)
+    /// **NOTE:** The names provided may be an argument, or group name
     ///
     /// # Examples
     ///
@@ -353,16 +351,11 @@ impl<'help> ArgGroup<'help> {
         self
     }
 
-    /// Specify an argument or group that must **not** be present when this group is.
-    ///
-    /// Exclusion (aka conflict) rules function just like [argument exclusion rules], you can name
-    /// other arguments or groups that must *not* be present when one of the arguments from this
-    /// group are used.
+    /// Sets the exclusion rules of this group. Exclusion (aka conflict) rules function just like
+    /// [argument exclusion rules], you can name other arguments or groups that must *not* be
+    /// present when one of the arguments from this group are used.
     ///
     /// **NOTE:** The name provided may be an argument, or group name
-    ///
-    /// **NOTE:** An argument is considered present when there is a
-    /// [`Arg::default_value`](crate::Arg::default_value)
     ///
     /// # Examples
     ///
@@ -390,15 +383,11 @@ impl<'help> ArgGroup<'help> {
         self
     }
 
-    /// Specify arguments or groups that must **not** be present when this group is.
-    ///
-    /// Exclusion rules function just like [argument exclusion rules], you can name other arguments
-    /// or groups that must *not* be present when one of the arguments from this group are used.
+    /// Sets the exclusion rules of this group. Exclusion rules function just like
+    /// [argument exclusion rules], you can name other arguments or groups that must *not* be
+    /// present when one of the arguments from this group are used.
     ///
     /// **NOTE:** The names provided may be an argument, or group name
-    ///
-    /// **NOTE:** An argument is considered present when there is a
-    /// [`Arg::default_value`](crate::Arg::default_value)
     ///
     /// # Examples
     ///
@@ -431,22 +420,6 @@ impl<'help> ArgGroup<'help> {
         }
         self
     }
-
-    /// Deprecated, replaced with [`ArgGroup::new`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `ArgGroup::new`")]
-    pub fn with_name<S: Into<&'help str>>(n: S) -> Self {
-        Self::new(n)
-    }
-
-    /// Deprecated in [Issue #3087](https://github.com/clap-rs/clap/issues/3087), maybe [`clap::Parser`][crate::Parser] would fit your use case?
-    #[cfg(feature = "yaml")]
-    #[deprecated(
-        since = "3.0.0",
-        note = "Maybe clap::Parser would fit your use case? (Issue #3087)"
-    )]
-    pub fn from_yaml(yaml: &'help Yaml) -> Self {
-        Self::from(yaml)
-    }
 }
 
 impl<'help> From<&'_ ArgGroup<'help>> for ArgGroup<'help> {
@@ -463,10 +436,17 @@ impl<'help> From<&'_ ArgGroup<'help>> for ArgGroup<'help> {
     }
 }
 
-/// Deprecated in [Issue #3087](https://github.com/clap-rs/clap/issues/3087), maybe [`clap::Parser`][crate::Parser] would fit your use case?
 #[cfg(feature = "yaml")]
 impl<'help> From<&'help Yaml> for ArgGroup<'help> {
-    /// Deprecated in [Issue #3087](https://github.com/clap-rs/clap/issues/3087), maybe [`clap::Parser`][crate::Parser] would fit your use case?
+    /// Creates a new instance of `ArgGroup` from a .yaml (YAML) file.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// # use clap::{ArgGroup, load_yaml};
+    /// let yaml = load_yaml!("group.yaml");
+    /// let ag = ArgGroup::from(yaml);
+    /// ```
     fn from(y: &'help Yaml) -> Self {
         let b = y.as_hash().expect("ArgGroup::from::<Yaml> expects a table");
         // We WANT this to panic on error...so expect() is good.

@@ -12,9 +12,11 @@
 [package]
 edition = "2018"
 name = "clap_generate"
-version = "3.0.0-rc.9"
-include = ["src/**/*", "Cargo.toml", "LICENSE-*", "README.md"]
+version = "3.0.0-beta.5"
+authors = ["Kevin K. <kbknapp@gmail.com>", "Clap Maintainers"]
+include = ["src/**/*", "Cargo.toml", "README.md"]
 description = "A generator library used with clap for shell completion scripts, manpage, etc."
+homepage = "https://clap.rs/"
 documentation = "https://docs.rs/clap_generate"
 readme = "README.md"
 keywords = ["clap", "cli", "generate", "completion", "manpage"]
@@ -23,26 +25,18 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/clap-rs/clap/tree/master/clap_generate"
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
-[[package.metadata.release.pre-release-replacements]]
-exactly = 4
-file = "README.md"
-prerelease = true
-replace = "github.com/clap-rs/clap/blob/{{tag_name}}/"
-search = "github.com/clap-rs/clap/blob/[^/]+/"
 
 [lib]
 bench = false
 [dependencies.clap]
-version = "=3.0.0-rc.9"
+version = "=3.0.0-beta.5"
 features = ["std"]
 default-features = false
-[dev-dependencies.clap]
-version = "=3.0.0-rc.9"
-features = ["std", "derive"]
-default-features = false
-
 [dev-dependencies.pretty_assertions]
-version = "1.0"
+version = "0.7"
+
+[dev-dependencies.version-sync]
+version = "0.9"
 
 [features]
 debug = ["clap/debug"]

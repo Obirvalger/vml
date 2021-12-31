@@ -33,7 +33,7 @@ impl Generator for Bash {
     for i in ${{COMP_WORDS[@]}}
     do
         case \"${{i}}\" in
-            \"$1\")
+            {name})
                 cmd=\"{cmd}\"
                 ;;{subcmds}
             *)
@@ -179,7 +179,7 @@ fn vals_for(o: &Arg) -> String {
         format!(
             "$(compgen -W \"{}\" -- \"${{cur}}\")",
             vals.iter()
-                .filter_map(PossibleValue::get_visible_name)
+                .filter_map(ArgValue::get_visible_name)
                 .collect::<Vec<_>>()
                 .join(" ")
         )

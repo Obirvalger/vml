@@ -1,8 +1,6 @@
 use std::str::FromStr;
 
-/// Provide shell with hint on how to complete an argument.
-///
-/// See [Arg::value_hint][crate::Arg::value_hint] to set this on an argument.
+/// Provides hints about argument types for shell command completion.
 ///
 /// See the `clap_generate` crate for completion script generation.
 ///
@@ -25,7 +23,6 @@ use std::str::FromStr;
 /// [^1]: fish completions currently only support named arguments (e.g. -o or --opt), not
 ///       positional arguments.
 #[derive(Debug, PartialEq, Copy, Clone)]
-#[non_exhaustive]
 pub enum ValueHint {
     /// Default value if hint is not specified. Follows shell default behavior, which is usually
     /// auto-completing filenames.

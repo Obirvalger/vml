@@ -18,6 +18,21 @@ use crate::{
 use indexmap::IndexSet;
 use textwrap::core::display_width;
 
+pub(crate) fn dimensions() -> Option<(usize, usize)> {
+    #[cfg(not(feature = "wrap_help"))]
+    return None;
+
+    #[cfg(feature = "wrap_help")]
+    terminal_size::terminal_size().map(|(w, h)| (w.0.into(), h.0.into()))
+}
+
+const TAB: &str = "    ";
+
+pub(crate) enum HelpWriter<'writer> {
+    Normal(&'writer mut dyn Write),
+    Buffer(&'writer mut Colorizer),
+}
+
 /// `clap` Help Writer.
 ///
 /// Wraps a writer stream providing different methods to generate help for `clap` objects.
@@ -34,7 +49,8 @@ pub(crate) struct Help<'help, 'app, 'parser, 'writer> {
 impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
     const DEFAULT_TEMPLATE: &'static str = "\
         {before-help}{bin} {version}\n\
-        {author-with-newline}{about-with-newline}\n\
+        {author-section}\
+        {about-section}\n\
         {usage-heading}\n    {usage}\n\
         \n\
         {all-args}{after-help}\
@@ -42,7 +58,8 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
 
     const DEFAULT_NO_ARGS_TEMPLATE: &'static str = "\
         {before-help}{bin} {version}\n\
-        {author-with-newline}{about-with-newline}\n\
+        {author-section}\
+        {about-section}\n\
         {usage-heading}\n    {usage}{after-help}\
     ";
 
@@ -65,7 +82,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             ),
         };
         let next_line_help = parser.is_set(AppSettings::NextLineHelp);
-        let hide_pv = parser.is_set(AppSettings::HidePossibleValues);
+        let hide_pv = parser.is_set(AppSettings::HidePossibleValuesInHelp);
 
         Help {
             writer,
@@ -193,9 +210,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
                 longest = longest.max(display_width(arg.to_string().as_str()));
                 debug!("Help::write_args: New Longest...{}", longest);
             }
-            let btm = ord_m
-                .entry(arg.get_display_order())
-                .or_insert_with(BTreeMap::new);
+            let btm = ord_m.entry(arg.disp_ord).or_insert_with(BTreeMap::new);
 
             // Formatting key like this to ensure that:
             // 1. Argument has long flags are printed just after short flags.
@@ -442,9 +457,9 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
         self.val(arg, next_line_help, longest)?;
 
         let about = if self.use_long {
-            arg.long_help.unwrap_or_else(|| arg.help.unwrap_or(""))
+            arg.long_about.unwrap_or_else(|| arg.about.unwrap_or(""))
         } else {
-            arg.help.unwrap_or_else(|| arg.long_help.unwrap_or(""))
+            arg.about.unwrap_or_else(|| arg.long_about.unwrap_or(""))
         };
 
         self.help(
@@ -473,7 +488,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             true
         } else {
             // force_next_line
-            let h = arg.help.unwrap_or("");
+            let h = arg.about.unwrap_or("");
             let h_w = display_width(h) + display_width(spec_vals);
             let taken = longest + 12;
             self.term_w >= taken
@@ -590,7 +605,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             spec_vals.push(format!("[possible values: {}]", pvs));
         }
         let connector = if self.use_long { "\n" } else { " " };
-        let prefix = if !spec_vals.is_empty() && !a.get_help().unwrap_or("").is_empty() {
+        let prefix = if !spec_vals.is_empty() && !a.get_about().unwrap_or("").is_empty() {
             if self.use_long {
                 "\n\n"
             } else {
@@ -797,7 +812,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
                 self.none("\n\n")?;
             }
 
-            self.warning(self.parser.app.subcommand_heading.unwrap_or("SUBCOMMANDS"))?;
+            self.warning(self.parser.app.subcommand_header.unwrap_or("SUBCOMMANDS"))?;
             self.warning(":\n")?;
 
             self.write_subcommands(self.parser.app)?;
@@ -829,7 +844,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             .filter(|subcommand| should_show_subcommand(subcommand))
         {
             let btm = ord_m
-                .entry(subcommand.get_display_order())
+                .entry(subcommand.disp_ord)
                 .or_insert_with(BTreeMap::new);
             let mut sc_str = String::new();
             sc_str.push_str(
@@ -990,21 +1005,6 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
     }
 }
 
-pub(crate) fn dimensions() -> Option<(usize, usize)> {
-    #[cfg(not(feature = "wrap_help"))]
-    return None;
-
-    #[cfg(feature = "wrap_help")]
-    terminal_size::terminal_size().map(|(w, h)| (w.0.into(), h.0.into()))
-}
-
-const TAB: &str = "    ";
-
-pub(crate) enum HelpWriter<'writer> {
-    Normal(&'writer mut dyn Write),
-    Buffer(&'writer mut Colorizer),
-}
-
 fn should_show_arg(use_long: bool, arg: &Arg) -> bool {
     debug!("should_show_arg: use_long={:?}, arg={}", use_long, arg.name);
     if arg.is_set(ArgSettings::Hidden) {
@@ -1039,7 +1039,7 @@ mod test {
 
     #[test]
     fn display_width_handles_non_ascii() {
-        // Popular Danish tongue-twister, the name of a fruit dessert.
+        // Popular Danish tounge-twister, the name of a fruit dessert.
         let text = "rødgrød med fløde";
         assert_eq!(display_width(text), 17);
         // Note that the string width is smaller than the string
