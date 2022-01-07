@@ -1,6 +1,5 @@
 #![feature(asm)]
 #![feature(llvm_asm)]
-#![feature(const_fn)] // see https://github.com/rust-lang/rfcs/pull/2632
 #![cfg_attr(not(test), no_std)]
 
 #[cfg(test)]
@@ -21,6 +20,10 @@ mod arch;
 
 #[cfg(all(any(target_os = "none", target_os = "redox"), target_arch = "aarch64"))]
 #[path="arch/aarch64.rs"]
+mod arch;
+
+#[cfg(all(any(target_os = "none", target_os = "redox"), target_arch = "riscv64"))]
+#[path="arch/riscv64.rs"]
 mod arch;
 
 #[cfg(all(any(target_os = "none", target_os = "redox"), target_arch = "x86"))]
