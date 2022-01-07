@@ -44,6 +44,8 @@ fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<B
 fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
     let names: Vec<&str> = if create_matches.is_present("names") {
         create_matches.values_of("names").unwrap().collect()
+    } else if let Some(name) = create_matches.value_of("name-same-image") {
+        vec![name]
     } else if let Some(name) = create_matches.value_of("NAME") {
         vec![name]
     } else {
@@ -52,7 +54,7 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
 
     let mut vm_config: VMConfig = Default::default();
 
-    let image = create_matches.value_of("image");
+    let image = create_matches.value_of("image").or(create_matches.value_of("name-same-image"));
 
     let exists = if create_matches.is_present("exists-fail") {
         CreateExistsAction::Fail
@@ -201,6 +203,10 @@ fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
     if let Some(name) = matches.value_of("NAME") {
         let (_user, name) = parse_user_at_name(name);
 
+        vmc.name(name);
+    }
+
+    if let Some(name) = matches.value_of("name-same-image") {
         vmc.name(name);
     }
 

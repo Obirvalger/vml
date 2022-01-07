@@ -149,6 +149,12 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
+                .arg(
+                    Arg::new("name-same-image")
+                        .long("name-same-image")
+                        .short('N')
+                        .takes_value(true),
+                )
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
                 .arg(Arg::new("nproc").long("nproc").takes_value(true))
                 .arg(Arg::new("memory").long("memory").short('m').takes_value(true))
@@ -199,7 +205,11 @@ pub fn build_cli() -> clap::App<'static> {
                     "exists-ignore",
                     "exists-replace",
                 ]))
-                .group(ArgGroup::new("name_group").args(&["names", "NAME"]).required(true)),
+                .group(
+                    ArgGroup::new("name_group")
+                        .args(&["names", "name-same-image", "NAME"])
+                        .required(true),
+                ),
         )
         .subcommand(
             App::new("start")
@@ -249,6 +259,12 @@ pub fn build_cli() -> clap::App<'static> {
                         .short('n')
                         .takes_value(true)
                         .multiple_values(true),
+                )
+                .arg(
+                    Arg::new("name-same-image")
+                        .long("name-same-image")
+                        .short('N')
+                        .takes_value(true),
                 )
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
@@ -309,7 +325,11 @@ pub fn build_cli() -> clap::App<'static> {
                     "exists-replace",
                 ]))
                 .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"]))
-                .group(ArgGroup::new("name_group").args(&["names", "NAME"]).required(true)),
+                .group(
+                    ArgGroup::new("name_group")
+                        .args(&["names", "name-same-image", "NAME"])
+                        .required(true),
+                ),
         )
         .subcommand(
             App::new("stop")
