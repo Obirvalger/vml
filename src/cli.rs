@@ -574,6 +574,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(Arg::new("format-debug").long("format-debug").short('d'))
                 .arg(Arg::new("format-json").long("format-json").short('j'))
+                .arg(Arg::new("format-table").long("format-table"))
                 .arg(
                     Arg::new("parents")
                         .long("parents")

@@ -9,6 +9,8 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use byte_unit::Byte;
 use clap::ArgMatches;
+use comfy_table::presets::UTF8_FULL;
+use comfy_table::{Cell, Color, ContentArrangement, Table};
 
 use vml::cli;
 use vml::config::Config;
@@ -521,6 +523,7 @@ fn main() -> Result<()> {
             }
 
             let format_debug = show_matches.is_present("format-debug");
+            let format_json = show_matches.is_present("format-json");
 
             set_specifications(&mut vmc, show_matches);
 
@@ -529,12 +532,35 @@ fn main() -> Result<()> {
                 for vm in vmc.create()? {
                     println!("{:#?}", vm);
                 }
-            } else {
+            } else if format_json {
                 let mut infos = vec![];
                 for vm in vmc.create()? {
                     infos.push(vm.info());
                 }
                 println!("{:}", json::stringify_pretty(infos, 2));
+            } else {
+                let mut table = Table::new();
+                table
+                    .load_preset(UTF8_FULL)
+                    .set_content_arrangement(ContentArrangement::Dynamic)
+                    .set_table_width(80)
+                    .set_header(vec![Cell::new("Name"), Cell::new("State"), Cell::new("Address")]);
+
+                for vm in vmc.create()? {
+                    let info = vm.info();
+                    let state = if info.get("pid").is_some() {
+                        Cell::new("Running").fg(Color::Green)
+                    } else {
+                        Cell::new("Stopped").fg(Color::Red)
+                    };
+                    table.add_row(vec![
+                        Cell::new(&info["name"]),
+                        state,
+                        Cell::new(info.get("network_address").unwrap_or(&"".to_string())),
+                    ]);
+                }
+
+                println!("{}", table);
             }
         }
 
