@@ -125,6 +125,7 @@ pub struct VM {
     nproc: String,
     specified_by: SpecifiedBy,
     pid: Option<i32>,
+    openssh_config: PathBuf,
     ssh: Option<Ssh>,
     tags: HashSet<String>,
     vml_directory: PathBuf,
@@ -203,6 +204,8 @@ impl VM {
         };
         let ssh = Ssh::new(&ssh_config, &net_config);
 
+        let openssh_config = config.openssh_config.vm_configs_dir.join(&name);
+
         Ok(VM {
             cache,
             cloud_init,
@@ -221,6 +224,7 @@ impl VM {
             pid: None,
             nic_model,
             nproc,
+            openssh_config,
             specified_by,
             ssh,
             tags,
@@ -666,6 +670,7 @@ impl VM {
             ("memory", self.memory.to_string()),
             ("name", self.name.to_string()),
             ("nproc", self.nproc.to_string()),
+            ("openssh_config", self.openssh_config.display().to_string()),
         ]);
 
         if let Some(pid) = &self.pid {
