@@ -54,7 +54,8 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
 
     let mut vm_config: VMConfig = Default::default();
 
-    let image = create_matches.value_of("image").or(create_matches.value_of("name-same-image"));
+    let image =
+        create_matches.value_of("image").or_else(|| create_matches.value_of("name-same-image"));
 
     let exists = if create_matches.is_present("exists-fail") {
         CreateExistsAction::Fail
