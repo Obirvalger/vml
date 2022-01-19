@@ -3,7 +3,7 @@ use std::io;
 use anyhow::{bail, Result};
 use byte_unit::Byte;
 use clap::{App, AppSettings, Arg, ArgEnum, ArgGroup, ValueHint};
-use clap_generate::{generate, Generator, Shell};
+use clap_complete::{generate, Generator, Shell};
 
 fn print_completions<G: Generator>(gen: G, app: &mut App) {
     generate(gen, app, app.get_name().to_string(), &mut io::stdout());
