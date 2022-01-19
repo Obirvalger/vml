@@ -12,32 +12,23 @@
 [package]
 edition = "2018"
 name = "clap_generate"
-version = "3.0.0-beta.5"
-authors = ["Kevin K. <kbknapp@gmail.com>", "Clap Maintainers"]
-include = ["src/**/*", "Cargo.toml", "README.md"]
-description = "A generator library used with clap for shell completion scripts, manpage, etc."
-homepage = "https://clap.rs/"
+version = "3.0.1"
+include = ["src/**/*", "Cargo.toml", "LICENSE-*", "README.md"]
+description = "Renamed to clap_complete"
 documentation = "https://docs.rs/clap_generate"
 readme = "README.md"
 keywords = ["clap", "cli", "generate", "completion", "manpage"]
 categories = ["command-line-interface"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/clap-rs/clap/tree/master/clap_generate"
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
-
-[lib]
-bench = false
 [dependencies.clap]
-version = "=3.0.0-beta.5"
+version = "3.0.0"
 features = ["std"]
 default-features = false
-[dev-dependencies.pretty_assertions]
-version = "0.7"
 
-[dev-dependencies.version-sync]
-version = "0.9"
+[dependencies.clap_complete]
+version = "3.0.0"
 
 [features]
-debug = ["clap/debug"]
+debug = ["clap_complete/debug"]
 default = []

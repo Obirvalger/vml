@@ -1,6 +1,6 @@
 // Std
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     ffi::{OsStr, OsString},
 };
 
@@ -19,96 +19,14 @@ use crate::{
     parse::features::suggestions,
     parse::{ArgMatcher, SubCommand},
     parse::{Validator, ValueType},
-    util::{ChildGraph, Id},
+    util::{color::ColorChoice, ChildGraph, Id},
     INTERNAL_ERROR_MSG, INVALID_UTF8,
 };
-
-pub(crate) enum ParseState {
-    ValuesDone,
-    Opt(Id),
-    Pos(Id),
-}
-
-/// Recoverable Parsing results.
-#[derive(Debug, PartialEq, Clone)]
-enum ParseResult {
-    FlagSubCommand(String),
-    Opt(Id),
-    ValuesDone,
-    /// Value attached to the short flag is not consumed(e.g. 'u' for `-cu` is
-    /// not consumed).
-    AttachedValueNotConsumed,
-    /// This long flag doesn't need a value but is provided one.
-    UnneededAttachedValue {
-        rest: String,
-        used: Vec<Id>,
-        arg: String,
-    },
-    /// This flag might be an hyphen Value.
-    MaybeHyphenValue,
-    /// Equals required but not provided.
-    EqualsNotProvided {
-        arg: String,
-    },
-    /// Failed to match a Arg.
-    NoMatchingArg {
-        arg: String,
-    },
-    /// No argument found e.g. parser is given `-` when parsing a flag.
-    NoArg,
-    /// This is a Help flag.
-    HelpFlag,
-    /// This is a version flag.
-    VersionFlag,
-}
-
-#[derive(Debug)]
-pub(crate) struct Input {
-    items: Vec<OsString>,
-    cursor: usize,
-}
-
-impl<I, T> From<I> for Input
-where
-    I: Iterator<Item = T>,
-    T: Into<OsString> + Clone,
-{
-    fn from(val: I) -> Self {
-        Self {
-            items: val.map(|x| x.into()).collect(),
-            cursor: 0,
-        }
-    }
-}
-
-impl Input {
-    pub(crate) fn next(&mut self) -> Option<(&OsStr, &[OsString])> {
-        if self.cursor >= self.items.len() {
-            None
-        } else {
-            let current = &self.items[self.cursor];
-            self.cursor += 1;
-            let remaining = &self.items[self.cursor..];
-            Some((current, remaining))
-        }
-    }
-
-    /// Insert some items to the Input items just after current parsing cursor.
-    /// Usually used by replaced items recovering.
-    pub(crate) fn insert(&mut self, insert_items: &[&str]) {
-        self.items = insert_items
-            .iter()
-            .map(OsString::from)
-            .chain(self.items.drain(self.cursor..))
-            .collect();
-        self.cursor = 0;
-    }
-}
 
 pub(crate) struct Parser<'help, 'app> {
     pub(crate) app: &'app mut App<'help>,
     pub(crate) required: ChildGraph<Id>,
-    pub(crate) overridden: Vec<Id>,
+    pub(crate) overridden: RefCell<Vec<Id>>,
     pub(crate) seen: Vec<Id>,
     pub(crate) cur_idx: Cell<usize>,
     /// Index of the previous flag subcommand in a group of flags.
@@ -133,7 +51,7 @@ impl<'help, 'app> Parser<'help, 'app> {
         Parser {
             app,
             required: reqs,
-            overridden: Vec::new(),
+            overridden: Default::default(),
             seen: Vec::new(),
             cur_idx: Cell::new(0),
             flag_subcmd_at: None,
@@ -141,186 +59,9 @@ impl<'help, 'app> Parser<'help, 'app> {
         }
     }
 
-    #[cfg(debug_assertions)]
-    fn _verify_positionals(&self) -> bool {
-        debug!("Parser::_verify_positionals");
-        // Because you must wait until all arguments have been supplied, this is the first chance
-        // to make assertions on positional argument indexes
-        //
-        // First we verify that the index highest supplied index, is equal to the number of
-        // positional arguments to verify there are no gaps (i.e. supplying an index of 1 and 3
-        // but no 2)
-
-        let highest_idx = self
-            .app
-            .args
-            .keys()
-            .filter_map(|x| {
-                if let KeyType::Position(n) = x {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .max()
-            .unwrap_or(0);
-
-        //_highest_idx(&self.positionals);
-
-        let num_p = self.app.args.keys().filter(|x| x.is_position()).count();
-
-        assert!(
-            highest_idx == num_p,
-            "Found positional argument whose index is {} but there \
-             are only {} positional arguments defined",
-            highest_idx,
-            num_p
-        );
-
-        // Next we verify that only the highest index has a .multiple_values(true) (if any)
-        let only_highest = |a: &Arg| {
-            a.is_set(ArgSettings::MultipleValues) && (a.index.unwrap_or(0) != highest_idx)
-        };
-        if self.app.get_positionals().any(only_highest) {
-            // First we make sure if there is a positional that allows multiple values
-            // the one before it (second to last) has one of these:
-            //  * a value terminator
-            //  * ArgSettings::Last
-            //  * The last arg is Required
-
-            // We can't pass the closure (it.next()) to the macro directly because each call to
-            // find() (iterator, not macro) gets called repeatedly.
-            let last = &self.app.args[&KeyType::Position(highest_idx)];
-            let second_to_last = &self.app.args[&KeyType::Position(highest_idx - 1)];
-
-            // Either the final positional is required
-            // Or the second to last has a terminator or .last(true) set
-            let ok = last.is_set(ArgSettings::Required)
-                || (second_to_last.terminator.is_some()
-                    || second_to_last.is_set(ArgSettings::Last))
-                || last.is_set(ArgSettings::Last);
-            assert!(
-                ok,
-                "When using a positional argument with .multiple_values(true) that is *not the \
-                 last* positional argument, the last positional argument (i.e. the one \
-                 with the highest index) *must* have .required(true) or .last(true) set."
-            );
-
-            // We make sure if the second to last is Multiple the last is ArgSettings::Last
-            let ok = second_to_last.is_set(ArgSettings::MultipleValues)
-                || last.is_set(ArgSettings::Last);
-            assert!(
-                ok,
-                "Only the last positional argument, or second to last positional \
-                 argument may be set to .multiple_values(true)"
-            );
-
-            // Next we check how many have both Multiple and not a specific number of values set
-            let count = self
-                .app
-                .get_positionals()
-                .filter(|p| p.settings.is_set(ArgSettings::MultipleValues) && p.num_vals.is_none())
-                .count();
-            let ok = count <= 1
-                || (last.is_set(ArgSettings::Last)
-                    && last.is_set(ArgSettings::MultipleValues)
-                    && second_to_last.is_set(ArgSettings::MultipleValues)
-                    && count == 2);
-            assert!(
-                ok,
-                "Only one positional argument with .multiple_values(true) set is allowed per \
-                 command, unless the second one also has .last(true) set"
-            );
-        }
-
-        let mut found = false;
-
-        if self.is_set(AS::AllowMissingPositional) {
-            // Check that if a required positional argument is found, all positions with a lower
-            // index are also required.
-            let mut foundx2 = false;
-
-            for p in self.app.get_positionals() {
-                if foundx2 && !p.is_set(ArgSettings::Required) {
-                    assert!(
-                        p.is_set(ArgSettings::Required),
-                        "Found non-required positional argument with a lower \
-                         index than a required positional argument by two or more: {:?} \
-                         index {:?}",
-                        p.name,
-                        p.index
-                    );
-                } else if p.is_set(ArgSettings::Required) && !p.is_set(ArgSettings::Last) {
-                    // Args that .last(true) don't count since they can be required and have
-                    // positionals with a lower index that aren't required
-                    // Imagine: prog <req1> [opt1] -- <req2>
-                    // Both of these are valid invocations:
-                    //      $ prog r1 -- r2
-                    //      $ prog r1 o1 -- r2
-                    if found {
-                        foundx2 = true;
-                        continue;
-                    }
-                    found = true;
-                    continue;
-                } else {
-                    found = false;
-                }
-            }
-        } else {
-            // Check that if a required positional argument is found, all positions with a lower
-            // index are also required
-            for p in (1..=num_p).rev().filter_map(|n| self.app.args.get(&n)) {
-                if found {
-                    assert!(
-                        p.is_set(ArgSettings::Required),
-                        "Found non-required positional argument with a lower \
-                         index than a required positional argument: {:?} index {:?}",
-                        p.name,
-                        p.index
-                    );
-                } else if p.is_set(ArgSettings::Required) && !p.is_set(ArgSettings::Last) {
-                    // Args that .last(true) don't count since they can be required and have
-                    // positionals with a lower index that aren't required
-                    // Imagine: prog <req1> [opt1] -- <req2>
-                    // Both of these are valid invocations:
-                    //      $ prog r1 -- r2
-                    //      $ prog r1 o1 -- r2
-                    found = true;
-                    continue;
-                }
-            }
-        }
-        assert!(
-            self.app
-                .get_positionals()
-                .filter(|p| p.is_set(ArgSettings::Last))
-                .count()
-                < 2,
-            "Only one positional argument may have last(true) set. Found two."
-        );
-        if self
-            .app
-            .get_positionals()
-            .any(|p| p.is_set(ArgSettings::Last) && p.is_set(ArgSettings::Required))
-            && self.app.has_subcommands()
-            && !self.is_set(AS::SubcommandsNegateReqs)
-        {
-            panic!(
-                "Having a required positional argument with .last(true) set *and* child \
-                 subcommands without setting SubcommandsNegateReqs isn't compatible."
-            );
-        }
-
-        true
-    }
-
     // Does all the initializing and prepares the parser
     pub(crate) fn _build(&mut self) {
         debug!("Parser::_build");
-
-        #[cfg(debug_assertions)]
-        self._verify_positionals();
 
         for group in &self.app.groups {
             if group.required {
@@ -330,6 +71,16 @@ impl<'help, 'app> Parser<'help, 'app> {
                 }
             }
         }
+    }
+
+    // Should we color the help?
+    pub(crate) fn color_help(&self) -> ColorChoice {
+        #[cfg(feature = "color")]
+        if self.is_set(AS::DisableColoredHelp) {
+            return ColorChoice::Never;
+        }
+
+        self.app.get_color()
     }
 }
 
@@ -389,12 +140,12 @@ impl<'help, 'app> Parser<'help, 'app> {
                 let is_second_to_last = pos_counter + 1 == positional_count;
 
                 // The last positional argument, or second to last positional
-                // argument may be set to .multiple_values(true)
+                // argument may be set to .multiple_values(true) or `.multiple_occurrences(true)`
                 let low_index_mults = is_second_to_last
-                    && self.app.get_positionals().any(|a| {
-                        a.is_set(ArgSettings::MultipleValues)
-                            && (positional_count != a.index.unwrap_or(0))
-                    })
+                    && self
+                        .app
+                        .get_positionals()
+                        .any(|a| a.is_multiple() && (positional_count != a.index.unwrap_or(0)))
                     && self
                         .app
                         .get_positionals()
@@ -546,7 +297,7 @@ impl<'help, 'app> Parser<'help, 'app> {
                 } else if let Some(short_arg) = arg_os.strip_prefix("-") {
                     // Arg looks like a short flag, and not a possible number
 
-                    // Try to parse short args like normal, if AllowLeadingHyphen or
+                    // Try to parse short args like normal, if AllowHyphenValues or
                     // AllowNegativeNumbers is set, parse_short_arg will *not* throw
                     // an error, and instead return Ok(None)
                     let parse_result = self.parse_short_arg(
@@ -663,10 +414,14 @@ impl<'help, 'app> Parser<'help, 'app> {
                 }
 
                 self.seen.push(p.id.clone());
+                // Increase occurrence no matter if we are appending, occurrences
+                // of positional argument equals to number of values rather than
+                // the number of value groups.
+                self.inc_occurrence_of_arg(matcher, p);
                 // Creating new value group rather than appending when the arg
                 // doesn't have any value. This behaviour is right because
-                // positional arguments are always present continiously.
-                let append = self.arg_have_val(matcher, p);
+                // positional arguments are always present continuously.
+                let append = self.has_val_groups(matcher, p);
                 self.add_val_to_arg(
                     p,
                     &arg_os,
@@ -676,13 +431,8 @@ impl<'help, 'app> Parser<'help, 'app> {
                     trailing_values,
                 );
 
-                // Increase occurrence no matter if we are appending, occurrences
-                // of positional argument equals to number of values rather than
-                // the number of value groups.
-                self.inc_occurrence_of_arg(matcher, p);
-
                 // Only increment the positional counter if it doesn't allow multiples
-                if !p.settings.is_set(ArgSettings::MultipleValues) {
+                if !p.is_multiple() {
                     pos_counter += 1;
                     parse_state = ParseState::ValuesDone;
                 } else {
@@ -702,12 +452,12 @@ impl<'help, 'app> Parser<'help, 'app> {
                 };
 
                 // Collect the external subcommand args
-                let mut sc_m = ArgMatcher::default();
+                let mut sc_m = ArgMatcher::new(self.app);
 
                 while let Some((v, _)) = it.next() {
-                    if !self.is_set(AS::AllowInvalidUtf8ForExternalSubcommands)
-                        && v.to_str().is_none()
-                    {
+                    let allow_invalid_utf8 =
+                        self.is_set(AS::AllowInvalidUtf8ForExternalSubcommands);
+                    if !allow_invalid_utf8 && v.to_str().is_none() {
                         return Err(ClapError::invalid_utf8(
                             self.app,
                             Usage::new(self).create_usage_with_title(&[]),
@@ -719,6 +469,9 @@ impl<'help, 'app> Parser<'help, 'app> {
                         ValueType::CommandLine,
                         false,
                     );
+                    sc_m.get_mut(&Id::empty_hash())
+                        .expect("just inserted")
+                        .invalid_utf8_allowed(allow_invalid_utf8);
                 }
 
                 matcher.subcommand(SubCommand {
@@ -726,8 +479,6 @@ impl<'help, 'app> Parser<'help, 'app> {
                     id: sc_name.into(),
                     matches: sc_m.into_inner(),
                 });
-
-                self.remove_overrides(matcher);
 
                 return Validator::new(self).validate(
                     parse_state,
@@ -762,10 +513,9 @@ impl<'help, 'app> Parser<'help, 'app> {
             return Err(ClapError::new(
                 message,
                 ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand,
+                self.app.settings.is_set(AS::WaitOnError),
             ));
         }
-
-        self.remove_overrides(matcher);
 
         Validator::new(self).validate(parse_state, subcmd_name.is_some(), matcher, trailing_values)
     }
@@ -895,8 +645,6 @@ impl<'help, 'app> Parser<'help, 'app> {
         let mut bin_name = self.app.bin_name.as_ref().unwrap_or(&self.app.name).clone();
 
         let mut sc = {
-            // @TODO @perf: cloning all these Apps isn't great, but since it's just displaying the
-            // help message there are bigger fish to fry
             let mut sc = self.app.clone();
 
             for cmd in cmds.iter() {
@@ -916,16 +664,6 @@ impl<'help, 'app> Parser<'help, 'app> {
                     ));
                 }
                 .clone();
-
-                if cmd == OsStr::new("help") {
-                    let pb = Arg::new("subcommand")
-                        .index(1)
-                        .setting(ArgSettings::TakesValue)
-                        .setting(ArgSettings::MultipleValues)
-                        .value_name("SUBCOMMAND")
-                        .about("The subcommand whose help message to display");
-                    sc = sc.arg(pb);
-                }
 
                 sc._build();
                 bin_name.push(' ');
@@ -947,7 +685,7 @@ impl<'help, 'app> Parser<'help, 'app> {
             next, current_positional.name
         );
 
-        if self.is_set(AS::AllowLeadingHyphen)
+        if self.is_set(AS::AllowHyphenValues)
             || self.app[&current_positional.id].is_set(ArgSettings::AllowHyphenValues)
             || (self.is_set(AS::AllowNegativeNumbers) && next.to_str_lossy().parse::<f64>().is_ok())
         {
@@ -993,7 +731,6 @@ impl<'help, 'app> Parser<'help, 'app> {
         let partial_parsing_enabled = self.is_set(AS::IgnoreErrors);
 
         if let Some(sc) = self.app.subcommands.iter_mut().find(|s| s.name == sc_name) {
-            let mut sc_matcher = ArgMatcher::default();
             // Display subcommand name, short and long in usage
             let mut sc_names = sc.name.clone();
             let mut flag_subcmd = false;
@@ -1029,6 +766,8 @@ impl<'help, 'app> Parser<'help, 'app> {
 
             // Ensure all args are built and ready to parse
             sc._build();
+
+            let mut sc_matcher = ArgMatcher::new(sc);
 
             debug!("Parser::parse_subcommand: About to parse sc={}", sc.name);
 
@@ -1134,16 +873,17 @@ impl<'help, 'app> Parser<'help, 'app> {
         // specified by the user is sent through. If HiddenShortHelp is not included,
         // then items specified with hidden_short_help will also be hidden.
         let should_long = |v: &Arg| {
-            v.long_about.is_some()
+            v.long_help.is_some()
                 || v.is_set(ArgSettings::HiddenLongHelp)
                 || v.is_set(ArgSettings::HiddenShortHelp)
         };
 
+        // Subcommands aren't checked because we prefer short help for them, deferring to
+        // `cmd subcmd --help` for more.
         self.app.long_about.is_some()
             || self.app.before_long_help.is_some()
             || self.app.after_long_help.is_some()
             || self.app.args.args().any(should_long)
-            || self.app.subcommands.iter().any(|s| s.long_about.is_some())
     }
 
     fn parse_long_arg(
@@ -1232,7 +972,7 @@ impl<'help, 'app> Parser<'help, 'app> {
             }
         } else if let Some(sc_name) = self.possible_long_flag_subcommand(arg) {
             ParseResult::FlagSubCommand(sc_name.to_string())
-        } else if self.is_set(AS::AllowLeadingHyphen) {
+        } else if self.is_set(AS::AllowHyphenValues) {
             ParseResult::MaybeHyphenValue
         } else {
             ParseResult::NoMatchingArg {
@@ -1254,17 +994,27 @@ impl<'help, 'app> Parser<'help, 'app> {
         debug!("Parser::parse_short_arg: short_arg={:?}", short_arg);
         let arg = short_arg.to_str_lossy();
 
-        if (self.is_set(AS::AllowNegativeNumbers) && arg.parse::<f64>().is_ok())
-            || (self.is_set(AS::AllowLeadingHyphen)
-                && arg.chars().any(|c| !self.app.contains_short(c)))
-            || matches!(parse_state, ParseState::Opt(opt) | ParseState::Pos(opt)
-                if self.app[opt].is_set(ArgSettings::AllowHyphenValues))
-            || self
-                .app
-                .args
-                .get(&pos_counter)
-                .map_or(false, |arg| arg.is_set(ArgSettings::AllowHyphenValues))
+        #[allow(clippy::blocks_in_if_conditions)]
+        if self.is_set(AS::AllowNegativeNumbers) && arg.parse::<f64>().is_ok() {
+            debug!("Parser::parse_short_arg: negative number");
+            return ParseResult::MaybeHyphenValue;
+        } else if self.is_set(AS::AllowHyphenValues)
+            && arg.chars().any(|c| !self.app.contains_short(c))
         {
+            debug!("Parser::parse_short_args: contains non-short flag");
+            return ParseResult::MaybeHyphenValue;
+        } else if matches!(parse_state, ParseState::Opt(opt) | ParseState::Pos(opt)
+                if self.app[opt].is_set(ArgSettings::AllowHyphenValues))
+        {
+            debug!("Parser::parse_short_args: prior arg accepts hyphenated values",);
+            return ParseResult::MaybeHyphenValue;
+        } else if self.app.args.get(&pos_counter).map_or(false, |arg| {
+            arg.is_set(ArgSettings::AllowHyphenValues) && !arg.is_set(ArgSettings::Last)
+        }) {
+            debug!(
+                "Parser::parse_short_args: positional at {} allows hyphens",
+                pos_counter
+            );
             return ParseResult::MaybeHyphenValue;
         }
 
@@ -1370,6 +1120,7 @@ impl<'help, 'app> Parser<'help, 'app> {
         if opt.is_set(ArgSettings::RequireEquals) && !has_eq {
             if opt.min_vals == Some(0) {
                 debug!("Requires equals, but min_vals == 0");
+                self.inc_occurrence_of_arg(matcher, opt);
                 // We assume this case is valid: require equals, but min_vals == 0.
                 if !opt.default_missing_vals.is_empty() {
                     debug!("Parser::parse_opt: has default_missing_vals");
@@ -1381,7 +1132,6 @@ impl<'help, 'app> Parser<'help, 'app> {
                         false,
                     );
                 };
-                self.inc_occurrence_of_arg(matcher, opt);
                 if attached_value.is_some() {
                     ParseResult::AttachedValueNotConsumed
                 } else {
@@ -1401,6 +1151,7 @@ impl<'help, 'app> Parser<'help, 'app> {
                 fv,
                 fv.starts_with("=")
             );
+            self.inc_occurrence_of_arg(matcher, opt);
             self.add_val_to_arg(
                 opt,
                 v,
@@ -1409,7 +1160,6 @@ impl<'help, 'app> Parser<'help, 'app> {
                 false,
                 trailing_values,
             );
-            self.inc_occurrence_of_arg(matcher, opt);
             ParseResult::ValuesDone
         } else {
             debug!("Parser::parse_opt: More arg vals required...");
@@ -1531,78 +1281,40 @@ impl<'help, 'app> Parser<'help, 'app> {
         matcher.add_index_to(&arg.id, self.cur_idx.get(), ty);
     }
 
-    fn arg_have_val(&self, matcher: &mut ArgMatcher, arg: &Arg<'help>) -> bool {
-        matcher.arg_have_val(&arg.id)
+    fn has_val_groups(&self, matcher: &mut ArgMatcher, arg: &Arg<'help>) -> bool {
+        matcher.has_val_groups(&arg.id)
     }
 
     fn parse_flag(&self, flag: &Arg<'help>, matcher: &mut ArgMatcher) -> ParseResult {
         debug!("Parser::parse_flag");
 
-        matcher.add_index_to(&flag.id, self.cur_idx.get(), ValueType::CommandLine);
         self.inc_occurrence_of_arg(matcher, flag);
+        matcher.add_index_to(&flag.id, self.cur_idx.get(), ValueType::CommandLine);
 
         ParseResult::ValuesDone
     }
 
-    fn remove_overrides(&mut self, matcher: &mut ArgMatcher) {
-        debug!("Parser::remove_overrides");
-        let mut to_rem: Vec<Id> = Vec::new();
-        let mut self_override: Vec<Id> = Vec::new();
-        let mut arg_overrides = Vec::new();
-        for name in matcher.arg_names() {
-            debug!("Parser::remove_overrides:iter:{:?}", name);
-            if let Some(overrider) = self.app.find(name) {
-                let mut override_self = false;
-                for overridee in &overrider.overrides {
-                    debug!(
-                        "Parser::remove_overrides:iter:{:?} => {:?}",
-                        name, overrider
-                    );
-                    if *overridee == overrider.id {
-                        override_self = true;
-                    } else {
-                        arg_overrides.push((overrider.id.clone(), overridee));
-                        arg_overrides.push((overridee.clone(), &overrider.id));
-                    }
-                }
-                // Only do self override for argument that is not positional
-                // argument or flag with MultipleOccurrences setting enabled.
-                if (self.is_set(AS::AllArgsOverrideSelf) || override_self)
-                    && !overrider.is_set(ArgSettings::MultipleOccurrences)
-                    && !overrider.is_positional()
-                {
-                    debug!(
-                        "Parser::remove_overrides:iter:{:?}:iter:{:?}: self override",
-                        name, overrider
-                    );
-                    self_override.push(overrider.id.clone());
+    fn remove_overrides(&self, arg: &Arg<'help>, matcher: &mut ArgMatcher) {
+        debug!("Parser::remove_overrides: id={:?}", arg.id);
+        for override_id in &arg.overrides {
+            debug!("Parser::remove_overrides:iter:{:?}: removing", override_id);
+            matcher.remove(override_id);
+            self.overridden.borrow_mut().push(override_id.clone());
+        }
+
+        // Override anything that can override us
+        let mut transitive = Vec::new();
+        for arg_id in matcher.arg_names() {
+            if let Some(overrider) = self.app.find(arg_id) {
+                if overrider.overrides.contains(&arg.id) {
+                    transitive.push(&overrider.id);
                 }
             }
         }
-
-        // remove future overrides in reverse seen order
-        for arg in self.seen.iter().rev() {
-            for (a, overr) in arg_overrides.iter().filter(|(a, _)| a == arg) {
-                if !to_rem.contains(a) {
-                    to_rem.push((*overr).clone());
-                }
-            }
-        }
-
-        // Do self overrides
-        for name in &self_override {
-            debug!("Parser::remove_overrides:iter:self:{:?}: resetting", name);
-            if let Some(ma) = matcher.get_mut(name) {
-                ma.occurs = 1;
-                ma.override_vals();
-            }
-        }
-
-        // Finally remove conflicts
-        for name in &to_rem {
-            debug!("Parser::remove_overrides:iter:{:?}: removing", name);
-            matcher.remove(name);
-            self.overridden.push(name.clone());
+        for overrider_id in transitive {
+            debug!("Parser::remove_overrides:iter:{:?}: removing", overrider_id);
+            matcher.remove(overrider_id);
+            self.overridden.borrow_mut().push(overrider_id.clone());
         }
     }
 
@@ -1706,7 +1418,7 @@ impl<'help, 'app> Parser<'help, 'app> {
                 arg.name
             );
             match matcher.get(&arg.id) {
-                Some(ma) if ma.is_vals_empty() => {
+                Some(ma) if ma.all_val_groups_empty() => {
                     debug!(
                         "Parser::add_value:iter:{}: has no user defined vals",
                         arg.name
@@ -1800,10 +1512,13 @@ impl<'help, 'app> Parser<'help, 'app> {
 
     /// Increase occurrence of specific argument and the grouped arg it's in.
     fn inc_occurrence_of_arg(&self, matcher: &mut ArgMatcher, arg: &Arg<'help>) {
-        matcher.inc_occurrence_of(&arg.id, arg.is_set(ArgSettings::IgnoreCase));
+        // With each new occurrence, remove overrides from prior occurrences
+        self.remove_overrides(arg, matcher);
+
+        matcher.inc_occurrence_of_arg(arg);
         // Increment or create the group "args"
         for group in self.app.groups_for_arg(&arg.id) {
-            matcher.inc_occurrence_of(&group, false);
+            matcher.inc_occurrence_of_group(&group);
         }
     }
 }
@@ -1863,7 +1578,7 @@ impl<'help, 'app> Parser<'help, 'app> {
     }
 
     pub(crate) fn write_help_err(&self) -> ClapResult<Colorizer> {
-        let mut c = Colorizer::new(true, self.app.get_color());
+        let mut c = Colorizer::new(true, self.color_help());
         Help::new(HelpWriter::Buffer(&mut c), self, false).write_help()?;
         Ok(c)
     }
@@ -1875,11 +1590,15 @@ impl<'help, 'app> Parser<'help, 'app> {
         );
 
         use_long = use_long && self.use_long_help();
-        let mut c = Colorizer::new(false, self.app.get_color());
+        let mut c = Colorizer::new(false, self.color_help());
 
         match Help::new(HelpWriter::Buffer(&mut c), self, use_long).write_help() {
             Err(e) => e.into(),
-            _ => ClapError::new(c, ErrorKind::DisplayHelp),
+            _ => ClapError::new(
+                c,
+                ErrorKind::DisplayHelp,
+                self.app.settings.is_set(AS::WaitOnError),
+            ),
         }
     }
 
@@ -1887,9 +1606,13 @@ impl<'help, 'app> Parser<'help, 'app> {
         debug!("Parser::version_err");
 
         let msg = self.app._render_version(use_long);
-        let mut c = Colorizer::new(false, self.app.get_color());
+        let mut c = Colorizer::new(false, self.color_help());
         c.none(msg);
-        ClapError::new(c, ErrorKind::DisplayVersion)
+        ClapError::new(
+            c,
+            ErrorKind::DisplayVersion,
+            self.app.settings.is_set(AS::WaitOnError),
+        )
     }
 }
 
@@ -1898,4 +1621,87 @@ impl<'help, 'app> Parser<'help, 'app> {
     pub(crate) fn is_set(&self, s: AS) -> bool {
         self.app.is_set(s)
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct Input {
+    items: Vec<OsString>,
+    cursor: usize,
+}
+
+impl<I, T> From<I> for Input
+where
+    I: Iterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    fn from(val: I) -> Self {
+        Self {
+            items: val.map(|x| x.into()).collect(),
+            cursor: 0,
+        }
+    }
+}
+
+impl Input {
+    pub(crate) fn next(&mut self) -> Option<(&OsStr, &[OsString])> {
+        if self.cursor >= self.items.len() {
+            None
+        } else {
+            let current = &self.items[self.cursor];
+            self.cursor += 1;
+            let remaining = &self.items[self.cursor..];
+            Some((current, remaining))
+        }
+    }
+
+    /// Insert some items to the Input items just after current parsing cursor.
+    /// Usually used by replaced items recovering.
+    pub(crate) fn insert(&mut self, insert_items: &[&str]) {
+        self.items = insert_items
+            .iter()
+            .map(OsString::from)
+            .chain(self.items.drain(self.cursor..))
+            .collect();
+        self.cursor = 0;
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ParseState {
+    ValuesDone,
+    Opt(Id),
+    Pos(Id),
+}
+
+/// Recoverable Parsing results.
+#[derive(Debug, PartialEq, Clone)]
+enum ParseResult {
+    FlagSubCommand(String),
+    Opt(Id),
+    ValuesDone,
+    /// Value attached to the short flag is not consumed(e.g. 'u' for `-cu` is
+    /// not consumed).
+    AttachedValueNotConsumed,
+    /// This long flag doesn't need a value but is provided one.
+    UnneededAttachedValue {
+        rest: String,
+        used: Vec<Id>,
+        arg: String,
+    },
+    /// This flag might be an hyphen Value.
+    MaybeHyphenValue,
+    /// Equals required but not provided.
+    EqualsNotProvided {
+        arg: String,
+    },
+    /// Failed to match a Arg.
+    NoMatchingArg {
+        arg: String,
+    },
+    /// No argument found e.g. parser is given `-` when parsing a flag.
+    NoArg,
+    /// This is a Help flag.
+    HelpFlag,
+    /// This is a version flag.
+    VersionFlag,
 }

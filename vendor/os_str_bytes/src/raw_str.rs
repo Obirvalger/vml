@@ -108,8 +108,9 @@ macro_rules! impl_split_once_raw {
 /// All searching methods have worst-case multiplicative time complexity (i.e.,
 /// `O(self.raw_len() * pat.len())`). Enabling the "memchr" feature allows
 /// these methods to instead run in linear time in the worst case (documented
-/// for [`memchr::memmem::find`]).
+/// for [`memchr::memmem::find`][memchr complexity]).
 ///
+/// [memchr complexity]: memchr::memmem::find#complexity
 /// [unspecified encoding]: super#encoding
 #[derive(Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(os_str_bytes_docs_rs, doc(cfg(feature = "raw_os_str")))]
@@ -820,7 +821,7 @@ impl ToOwned for RawOsStr {
 
     #[inline]
     fn to_owned(&self) -> Self::Owned {
-        RawOsString(self.0.to_vec())
+        RawOsString(self.0.to_owned())
     }
 }
 
@@ -868,7 +869,7 @@ impl RawOsString {
     /// ```
     /// use os_str_bytes::RawOsString;
     ///
-    /// let string = "foobar".to_string();
+    /// let string = "foobar".to_owned();
     /// let raw = RawOsString::from_string(string.clone());
     /// assert_eq!(string, raw);
     /// ```
@@ -935,7 +936,7 @@ impl RawOsString {
     /// ```
     /// use os_str_bytes::RawOsString;
     ///
-    /// let string = "foobar".to_string();
+    /// let string = "foobar".to_owned();
     /// let raw = RawOsString::from_string(string.clone());
     /// assert_eq!(Ok(string), raw.into_string());
     /// ```
@@ -1089,23 +1090,40 @@ r#impl!(RawOsString, String);
 #[cfg(feature = "print_bytes")]
 #[cfg_attr(os_str_bytes_docs_rs, doc(cfg(feature = "print_bytes")))]
 mod print_bytes {
-    use print_bytes::Bytes;
+    use print_bytes::ByteStr;
     use print_bytes::ToBytes;
+    #[cfg(windows)]
+    use print_bytes::WideStr;
+
+    #[cfg(windows)]
+    use crate::imp::raw;
 
     use super::RawOsStr;
     use super::RawOsString;
 
     impl ToBytes for RawOsStr {
         #[inline]
-        fn to_bytes(&self) -> Bytes<'_> {
+        fn to_bytes(&self) -> ByteStr<'_> {
             self.0.to_bytes()
+        }
+
+        #[cfg(windows)]
+        #[inline]
+        fn to_wide(&self) -> Option<WideStr> {
+            Some(WideStr::new(raw::encode_wide_unchecked(&self.0).collect()))
         }
     }
 
     impl ToBytes for RawOsString {
         #[inline]
-        fn to_bytes(&self) -> Bytes<'_> {
+        fn to_bytes(&self) -> ByteStr<'_> {
             (**self).to_bytes()
+        }
+
+        #[cfg(windows)]
+        #[inline]
+        fn to_wide(&self) -> Option<WideStr> {
+            (**self).to_wide()
         }
     }
 }

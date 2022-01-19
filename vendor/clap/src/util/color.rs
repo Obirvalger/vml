@@ -60,14 +60,3 @@ impl Default for ColorChoice {
         Self::Auto
     }
 }
-
-#[cfg(feature = "color")]
-pub(crate) use termcolor::Color;
-
-#[cfg(not(feature = "color"))]
-#[derive(Debug)]
-pub(crate) enum Color {
-    Green,
-    Yellow,
-    Red,
-}

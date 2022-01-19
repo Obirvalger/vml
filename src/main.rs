@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use byte_unit::Byte;
-use clap::ArgMatches;
+use clap::{ArgMatches, Values};
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Cell, Color, ContentArrangement, Table};
 
@@ -200,33 +200,49 @@ fn parse_user_at_name(user_at_name: &str) -> (Option<&str>, &str) {
     }
 }
 
+fn matches_valid_value<S: AsRef<str>>(matches: &ArgMatches, key: S) -> Option<&str> {
+    if matches.is_valid_arg(key.as_ref()) {
+        matches.value_of(key.as_ref())
+    } else {
+        None
+    }
+}
+
+fn matches_valid_values<S: AsRef<str>>(matches: &ArgMatches, key: S) -> Option<Values> {
+    if matches.is_valid_arg(key.as_ref()) {
+        matches.values_of(key.as_ref())
+    } else {
+        None
+    }
+}
+
 fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
-    if let Some(name) = matches.value_of("NAME") {
+    if let Some(name) = matches_valid_value(matches, "NAME") {
         let (_user, name) = parse_user_at_name(name);
 
         vmc.name(name);
     }
 
-    if let Some(name) = matches.value_of("name-same-image") {
+    if let Some(name) = matches_valid_value(matches, "name-same-image") {
         vmc.name(name);
     }
 
-    if matches.is_present("names") {
-        let names: Vec<&str> = matches.values_of("names").unwrap().collect();
+    if let Some(values) = matches_valid_values(matches, "names") {
+        let names: Vec<&str> = values.collect();
         vmc.names(&names);
     }
 
-    if matches.is_present("parents") {
-        let parents: Vec<&str> = matches.values_of("parents").unwrap().collect();
+    if let Some(values) = matches_valid_values(matches, "parents") {
+        let parents: Vec<&str> = values.collect();
         vmc.parents(&parents);
     }
 
-    if matches.is_present("tags") {
-        let tags: Vec<&str> = matches.values_of("tags").unwrap().collect();
+    if let Some(values) = matches_valid_values(matches, "tags") {
+        let tags: Vec<&str> = values.collect();
         vmc.tags(&tags);
     }
 
-    if matches.is_present("running") {
+    if matches_valid_value(matches, "running").is_some() {
         vmc.with_pid(WithPid::Filter);
     }
 }

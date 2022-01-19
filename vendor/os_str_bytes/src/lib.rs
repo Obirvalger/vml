@@ -156,7 +156,7 @@
     all(target_vendor = "fortanix", target_env = "sgx"),
     feature(sgx_platform)
 )]
-#![cfg_attr(not(feature = "raw_os_str"), forbid(unsafe_code))]
+#![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(unused_results)]
 
 use std::borrow::Cow;
@@ -429,5 +429,4 @@ mod private {
     impl Sealed for PathBuf {}
     impl Sealed for &str {}
     impl Sealed for &String {}
-    impl Sealed for u8 {}
 }
