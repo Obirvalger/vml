@@ -12,7 +12,7 @@ class InventoryBuilder:
     def __init__(self):
         self.vms = json.loads(
             subprocess.run(
-                ["vml", "show", "--format-json", "--all", "--running"],
+                ["vml", "show", "--format-json", "--running"],
                 stdout=subprocess.PIPE,
             ).stdout
         )
