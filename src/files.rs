@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::Result;
@@ -17,6 +18,10 @@ struct AssetConfigs;
 #[derive(RustEmbed)]
 #[folder = "files/get-url-progs"]
 struct AssetGetUrlProgs;
+
+#[derive(RustEmbed)]
+#[folder = "files"]
+struct AssetAllFiles;
 
 pub fn get_config<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
     AssetConfigs::get(path.as_ref())
@@ -89,5 +94,16 @@ pub fn install_all(config: &Config) -> Result<()> {
 
     install_get_url_progs()?;
 
+    Ok(())
+}
+
+fn get_file<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
+    AssetAllFiles::get(path.as_ref())
+        .map(|f| f.data)
+        .ok_or_else(|| Error::GetWrongEmbeddedFile(path.as_ref().to_string()).into())
+}
+
+pub fn show_file<S: AsRef<str>>(path: S) -> Result<()> {
+    io::stdout().write_all(&get_file(path)?)?;
     Ok(())
 }

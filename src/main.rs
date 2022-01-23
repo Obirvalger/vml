@@ -680,6 +680,10 @@ fn main() -> Result<()> {
             }
         }
 
+        Some(("get-file", get_file_matches)) => {
+            files::show_file(get_file_matches.value_of("path").unwrap())?
+        }
+
         Some(("completion", completion_matches)) => {
             cli::completion(completion_matches.value_of("SHELL").unwrap())?
         }

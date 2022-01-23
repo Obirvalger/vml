@@ -703,6 +703,9 @@ pub fn build_cli() -> clap::App<'static> {
                         .multiple_values(true),
                 ),
         )
+        .subcommand(
+            App::new("get-file").about("show embedded file").arg(Arg::new("path").required(true)),
+        )
         .subcommand(App::new("completion").arg(
             Arg::new("SHELL").help("generate completions").required(true).possible_values(&[
                 "bash",
