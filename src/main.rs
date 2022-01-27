@@ -260,6 +260,8 @@ fn main() -> Result<()> {
         }
         ssh.arg(&host).args(&args);
 
+        #[cfg(debug_assertions)]
+        eprintln!("{:?}", &ssh);
         ssh.spawn().context("failed to run executable ssh")?.wait()?;
 
         return Ok(());
