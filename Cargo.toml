@@ -16,7 +16,7 @@ comfy-table = "5.0.0"
 json = "0.12.4"
 procfs = "0.12.0"
 rand = "0.8.4"
-reqwest = { version = "0.11.8", features = ["blocking"] }
+reqwest = { version = "0.11.8", default-features = false, features = ["blocking"] }
 rust-embed = "6.3.0"
 serde = { version = "1.0.132", features = ["derive"] }
 shellexpand = "2.1.0"
@@ -26,6 +26,11 @@ thiserror = "1.0.30"
 toml = "0.5.8"
 urlencoding = "2.1.0"
 walkdir = "2.3.2"
+
+[features]
+default = ["rustls-tls"]
+rustls-tls = ["reqwest/rustls-tls"]
+native-tls = ["reqwest/native-tls"]
 
 [patch.crates-io]
 faccess = { git = "https://github.com/Obirvalger/faccess" }
