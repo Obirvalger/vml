@@ -130,12 +130,18 @@ impl Default for WaitSsh {
     }
 }
 
+fn default_start_ssh() -> bool {
+    false
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct StrartCommand {
     #[serde(default)]
     pub wait_ssh: WaitSsh,
+    #[serde(default = "default_start_ssh")]
+    pub ssh: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]

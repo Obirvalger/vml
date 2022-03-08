@@ -222,6 +222,8 @@ pub fn build_cli() -> clap::App<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
+                .arg(Arg::new("ssh").long("ssh"))
+                .arg(Arg::new("no-ssh").long("no-ssh"))
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
@@ -266,6 +268,8 @@ pub fn build_cli() -> clap::App<'static> {
                         .short('N')
                         .takes_value(true),
                 )
+                .arg(Arg::new("ssh").long("ssh"))
+                .arg(Arg::new("no-ssh").long("no-ssh"))
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))

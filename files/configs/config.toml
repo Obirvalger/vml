@@ -23,6 +23,9 @@ remove.verbose = true
 
 start.wait-ssh = { on = true, attempts = 60, repeat = 2, sleep = 5, timeout = 1 }
 
+# Ssh to vms after start
+start.ssh = false
+
 
 [default]
 memory = "2G"

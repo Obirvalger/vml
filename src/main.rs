@@ -114,7 +114,11 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
 fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> Result<()> {
     set_specifications(vmc, start_matches);
 
-    let wait_ssh = config.commands.start.wait_ssh.on && !start_matches.is_present("no-wait-ssh")
+    let ssh = config.commands.start.ssh && !start_matches.is_present("no-ssh")
+        || start_matches.is_present("ssh");
+
+    let wait_ssh = ssh
+        || config.commands.start.wait_ssh.on && !start_matches.is_present("no-wait-ssh")
         || start_matches.is_present("wait-ssh");
     let cloud_init = if start_matches.is_present("no-cloud-init") {
         Some(false)
@@ -148,10 +152,14 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
             format!("ConnectionAttempts={}", config.commands.start.wait_ssh.attempts),
             format!("ConnectTimeout={}", config.commands.start.wait_ssh.timeout),
         ];
+        let cmd: Option<Vec<&str>> = None;
         let flags: Vec<&str> = vec![];
         for vm in &vms {
             for _ in 0..repeat {
                 if vm.ssh(&user, &options, &flags, &Some(vec!["true"]))? == Some(0) {
+                    if ssh {
+                        vm.ssh(&user, &options, &flags, &cmd)?;
+                    };
                     break;
                 } else {
                     thread::sleep(Duration::from_secs(sleep));
