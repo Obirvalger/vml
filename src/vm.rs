@@ -5,9 +5,12 @@ use std::hash::{Hash, Hasher};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use anyhow::Context as AnyhowContext;
 use anyhow::{bail, Result};
+use procfs::process::Process;
 use rand::Rng;
 use tera::Context;
 
@@ -375,16 +378,39 @@ impl VM {
         #[cfg(debug_assertions)]
         eprintln!("Stop vm {:?}", self.name);
 
+        fn kill(pid: i32) -> Result<()> {
+            Command::new("kill")
+                .args(&[pid.to_string()])
+                .spawn()
+                .context("failed to run executable kill")?;
+            #[cfg(debug_assertions)]
+            eprintln!("Kill {}", pid);
+
+            Ok(())
+        }
+
         if let Some(pid) = self.pid {
             if force {
-                Command::new("kill")
-                    .args(&[pid.to_string()])
-                    .spawn()
-                    .context("failed to run executable kill")?;
-                #[cfg(debug_assertions)]
-                eprintln!("Kill {}", pid);
+                kill(pid)?;
             } else {
                 self.monitor_command("quit")?;
+            }
+
+            let mut repeat = 900; // stop after 90 seconds
+            let sleep = 100; // milliseconds
+            let mut killed = false;
+            loop {
+                if !killed && repeat <= 0 {
+                    kill(pid)?;
+                    killed = true;
+                }
+                if Process::new(pid).is_err() {
+                    break;
+                } else {
+                    thread::sleep(Duration::from_millis(sleep));
+                }
+
+                repeat -= 1;
             }
 
             self.pid = None;
