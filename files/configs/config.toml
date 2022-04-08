@@ -26,6 +26,9 @@ start.wait-ssh = { on = true, attempts = 60, repeat = 2, sleep = 5, timeout = 1 
 # Ssh to vms after start
 start.ssh = false
 
+# Do this when start vm that already running: fail, ignore, restart
+start.running = "fail"
+
 
 [default]
 memory = "2G"

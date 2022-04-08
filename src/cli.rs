@@ -228,6 +228,9 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
+                .arg(Arg::new("running-fail").long("running-fail"))
+                .arg(Arg::new("running-ignore").long("running-ignore"))
+                .arg(Arg::new("running-restart").long("running-restart").alias("running-stop"))
                 .arg(
                     Arg::new("drives")
                         .long("drives")
@@ -313,6 +316,9 @@ pub fn build_cli() -> clap::App<'static> {
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
+                .arg(Arg::new("running-fail").long("running-fail"))
+                .arg(Arg::new("running-ignore").long("running-ignore"))
+                .arg(Arg::new("running-restart").long("running-restart").alias("running-stop"))
                 .arg(Arg::new("net-none").long("net-none"))
                 .arg(Arg::new("net-user").long("net-user"))
                 .arg(Arg::new("nic-model").long("nic-model").takes_value(true))

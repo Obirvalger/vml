@@ -14,7 +14,7 @@ use comfy_table::{Cell, Color, ContentArrangement, Table};
 
 use vml::cli;
 use vml::config::Config;
-use vml::config::CreateExistsAction;
+use vml::config::{CreateExistsAction, StartRunningAction};
 use vml::files;
 use vml::images;
 use vml::net::ConfigNet;
@@ -66,6 +66,16 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
     } else {
         config.commands.create.exists
     };
+
+    if matches!(&exists, &CreateExistsAction::Replace) {
+        let mut vmc = VMsCreator::new(config);
+        vmc.names(&names);
+        vmc.with_pid(WithPid::Filter);
+        let mut vms = vmc.create()?;
+        for vm in &mut vms {
+            vm.stop(true)?
+        }
+    }
 
     vm_config.nproc = create_matches.value_of("nproc").map(|m| StringOrUint::S(m.to_string()));
     vm_config.memory = create_matches.value_of("memory").map(|m| m.to_string());
@@ -134,12 +144,35 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
         vec![]
     };
 
-    vmc.with_pid(WithPid::Without);
-    vmc.error_on_empty();
+    let running = if start_matches.is_present("running-fail") {
+        StartRunningAction::Fail
+    } else if start_matches.is_present("running-ignore") {
+        StartRunningAction::Ignore
+    } else if start_matches.is_present("running-restart") {
+        StartRunningAction::Restart
+    } else {
+        config.commands.start.running
+    };
 
-    let vms = vmc.create()?;
+    match running {
+        StartRunningAction::Fail => {
+            vmc.with_pid(WithPid::Without);
+            vmc.error_on_empty();
+        }
+        StartRunningAction::Ignore => {
+            vmc.with_pid(WithPid::Without);
+        }
+        StartRunningAction::Restart => {
+            vmc.with_pid(WithPid::Option);
+        }
+    };
 
-    for vm in &vms {
+    let mut vms = vmc.create()?;
+
+    for vm in &mut vms {
+        if vm.has_pid() {
+            vm.stop(false)?;
+        }
         vm.start(cloud_init, &drives)?;
         openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
     }

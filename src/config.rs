@@ -134,6 +134,18 @@ fn default_start_ssh() -> bool {
     false
 }
 
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StartRunningAction {
+    Fail,
+    Ignore,
+    Restart,
+}
+
+fn default_start_running_action() -> StartRunningAction {
+    StartRunningAction::Fail
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
@@ -142,6 +154,8 @@ pub struct StrartCommand {
     pub wait_ssh: WaitSsh,
     #[serde(default = "default_start_ssh")]
     pub ssh: bool,
+    #[serde(default = "default_start_running_action")]
+    pub running: StartRunningAction,
 }
 
 #[derive(Clone, Debug, Deserialize)]
