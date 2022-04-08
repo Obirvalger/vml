@@ -271,7 +271,7 @@ impl VM {
 
     pub fn start<S: AsRef<OsStr>>(&self, cloud_init: Option<bool>, drives: &[S]) -> Result<()> {
         #[cfg(debug_assertions)]
-        eprintln!("Strart vm {:?}", self.name);
+        eprintln!("Start vm {:?}", self.name);
         let mut kvm = Command::new("kvm");
         let mut context = self.context();
 
