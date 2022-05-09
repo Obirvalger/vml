@@ -8,5 +8,5 @@
 # `get-url-prog` from updating.
 
 url="https://mirror.yandex.ru/fedora/linux/development/rawhide/Cloud/x86_64/images/"
-name="$(curl "$url" | sed -n -E 's/.*href="(.*\.qcow2)".*/\1/p')"
+name="$(curl "$url" | sed -n -E 's/.*href="(.*\.qcow2)".*/\1/p' | sort -rV | head -1)"
 echo "$url$name"
