@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::btree_map;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::env::consts::ARCH;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::Images as ConfigImages;
 use crate::config_dir;
 use crate::files;
+use crate::template;
 use crate::Error;
 
 #[derive(Clone, Debug)]
@@ -89,9 +91,10 @@ impl<'a> Image<'a> {
     }
 
     pub fn pull(&self) -> Result<PathBuf> {
-        let url = &self.url();
+        let context = template::create_context(&[("arch", ARCH)]);
+        let url = template::render(&context, &self.url(), "pull image url")?;
         let mut body =
-            reqwest::blocking::get(url).map_err(|e| Error::DownloadImage(e.to_string()))?;
+            reqwest::blocking::get(&url).map_err(|e| Error::DownloadImage(e.to_string()))?;
         let image_path = self.path();
         let images_dir = &self.config.directory;
         let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;

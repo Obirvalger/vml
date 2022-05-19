@@ -6,6 +6,15 @@ use anyhow::Result;
 use tera::Context;
 use tera::Tera;
 
+pub fn create_context<S: AsRef<str>>(pairs: &[(S, S)]) -> Context {
+    let mut context = Context::new();
+    for (k, v) in pairs {
+        context.insert(k.as_ref(), v.as_ref());
+    }
+
+    context
+}
+
 pub fn render<S: AsRef<str>>(context: &Context, template: S, place: &str) -> Result<String> {
     Tera::one_off(template.as_ref(), context, false)
         .with_context(|| format!("failed to render template in {}", place))
