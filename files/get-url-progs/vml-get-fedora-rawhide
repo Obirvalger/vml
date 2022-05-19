@@ -7,6 +7,7 @@
 # apropriate item. Do not forget to update `change` section to keep
 # `get-url-prog` from updating.
 
-url="https://mirror.yandex.ru/fedora/linux/development/rawhide/Cloud/x86_64/images/"
+arch="$(uname -m)"
+url="https://mirror.yandex.ru/fedora/linux/development/rawhide/Cloud/$arch/images/"
 name="$(curl "$url" | sed -n -E 's/.*href="(.*\.qcow2)".*/\1/p' | sort -rV | head -1)"
 echo "$url$name"
