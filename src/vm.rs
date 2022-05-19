@@ -177,7 +177,7 @@ impl VM {
         let cloud_init = vm_config.cloud_init.unwrap_or(config.default.cloud_init);
         let cloud_init_image =
             vm_config.cloud_init_image.or_else(|| config.default.cloud_init_image.to_owned());
-        let data = vm_config.data.unwrap_or_else(HashMap::new);
+        let data = vm_config.data.unwrap_or_default();
         let disk = directory.join(vm_config.disk.unwrap_or_else(|| PathBuf::from("disk.qcow2")));
         if !disk.is_file() {
             bail!("disk `{}` for vm `{}` not found", &disk.display(), &name);
@@ -190,7 +190,7 @@ impl VM {
         let nic_model =
             vm_config.nic_model.unwrap_or_else(|| config.default.nic_model.to_string());
         let nproc = vm_config.nproc.unwrap_or_else(|| config.default.nproc.to_owned()).to_string();
-        let tags = vm_config.tags.unwrap_or_else(HashSet::new);
+        let tags = vm_config.tags.unwrap_or_default();
 
         let mut net_config = match vm_config.net {
             None => config.default.net.to_owned(),

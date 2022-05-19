@@ -49,22 +49,22 @@ impl ConfigSsh {
             authorized_keys: self
                 .authorized_keys
                 .as_ref()
-                .or_else(|| other.authorized_keys.as_ref())
+                .or(other.authorized_keys.as_ref())
                 .cloned(),
-            key: self.key.as_ref().or_else(|| other.key.as_ref()).cloned(),
-            options: self.options.as_ref().or_else(|| other.options.as_ref()).cloned(),
-            port: self.port.as_ref().or_else(|| other.port.as_ref()).cloned(),
+            key: self.key.as_ref().or(other.key.as_ref()).cloned(),
+            options: self.options.as_ref().or(other.options.as_ref()).cloned(),
+            port: self.port.as_ref().or(other.port.as_ref()).cloned(),
             port_user_network: self
                 .port_user_network
                 .as_ref()
-                .or_else(|| other.port_user_network.as_ref())
+                .or(other.port_user_network.as_ref())
                 .cloned(),
             host_user_network: self
                 .host_user_network
                 .as_ref()
-                .or_else(|| other.host_user_network.as_ref())
+                .or(other.host_user_network.as_ref())
                 .cloned(),
-            user: self.user.as_ref().or_else(|| other.user.as_ref()).cloned(),
+            user: self.user.as_ref().or(other.user.as_ref()).cloned(),
         }
     }
 }

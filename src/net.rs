@@ -38,11 +38,11 @@ impl ConfigNet {
                     tap: other_tap,
                 },
             ) => {
-                let address = self_address.as_ref().or_else(|| other_address.as_ref()).cloned();
-                let gateway = self_gateway.as_ref().or_else(|| other_gateway.as_ref()).cloned();
+                let address = self_address.as_ref().or(other_address.as_ref()).cloned();
+                let gateway = self_gateway.as_ref().or(other_gateway.as_ref()).cloned();
                 let nameservers =
-                    self_nameservers.as_ref().or_else(|| other_nameservers.as_ref()).cloned();
-                let tap = self_tap.as_ref().or_else(|| other_tap.as_ref()).cloned();
+                    self_nameservers.as_ref().or(other_nameservers.as_ref()).cloned();
+                let tap = self_tap.as_ref().or(other_tap.as_ref()).cloned();
                 ConfigNet::Tap { address, gateway, nameservers, tap }
             }
             _ => self.to_owned(),
