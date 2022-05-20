@@ -16,6 +16,7 @@ use crate::string_like::StringOrUint;
 pub struct VMConfig {
     pub cloud_init: Option<bool>,
     pub cloud_init_image: Option<PathBuf>,
+    pub cpu_model: Option<String>,
     pub data: Option<HashMap<String, String>>,
     pub disk: Option<PathBuf>,
     pub display: Option<String>,
@@ -62,6 +63,7 @@ impl VMConfig {
         let VMConfig {
             ref mut cloud_init,
             ref mut cloud_init_image,
+            ref mut cpu_model,
             ref mut data,
             ref mut disk,
             ref mut display,
@@ -81,6 +83,9 @@ impl VMConfig {
         }
         if cloud_init_image.is_none() {
             *cloud_init_image = other.cloud_init_image.to_owned();
+        }
+        if cpu_model.is_none() {
+            *cpu_model = other.cpu_model.to_owned();
         }
         if data.is_none() {
             *data = other.data.to_owned();

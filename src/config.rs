@@ -17,6 +17,8 @@ use crate::string_like::StringOrUint;
 pub struct VMsDefault {
     pub memory: String,
     pub display: Option<String>,
+    #[serde(default = "default_cpu_model")]
+    pub cpu_model: String,
     pub net: ConfigNet,
     #[serde(default = "default_nic_model")]
     pub nic_model: String,
@@ -28,6 +30,14 @@ pub struct VMsDefault {
     pub minimum_disk_size: Option<Byte>,
     pub cloud_init: bool,
     pub cloud_init_image: Option<PathBuf>,
+}
+
+fn default_cpu_model() -> String {
+    if ARCH == "aarch64" {
+        "host,pmu=off".to_string()
+    } else {
+        "host".to_string()
+    }
 }
 
 fn default_nic_model() -> String {

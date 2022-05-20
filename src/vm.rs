@@ -113,6 +113,7 @@ pub struct VM {
     cache: Cache,
     cloud_init: bool,
     cloud_init_image: Option<PathBuf>,
+    cpu_model: String,
     data: HashMap<String, String>,
     directory: PathBuf,
     disk: PathBuf,
@@ -178,6 +179,8 @@ impl VM {
         let cloud_init = vm_config.cloud_init.unwrap_or(config.default.cloud_init);
         let cloud_init_image =
             vm_config.cloud_init_image.or_else(|| config.default.cloud_init_image.to_owned());
+        let cpu_model =
+            vm_config.cpu_model.unwrap_or_else(|| config.default.cpu_model.to_string());
         let data = vm_config.data.unwrap_or_default();
         let disk = directory.join(vm_config.disk.unwrap_or_else(|| PathBuf::from("disk.qcow2")));
         if !disk.is_file() {
@@ -217,6 +220,7 @@ impl VM {
             cache,
             cloud_init,
             cloud_init_image,
+            cpu_model,
             data,
             directory,
             disk,
@@ -281,7 +285,8 @@ impl VM {
         let mut context = self.context();
 
         qemu.args(&["-m", &self.memory])
-            .args(&["-cpu", "host"])
+            .arg("--enable-kvm")
+            .args(&["-cpu", &self.cpu_model])
             .args(&["-smp", &self.nproc])
             .args(&["-drive", &format!("file={},if=virtio", self.disk.to_string_lossy())])
             .args(&["-monitor", &format!("unix:{},server,nowait", self.monitor.to_string_lossy())])
