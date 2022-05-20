@@ -26,6 +26,7 @@ pub struct VMConfig {
     pub nic_model: Option<String>,
     pub nproc: Option<StringOrUint>,
     pub qemu_binary: Option<String>,
+    pub qemu_arch_options: Option<Vec<String>>,
     pub tags: Option<HashSet<String>>,
     pub ssh: Option<ConfigSsh>,
     pub net: Option<ConfigNet>,
@@ -74,6 +75,7 @@ impl VMConfig {
             ref mut nic_model,
             ref mut nproc,
             ref mut qemu_binary,
+            ref mut qemu_arch_options,
             ref mut ssh,
             ref mut tags,
         } = self;
@@ -121,6 +123,9 @@ impl VMConfig {
         }
         if qemu_binary.is_none() {
             *qemu_binary = other.qemu_binary.to_owned();
+        }
+        if qemu_arch_options.is_none() {
+            *qemu_arch_options = other.qemu_arch_options.to_owned();
         }
         match ssh {
             None => *ssh = other.ssh.to_owned(),

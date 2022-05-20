@@ -131,6 +131,7 @@ pub struct VM {
     pid: Option<i32>,
     openssh_config: PathBuf,
     qemu_binary: String,
+    qemu_arch_options: Vec<String>,
     ssh: Option<Ssh>,
     tags: HashSet<String>,
     vml_directory: PathBuf,
@@ -208,6 +209,10 @@ impl VM {
         let qemu_binary =
             vm_config.qemu_binary.unwrap_or_else(|| config.default.qemu_binary.to_string());
 
+        let qemu_arch_options = vm_config
+            .qemu_arch_options
+            .unwrap_or_else(|| config.default.qemu_arch_options.to_owned());
+
         let ssh_config = match vm_config.ssh {
             None => config.default.ssh.to_owned(),
             Some(ssh) => ssh.updated(&config.default.ssh),
@@ -237,6 +242,7 @@ impl VM {
             nproc,
             openssh_config,
             qemu_binary,
+            qemu_arch_options,
             specified_by,
             ssh,
             tags,
@@ -286,6 +292,7 @@ impl VM {
 
         qemu.args(&["-m", &self.memory])
             .arg("--enable-kvm")
+            .args(&self.qemu_arch_options)
             .args(&["-cpu", &self.cpu_model])
             .args(&["-smp", &self.nproc])
             .args(&["-drive", &format!("file={},if=virtio", self.disk.to_string_lossy())])

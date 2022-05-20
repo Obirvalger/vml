@@ -27,6 +27,8 @@ pub struct VMsDefault {
     pub ssh: ConfigSsh,
     #[serde(default = "default_qemu_binary")]
     pub qemu_binary: String,
+    #[serde(default = "default_qemu_arch_options")]
+    pub qemu_arch_options: Vec<String>,
     pub minimum_disk_size: Option<Byte>,
     pub cloud_init: bool,
     pub cloud_init_image: Option<PathBuf>,
@@ -42,6 +44,19 @@ fn default_cpu_model() -> String {
 
 fn default_nic_model() -> String {
     "virtio-net-pci".to_string()
+}
+
+fn default_qemu_arch_options() -> Vec<String> {
+    if ARCH == "aarch64" {
+        vec![
+            "-M".to_string(),
+            "virt,gic-version=3".to_string(),
+            "-bios".to_string(),
+            "/usr/share/AAVMF/AAVMF_CODE.fd".to_string(),
+        ]
+    } else {
+        vec![]
+    }
 }
 
 fn default_qemu_binary() -> String {
