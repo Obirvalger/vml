@@ -129,6 +129,7 @@ pub struct VM {
     specified_by: SpecifiedBy,
     pid: Option<i32>,
     openssh_config: PathBuf,
+    qemu_binary: String,
     ssh: Option<Ssh>,
     tags: HashSet<String>,
     vml_directory: PathBuf,
@@ -201,6 +202,9 @@ impl VM {
         }
         let net = Net::new(&net_config)?;
 
+        let qemu_binary =
+            vm_config.qemu_binary.unwrap_or_else(|| config.default.qemu_binary.to_string());
+
         let ssh_config = match vm_config.ssh {
             None => config.default.ssh.to_owned(),
             Some(ssh) => ssh.updated(&config.default.ssh),
@@ -228,6 +232,7 @@ impl VM {
             nic_model,
             nproc,
             openssh_config,
+            qemu_binary,
             specified_by,
             ssh,
             tags,
@@ -272,10 +277,10 @@ impl VM {
     pub fn start<S: AsRef<OsStr>>(&self, cloud_init: Option<bool>, drives: &[S]) -> Result<()> {
         #[cfg(debug_assertions)]
         eprintln!("Start vm {:?}", self.name);
-        let mut kvm = Command::new("kvm");
+        let mut qemu = Command::new(&self.qemu_binary);
         let mut context = self.context();
 
-        kvm.args(&["-m", &self.memory])
+        qemu.args(&["-m", &self.memory])
             .args(&["-cpu", "host"])
             .args(&["-smp", &self.nproc])
             .args(&["-drive", &format!("file={},if=virtio", self.disk.to_string_lossy())])
@@ -284,11 +289,11 @@ impl VM {
             .current_dir(&self.directory);
 
         if let Some(display) = &self.display {
-            kvm.args(&["-display", display]);
+            qemu.args(&["-display", display]);
         }
 
         for drive in drives {
-            kvm.arg("-drive").arg(drive);
+            qemu.arg("-drive").arg(drive);
         }
 
         if let Some(net) = &self.net {
@@ -304,7 +309,7 @@ impl VM {
                     } else {
                         "".to_string()
                     };
-                    kvm.args(&["-nic", &format!("user{}", hostfwd)]);
+                    qemu.args(&["-nic", &format!("user{}", hostfwd)]);
                 }
                 Net::Tap { address, nameservers, tap, .. } => {
                     context.insert("address", &address);
@@ -314,7 +319,7 @@ impl VM {
                     context.insert("nameservers", &nameservers);
                     let mac = get_random_mac();
                     context.insert("mac", &mac);
-                    kvm.args(&[
+                    qemu.args(&[
                         "-nic",
                         &format!(
                             "tap,ifname={},script=no,mac={},model={}",
@@ -349,7 +354,7 @@ impl VM {
                 cloud_init::generate_data(&context, &self.vml_directory.join("cloud-init"))?
             };
 
-            kvm.args(&[
+            qemu.args(&[
                 "-drive",
                 &format!(
                     "file={},if=virtio,format=raw,force-share=on,read-only=on",
@@ -363,9 +368,11 @@ impl VM {
         }
 
         #[cfg(debug_assertions)]
-        eprintln!("{:?}", &kvm);
-        let exit_status =
-            kvm.spawn().context("failed to run executable executable kvm")?.wait()?;
+        eprintln!("{:?}", &qemu);
+        let exit_status = qemu
+            .spawn()
+            .with_context(|| format!("failed to run executable executable {}", &self.qemu_binary))?
+            .wait()?;
 
         if !exit_status.success() {
             bail!(Error::StartVmFailed(self.name.to_string()));

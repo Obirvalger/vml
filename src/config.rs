@@ -1,4 +1,5 @@
 use std::env;
+use std::env::consts::ARCH;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -22,6 +23,8 @@ pub struct VMsDefault {
     pub nproc: StringOrUint,
     #[serde(default)]
     pub ssh: ConfigSsh,
+    #[serde(default = "default_qemu_binary")]
+    pub qemu_binary: String,
     pub minimum_disk_size: Option<Byte>,
     pub cloud_init: bool,
     pub cloud_init_image: Option<PathBuf>,
@@ -29,6 +32,10 @@ pub struct VMsDefault {
 
 fn default_nic_model() -> String {
     "virtio-net-pci".to_string()
+}
+
+fn default_qemu_binary() -> String {
+    format!("qemu-system-{}", ARCH)
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]

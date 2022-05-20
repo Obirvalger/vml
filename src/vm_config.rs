@@ -24,6 +24,7 @@ pub struct VMConfig {
     pub minimum_disk_size: Option<Byte>,
     pub nic_model: Option<String>,
     pub nproc: Option<StringOrUint>,
+    pub qemu_binary: Option<String>,
     pub tags: Option<HashSet<String>>,
     pub ssh: Option<ConfigSsh>,
     pub net: Option<ConfigNet>,
@@ -70,6 +71,7 @@ impl VMConfig {
             ref mut net,
             ref mut nic_model,
             ref mut nproc,
+            ref mut qemu_binary,
             ref mut ssh,
             ref mut tags,
         } = self;
@@ -111,6 +113,9 @@ impl VMConfig {
         }
         if nproc.is_none() {
             *nproc = other.nproc.to_owned();
+        }
+        if qemu_binary.is_none() {
+            *qemu_binary = other.qemu_binary.to_owned();
         }
         match ssh {
             None => *ssh = other.ssh.to_owned(),
