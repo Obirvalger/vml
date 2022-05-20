@@ -25,59 +25,103 @@ get-url-prog = "vml-get-arch"
 change = ["update-all", "delete"]
 
 [ubuntu]
-url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-{{arch}}.img"
 description = "latest Ubuntu release (22.04)"
 change = ["update-all", "delete"]
 
+[ubuntu.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-lts]
-url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-{{arch}}.img"
 description = "latest LTS Ubuntu release (22.04)"
 change = ["update-all", "delete"]
 
+[ubuntu-lts.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-jammy]
-url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 22.04 Jammy Jellyfish"
 change = ["update-all", "delete"]
 
+[ubuntu-jammy.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-impish]
-url = "https://cloud-images.ubuntu.com/impish/current/impish-server-cloudimg-amd64.img"
+url = "https://cloud-images.ubuntu.com/impish/current/impish-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 21.10 Impish Indri"
 change = ["update-all", "delete"]
 
+[ubuntu-impish.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-hirsute]
-url = "https://cloud-images.ubuntu.com/hirsute/current/hirsute-server-cloudimg-amd64.img"
+url = "https://cloud-images.ubuntu.com/hirsute/current/hirsute-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 21.04 Hirsute Hippo"
 change = ["update-all", "delete"]
 
+[ubuntu-hirsute.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-focal]
-url = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+url = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 20.04 Focal Fossa"
 change = ["update-all", "delete"]
 
+[ubuntu-focal.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-bionic]
-url = "https://cloud-images.ubuntu.com/bionic/current/bionic-server-cloudimg-amd64.img"
+url = "https://cloud-images.ubuntu.com/bionic/current/bionic-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 18.04 Bionic Beaver"
 change = ["update-all", "delete"]
 
+[ubuntu-bionic.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [debian]
-url = "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-amd64.qcow2"
+url = "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-{{arch}}.qcow2"
 description = "Debian stable"
 change = ["update-all", "delete"]
 
+[debian.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [debian-11]
-url = "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-amd64.qcow2"
+url = "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-{{arch}}.qcow2"
 description = "Debian bullseye (stable)"
 change = ["update-all", "delete"]
 
+[debian-11.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [debian-10]
-url = "https://cloud.debian.org/images/cloud/buster/latest/debian-10-genericcloud-amd64.qcow2"
+url = "https://cloud.debian.org/images/cloud/buster/latest/debian-10-genericcloud-{{arch}}.qcow2"
 description = "Debian buster (oldstable)"
 change = ["update-all", "delete"]
 
+[debian-10.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [debian-9]
-url = "https://cdimage.debian.org/cdimage/openstack/current-9/debian-9-openstack-amd64.qcow2"
+url = "https://cdimage.debian.org/cdimage/openstack/current-9/debian-9-openstack-{{arch}}.qcow2"
 description = "Debian stretch (oldoldstable)"
 change = ["update-all", "delete"]
+
+[debian-9.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
 
 [centos]
 url = "https://cloud.centos.org/centos/8-stream/{{arch}}/images/CentOS-Stream-GenericCloud-8-20210603.0.{{arch}}.qcow2"

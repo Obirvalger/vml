@@ -35,9 +35,22 @@ impl<'a> Image<'a> {
         name: impl AsRef<str>,
         config: &'a ConfigImages,
     ) -> Self {
+        let mut arch = ARCH.to_string();
+        if let Some(arch_mapping) = &image.arch_mapping {
+            if let Some(mapped_arch) = arch_mapping.get(&arch) {
+                arch = mapped_arch.to_string();
+            }
+        }
+
+        let mut url = image.url;
+        let context = template::create_context(&[("arch".to_string(), arch)]);
+        if let Ok(rendered_url) = template::render(&context, &url, "read image url") {
+            url = rendered_url;
+        }
+
         Image {
             name: name.as_ref().to_string(),
-            url: image.url,
+            url,
             get_url_prog: image.get_url_prog,
             description: image.description,
             config,
@@ -91,10 +104,9 @@ impl<'a> Image<'a> {
     }
 
     pub fn pull(&self) -> Result<PathBuf> {
-        let context = template::create_context(&[("arch", ARCH)]);
-        let url = template::render(&context, &self.url(), "pull image url")?;
+        let url = &self.url();
         let mut body =
-            reqwest::blocking::get(&url).map_err(|e| Error::DownloadImage(e.to_string()))?;
+            reqwest::blocking::get(url).map_err(|e| Error::DownloadImage(e.to_string()))?;
         let image_path = self.path();
         let images_dir = &self.config.directory;
         let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;
@@ -194,6 +206,7 @@ struct DeserializeImage {
     #[serde(default)]
     change: Vec<String>,
     update_after_days: Option<u64>,
+    arch_mapping: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -263,9 +276,16 @@ fn update_images(
                 } else {
                     new.update_after_days.to_owned()
                 };
+                let arch_mapping = if change_set.contains("keep-arch-mapping")
+                    || !update_all && !change_set.contains("update-arch-mapping")
+                {
+                    old.arch_mapping.to_owned()
+                } else {
+                    new.arch_mapping.to_owned()
+                };
                 images.insert(
                     old_name.to_owned(),
-                    DeserializeImage { url, get_url_prog, description, change, update_after_days },
+                    DeserializeImage { url, get_url_prog, description, change, update_after_days, arch_mapping },
                 );
                 embedded_image = embedded_images.next();
                 config_image = config_images.next();
