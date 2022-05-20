@@ -154,7 +154,7 @@ impl<'a> VMsCreator<'a> {
             {
                 if let Ok(path) = proc.exe() {
                     if let Some(file_name) = path.file_name() {
-                        if file_name.to_string_lossy().starts_with("qemu-system-x86_64") {
+                        if file_name.to_string_lossy().starts_with("qemu-system") {
                             if let Ok(fds) = proc.fd() {
                                 for fd in fds {
                                     if let FDTarget::Path(f) = fd.target {
