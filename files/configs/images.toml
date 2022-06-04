@@ -1,20 +1,20 @@
 [alt]
-url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/alt-sisyphus-cloud-{{arch}}.qcow2"
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/{{arch}}/alt-sisyphus-cloud-{{arch}}.qcow2"
 description = "ALT Linux Sisyphus"
 change = ["update-all", "delete"]
 
 [alt-p10]
-url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p10/cloud/alt-p10-cloud-{{arch}}.qcow2"
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p10/cloud/{{arch}}/alt-p10-cloud-{{arch}}.qcow2"
 description = "ALT Linux p10"
 change = ["update-all", "delete"]
 
 [alt-p9]
-url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p9/cloud/alt-p9-cloud-{{arch}}.qcow2"
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p9/cloud/{{arch}}/alt-p9-cloud-{{arch}}.qcow2"
 description = "ALT Linux p9"
 change = ["update-all", "delete"]
 
 [alt-sisyphus]
-url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/alt-sisyphus-cloud-{{arch}}.qcow2"
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/{{arch}}/alt-sisyphus-cloud-{{arch}}.qcow2"
 description = "ALT Linux Sisyphus"
 change = ["update-all", "delete"]
 
