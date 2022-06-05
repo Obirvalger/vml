@@ -285,7 +285,14 @@ fn update_images(
                 };
                 images.insert(
                     old_name.to_owned(),
-                    DeserializeImage { url, get_url_prog, description, change, update_after_days, arch_mapping },
+                    DeserializeImage {
+                        url,
+                        get_url_prog,
+                        description,
+                        change,
+                        update_after_days,
+                        arch_mapping,
+                    },
                 );
                 embedded_image = embedded_images.next();
                 config_image = config_images.next();
