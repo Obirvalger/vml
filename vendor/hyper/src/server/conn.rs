@@ -43,36 +43,43 @@
 //! # }
 //! ```
 
-use std::error::Error as StdError;
-use std::fmt;
-#[cfg(feature = "http1")]
+#[cfg(all(
+    any(feature = "http1", feature = "http2"),
+    not(all(feature = "http1", feature = "http2"))
+))]
 use std::marker::PhantomData;
-#[cfg(feature = "tcp")]
-use std::net::SocketAddr;
-#[cfg(all(feature = "runtime", feature = "http2"))]
+#[cfg(all(any(feature = "http1", feature = "http2"), feature = "runtime"))]
 use std::time::Duration;
 
-use bytes::Bytes;
-use pin_project::pin_project;
-use tokio::io::{AsyncRead, AsyncWrite};
-
-use super::accept::Accept;
-use crate::body::{Body, HttpBody};
-use crate::common::exec::{ConnStreamExec, Exec, NewSvcExec};
 #[cfg(feature = "http2")]
 use crate::common::io::Rewind;
-use crate::common::{task, Future, Pin, Poll, Unpin};
 #[cfg(all(feature = "http1", feature = "http2"))]
 use crate::error::{Kind, Parse};
-use crate::proto;
-use crate::service::{HttpService, MakeServiceRef};
 #[cfg(feature = "http1")]
 use crate::upgrade::Upgraded;
 
-use self::spawn_all::NewSvcTask;
-pub(super) use self::spawn_all::NoopWatcher;
-pub(super) use self::spawn_all::Watcher;
-pub(super) use self::upgrades::UpgradeableConnection;
+cfg_feature! {
+    #![any(feature = "http1", feature = "http2")]
+
+    use std::error::Error as StdError;
+    use std::fmt;
+
+    use bytes::Bytes;
+    use pin_project_lite::pin_project;
+    use tokio::io::{AsyncRead, AsyncWrite};
+    use tracing::trace;
+
+    pub use super::server::Connecting;
+    use crate::body::{Body, HttpBody};
+    use crate::common::{task, Future, Pin, Poll, Unpin};
+    #[cfg(not(all(feature = "http1", feature = "http2")))]
+    use crate::common::Never;
+    use crate::common::exec::{ConnStreamExec, Exec};
+    use crate::proto;
+    use crate::service::HttpService;
+
+    pub(super) use self::upgrades::UpgradeableConnection;
+}
 
 #[cfg(feature = "tcp")]
 pub use super::tcp::{AddrIncoming, AddrStream};
@@ -84,10 +91,17 @@ pub use super::tcp::{AddrIncoming, AddrStream};
 /// If you don't have need to manage connections yourself, consider using the
 /// higher-level [Server](super) API.
 #[derive(Clone, Debug)]
+#[cfg(any(feature = "http1", feature = "http2"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "http1", feature = "http2"))))]
 pub struct Http<E = Exec> {
-    exec: E,
+    pub(crate) exec: E,
     h1_half_close: bool,
     h1_keep_alive: bool,
+    h1_title_case_headers: bool,
+    h1_preserve_header_case: bool,
+    #[cfg(all(feature = "http1", feature = "runtime"))]
+    h1_header_read_timeout: Option<Duration>,
+    h1_writev: Option<bool>,
     #[cfg(feature = "http2")]
     h2_builder: proto::h2::server::Config,
     mode: ConnectionMode,
@@ -96,6 +110,7 @@ pub struct Http<E = Exec> {
 }
 
 /// The internal mode of HTTP protocol which indicates the behavior when a parse error occurs.
+#[cfg(any(feature = "http1", feature = "http2"))]
 #[derive(Clone, Debug, PartialEq)]
 enum ConnectionMode {
     /// Always use HTTP/1 and do not upgrade when a parse error occurs.
@@ -109,77 +124,55 @@ enum ConnectionMode {
     Fallback,
 }
 
-/// A stream mapping incoming IOs to new services.
-///
-/// Yields `Connecting`s that are futures that should be put on a reactor.
-#[must_use = "streams do nothing unless polled"]
-#[pin_project]
-#[derive(Debug)]
-pub(super) struct Serve<I, S, E = Exec> {
-    #[pin]
-    incoming: I,
-    make_service: S,
-    protocol: Http<E>,
+#[cfg(any(feature = "http1", feature = "http2"))]
+pin_project! {
+    /// A future binding a connection with a Service.
+    ///
+    /// Polling this future will drive HTTP forward.
+    #[must_use = "futures do nothing unless polled"]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "http1", feature = "http2"))))]
+    pub struct Connection<T, S, E = Exec>
+    where
+        S: HttpService<Body>,
+    {
+        pub(super) conn: Option<ProtoServer<T, S::ResBody, S, E>>,
+        fallback: Fallback<E>,
+    }
 }
 
-/// A future building a new `Service` to a `Connection`.
-///
-/// Wraps the future returned from `MakeService` into one that returns
-/// a `Connection`.
-#[must_use = "futures do nothing unless polled"]
-#[pin_project]
-#[derive(Debug)]
-pub struct Connecting<I, F, E = Exec> {
-    #[pin]
-    future: F,
-    io: Option<I>,
-    protocol: Http<E>,
-}
+#[cfg(feature = "http1")]
+type Http1Dispatcher<T, B, S> =
+    proto::h1::Dispatcher<proto::h1::dispatch::Server<S, Body>, B, T, proto::ServerTransaction>;
 
-#[must_use = "futures do nothing unless polled"]
-#[pin_project]
-#[derive(Debug)]
-pub(super) struct SpawnAll<I, S, E> {
-    // TODO: re-add `pub(super)` once rustdoc can handle this.
-    //
-    // See https://github.com/rust-lang/rust/issues/64705
-    #[pin]
-    pub(super) serve: Serve<I, S, E>,
-}
+#[cfg(all(not(feature = "http1"), feature = "http2"))]
+type Http1Dispatcher<T, B, S> = (Never, PhantomData<(T, Box<Pin<B>>, Box<Pin<S>>)>);
 
-/// A future binding a connection with a Service.
-///
-/// Polling this future will drive HTTP forward.
-#[must_use = "futures do nothing unless polled"]
-#[pin_project]
-pub struct Connection<T, S, E = Exec>
-where
-    S: HttpService<Body>,
-{
-    pub(super) conn: Option<ProtoServer<T, S::ResBody, S, E>>,
-    #[cfg(all(feature = "http1", feature = "http2"))]
-    fallback: Fallback<E>,
-}
+#[cfg(feature = "http2")]
+type Http2Server<T, B, S, E> = proto::h2::Server<Rewind<T>, S, B, E>;
 
-#[pin_project(project = ProtoServerProj)]
-pub(super) enum ProtoServer<T, B, S, E = Exec>
-where
-    S: HttpService<Body>,
-    B: HttpBody,
-{
-    #[cfg(feature = "http1")]
-    H1(
-        #[pin]
-        proto::h1::Dispatcher<
-            proto::h1::dispatch::Server<S, Body>,
-            B,
-            T,
-            proto::ServerTransaction,
-        >,
-        PhantomData<E>,
-    ),
-    #[cfg(feature = "http2")]
-    H2(#[pin] proto::h2::Server<Rewind<T>, S, B, E>),
+#[cfg(all(not(feature = "http2"), feature = "http1"))]
+type Http2Server<T, B, S, E> = (
+    Never,
+    PhantomData<(T, Box<Pin<S>>, Box<Pin<B>>, Box<Pin<E>>)>,
+);
+
+#[cfg(any(feature = "http1", feature = "http2"))]
+pin_project! {
+    #[project = ProtoServerProj]
+    pub(super) enum ProtoServer<T, B, S, E = Exec>
+    where
+        S: HttpService<Body>,
+        B: HttpBody,
+    {
+        H1 {
+            #[pin]
+            h1: Http1Dispatcher<T, B, S>,
+        },
+        H2 {
+            #[pin]
+            h2: Http2Server<T, B, S, E>,
+        },
+    }
 }
 
 #[cfg(all(feature = "http1", feature = "http2"))]
@@ -188,6 +181,12 @@ enum Fallback<E> {
     ToHttp2(proto::h2::server::Config, E),
     Http1Only,
 }
+
+#[cfg(all(
+    any(feature = "http1", feature = "http2"),
+    not(all(feature = "http1", feature = "http2"))
+))]
+type Fallback<E> = PhantomData<E>;
 
 #[cfg(all(feature = "http1", feature = "http2"))]
 impl<E> Fallback<E> {
@@ -207,6 +206,8 @@ impl<E> Unpin for Fallback<E> {}
 /// This allows taking apart a `Connection` at a later time, in order to
 /// reclaim the IO object, and additional related pieces.
 #[derive(Debug)]
+#[cfg(any(feature = "http1", feature = "http2"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "http1", feature = "http2"))))]
 pub struct Parts<T, S> {
     /// The original IO object used in the handshake.
     pub io: T,
@@ -226,6 +227,7 @@ pub struct Parts<T, S> {
 
 // ===== impl Http =====
 
+#[cfg(any(feature = "http1", feature = "http2"))]
 impl Http {
     /// Creates a new instance of the HTTP protocol, ready to spawn a server or
     /// start accepting connections.
@@ -234,6 +236,11 @@ impl Http {
             exec: Exec::Default,
             h1_half_close: false,
             h1_keep_alive: true,
+            h1_title_case_headers: false,
+            h1_preserve_header_case: false,
+            #[cfg(all(feature = "http1", feature = "runtime"))]
+            h1_header_read_timeout: None,
+            h1_writev: None,
             #[cfg(feature = "http2")]
             h2_builder: Default::default(),
             mode: ConnectionMode::default(),
@@ -243,6 +250,7 @@ impl Http {
     }
 }
 
+#[cfg(any(feature = "http1", feature = "http2"))]
 impl<E> Http<E> {
     /// Sets whether HTTP1 is required.
     ///
@@ -283,6 +291,70 @@ impl<E> Http<E> {
     #[cfg_attr(docsrs, doc(cfg(feature = "http1")))]
     pub fn http1_keep_alive(&mut self, val: bool) -> &mut Self {
         self.h1_keep_alive = val;
+        self
+    }
+
+    /// Set whether HTTP/1 connections will write header names as title case at
+    /// the socket level.
+    ///
+    /// Note that this setting does not affect HTTP/2.
+    ///
+    /// Default is false.
+    #[cfg(feature = "http1")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http1")))]
+    pub fn http1_title_case_headers(&mut self, enabled: bool) -> &mut Self {
+        self.h1_title_case_headers = enabled;
+        self
+    }
+
+    /// Set whether to support preserving original header cases.
+    ///
+    /// Currently, this will record the original cases received, and store them
+    /// in a private extension on the `Request`. It will also look for and use
+    /// such an extension in any provided `Response`.
+    ///
+    /// Since the relevant extension is still private, there is no way to
+    /// interact with the original cases. The only effect this can have now is
+    /// to forward the cases in a proxy-like fashion.
+    ///
+    /// Note that this setting does not affect HTTP/2.
+    ///
+    /// Default is false.
+    #[cfg(feature = "http1")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http1")))]
+    pub fn http1_preserve_header_case(&mut self, enabled: bool) -> &mut Self {
+        self.h1_preserve_header_case = enabled;
+        self
+    }
+
+    /// Set a timeout for reading client request headers. If a client does not 
+    /// transmit the entire header within this time, the connection is closed.
+    ///
+    /// Default is None.
+    #[cfg(all(feature = "http1", feature = "runtime"))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "http1", feature = "runtime"))))]
+    pub fn http1_header_read_timeout(&mut self, read_timeout: Duration) -> &mut Self {
+        self.h1_header_read_timeout = Some(read_timeout);
+        self
+    }
+
+    /// Set whether HTTP/1 connections should try to use vectored writes,
+    /// or always flatten into a single buffer.
+    ///
+    /// Note that setting this to false may mean more copies of body data,
+    /// but may also improve performance when an IO transport doesn't
+    /// support vectored writes well, such as most TLS implementations.
+    ///
+    /// Setting this to true will force hyper to use queued strategy
+    /// which may eliminate unnecessary cloning on some TLS backends
+    ///
+    /// Default is `auto`. In this mode hyper will try to guess which
+    /// mode to use
+    #[inline]
+    #[cfg(feature = "http1")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http1")))]
+    pub fn http1_writev(&mut self, val: bool) -> &mut Self {
+        self.h1_writev = Some(val);
         self
     }
 
@@ -423,6 +495,40 @@ impl<E> Http<E> {
         self
     }
 
+    /// Set the maximum write buffer size for each HTTP/2 stream.
+    ///
+    /// Default is currently ~400KB, but may change.
+    ///
+    /// # Panics
+    ///
+    /// The value must be no larger than `u32::MAX`.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_max_send_buf_size(&mut self, max: usize) -> &mut Self {
+        assert!(max <= std::u32::MAX as usize);
+        self.h2_builder.max_send_buffer_size = max;
+        self
+    }
+
+    /// Enables the [extended CONNECT protocol].
+    ///
+    /// [extended CONNECT protocol]: https://datatracker.ietf.org/doc/html/rfc8441#section-4
+    #[cfg(feature = "http2")]
+    pub fn http2_enable_connect_protocol(&mut self) -> &mut Self {
+        self.h2_builder.enable_connect_protocol = true;
+        self
+    }
+
+    /// Sets the max size of received header frames.
+    ///
+    /// Default is currently ~16MB, but may change.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_max_header_list_size(&mut self, max: u32) -> &mut Self {
+        self.h2_builder.max_header_list_size = max;
+        self
+    }
+
     /// Set the maximum buffer size for the connection.
     ///
     /// Default is ~400kb.
@@ -459,6 +565,11 @@ impl<E> Http<E> {
             exec,
             h1_half_close: self.h1_half_close,
             h1_keep_alive: self.h1_keep_alive,
+            h1_title_case_headers: self.h1_title_case_headers,
+            h1_preserve_header_case: self.h1_preserve_header_case,
+            #[cfg(all(feature = "http1", feature = "runtime"))]
+            h1_header_read_timeout: self.h1_header_read_timeout,
+            h1_writev: self.h1_writev,
             #[cfg(feature = "http2")]
             h2_builder: self.h2_builder,
             mode: self.mode,
@@ -514,12 +625,31 @@ impl<E> Http<E> {
                 if self.h1_half_close {
                     conn.set_allow_half_close();
                 }
+                if self.h1_title_case_headers {
+                    conn.set_title_case_headers();
+                }
+                if self.h1_preserve_header_case {
+                    conn.set_preserve_header_case();
+                }
+                #[cfg(all(feature = "http1", feature = "runtime"))]
+                if let Some(header_read_timeout) = self.h1_header_read_timeout {
+                    conn.set_http1_header_read_timeout(header_read_timeout);
+                }
+                if let Some(writev) = self.h1_writev {
+                    if writev {
+                        conn.set_write_strategy_queue();
+                    } else {
+                        conn.set_write_strategy_flatten();
+                    }
+                }
                 conn.set_flush_pipeline(self.pipeline_flush);
                 if let Some(max) = self.max_buf_size {
                     conn.set_max_buf_size(max);
                 }
                 let sd = proto::h1::dispatch::Server::new(service);
-                ProtoServer::H1(proto::h1::Dispatcher::new(sd, conn), PhantomData)
+                ProtoServer::H1 {
+                    h1: proto::h1::Dispatcher::new(sd, conn),
+                }
             }};
         }
 
@@ -535,42 +665,27 @@ impl<E> Http<E> {
                 let rewind_io = Rewind::new(io);
                 let h2 =
                     proto::h2::Server::new(rewind_io, service, &self.h2_builder, self.exec.clone());
-                ProtoServer::H2(h2)
+                ProtoServer::H2 { h2 }
             }
         };
 
         Connection {
             conn: Some(proto),
-            #[cfg(feature = "http1")]
-            #[cfg(feature = "http2")]
+            #[cfg(all(feature = "http1", feature = "http2"))]
             fallback: if self.mode == ConnectionMode::Fallback {
                 Fallback::ToHttp2(self.h2_builder.clone(), self.exec.clone())
             } else {
                 Fallback::Http1Only
             },
-        }
-    }
-
-    pub(super) fn serve<I, IO, IE, S, Bd>(&self, incoming: I, make_service: S) -> Serve<I, S, E>
-    where
-        I: Accept<Conn = IO, Error = IE>,
-        IE: Into<Box<dyn StdError + Send + Sync>>,
-        IO: AsyncRead + AsyncWrite + Unpin,
-        S: MakeServiceRef<IO, Body, ResBody = Bd>,
-        S::Error: Into<Box<dyn StdError + Send + Sync>>,
-        Bd: HttpBody,
-        E: ConnStreamExec<<S::Service as HttpService<Body>>::Future, Bd>,
-    {
-        Serve {
-            incoming,
-            make_service,
-            protocol: self.clone(),
+            #[cfg(not(all(feature = "http1", feature = "http2")))]
+            fallback: PhantomData,
         }
     }
 }
 
 // ===== impl Connection =====
 
+#[cfg(any(feature = "http1", feature = "http2"))]
 impl<I, B, S, E> Connection<I, S, E>
 where
     S: HttpService<Body, ResBody = B>,
@@ -590,17 +705,22 @@ where
     /// This should only be called while the `Connection` future is still
     /// pending. If called after `Connection::poll` has resolved, this does
     /// nothing.
-    pub fn graceful_shutdown(self: Pin<&mut Self>) {
-        match self.project().conn {
+    pub fn graceful_shutdown(mut self: Pin<&mut Self>) {
+        match self.conn {
             #[cfg(feature = "http1")]
-            Some(ProtoServer::H1(ref mut h1, _)) => {
+            Some(ProtoServer::H1 { ref mut h1, .. }) => {
                 h1.disable_keep_alive();
             }
             #[cfg(feature = "http2")]
-            Some(ProtoServer::H2(ref mut h2)) => {
+            Some(ProtoServer::H2 { ref mut h2 }) => {
                 h2.graceful_shutdown();
             }
             None => (),
+
+            #[cfg(not(feature = "http1"))]
+            Some(ProtoServer::H1 { ref mut h1, .. }) => match h1.0 {},
+            #[cfg(not(feature = "http2"))]
+            Some(ProtoServer::H2 { ref mut h2 }) => match h2.0 {},
         }
     }
 
@@ -624,7 +744,7 @@ where
     pub fn try_into_parts(self) -> Option<Parts<I, S>> {
         match self.conn.unwrap() {
             #[cfg(feature = "http1")]
-            ProtoServer::H1(h1, _) => {
+            ProtoServer::H1 { h1, .. } => {
                 let (io, read_buf, dispatch) = h1.into_inner();
                 Some(Parts {
                     io,
@@ -633,8 +753,10 @@ where
                     _inner: (),
                 })
             }
-            #[cfg(feature = "http2")]
-            ProtoServer::H2(_h2) => None,
+            ProtoServer::H2 { .. } => None,
+
+            #[cfg(not(feature = "http1"))]
+            ProtoServer::H1 { h1, .. } => match h1.0 {},
         }
     }
 
@@ -645,10 +767,6 @@ where
     /// upgrade. Once the upgrade is completed, the connection would be "done",
     /// but it is not desired to actually shutdown the IO object. Instead you
     /// would take it back using `into_parts`.
-    ///
-    /// Use [`poll_fn`](https://docs.rs/futures/0.1.25/futures/future/fn.poll_fn.html)
-    /// and [`try_ready!`](https://docs.rs/futures/0.1.25/futures/macro.try_ready.html)
-    /// to work with this function; or use the `without_shutdown` wrapper.
     pub fn poll_without_shutdown(&mut self, cx: &mut task::Context<'_>) -> Poll<crate::Result<()>>
     where
         S: Unpin,
@@ -658,7 +776,7 @@ where
         loop {
             match *self.conn.as_mut().unwrap() {
                 #[cfg(feature = "http1")]
-                ProtoServer::H1(ref mut h1, _) => match ready!(h1.poll_without_shutdown(cx)) {
+                ProtoServer::H1 { ref mut h1, .. } => match ready!(h1.poll_without_shutdown(cx)) {
                     Ok(()) => return Poll::Ready(Ok(())),
                     Err(e) => {
                         #[cfg(feature = "http2")]
@@ -674,13 +792,22 @@ where
                     }
                 },
                 #[cfg(feature = "http2")]
-                ProtoServer::H2(ref mut h2) => return Pin::new(h2).poll(cx).map_ok(|_| ()),
+                ProtoServer::H2 { ref mut h2 } => return Pin::new(h2).poll(cx).map_ok(|_| ()),
+
+                #[cfg(not(feature = "http1"))]
+                ProtoServer::H1 { ref mut h1, .. } => match h1.0 {},
+                #[cfg(not(feature = "http2"))]
+                ProtoServer::H2 { ref mut h2 } => match h2.0 {},
             };
         }
     }
 
     /// Prevent shutdown of the underlying IO object at the end of service the request,
     /// instead run `into_parts`. This is a convenience wrapper over `poll_without_shutdown`.
+    ///
+    /// # Error
+    ///
+    /// This errors if the underlying connection protocol is not HTTP/1.
     pub fn without_shutdown(self) -> impl Future<Output = crate::Result<Parts<I, S>>>
     where
         S: Unpin,
@@ -690,7 +817,7 @@ where
         let mut conn = Some(self);
         futures_util::future::poll_fn(move |cx| {
             ready!(conn.as_mut().unwrap().poll_without_shutdown(cx))?;
-            Poll::Ready(Ok(conn.take().unwrap().into_parts()))
+            Poll::Ready(conn.take().unwrap().try_into_parts().ok_or_else(crate::Error::new_without_shutdown_not_h1))
         })
     }
 
@@ -700,8 +827,8 @@ where
         let conn = self.conn.take();
 
         let (io, read_buf, dispatch) = match conn.unwrap() {
-            ProtoServer::H1(h1, _) => h1.into_inner(),
-            ProtoServer::H2(_h2) => {
+            ProtoServer::H1 { h1, .. } => h1.into_inner(),
+            ProtoServer::H2 { .. } => {
                 panic!("h2 cannot into_inner");
             }
         };
@@ -714,7 +841,7 @@ where
         let h2 = proto::h2::Server::new(rewind_io, dispatch.into_service(), builder, exec.clone());
 
         debug_assert!(self.conn.is_none());
-        self.conn = Some(ProtoServer::H2(h2));
+        self.conn = Some(ProtoServer::H2 { h2 });
     }
 
     /// Enable this connection to support higher-level HTTP upgrades.
@@ -728,6 +855,7 @@ where
     }
 }
 
+#[cfg(any(feature = "http1", feature = "http2"))]
 impl<I, B, S, E> Future for Connection<I, S, E>
 where
     S: HttpService<Body, ResBody = B>,
@@ -774,6 +902,7 @@ where
     }
 }
 
+#[cfg(any(feature = "http1", feature = "http2"))]
 impl<I, S> fmt::Debug for Connection<I, S>
 where
     S: HttpService<Body>,
@@ -785,6 +914,7 @@ where
 
 // ===== impl ConnectionMode =====
 
+#[cfg(any(feature = "http1", feature = "http2"))]
 impl Default for ConnectionMode {
     #[cfg(all(feature = "http1", feature = "http2"))]
     fn default() -> ConnectionMode {
@@ -802,138 +932,9 @@ impl Default for ConnectionMode {
     }
 }
 
-// ===== impl Serve =====
-
-impl<I, S, E> Serve<I, S, E> {
-    /// Get a reference to the incoming stream.
-    #[inline]
-    pub(super) fn incoming_ref(&self) -> &I {
-        &self.incoming
-    }
-
-    /*
-    /// Get a mutable reference to the incoming stream.
-    #[inline]
-    pub fn incoming_mut(&mut self) -> &mut I {
-        &mut self.incoming
-    }
-    */
-
-    /// Spawn all incoming connections onto the executor in `Http`.
-    pub(super) fn spawn_all(self) -> SpawnAll<I, S, E> {
-        SpawnAll { serve: self }
-    }
-}
-
-impl<I, IO, IE, S, B, E> Serve<I, S, E>
-where
-    I: Accept<Conn = IO, Error = IE>,
-    IO: AsyncRead + AsyncWrite + Unpin,
-    IE: Into<Box<dyn StdError + Send + Sync>>,
-    S: MakeServiceRef<IO, Body, ResBody = B>,
-    B: HttpBody,
-    E: ConnStreamExec<<S::Service as HttpService<Body>>::Future, B>,
-{
-    fn poll_next_(
-        self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> Poll<Option<crate::Result<Connecting<IO, S::Future, E>>>> {
-        let me = self.project();
-        match ready!(me.make_service.poll_ready_ref(cx)) {
-            Ok(()) => (),
-            Err(e) => {
-                trace!("make_service closed");
-                return Poll::Ready(Some(Err(crate::Error::new_user_make_service(e))));
-            }
-        }
-
-        if let Some(item) = ready!(me.incoming.poll_accept(cx)) {
-            let io = item.map_err(crate::Error::new_accept)?;
-            let new_fut = me.make_service.make_service_ref(&io);
-            Poll::Ready(Some(Ok(Connecting {
-                future: new_fut,
-                io: Some(io),
-                protocol: me.protocol.clone(),
-            })))
-        } else {
-            Poll::Ready(None)
-        }
-    }
-}
-
-// ===== impl Connecting =====
-
-impl<I, F, S, FE, E, B> Future for Connecting<I, F, E>
-where
-    I: AsyncRead + AsyncWrite + Unpin,
-    F: Future<Output = Result<S, FE>>,
-    S: HttpService<Body, ResBody = B>,
-    B: HttpBody + 'static,
-    B::Error: Into<Box<dyn StdError + Send + Sync>>,
-    E: ConnStreamExec<S::Future, B>,
-{
-    type Output = Result<Connection<I, S, E>, FE>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        let mut me = self.project();
-        let service = ready!(me.future.poll(cx))?;
-        let io = Option::take(&mut me.io).expect("polled after complete");
-        Poll::Ready(Ok(me.protocol.serve_connection(io, service)))
-    }
-}
-
-// ===== impl SpawnAll =====
-
-#[cfg(feature = "tcp")]
-impl<S, E> SpawnAll<AddrIncoming, S, E> {
-    pub(super) fn local_addr(&self) -> SocketAddr {
-        self.serve.incoming.local_addr()
-    }
-}
-
-impl<I, S, E> SpawnAll<I, S, E> {
-    pub(super) fn incoming_ref(&self) -> &I {
-        self.serve.incoming_ref()
-    }
-}
-
-impl<I, IO, IE, S, B, E> SpawnAll<I, S, E>
-where
-    I: Accept<Conn = IO, Error = IE>,
-    IE: Into<Box<dyn StdError + Send + Sync>>,
-    IO: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    S: MakeServiceRef<IO, Body, ResBody = B>,
-    B: HttpBody,
-    E: ConnStreamExec<<S::Service as HttpService<Body>>::Future, B>,
-{
-    pub(super) fn poll_watch<W>(
-        self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-        watcher: &W,
-    ) -> Poll<crate::Result<()>>
-    where
-        E: NewSvcExec<IO, S::Future, S::Service, E, W>,
-        W: Watcher<IO, S::Service, E>,
-    {
-        let mut me = self.project();
-        loop {
-            if let Some(connecting) = ready!(me.serve.as_mut().poll_next_(cx)?) {
-                let fut = NewSvcTask::new(connecting, watcher.clone());
-                me.serve
-                    .as_mut()
-                    .project()
-                    .protocol
-                    .exec
-                    .execute_new_svc(fut);
-            } else {
-                return Poll::Ready(Ok(()));
-            }
-        }
-    }
-}
-
 // ===== impl ProtoServer =====
 
+#[cfg(any(feature = "http1", feature = "http2"))]
 impl<T, B, S, E> Future for ProtoServer<T, B, S, E>
 where
     T: AsyncRead + AsyncWrite + Unpin,
@@ -948,139 +949,19 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         match self.project() {
             #[cfg(feature = "http1")]
-            ProtoServerProj::H1(s, _) => s.poll(cx),
+            ProtoServerProj::H1 { h1, .. } => h1.poll(cx),
             #[cfg(feature = "http2")]
-            ProtoServerProj::H2(s) => s.poll(cx),
+            ProtoServerProj::H2 { h2 } => h2.poll(cx),
+
+            #[cfg(not(feature = "http1"))]
+            ProtoServerProj::H1 { h1, .. } => match h1.0 {},
+            #[cfg(not(feature = "http2"))]
+            ProtoServerProj::H2 { h2 } => match h2.0 {},
         }
     }
 }
 
-pub(crate) mod spawn_all {
-    use std::error::Error as StdError;
-    use tokio::io::{AsyncRead, AsyncWrite};
-
-    use super::{Connecting, UpgradeableConnection};
-    use crate::body::{Body, HttpBody};
-    use crate::common::exec::ConnStreamExec;
-    use crate::common::{task, Future, Pin, Poll, Unpin};
-    use crate::service::HttpService;
-    use pin_project::pin_project;
-
-    // Used by `SpawnAll` to optionally watch a `Connection` future.
-    //
-    // The regular `hyper::Server` just uses a `NoopWatcher`, which does
-    // not need to watch anything, and so returns the `Connection` untouched.
-    //
-    // The `Server::with_graceful_shutdown` needs to keep track of all active
-    // connections, and signal that they start to shutdown when prompted, so
-    // it has a `GracefulWatcher` implementation to do that.
-    pub trait Watcher<I, S: HttpService<Body>, E>: Clone {
-        type Future: Future<Output = crate::Result<()>>;
-
-        fn watch(&self, conn: UpgradeableConnection<I, S, E>) -> Self::Future;
-    }
-
-    #[allow(missing_debug_implementations)]
-    #[derive(Copy, Clone)]
-    pub struct NoopWatcher;
-
-    impl<I, S, E> Watcher<I, S, E> for NoopWatcher
-    where
-        I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-        S: HttpService<Body>,
-        E: ConnStreamExec<S::Future, S::ResBody>,
-        S::ResBody: 'static,
-        <S::ResBody as HttpBody>::Error: Into<Box<dyn StdError + Send + Sync>>,
-    {
-        type Future = UpgradeableConnection<I, S, E>;
-
-        fn watch(&self, conn: UpgradeableConnection<I, S, E>) -> Self::Future {
-            conn
-        }
-    }
-
-    // This is a `Future<Item=(), Error=()>` spawned to an `Executor` inside
-    // the `SpawnAll`. By being a nameable type, we can be generic over the
-    // user's `Service::Future`, and thus an `Executor` can execute it.
-    //
-    // Doing this allows for the server to conditionally require `Send` futures,
-    // depending on the `Executor` configured.
-    //
-    // Users cannot import this type, nor the associated `NewSvcExec`. Instead,
-    // a blanket implementation for `Executor<impl Future>` is sufficient.
-
-    #[pin_project]
-    #[allow(missing_debug_implementations)]
-    pub struct NewSvcTask<I, N, S: HttpService<Body>, E, W: Watcher<I, S, E>> {
-        #[pin]
-        state: State<I, N, S, E, W>,
-    }
-
-    #[pin_project(project = StateProj)]
-    pub(super) enum State<I, N, S: HttpService<Body>, E, W: Watcher<I, S, E>> {
-        Connecting(#[pin] Connecting<I, N, E>, W),
-        Connected(#[pin] W::Future),
-    }
-
-    impl<I, N, S: HttpService<Body>, E, W: Watcher<I, S, E>> NewSvcTask<I, N, S, E, W> {
-        pub(super) fn new(connecting: Connecting<I, N, E>, watcher: W) -> Self {
-            NewSvcTask {
-                state: State::Connecting(connecting, watcher),
-            }
-        }
-    }
-
-    impl<I, N, S, NE, B, E, W> Future for NewSvcTask<I, N, S, E, W>
-    where
-        I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-        N: Future<Output = Result<S, NE>>,
-        NE: Into<Box<dyn StdError + Send + Sync>>,
-        S: HttpService<Body, ResBody = B>,
-        B: HttpBody + 'static,
-        B::Error: Into<Box<dyn StdError + Send + Sync>>,
-        E: ConnStreamExec<S::Future, B>,
-        W: Watcher<I, S, E>,
-    {
-        type Output = ();
-
-        fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
-            // If it weren't for needing to name this type so the `Send` bounds
-            // could be projected to the `Serve` executor, this could just be
-            // an `async fn`, and much safer. Woe is me.
-
-            let mut me = self.project();
-            loop {
-                let next = {
-                    match me.state.as_mut().project() {
-                        StateProj::Connecting(connecting, watcher) => {
-                            let res = ready!(connecting.poll(cx));
-                            let conn = match res {
-                                Ok(conn) => conn,
-                                Err(err) => {
-                                    let err = crate::Error::new_user_make_service(err);
-                                    debug!("connecting error: {}", err);
-                                    return Poll::Ready(());
-                                }
-                            };
-                            let connected = watcher.watch(conn.with_upgrades());
-                            State::Connected(connected)
-                        }
-                        StateProj::Connected(future) => {
-                            return future.poll(cx).map(|res| {
-                                if let Err(err) = res {
-                                    debug!("connection error: {}", err);
-                                }
-                            });
-                        }
-                    }
-                };
-
-                me.state.set(next);
-            }
-        }
-    }
-}
-
+#[cfg(any(feature = "http1", feature = "http2"))]
 mod upgrades {
     use super::*;
 
@@ -1133,7 +1014,7 @@ mod upgrades {
                     #[cfg(feature = "http1")]
                     Ok(proto::Dispatched::Upgrade(pending)) => {
                         match self.inner.conn.take() {
-                            Some(ProtoServer::H1(h1, _)) => {
+                            Some(ProtoServer::H1 { h1, .. }) => {
                                 let (io, buf, _) = h1.into_inner();
                                 pending.fulfill(Upgraded::new(io, buf));
                                 return Poll::Ready(Ok(()));

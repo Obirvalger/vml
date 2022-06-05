@@ -20,7 +20,7 @@ pub enum ContentArrangement {
     /// Constraints on columns are still respected.
     ///
     /// **Warning:** If terminal width cannot be determined and no table_width is set via
-    /// [Table::set_table_width](crate::table::Table::set_table_width),
+    /// [Table::set_width](crate::table::Table::set_width),
     /// this option won't work and [Disabled](ContentArrangement::Disabled) will be used as a fallback.
     Dynamic,
     /// This is mode is the same as the [ContentArrangement::Dynamic] arrangement, but it will always use as much
@@ -46,7 +46,7 @@ pub enum ContentArrangement {
 /// |   |   |   |    The inner "+" chars are MiddleIntersections
 /// +---+---+---+
 /// ```
-#[derive(Debug, PartialEq, Eq, Hash, EnumIter)]
+#[derive(Debug, PartialEq, Eq, Hash, EnumIter, Clone, Copy)]
 pub enum TableComponent {
     LeftBorder,
     RightBorder,

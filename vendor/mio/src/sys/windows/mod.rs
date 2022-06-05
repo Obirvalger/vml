@@ -1,14 +1,19 @@
 mod afd;
-mod io_status_block;
 
 pub mod event;
 pub use event::{Event, Events};
 
-mod selector;
-pub use selector::{Selector, SelectorInner, SockState};
+mod handle;
+use handle::Handle;
+
+mod io_status_block;
+mod iocp;
 
 mod overlapped;
 use overlapped::Overlapped;
+
+mod selector;
+pub use selector::{Selector, SelectorInner, SockState};
 
 // Macros must be defined before the modules that use them
 cfg_net! {
@@ -45,7 +50,7 @@ cfg_io_source! {
     use std::pin::Pin;
     use std::sync::{Arc, Mutex};
 
-    use crate::{poll, Interest, Registry, Token};
+    use crate::{Interest, Registry, Token};
 
     struct InternalState {
         selector: Arc<SelectorInner>,
@@ -101,7 +106,8 @@ cfg_io_source! {
             if self.inner.is_some() {
                 Err(io::ErrorKind::AlreadyExists.into())
             } else {
-                poll::selector(registry)
+                registry
+                    .selector()
                     .register(socket, token, interests)
                     .map(|state| {
                         self.inner = Some(Box::new(state));
@@ -117,7 +123,8 @@ cfg_io_source! {
         ) -> io::Result<()> {
             match self.inner.as_mut() {
                 Some(state) => {
-                    poll::selector(registry)
+                    registry
+                        .selector()
                         .reregister(state.sock_state.clone(), token, interests)
                         .map(|()| {
                             state.token = token;

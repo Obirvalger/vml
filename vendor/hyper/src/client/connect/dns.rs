@@ -31,13 +31,14 @@ use std::{fmt, io, vec};
 
 use tokio::task::JoinHandle;
 use tower_service::Service;
+use tracing::debug;
 
 pub(super) use self::sealed::Resolve;
 
 /// A domain name to resolve into IP addresses.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct Name {
-    host: String,
+    host: Box<str>,
 }
 
 /// A resolver using blocking `getaddrinfo` calls in a threadpool.
@@ -57,7 +58,7 @@ pub struct GaiFuture {
 }
 
 impl Name {
-    pub(super) fn new(host: String) -> Name {
+    pub(super) fn new(host: Box<str>) -> Name {
         Name { host }
     }
 
@@ -84,7 +85,7 @@ impl FromStr for Name {
 
     fn from_str(host: &str) -> Result<Self, Self::Err> {
         // Possibly add validation later
-        Ok(Name::new(host.to_owned()))
+        Ok(Name::new(host.into()))
     }
 }
 
@@ -158,6 +159,12 @@ impl fmt::Debug for GaiFuture {
     }
 }
 
+impl Drop for GaiFuture {
+    fn drop(&mut self) {
+        self.inner.abort();
+    }
+}
+
 impl Iterator for GaiAddrs {
     type Item = SocketAddr;
 
@@ -190,7 +197,6 @@ impl SocketAddrs {
                 iter: vec![SocketAddr::V4(addr)].into_iter(),
             });
         }
-        let host = host.trim_start_matches('[').trim_end_matches(']');
         if let Ok(addr) = host.parse::<Ipv6Addr>() {
             let addr = SocketAddrV6::new(addr, port, 0, 0);
             return Some(SocketAddrs {
@@ -415,18 +421,5 @@ mod tests {
         let name = Name::from_str(DOMAIN).expect("Should be a valid domain");
         assert_eq!(name.as_str(), DOMAIN);
         assert_eq!(name.to_string(), DOMAIN);
-    }
-
-    #[test]
-    fn ip_addrs_try_parse_v6() {
-        let dst = ::http::Uri::from_static("http://[::1]:8080/");
-
-        let mut addrs =
-            SocketAddrs::try_parse(dst.host().expect("host"), dst.port_u16().expect("port"))
-                .expect("try_parse");
-
-        let expected = "[::1]:8080".parse::<SocketAddr>().expect("expected");
-
-        assert_eq!(addrs.next(), Some(expected));
     }
 }

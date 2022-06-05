@@ -14,7 +14,11 @@ impl Generator for Zsh {
         format!("_{}", name)
     }
 
-    fn generate(&self, app: &App, buf: &mut dyn Write) {
+    fn generate(&self, cmd: &Command, buf: &mut dyn Write) {
+        let bin_name = cmd
+            .get_bin_name()
+            .expect("crate::generate should have set the bin_name");
+
         w!(
             buf,
             format!(
@@ -41,10 +45,10 @@ _{name}() {{
 
 _{name} \"$@\"
 ",
-                name = app.get_bin_name().unwrap(),
-                initial_args = get_args_of(app, None),
-                subcommands = get_subcommands_of(app),
-                subcommand_details = subcommand_details(app)
+                name = bin_name,
+                initial_args = get_args_of(cmd, None),
+                subcommands = get_subcommands_of(cmd),
+                subcommand_details = subcommand_details(cmd)
             )
             .as_bytes()
         );
@@ -78,10 +82,12 @@ _{name} \"$@\"
 //     )
 //     _describe -t commands 'rustup commands' commands "$@"
 //
-fn subcommand_details(p: &App) -> String {
+fn subcommand_details(p: &Command) -> String {
     debug!("subcommand_details");
 
-    let name = p.get_bin_name().unwrap();
+    let bin_name = p
+        .get_bin_name()
+        .expect("crate::generate should have set the bin_name");
 
     let mut ret = vec![];
 
@@ -93,8 +99,8 @@ _{bin_name_underscore}_commands() {{
     local commands; commands=({subcommands_and_args})
     _describe -t commands '{bin_name} commands' commands \"$@\"
 }}",
-        bin_name_underscore = name.replace(' ', "__"),
-        bin_name = name,
+        bin_name_underscore = bin_name.replace(' ', "__"),
+        bin_name = bin_name,
         subcommands_and_args = subcommands_of(p)
     );
     ret.push(parent_text);
@@ -136,12 +142,12 @@ _{bin_name_underscore}_commands() {{
 // A snippet from rustup:
 //         'show:Show the active and installed toolchains'
 //      'update:Update Rust toolchains'
-fn subcommands_of(p: &App) -> String {
+fn subcommands_of(p: &Command) -> String {
     debug!("subcommands_of");
 
     let mut segments = vec![];
 
-    fn add_subcommands(subcommand: &App, name: &str, ret: &mut Vec<String>) {
+    fn add_subcommands(subcommand: &Command, name: &str, ret: &mut Vec<String>) {
         debug!("add_subcommands");
 
         let text = format!(
@@ -206,7 +212,7 @@ fn subcommands_of(p: &App) -> String {
 //    [name_hyphen] = The full space delineated bin_name, but replace spaces with hyphens
 //    [repeat] = From the same recursive calls, but for all subcommands
 //    [subcommand_args] = The same as zsh::get_args_of
-fn get_subcommands_of(parent: &App) -> String {
+fn get_subcommands_of(parent: &Command) -> String {
     debug!(
         "get_subcommands_of: Has subcommands...{:?}",
         parent.has_subcommands()
@@ -247,6 +253,10 @@ fn get_subcommands_of(parent: &App) -> String {
         all_subcommands.push(segments.join("\n"));
     }
 
+    let parent_bin_name = parent
+        .get_bin_name()
+        .expect("crate::generate should have set the bin_name");
+
     format!(
         "
     case $state in
@@ -260,17 +270,20 @@ fn get_subcommands_of(parent: &App) -> String {
     ;;
 esac",
         name = parent.get_name(),
-        name_hyphen = parent.get_bin_name().unwrap().replace(' ', "-"),
+        name_hyphen = parent_bin_name.replace(' ', "-"),
         subcommands = all_subcommands.join("\n"),
         pos = parent.get_positionals().count() + 1
     )
 }
 
-// Get the App for a given subcommand tree.
+// Get the Command for a given subcommand tree.
 //
-// Given the bin_name "a b c" and the App for "a" this returns the "c" App.
-// Given the bin_name "a b c" and the App for "b" this returns the "c" App.
-fn parser_of<'help, 'app>(parent: &'app App<'help>, bin_name: &str) -> Option<&'app App<'help>> {
+// Given the bin_name "a b c" and the Command for "a" this returns the "c" Command.
+// Given the bin_name "a b c" and the Command for "b" this returns the "c" Command.
+fn parser_of<'help, 'cmd>(
+    parent: &'cmd Command<'help>,
+    bin_name: &str,
+) -> Option<&'cmd Command<'help>> {
     debug!("parser_of: p={}, bin_name={}", parent.get_name(), bin_name);
 
     if bin_name == parent.get_bin_name().unwrap_or(&String::new()) {
@@ -306,7 +319,7 @@ fn parser_of<'help, 'app>(parent: &'app App<'help>, bin_name: &str) -> Option<&'
 //    -C: modify the $context internal variable
 //    -s: Allow stacking of short args (i.e. -a -b -c => -abc)
 //    -S: Do not complete anything after '--' and treat those as argument values
-fn get_args_of(parent: &App, p_global: Option<&App>) -> String {
+fn get_args_of(parent: &Command, p_global: Option<&Command>) -> String {
     debug!("get_args_of");
 
     let mut segments = vec![String::from("_arguments \"${_arguments_options[@]}\" \\")];
@@ -327,9 +340,12 @@ fn get_args_of(parent: &App, p_global: Option<&App>) -> String {
     }
 
     if parent.has_subcommands() {
+        let parent_bin_name = parent
+            .get_bin_name()
+            .expect("crate::generate should have set the bin_name");
         let subcommand_bin_name = format!(
             "\":: :_{name}_commands\" \\",
-            name = parent.get_bin_name().as_ref().unwrap().replace(' ', "__")
+            name = parent_bin_name.replace(' ', "__")
         );
         segments.push(subcommand_bin_name);
 
@@ -346,14 +362,14 @@ fn value_completion(arg: &Arg) -> Option<String> {
     if let Some(values) = &arg.get_possible_values() {
         if values
             .iter()
-            .any(|value| !value.is_hidden() && value.get_help().is_some())
+            .any(|value| !value.is_hide_set() && value.get_help().is_some())
         {
             Some(format!(
                 "(({}))",
                 values
                     .iter()
                     .filter_map(|value| {
-                        if value.is_hidden() {
+                        if value.is_hide_set() {
                             None
                         } else {
                             Some(format!(
@@ -371,7 +387,8 @@ fn value_completion(arg: &Arg) -> Option<String> {
                 "({})",
                 values
                     .iter()
-                    .filter_map(PossibleValue::get_visible_name)
+                    .filter(|pv| !pv.is_hide_set())
+                    .map(PossibleValue::get_name)
                     .collect::<Vec<_>>()
                     .join(" ")
             ))
@@ -423,18 +440,18 @@ fn escape_value(string: &str) -> String {
         .replace(' ', "\\ ")
 }
 
-fn write_opts_of(p: &App, p_global: Option<&App>) -> String {
+fn write_opts_of(p: &Command, p_global: Option<&Command>) -> String {
     debug!("write_opts_of");
 
     let mut ret = vec![];
 
     for o in p.get_opts() {
-        debug!("write_opts_of:iter: o={}", o.get_name());
+        debug!("write_opts_of:iter: o={}", o.get_id());
 
         let help = o.get_help().map_or(String::new(), escape_help);
         let conflicts = arg_conflicts(p, o, p_global);
 
-        let multiple = if o.is_set(ArgSettings::MultipleOccurrences) {
+        let multiple = if o.is_multiple_occurrences_set() {
             "*"
         } else {
             ""
@@ -488,7 +505,7 @@ fn write_opts_of(p: &App, p_global: Option<&App>) -> String {
     ret.join("\n")
 }
 
-fn arg_conflicts(app: &App, arg: &Arg, app_global: Option<&App>) -> String {
+fn arg_conflicts(cmd: &Command, arg: &Arg, app_global: Option<&Command>) -> String {
     fn push_conflicts(conflicts: &[&Arg], res: &mut Vec<String>) {
         for conflict in conflicts {
             if let Some(s) = conflict.get_short() {
@@ -502,7 +519,7 @@ fn arg_conflicts(app: &App, arg: &Arg, app_global: Option<&App>) -> String {
     }
 
     let mut res = vec![];
-    match (app_global, arg.get_global()) {
+    match (app_global, arg.is_global_set()) {
         (Some(x), true) => {
             let conflicts = x.get_arg_conflicts_with(arg);
 
@@ -513,7 +530,7 @@ fn arg_conflicts(app: &App, arg: &Arg, app_global: Option<&App>) -> String {
             push_conflicts(&conflicts, &mut res);
         }
         (_, _) => {
-            let conflicts = app.get_arg_conflicts_with(arg);
+            let conflicts = cmd.get_arg_conflicts_with(arg);
 
             if conflicts.is_empty() {
                 return String::new();
@@ -526,18 +543,18 @@ fn arg_conflicts(app: &App, arg: &Arg, app_global: Option<&App>) -> String {
     format!("({})", res.join(" "))
 }
 
-fn write_flags_of(p: &App, p_global: Option<&App>) -> String {
+fn write_flags_of(p: &Command, p_global: Option<&Command>) -> String {
     debug!("write_flags_of;");
 
     let mut ret = vec![];
 
     for f in utils::flags(p) {
-        debug!("write_flags_of:iter: f={}", f.get_name());
+        debug!("write_flags_of:iter: f={}", f.get_id());
 
         let help = f.get_help().map_or(String::new(), escape_help);
         let conflicts = arg_conflicts(p, &f, p_global);
 
-        let multiple = if f.is_set(ArgSettings::MultipleOccurrences) {
+        let multiple = if f.is_multiple_occurrences_set() {
             "*"
         } else {
             ""
@@ -607,19 +624,17 @@ fn write_flags_of(p: &App, p_global: Option<&App>) -> String {
     ret.join("\n")
 }
 
-fn write_positionals_of(p: &App) -> String {
+fn write_positionals_of(p: &Command) -> String {
     debug!("write_positionals_of;");
 
     let mut ret = vec![];
 
     for arg in p.get_positionals() {
-        debug!("write_positionals_of:iter: arg={}", arg.get_name());
+        debug!("write_positionals_of:iter: arg={}", arg.get_id());
 
-        let cardinality = if arg.is_set(ArgSettings::MultipleValues)
-            || arg.is_set(ArgSettings::MultipleOccurrences)
-        {
+        let cardinality = if arg.is_multiple_values_set() || arg.is_multiple_occurrences_set() {
             "*:"
-        } else if !arg.is_set(ArgSettings::Required) {
+        } else if !arg.is_required_set() {
             ":"
         } else {
             ""
@@ -628,7 +643,7 @@ fn write_positionals_of(p: &App) -> String {
         let a = format!(
             "'{cardinality}:{name}{help}:{value_completion}' \\",
             cardinality = cardinality,
-            name = arg.get_name(),
+            name = arg.get_id(),
             help = arg
                 .get_help()
                 .map_or("".to_owned(), |v| " -- ".to_owned() + v)

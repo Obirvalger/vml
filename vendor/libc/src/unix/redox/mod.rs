@@ -151,10 +151,18 @@ s! {
     }
 
     pub struct sigaction {
-        pub sa_handler: ::sighandler_t,
+        pub sa_sigaction: ::sighandler_t,
         pub sa_flags: ::c_ulong,
         pub sa_restorer: ::Option<extern fn()>,
         pub sa_mask: ::sigset_t,
+    }
+
+    pub struct siginfo_t {
+        pub si_signo: ::c_int,
+        pub si_errno: ::c_int,
+        pub si_code: ::c_int,
+        _pad: [::c_int; 29],
+        _align: [usize; 0],
     }
 
     pub struct sockaddr {
@@ -819,6 +827,8 @@ pub const __WCLONE: ::c_int = 0x8000_0000;
 // time.h
 pub const CLOCK_REALTIME: ::c_int = 1;
 pub const CLOCK_MONOTONIC: ::c_int = 4;
+pub const CLOCK_PROCESS_CPUTIME_ID: ::clockid_t = 2;
+pub const CLOCKS_PER_SEC: ::clock_t = 1_000_000;
 
 // unistd.h
 // POSIX.1 {
@@ -999,6 +1009,8 @@ extern "C" {
         set: *const ::sigset_t,
         oldset: *mut ::sigset_t,
     ) -> ::c_int;
+    pub fn pthread_cancel(thread: ::pthread_t) -> ::c_int;
+    pub fn pthread_kill(thread: ::pthread_t, sig: ::c_int) -> ::c_int;
 
     // sys/epoll.h
     pub fn epoll_create(size: ::c_int) -> ::c_int;

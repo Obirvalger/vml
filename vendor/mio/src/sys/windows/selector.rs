@@ -10,8 +10,9 @@ cfg_net! {
     use crate::Interest;
 }
 
-use miow::iocp::{CompletionPort, CompletionStatus};
+use super::iocp::{CompletionPort, CompletionStatus};
 use std::collections::VecDeque;
+use std::ffi::c_void;
 use std::io;
 use std::marker::PhantomPinned;
 use std::os::windows::io::RawSocket;
@@ -21,14 +22,15 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use winapi::shared::ntdef::NT_SUCCESS;
-use winapi::shared::ntdef::{HANDLE, PVOID};
-use winapi::shared::ntstatus::STATUS_CANCELLED;
-use winapi::shared::winerror::{ERROR_INVALID_HANDLE, ERROR_IO_PENDING, WAIT_TIMEOUT};
-use winapi::um::minwinbase::OVERLAPPED;
+
+use windows_sys::Win32::Foundation::{
+    ERROR_INVALID_HANDLE, ERROR_IO_PENDING, HANDLE, STATUS_CANCELLED, WAIT_TIMEOUT,
+};
+use windows_sys::Win32::System::IO::OVERLAPPED;
 
 #[derive(Debug)]
 struct AfdGroup {
+    #[cfg_attr(not(feature = "net"), allow(dead_code))]
     cp: Arc<CompletionPort>,
     afd_group: Mutex<Vec<Arc<Afd>>>,
 }
@@ -43,7 +45,7 @@ impl AfdGroup {
 
     pub fn release_unused_afd(&self) {
         let mut afd_group = self.afd_group.lock().unwrap();
-        afd_group.retain(|g| Arc::strong_count(&g) > 1);
+        afd_group.retain(|g| Arc::strong_count(g) > 1);
     }
 }
 
@@ -57,7 +59,7 @@ cfg_io_source! {
                 self._alloc_afd_group(&mut afd_group)?;
             } else {
                 // + 1 reference in Vec
-                if Arc::strong_count(afd_group.last().unwrap()) >= POLL_GROUP__MAX_GROUP_SIZE + 1 {
+                if Arc::strong_count(afd_group.last().unwrap()) > POLL_GROUP__MAX_GROUP_SIZE  {
                     self._alloc_afd_group(&mut afd_group)?;
                 }
             }
@@ -93,7 +95,6 @@ pub struct SockState {
     poll_info: AfdPollInfo,
     afd: Arc<Afd>,
 
-    raw_socket: RawSocket,
     base_socket: RawSocket,
 
     user_evts: u32,
@@ -107,7 +108,7 @@ pub struct SockState {
     // last raw os error
     error: Option<i32>,
 
-    pinned: PhantomPinned,
+    _pinned: PhantomPinned,
 }
 
 impl SockState {
@@ -141,7 +142,7 @@ impl SockState {
             /* No poll operation is pending; start one. */
             self.poll_info.exclusive = 0;
             self.poll_info.number_of_handles = 1;
-            *unsafe { self.poll_info.timeout.QuadPart_mut() } = std::i64::MAX;
+            self.poll_info.timeout = i64::MAX;
             self.poll_info.handles[0].handle = self.base_socket as HANDLE;
             self.poll_info.handles[0].status = 0;
             self.poll_info.handles[0].events = self.user_evts | afd::POLL_LOCAL_CLOSE;
@@ -204,9 +205,9 @@ impl SockState {
         unsafe {
             if self.delete_pending {
                 return None;
-            } else if self.iosb.u.Status == STATUS_CANCELLED {
+            } else if self.iosb.Anonymous.Status == STATUS_CANCELLED {
                 /* The poll request was cancelled by CancelIoEx. */
-            } else if !NT_SUCCESS(self.iosb.u.Status) {
+            } else if self.iosb.Anonymous.Status < 0 {
                 /* The overlapped request itself failed in an unexpected way. */
                 afd_events = afd::POLL_CONNECT_FAIL;
             } else if self.poll_info.number_of_handles < 1 {
@@ -263,7 +264,6 @@ cfg_io_source! {
                 iosb: IoStatusBlock::zeroed(),
                 poll_info: AfdPollInfo::zeroed(),
                 afd,
-                raw_socket,
                 base_socket: get_base_socket(raw_socket)?,
                 user_evts: 0,
                 pending_evts: 0,
@@ -271,7 +271,7 @@ cfg_io_source! {
                 poll_status: SockPollStatus::Idle,
                 delete_pending: false,
                 error: None,
-                pinned: PhantomPinned,
+                _pinned: PhantomPinned,
             })
         }
 
@@ -296,7 +296,7 @@ impl Drop for SockState {
 
 /// Converts the pointer to a `SockState` into a raw pointer.
 /// To revert see `from_overlapped`.
-fn into_overlapped(sock_state: Pin<Arc<Mutex<SockState>>>) -> PVOID {
+fn into_overlapped(sock_state: Pin<Arc<Mutex<SockState>>>) -> *mut c_void {
     let overlapped_ptr: *const Mutex<SockState> =
         unsafe { Arc::into_raw(Pin::into_inner_unchecked(sock_state)) };
     overlapped_ptr as *mut _
@@ -448,11 +448,11 @@ impl SelectorInner {
                 if len == 0 {
                     continue;
                 }
-                return Ok(());
+                break Ok(());
             }
         } else {
             self.select2(&mut events.statuses, &mut events.events, timeout)?;
-            return Ok(());
+            Ok(())
         }
     }
 
@@ -462,7 +462,7 @@ impl SelectorInner {
         events: &mut Vec<Event>,
         timeout: Option<Duration>,
     ) -> io::Result<usize> {
-        assert_eq!(self.is_polling.swap(true, Ordering::AcqRel), false);
+        assert!(!self.is_polling.swap(true, Ordering::AcqRel));
 
         unsafe { self.update_sockets_events() }?;
 
@@ -482,7 +482,7 @@ impl SelectorInner {
         for sock in update_queue.iter_mut() {
             let mut sock_internal = sock.lock().unwrap();
             if !sock_internal.is_pending_deletion() {
-                sock_internal.update(&sock)?;
+                sock_internal.update(sock)?;
             }
         }
 
@@ -518,12 +518,9 @@ impl SelectorInner {
 
             let sock_state = from_overlapped(iocp_event.overlapped());
             let mut sock_guard = sock_state.lock().unwrap();
-            match sock_guard.feed_event() {
-                Some(e) => {
-                    events.push(e);
-                    n += 1;
-                }
-                None => {}
+            if let Some(e) = sock_guard.feed_event() {
+                events.push(e);
+                n += 1;
             }
 
             if !sock_guard.is_pending_deletion() {
@@ -538,9 +535,12 @@ impl SelectorInner {
 cfg_io_source! {
     use std::mem::size_of;
     use std::ptr::null_mut;
-    use winapi::um::mswsock;
-    use winapi::um::winsock2::WSAGetLastError;
-    use winapi::um::winsock2::{WSAIoctl, SOCKET_ERROR};
+
+    use windows_sys::Win32::Networking::WinSock::{
+        WSAGetLastError, WSAIoctl, SIO_BASE_HANDLE, SIO_BSP_HANDLE,
+        SIO_BSP_HANDLE_POLL, SIO_BSP_HANDLE_SELECT, SOCKET_ERROR,
+    };
+
 
     impl SelectorInner {
         fn register(
@@ -644,7 +644,7 @@ cfg_io_source! {
                 ioctl,
                 null_mut(),
                 0,
-                &mut base_socket as *mut _ as PVOID,
+                &mut base_socket as *mut _ as *mut c_void,
                 size_of::<RawSocket>() as u32,
                 &mut bytes,
                 null_mut(),
@@ -659,7 +659,7 @@ cfg_io_source! {
     }
 
     fn get_base_socket(raw_socket: RawSocket) -> io::Result<RawSocket> {
-        let res = try_get_base_socket(raw_socket, mswsock::SIO_BASE_HANDLE);
+        let res = try_get_base_socket(raw_socket, SIO_BASE_HANDLE);
         if let Ok(base_socket) = res {
             return Ok(base_socket);
         }
@@ -670,9 +670,9 @@ cfg_io_source! {
         // However, at least one known LSP deliberately breaks it, so we try
         // some alternative IOCTLs, starting with the most appropriate one.
         for &ioctl in &[
-            mswsock::SIO_BSP_HANDLE_SELECT,
-            mswsock::SIO_BSP_HANDLE_POLL,
-            mswsock::SIO_BSP_HANDLE,
+            SIO_BSP_HANDLE_SELECT,
+            SIO_BSP_HANDLE_POLL,
+            SIO_BSP_HANDLE,
         ] {
             if let Ok(base_socket) = try_get_base_socket(raw_socket, ioctl) {
                 // Since we know now that we're dealing with an LSP (otherwise

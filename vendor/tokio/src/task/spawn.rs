@@ -1,6 +1,4 @@
-use crate::runtime;
-use crate::task::JoinHandle;
-use crate::util::error::CONTEXT_MISSING_ERROR;
+use crate::{task::JoinHandle, util::error::CONTEXT_MISSING_ERROR};
 
 use std::future::Future;
 
@@ -123,15 +121,31 @@ cfg_rt! {
     /// ```text
     /// error[E0391]: cycle detected when processing `main`
     /// ```
-    #[cfg_attr(tokio_track_caller, track_caller)]
-    pub fn spawn<T>(task: T) -> JoinHandle<T::Output>
+    #[track_caller]
+    pub fn spawn<T>(future: T) -> JoinHandle<T::Output>
     where
         T: Future + Send + 'static,
         T::Output: Send + 'static,
     {
-        let spawn_handle = runtime::context::spawn_handle()
-        .expect(CONTEXT_MISSING_ERROR);
-        let task = crate::util::trace::task(task, "task");
-        spawn_handle.spawn(task)
+        // preventing stack overflows on debug mode, by quickly sending the
+        // task to the heap.
+        if cfg!(debug_assertions) && std::mem::size_of::<T>() > 2048 {
+            spawn_inner(Box::pin(future), None)
+        } else {
+            spawn_inner(future, None)
+        }
+    }
+
+    #[track_caller]
+    pub(super) fn spawn_inner<T>(future: T, name: Option<&str>) -> JoinHandle<T::Output>
+    where
+        T: Future + Send + 'static,
+        T::Output: Send + 'static,
+    {
+        use crate::runtime::{task, context};
+        let id = task::Id::next();
+        let spawn_handle = context::spawn_handle().expect(CONTEXT_MISSING_ERROR);
+        let task = crate::util::trace::task(future, "task", name, id.as_u64());
+        spawn_handle.spawn(task, id)
     }
 }

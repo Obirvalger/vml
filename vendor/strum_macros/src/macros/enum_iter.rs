@@ -1,6 +1,6 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Data, DeriveInput, Ident};
+use syn::{Data, DeriveInput, Fields, Ident};
 
 use crate::helpers::{non_enum_error, HasStrumVariantProperties, HasTypeProperties};
 
@@ -35,21 +35,19 @@ pub fn enum_iter_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
     let mut arms = Vec::new();
     let mut idx = 0usize;
     for variant in variants {
-        use syn::Fields::*;
-
         if variant.get_variant_properties()?.disabled.is_some() {
             continue;
         }
 
         let ident = &variant.ident;
         let params = match &variant.fields {
-            Unit => quote! {},
-            Unnamed(fields) => {
-                let defaults = ::std::iter::repeat(quote!(::core::default::Default::default()))
+            Fields::Unit => quote! {},
+            Fields::Unnamed(fields) => {
+                let defaults = ::core::iter::repeat(quote!(::core::default::Default::default()))
                     .take(fields.unnamed.len());
                 quote! { (#(#defaults),*) }
             }
-            Named(fields) => {
+            Fields::Named(fields) => {
                 let fields = fields
                     .named
                     .iter()
@@ -67,7 +65,7 @@ pub fn enum_iter_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
     let iter_name = syn::parse_str::<Ident>(&format!("{}Iter", name)).unwrap();
 
     Ok(quote! {
-        #[allow(missing_docs)]
+        #[doc = "An iterator over the variants of [Self]"]
         #vis struct #iter_name #ty_generics {
             idx: usize,
             back_idx: usize,
@@ -96,7 +94,7 @@ pub fn enum_iter_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
         impl #impl_generics Iterator for #iter_name #ty_generics #where_clause {
             type Item = #name #ty_generics;
 
-            fn next(&mut self) -> Option<Self::Item> {
+            fn next(&mut self) -> Option<<Self as Iterator>::Item> {
                 self.nth(0)
             }
 
@@ -105,7 +103,7 @@ pub fn enum_iter_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
                 (t, Some(t))
             }
 
-            fn nth(&mut self, n: usize) -> Option<Self::Item> {
+            fn nth(&mut self, n: usize) -> Option<<Self as Iterator>::Item> {
                 let idx = self.idx + n + 1;
                 if idx + self.back_idx > #variant_count {
                     // We went past the end of the iterator. Freeze idx at #variant_count
@@ -127,7 +125,7 @@ pub fn enum_iter_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
         }
 
         impl #impl_generics DoubleEndedIterator for #iter_name #ty_generics #where_clause {
-            fn next_back(&mut self) -> Option<Self::Item> {
+            fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
                 let back_idx = self.back_idx + 1;
 
                 if self.idx + back_idx > #variant_count {

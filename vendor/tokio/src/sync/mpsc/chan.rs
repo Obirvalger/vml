@@ -2,6 +2,9 @@ use crate::loom::cell::UnsafeCell;
 use crate::loom::future::AtomicWaker;
 use crate::loom::sync::atomic::AtomicUsize;
 use crate::loom::sync::Arc;
+use crate::park::thread::CachedParkThread;
+use crate::park::Park;
+use crate::sync::mpsc::error::TryRecvError;
 use crate::sync::mpsc::list;
 use crate::sync::notify::Notify;
 
@@ -11,7 +14,7 @@ use std::sync::atomic::Ordering::{AcqRel, Relaxed};
 use std::task::Poll::{Pending, Ready};
 use std::task::{Context, Poll};
 
-/// Channel sender
+/// Channel sender.
 pub(crate) struct Tx<T, S> {
     inner: Arc<Chan<T, S>>,
 }
@@ -22,7 +25,7 @@ impl<T, S: fmt::Debug> fmt::Debug for Tx<T, S> {
     }
 }
 
-/// Channel receiver
+/// Channel receiver.
 pub(crate) struct Rx<T, S: Semaphore> {
     inner: Arc<Chan<T, S>>,
 }
@@ -44,7 +47,7 @@ pub(crate) trait Semaphore {
 }
 
 struct Chan<T, S> {
-    /// Notifies all tasks listening for the receiver being dropped
+    /// Notifies all tasks listening for the receiver being dropped.
     notify_rx_closed: Notify,
 
     /// Handle to the push half of the lock-free list.
@@ -138,6 +141,11 @@ impl<T, S> Tx<T, S> {
     /// Wake the receive half
     pub(crate) fn wake_rx(&self) {
         self.inner.rx_waker.wake();
+    }
+
+    /// Returns `true` if senders belong to the same channel.
+    pub(crate) fn same_channel(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
@@ -258,29 +266,50 @@ impl<T, S: Semaphore> Rx<T, S> {
             }
         })
     }
-}
 
-feature! {
-    #![all(unix, any(feature = "signal", feature = "process"))]
+    /// Try to receive the next value.
+    pub(crate) fn try_recv(&mut self) -> Result<T, TryRecvError> {
+        use super::list::TryPopResult;
 
-    use crate::sync::mpsc::error::TryRecvError;
+        self.inner.rx_fields.with_mut(|rx_fields_ptr| {
+            let rx_fields = unsafe { &mut *rx_fields_ptr };
 
-    impl<T, S: Semaphore> Rx<T, S> {
-        /// Receives the next value without blocking
-        pub(crate) fn try_recv(&mut self) -> Result<T, TryRecvError> {
-            use super::block::Read::*;
-            self.inner.rx_fields.with_mut(|rx_fields_ptr| {
-                let rx_fields = unsafe { &mut *rx_fields_ptr };
-                match rx_fields.list.pop(&self.inner.tx) {
-                    Some(Value(value)) => {
-                        self.inner.semaphore.add_permit();
-                        Ok(value)
+            macro_rules! try_recv {
+                () => {
+                    match rx_fields.list.try_pop(&self.inner.tx) {
+                        TryPopResult::Ok(value) => {
+                            self.inner.semaphore.add_permit();
+                            return Ok(value);
+                        }
+                        TryPopResult::Closed => return Err(TryRecvError::Disconnected),
+                        TryPopResult::Empty => return Err(TryRecvError::Empty),
+                        TryPopResult::Busy => {} // fall through
                     }
-                    Some(Closed) => Err(TryRecvError::Closed),
-                    None => Err(TryRecvError::Empty),
-                }
-            })
-        }
+                };
+            }
+
+            try_recv!();
+
+            // If a previous `poll_recv` call has set a waker, we wake it here.
+            // This allows us to put our own CachedParkThread waker in the
+            // AtomicWaker slot instead.
+            //
+            // This is not a spurious wakeup to `poll_recv` since we just got a
+            // Busy from `try_pop`, which only happens if there are messages in
+            // the queue.
+            self.inner.rx_waker.wake();
+
+            // Park the thread until the problematic send has completed.
+            let mut park = CachedParkThread::new();
+            let waker = park.unpark().into_waker();
+            loop {
+                self.inner.rx_waker.register_by_ref(&waker);
+                // It is possible that the problematic send has now completed,
+                // so we have to check for messages again.
+                try_recv!();
+                park.park().expect("park failed");
+            }
+        })
     }
 }
 

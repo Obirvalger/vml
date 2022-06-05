@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-//! Definition of the `PollFn` adapter combinator
+//! Definition of the `PollFn` adapter combinator.
 
 use std::fmt;
 use std::future::Future;
@@ -35,6 +35,6 @@ where
     type Output = T;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
-        (&mut self.f)(cx)
+        (self.f)(cx)
     }
 }

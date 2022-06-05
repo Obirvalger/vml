@@ -17,7 +17,7 @@ fn simple_dynamic_table() {
     let mut table = Table::new();
     table.set_header(&vec!["Header1", "Header2", "Head"])
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_table_width(25)
+        .set_width(25)
         .add_row(&vec![
             "This is a very long line with a lot of text",
             "This is anotherverylongtextwithlongwords text",
@@ -29,7 +29,7 @@ fn simple_dynamic_table() {
             "smol",
         ]);
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 +--------+-------+------+
 | Header | Heade | Head |
@@ -66,7 +66,7 @@ fn simple_dynamic_table() {
 |        | line  |      |
 |        | stuff |      |
 +--------+-------+------+";
-    println!("{}", expected);
+    println!("{expected}");
     assert!(table.lines().all(|line| line.width() == 25));
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
@@ -93,20 +93,20 @@ fn table_with_truncate() {
     table
         .set_header(&vec!["Header1", "Header2", "Head"])
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_table_width(35)
+        .set_width(35)
         .add_row(first_row)
         .add_row(second_row);
 
     // The first column will be wider than 6 chars.
     // The second column's content is wider than 6 chars. There should be a '...'.
-    let second_column = table.get_column_mut(1).unwrap();
+    let second_column = table.column_mut(1).unwrap();
     second_column.set_constraint(Absolute(Fixed(8)));
 
     // The third column's content is less than 6 chars width. There shouldn't be a '...'.
-    let third_column = table.get_column_mut(2).unwrap();
+    let third_column = table.column_mut(2).unwrap();
     third_column.set_constraint(Absolute(Fixed(7)));
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 +----------------+--------+-------+
 | Header1        | Header | Head  |
@@ -122,7 +122,7 @@ fn table_with_truncate() {
 | long line in   | ther   |       |
 | the middle ... | text   |       |
 +----------------+--------+-------+";
-    println!("{}", expected);
+    println!("{expected}");
     assert_table_lines(&table, 35);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
@@ -137,14 +137,14 @@ fn distribute_space_after_split() {
     table
         .set_header(&vec!["Header1", "Header2", "Head"])
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_table_width(80)
+        .set_width(80)
         .add_row(&vec![
             "This is a very long line with a lot of text",
             "This is text with a anotherverylongtexttesttest",
             "smol",
         ]);
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 +-----------------------------------------+-----------------------------+------+
 | Header1                                 | Header2                     | Head |
@@ -152,7 +152,7 @@ fn distribute_space_after_split() {
 | This is a very long line with a lot of  | This is text with a         | smol |
 | text                                    | anotherverylongtexttesttest |      |
 +-----------------------------------------+-----------------------------+------+";
-    println!("{}", expected);
+    println!("{expected}");
 
     assert_table_lines(&table, 80);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
@@ -166,10 +166,10 @@ fn unused_space_after_split() {
     table
         .set_header(&vec!["Header1"])
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_table_width(30)
+        .set_width(30)
         .add_row(&vec!["This is text with a anotherverylongtext"]);
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 +---------------------+
 | Header1             |
@@ -177,7 +177,7 @@ fn unused_space_after_split() {
 | This is text with a |
 | anotherverylongtext |
 +---------------------+";
-    println!("{}", expected);
+    println!("{expected}");
     assert_table_lines(&table, 23);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
@@ -189,10 +189,10 @@ fn dynamic_full_width_after_split() {
     table
         .set_header(&vec!["Header1"])
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
-        .set_table_width(50)
+        .set_width(50)
         .add_row(&vec!["This is text with a anotherverylongtexttesttestaa"]);
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 +------------------------------------------------+
 | Header1                                        |
@@ -200,7 +200,7 @@ fn dynamic_full_width_after_split() {
 | This is text with a                            |
 | anotherverylongtexttesttestaa                  |
 +------------------------------------------------+";
-    println!("{}", expected);
+    println!("{expected}");
     assert_table_lines(&table, 50);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
@@ -214,17 +214,17 @@ fn dynamic_full_width() {
     table
         .set_header(&vec!["Header1", "Header2", "smol"])
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
-        .set_table_width(80)
+        .set_width(80)
         .add_row(&vec!["This is a short line", "small", "smol"]);
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 +-----------------------------------+----------------------+-------------------+
 | Header1                           | Header2              | smol              |
 +==============================================================================+
 | This is a short line              | small                | smol              |
 +-----------------------------------+----------------------+-------------------+";
-    println!("{}", expected);
+    println!("{expected}");
     assert_table_lines(&table, 80);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }

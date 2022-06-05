@@ -59,14 +59,14 @@
 //!   and from DynamoDB.
 //!
 //! [JSON]: https://github.com/serde-rs/json
-//! [Bincode]: https://github.com/servo/bincode
+//! [Bincode]: https://github.com/bincode-org/bincode
 //! [CBOR]: https://github.com/enarx/ciborium
 //! [YAML]: https://github.com/dtolnay/serde-yaml
 //! [MessagePack]: https://github.com/3Hren/msgpack-rust
 //! [TOML]: https://github.com/alexcrichton/toml-rs
 //! [Pickle]: https://github.com/birkenfeld/serde-pickle
 //! [RON]: https://github.com/ron-rs/ron
-//! [BSON]: https://github.com/zonyitoo/bson-rs
+//! [BSON]: https://github.com/mongodb/bson-rust
 //! [Avro]: https://github.com/flavray/avro-rs
 //! [JSON5]: https://github.com/callum-oakley/json5-rs
 //! [Postcard]: https://github.com/jamesmunns/postcard
@@ -74,7 +74,7 @@
 //! [Envy]: https://github.com/softprops/envy
 //! [Envy Store]: https://github.com/softprops/envy-store
 //! [Cargo]: https://doc.rust-lang.org/cargo/reference/manifest.html
-//! [AWS Parameter Store]: https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-paramstore.html
+//! [AWS Parameter Store]: https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html
 //! [S-expressions]: https://github.com/rotty/lexpr-rs
 //! [D-Bus]: https://docs.rs/zvariant
 //! [FlexBuffers]: https://github.com/google/flatbuffers/tree/master/rust/flexbuffers
@@ -84,7 +84,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 // Serde types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/serde/1.0.132")]
+#![doc(html_root_url = "https://docs.rs/serde/1.0.137")]
 // Support using Serde without the standard library!
 #![cfg_attr(not(feature = "std"), no_std)]
 // Unstable functionality only if the user asks for it. For tracking and
@@ -103,10 +103,8 @@
         // clippy bug: https://github.com/rust-lang/rust-clippy/issues/7768
         semicolon_if_nothing_returned,
         // not available in our oldest supported compiler
-        checked_conversions,
         empty_enum,
-        redundant_field_names,
-        redundant_static_lifetimes,
+        type_repetition_in_bounds, // https://github.com/rust-lang/rust-clippy/issues/8772
         // integer and float ser/de requires these sorts of casts
         cast_possible_truncation,
         cast_possible_wrap,
@@ -227,27 +225,27 @@ mod lib {
     #[cfg(feature = "std")]
     pub use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[cfg(all(feature = "std", collections_bound))]
+    #[cfg(all(feature = "std", not(no_collections_bound), no_ops_bound))]
     pub use std::collections::Bound;
 
-    #[cfg(core_reverse)]
+    #[cfg(not(no_core_reverse))]
     pub use self::core::cmp::Reverse;
 
-    #[cfg(ops_bound)]
+    #[cfg(not(no_ops_bound))]
     pub use self::core::ops::Bound;
 
-    #[cfg(range_inclusive)]
+    #[cfg(not(no_range_inclusive))]
     pub use self::core::ops::RangeInclusive;
 
-    #[cfg(all(feature = "std", std_atomic))]
+    #[cfg(all(feature = "std", not(no_std_atomic)))]
     pub use std::sync::atomic::{
         AtomicBool, AtomicI16, AtomicI32, AtomicI8, AtomicIsize, AtomicU16, AtomicU32, AtomicU8,
         AtomicUsize, Ordering,
     };
-    #[cfg(all(feature = "std", std_atomic64))]
+    #[cfg(all(feature = "std", not(no_std_atomic64)))]
     pub use std::sync::atomic::{AtomicI64, AtomicU64};
 
-    #[cfg(any(core_duration, feature = "std"))]
+    #[cfg(any(feature = "std", not(no_core_duration)))]
     pub use self::core::time::Duration;
 }
 
@@ -295,3 +293,8 @@ extern crate serde_derive;
 #[cfg(feature = "serde_derive")]
 #[doc(hidden)]
 pub use serde_derive::*;
+
+#[cfg(all(not(no_serde_derive), any(feature = "std", feature = "alloc")))]
+mod actually_private {
+    pub struct T;
+}

@@ -5,9 +5,10 @@ use std::io;
 use std::net::SocketAddr;
 
 #[cfg(unix)]
-use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
+use std::time::Duration;
 
 cfg_net! {
     /// A TCP socket that has not yet been converted to a `TcpStream` or
@@ -81,13 +82,14 @@ cfg_net! {
     /// [`AsRawFd`]: https://doc.rust-lang.org/std/os/unix/io/trait.AsRawFd.html
     /// [`AsRawSocket`]: https://doc.rust-lang.org/std/os/windows/io/trait.AsRawSocket.html
     /// [`socket2`]: https://docs.rs/socket2/
+    #[cfg_attr(docsrs, doc(alias = "connect_std"))]
     pub struct TcpSocket {
-        inner: mio::net::TcpSocket,
+        inner: socket2::Socket,
     }
 }
 
 impl TcpSocket {
-    /// Create a new socket configured for IPv4.
+    /// Creates a new socket configured for IPv4.
     ///
     /// Calls `socket(2)` with `AF_INET` and `SOCK_STREAM`.
     ///
@@ -117,11 +119,10 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn new_v4() -> io::Result<TcpSocket> {
-        let inner = mio::net::TcpSocket::new_v4()?;
-        Ok(TcpSocket { inner })
+        TcpSocket::new(socket2::Domain::IPV4)
     }
 
-    /// Create a new socket configured for IPv6.
+    /// Creates a new socket configured for IPv6.
     ///
     /// Calls `socket(2)` with `AF_INET6` and `SOCK_STREAM`.
     ///
@@ -151,11 +152,38 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn new_v6() -> io::Result<TcpSocket> {
-        let inner = mio::net::TcpSocket::new_v6()?;
+        TcpSocket::new(socket2::Domain::IPV6)
+    }
+
+    fn new(domain: socket2::Domain) -> io::Result<TcpSocket> {
+        let ty = socket2::Type::STREAM;
+        #[cfg(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ))]
+        let ty = ty.nonblocking();
+        let inner = socket2::Socket::new(domain, ty, Some(socket2::Protocol::TCP))?;
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )))]
+        inner.set_nonblocking(true)?;
         Ok(TcpSocket { inner })
     }
 
-    /// Allow the socket to bind to an in-use address.
+    /// Allows the socket to bind to an in-use address.
     ///
     /// Behavior is platform specific. Refer to the target platform's
     /// documentation for more details.
@@ -182,10 +210,10 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn set_reuseaddr(&self, reuseaddr: bool) -> io::Result<()> {
-        self.inner.set_reuseaddr(reuseaddr)
+        self.inner.set_reuse_address(reuseaddr)
     }
 
-    /// Retrieves the value set for `SO_REUSEADDR` on this socket
+    /// Retrieves the value set for `SO_REUSEADDR` on this socket.
     ///
     /// # Examples
     ///
@@ -208,10 +236,10 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn reuseaddr(&self) -> io::Result<bool> {
-        self.inner.get_reuseaddr()
+        self.inner.reuse_address()
     }
 
-    /// Allow the socket to bind to an in-use port. Only available for unix systems
+    /// Allows the socket to bind to an in-use port. Only available for unix systems
     /// (excluding Solaris & Illumos).
     ///
     /// Behavior is platform specific. Refer to the target platform's
@@ -242,10 +270,10 @@ impl TcpSocket {
         doc(cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos"))))
     )]
     pub fn set_reuseport(&self, reuseport: bool) -> io::Result<()> {
-        self.inner.set_reuseport(reuseport)
+        self.inner.set_reuse_port(reuseport)
     }
 
-    /// Allow the socket to bind to an in-use port. Only available for unix systems
+    /// Allows the socket to bind to an in-use port. Only available for unix systems
     /// (excluding Solaris & Illumos).
     ///
     /// Behavior is platform specific. Refer to the target platform's
@@ -277,14 +305,14 @@ impl TcpSocket {
         doc(cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos"))))
     )]
     pub fn reuseport(&self) -> io::Result<bool> {
-        self.inner.get_reuseport()
+        self.inner.reuse_port()
     }
 
     /// Sets the size of the TCP send buffer on this socket.
     ///
     /// On most operating systems, this sets the `SO_SNDBUF` socket option.
     pub fn set_send_buffer_size(&self, size: u32) -> io::Result<()> {
-        self.inner.set_send_buffer_size(size)
+        self.inner.set_send_buffer_size(size as usize)
     }
 
     /// Returns the size of the TCP send buffer for this socket.
@@ -311,14 +339,14 @@ impl TcpSocket {
     ///
     /// [`set_send_buffer_size`]: #method.set_send_buffer_size
     pub fn send_buffer_size(&self) -> io::Result<u32> {
-        self.inner.get_send_buffer_size()
+        self.inner.send_buffer_size().map(|n| n as u32)
     }
 
     /// Sets the size of the TCP receive buffer on this socket.
     ///
     /// On most operating systems, this sets the `SO_RCVBUF` socket option.
     pub fn set_recv_buffer_size(&self, size: u32) -> io::Result<()> {
-        self.inner.set_recv_buffer_size(size)
+        self.inner.set_recv_buffer_size(size as usize)
     }
 
     /// Returns the size of the TCP receive buffer for this socket.
@@ -345,10 +373,32 @@ impl TcpSocket {
     ///
     /// [`set_recv_buffer_size`]: #method.set_recv_buffer_size
     pub fn recv_buffer_size(&self) -> io::Result<u32> {
-        self.inner.get_recv_buffer_size()
+        self.inner.recv_buffer_size().map(|n| n as u32)
     }
 
-    /// Get the local address of this socket.
+    /// Sets the linger duration of this socket by setting the SO_LINGER option.
+    ///
+    /// This option controls the action taken when a stream has unsent messages and the stream is
+    /// closed. If SO_LINGER is set, the system shall block the process until it can transmit the
+    /// data or until the time expires.
+    ///
+    /// If SO_LINGER is not specified, and the socket is closed, the system handles the call in a
+    /// way that allows the process to continue as quickly as possible.
+    pub fn set_linger(&self, dur: Option<Duration>) -> io::Result<()> {
+        self.inner.set_linger(dur)
+    }
+
+    /// Reads the linger duration for this socket by getting the `SO_LINGER`
+    /// option.
+    ///
+    /// For more information about this option, see [`set_linger`].
+    ///
+    /// [`set_linger`]: TcpSocket::set_linger
+    pub fn linger(&self) -> io::Result<Option<Duration>> {
+        self.inner.linger()
+    }
+
+    /// Gets the local address of this socket.
     ///
     /// Will fail on windows if called before `bind`.
     ///
@@ -371,10 +421,15 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.inner.get_localaddr()
+        self.inner.local_addr().and_then(convert_address)
     }
 
-    /// Bind the socket to the given address.
+    /// Returns the value of the `SO_ERROR` option.
+    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
+        self.inner.take_error()
+    }
+
+    /// Binds the socket to the given address.
     ///
     /// This calls the `bind(2)` operating-system function. Behavior is
     /// platform specific. Refer to the target platform's documentation for more
@@ -403,10 +458,10 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn bind(&self, addr: SocketAddr) -> io::Result<()> {
-        self.inner.bind(addr)
+        self.inner.bind(&addr.into())
     }
 
-    /// Establish a TCP connection with a peer at the specified socket address.
+    /// Establishes a TCP connection with a peer at the specified socket address.
     ///
     /// The `TcpSocket` is consumed. Once the connection is established, a
     /// connected [`TcpStream`] is returned. If the connection fails, the
@@ -439,16 +494,41 @@ impl TcpSocket {
     /// }
     /// ```
     pub async fn connect(self, addr: SocketAddr) -> io::Result<TcpStream> {
-        let mio = self.inner.connect(addr)?;
+        if let Err(err) = self.inner.connect(&addr.into()) {
+            #[cfg(unix)]
+            if err.raw_os_error() != Some(libc::EINPROGRESS) {
+                return Err(err);
+            }
+            #[cfg(windows)]
+            if err.kind() != io::ErrorKind::WouldBlock {
+                return Err(err);
+            }
+        }
+        #[cfg(unix)]
+        let mio = {
+            use std::os::unix::io::{FromRawFd, IntoRawFd};
+
+            let raw_fd = self.inner.into_raw_fd();
+            unsafe { mio::net::TcpStream::from_raw_fd(raw_fd) }
+        };
+
+        #[cfg(windows)]
+        let mio = {
+            use std::os::windows::io::{FromRawSocket, IntoRawSocket};
+
+            let raw_socket = self.inner.into_raw_socket();
+            unsafe { mio::net::TcpStream::from_raw_socket(raw_socket) }
+        };
+
         TcpStream::connect_mio(mio).await
     }
 
-    /// Convert the socket into a `TcpListener`.
+    /// Converts the socket into a `TcpListener`.
     ///
     /// `backlog` defines the maximum number of pending connections are queued
     /// by the operating system at any given time. Connection are removed from
     /// the queue with [`TcpListener::accept`]. When the queue is full, the
-    /// operationg-system will start rejecting connections.
+    /// operating-system will start rejecting connections.
     ///
     /// [`TcpListener::accept`]: TcpListener::accept
     ///
@@ -479,8 +559,76 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn listen(self, backlog: u32) -> io::Result<TcpListener> {
-        let mio = self.inner.listen(backlog)?;
+        self.inner.listen(backlog as i32)?;
+        #[cfg(unix)]
+        let mio = {
+            use std::os::unix::io::{FromRawFd, IntoRawFd};
+
+            let raw_fd = self.inner.into_raw_fd();
+            unsafe { mio::net::TcpListener::from_raw_fd(raw_fd) }
+        };
+
+        #[cfg(windows)]
+        let mio = {
+            use std::os::windows::io::{FromRawSocket, IntoRawSocket};
+
+            let raw_socket = self.inner.into_raw_socket();
+            unsafe { mio::net::TcpListener::from_raw_socket(raw_socket) }
+        };
+
         TcpListener::new(mio)
+    }
+
+    /// Converts a [`std::net::TcpStream`] into a `TcpSocket`. The provided
+    /// socket must not have been connected prior to calling this function. This
+    /// function is typically used together with crates such as [`socket2`] to
+    /// configure socket options that are not available on `TcpSocket`.
+    ///
+    /// [`std::net::TcpStream`]: struct@std::net::TcpStream
+    /// [`socket2`]: https://docs.rs/socket2/
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::net::TcpSocket;
+    /// use socket2::{Domain, Socket, Type};
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> std::io::Result<()> {
+    ///
+    ///     let socket2_socket = Socket::new(Domain::IPV4, Type::STREAM, None)?;
+    ///
+    ///     let socket = TcpSocket::from_std_stream(socket2_socket.into());
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn from_std_stream(std_stream: std::net::TcpStream) -> TcpSocket {
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::{FromRawFd, IntoRawFd};
+
+            let raw_fd = std_stream.into_raw_fd();
+            unsafe { TcpSocket::from_raw_fd(raw_fd) }
+        }
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::{FromRawSocket, IntoRawSocket};
+
+            let raw_socket = std_stream.into_raw_socket();
+            unsafe { TcpSocket::from_raw_socket(raw_socket) }
+        }
+    }
+}
+
+fn convert_address(address: socket2::SockAddr) -> io::Result<SocketAddr> {
+    match address.as_socket() {
+        Some(address) => Ok(address),
+        None => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid address family (not IPv4 or IPv6)",
+        )),
     }
 }
 
@@ -506,8 +654,15 @@ impl FromRawFd for TcpSocket {
     /// The caller is responsible for ensuring that the socket is in
     /// non-blocking mode.
     unsafe fn from_raw_fd(fd: RawFd) -> TcpSocket {
-        let inner = mio::net::TcpSocket::from_raw_fd(fd);
+        let inner = socket2::Socket::from_raw_fd(fd);
         TcpSocket { inner }
+    }
+}
+
+#[cfg(unix)]
+impl IntoRawFd for TcpSocket {
+    fn into_raw_fd(self) -> RawFd {
+        self.inner.into_raw_fd()
     }
 }
 
@@ -534,7 +689,7 @@ impl FromRawSocket for TcpSocket {
     /// The caller is responsible for ensuring that the socket is in
     /// non-blocking mode.
     unsafe fn from_raw_socket(socket: RawSocket) -> TcpSocket {
-        let inner = mio::net::TcpSocket::from_raw_socket(socket);
+        let inner = socket2::Socket::from_raw_socket(socket);
         TcpSocket { inner }
     }
 }

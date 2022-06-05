@@ -16,6 +16,7 @@ pub struct StrumVariantProperties {
     pub ascii_case_insensitive: Option<bool>,
     pub message: Option<LitStr>,
     pub detailed_message: Option<LitStr>,
+    pub documentation: Vec<LitStr>,
     pub string_props: Vec<(LitStr, LitStr)>,
     serialize: Vec<LitStr>,
     to_string: Option<LitStr>,
@@ -29,17 +30,13 @@ impl StrumVariantProperties {
     }
 
     pub fn get_preferred_name(&self, case_style: Option<CaseStyle>) -> LitStr {
-        if let Some(to_string) = &self.to_string {
-            to_string.clone()
-        } else {
-            let mut serialized = self.serialize.clone();
-            serialized.sort_by_key(|s| s.value().len());
-            if let Some(n) = serialized.pop() {
-                n
-            } else {
-                self.ident_as_str(case_style)
-            }
-        }
+        self.to_string.as_ref().cloned().unwrap_or_else(|| {
+            self.serialize
+                .iter()
+                .max_by_key(|s| s.value().len())
+                .cloned()
+                .unwrap_or_else(|| self.ident_as_str(case_style))
+        })
     }
 
     pub fn get_serializations(&self, case_style: Option<CaseStyle>) -> Vec<LitStr> {
@@ -58,8 +55,10 @@ impl StrumVariantProperties {
 
 impl HasStrumVariantProperties for Variant {
     fn get_variant_properties(&self) -> syn::Result<StrumVariantProperties> {
-        let mut output = StrumVariantProperties::default();
-        output.ident = Some(self.ident.clone());
+        let mut output = StrumVariantProperties {
+            ident: Some(self.ident.clone()),
+            ..Default::default()
+        };
 
         let mut message_kw = None;
         let mut detailed_message_kw = None;
@@ -84,6 +83,9 @@ impl HasStrumVariantProperties for Variant {
 
                     detailed_message_kw = Some(kw);
                     output.detailed_message = Some(value);
+                }
+                VariantMeta::Documentation { value } => {
+                    output.documentation.push(value);
                 }
                 VariantMeta::Serialize { value, .. } => {
                     output.serialize.push(value);

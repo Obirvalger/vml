@@ -25,6 +25,15 @@ impl Event {
     }
 
     /// Returns true if the event contains readable readiness.
+    ///
+    /// # Notes
+    ///
+    /// Out-of-band (OOB) data also triggers readable events. But must
+    /// application don't actually read OOB data, this could leave an
+    /// application open to a Denial-of-Service (Dos) attack, see
+    /// <https://github.com/sandstorm-io/sandstorm-website/blob/58f93346028c0576e8147627667328eaaf4be9fa/_posts/2015-04-08-osx-security-bug.md>.
+    /// However because Mio uses edge-triggers it will not result in an infinite
+    /// loop as described in the article above.
     pub fn is_readable(&self) -> bool {
         sys::event::is_readable(&self.inner)
     }
@@ -53,7 +62,7 @@ impl Event {
     /// | [kqueue]      | `EV_ERROR` and `EV_EOF` with `fflags` set to `0`. |
     ///
     /// [OS selector]: ../struct.Poll.html#implementation-notes
-    /// [epoll]: http://man7.org/linux/man-pages/man7/epoll.7.html
+    /// [epoll]: https://man7.org/linux/man-pages/man7/epoll.7.html
     /// [kqueue]: https://www.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
     pub fn is_error(&self) -> bool {
         sys::event::is_error(&self.inner)
@@ -84,7 +93,7 @@ impl Event {
     /// | [kqueue]      | `EV_EOF`        |
     ///
     /// [OS selector]: ../struct.Poll.html#implementation-notes
-    /// [epoll]: http://man7.org/linux/man-pages/man7/epoll.7.html
+    /// [epoll]: https://man7.org/linux/man-pages/man7/epoll.7.html
     /// [kqueue]: https://www.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
     pub fn is_read_closed(&self) -> bool {
         sys::event::is_read_closed(&self.inner)
@@ -114,7 +123,7 @@ impl Event {
     /// | [kqueue]      | `EV_EOF`        |
     ///
     /// [OS selector]: ../struct.Poll.html#implementation-notes
-    /// [epoll]: http://man7.org/linux/man-pages/man7/epoll.7.html
+    /// [epoll]: https://man7.org/linux/man-pages/man7/epoll.7.html
     /// [kqueue]: https://www.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
     pub fn is_write_closed(&self) -> bool {
         sys::event::is_write_closed(&self.inner)
@@ -135,7 +144,7 @@ impl Event {
     /// | [kqueue]      | *Not supported* |
     ///
     /// [OS selector]: ../struct.Poll.html#implementation-notes
-    /// [epoll]: http://man7.org/linux/man-pages/man7/epoll.7.html
+    /// [epoll]: https://man7.org/linux/man-pages/man7/epoll.7.html
     /// [kqueue]: https://www.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
     #[inline]
     pub fn is_priority(&self) -> bool {
@@ -158,7 +167,7 @@ impl Event {
     /// 1: Only supported on DragonFly BSD, FreeBSD, iOS and macOS.
     ///
     /// [OS selector]: ../struct.Poll.html#implementation-notes
-    /// [epoll]: http://man7.org/linux/man-pages/man7/epoll.7.html
+    /// [epoll]: https://man7.org/linux/man-pages/man7/epoll.7.html
     /// [kqueue]: https://www.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
     pub fn is_aio(&self) -> bool {
         sys::event::is_aio(&self.inner)

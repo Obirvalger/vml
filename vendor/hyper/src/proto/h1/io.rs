@@ -1,11 +1,18 @@
 use std::cmp;
 use std::fmt;
+#[cfg(all(feature = "server", feature = "runtime"))]
+use std::future::Future;
 use std::io::{self, IoSlice};
 use std::marker::Unpin;
 use std::mem::MaybeUninit;
+#[cfg(all(feature = "server", feature = "runtime"))]
+use std::time::Duration;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+#[cfg(all(feature = "server", feature = "runtime"))]
+use tokio::time::Instant;
+use tracing::{debug, trace};
 
 use super::{Http1Transaction, ParseContext, ParsedMessage};
 use crate::common::buf::BufList;
@@ -56,7 +63,12 @@ where
     B: Buf,
 {
     pub(crate) fn new(io: T) -> Buffered<T, B> {
-        let write_buf = WriteBuf::new(&io);
+        let strategy = if io.is_write_vectored() {
+            WriteStrategy::Queue
+        } else {
+            WriteStrategy::Flatten
+        };
+        let write_buf = WriteBuf::new(strategy);
         Buffered {
             flush_pipeline: false,
             io,
@@ -91,12 +103,18 @@ where
         self.read_buf_strategy = ReadStrategy::Exact(sz);
     }
 
-    #[cfg(feature = "server")]
     pub(crate) fn set_write_strategy_flatten(&mut self) {
         // this should always be called only at construction time,
         // so this assert is here to catch myself
         debug_assert!(self.write_buf.queue.bufs_cnt() == 0);
         self.write_buf.set_strategy(WriteStrategy::Flatten);
+    }
+
+    pub(crate) fn set_write_strategy_queue(&mut self) {
+        // this should always be called only at construction time,
+        // so this assert is here to catch myself
+        debug_assert!(self.write_buf.queue.bufs_cnt() == 0);
+        self.write_buf.set_strategy(WriteStrategy::Queue);
     }
 
     pub(crate) fn read_buf(&self) -> &[u8] {
@@ -113,6 +131,15 @@ where
     /// that could be allocated in the future.
     fn read_buf_remaining_mut(&self) -> usize {
         self.read_buf.capacity() - self.read_buf.len()
+    }
+
+    /// Return whether we can append to the headers buffer.
+    ///
+    /// Reasons we can't:
+    /// - The write buf is in queue mode, and some of the past body is still
+    ///   needing to be flushed.
+    pub(crate) fn can_headers_buf(&self) -> bool {
+        !self.write_buf.queue.has_remaining()
     }
 
     pub(crate) fn headers_buf(&mut self) -> &mut Vec<u8> {
@@ -159,12 +186,39 @@ where
                 ParseContext {
                     cached_headers: parse_ctx.cached_headers,
                     req_method: parse_ctx.req_method,
-                    #[cfg(feature = "ffi")]
+                    h1_parser_config: parse_ctx.h1_parser_config.clone(),
+                    #[cfg(all(feature = "server", feature = "runtime"))]
+                    h1_header_read_timeout: parse_ctx.h1_header_read_timeout,
+                    #[cfg(all(feature = "server", feature = "runtime"))]
+                    h1_header_read_timeout_fut: parse_ctx.h1_header_read_timeout_fut,
+                    #[cfg(all(feature = "server", feature = "runtime"))]
+                    h1_header_read_timeout_running: parse_ctx.h1_header_read_timeout_running,
                     preserve_header_case: parse_ctx.preserve_header_case,
+                    #[cfg(feature = "ffi")]
+                    preserve_header_order: parse_ctx.preserve_header_order,
+                    h09_responses: parse_ctx.h09_responses,
+                    #[cfg(feature = "ffi")]
+                    on_informational: parse_ctx.on_informational,
+                    #[cfg(feature = "ffi")]
+                    raw_headers: parse_ctx.raw_headers,
                 },
             )? {
                 Some(msg) => {
                     debug!("parsed {} headers", msg.head.headers.len());
+
+                    #[cfg(all(feature = "server", feature = "runtime"))]
+                    {
+                        *parse_ctx.h1_header_read_timeout_running = false;
+
+                        if let Some(h1_header_read_timeout_fut) =
+                            parse_ctx.h1_header_read_timeout_fut
+                        {
+                            // Reset the timer in order to avoid woken up when the timeout finishes
+                            h1_header_read_timeout_fut
+                                .as_mut()
+                                .reset(Instant::now() + Duration::from_secs(30 * 24 * 60 * 60));
+                        }
+                    }
                     return Poll::Ready(Ok(msg));
                 }
                 None => {
@@ -172,6 +226,20 @@ where
                     if self.read_buf.len() >= max {
                         debug!("max_buf_size ({}) reached, closing", max);
                         return Poll::Ready(Err(crate::Error::new_too_large()));
+                    }
+
+                    #[cfg(all(feature = "server", feature = "runtime"))]
+                    if *parse_ctx.h1_header_read_timeout_running {
+                        if let Some(h1_header_read_timeout_fut) =
+                            parse_ctx.h1_header_read_timeout_fut
+                        {
+                            if Pin::new(h1_header_read_timeout_fut).poll(cx).is_ready() {
+                                *parse_ctx.h1_header_read_timeout_running = false;
+
+                                tracing::warn!("read header from client timeout");
+                                return Poll::Ready(Err(crate::Error::new_header_timeout()));
+                            }
+                        }
                     }
                 }
             }
@@ -182,7 +250,10 @@ where
         }
     }
 
-    pub(crate) fn poll_read_from_io(&mut self, cx: &mut task::Context<'_>) -> Poll<io::Result<usize>> {
+    pub(crate) fn poll_read_from_io(
+        &mut self,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<io::Result<usize>> {
         self.read_blocked = false;
         let next = self.read_buf_strategy.next();
         if self.read_buf_remaining_mut() < next {
@@ -195,6 +266,7 @@ where
         match Pin::new(&mut self.io).poll_read(cx, &mut buf) {
             Poll::Ready(Ok(_)) => {
                 let n = buf.filled().len();
+                trace!("received {} bytes", n);
                 unsafe {
                     // Safety: we just read that many bytes into the
                     // uninitialized part of the buffer, so this is okay.
@@ -377,7 +449,7 @@ impl ReadStrategy {
                         *decrease_now = false;
                     }
                 }
-            },
+            }
             #[cfg(feature = "client")]
             ReadStrategy::Exact(_) => (),
         }
@@ -415,6 +487,24 @@ impl<T: AsRef<[u8]>> Cursor<T> {
 }
 
 impl Cursor<Vec<u8>> {
+    /// If we've advanced the position a bit in this cursor, and wish to
+    /// extend the underlying vector, we may wish to unshift the "read" bytes
+    /// off, and move everything else over.
+    fn maybe_unshift(&mut self, additional: usize) {
+        if self.pos == 0 {
+            // nothing to do
+            return;
+        }
+
+        if self.bytes.capacity() - self.bytes.len() >= additional {
+            // there's room!
+            return;
+        }
+
+        self.bytes.drain(0..self.pos);
+        self.pos = 0;
+    }
+
     fn reset(&mut self) {
         self.pos = 0;
         self.bytes.clear();
@@ -459,12 +549,7 @@ pub(super) struct WriteBuf<B> {
 }
 
 impl<B: Buf> WriteBuf<B> {
-    fn new(io: &impl AsyncWrite) -> WriteBuf<B> {
-        let strategy = if io.is_write_vectored() {
-            WriteStrategy::Queue
-        } else {
-            WriteStrategy::Flatten
-        };
+    fn new(strategy: WriteStrategy) -> WriteBuf<B> {
         WriteBuf {
             headers: Cursor::new(Vec::with_capacity(INIT_BUFFER_SIZE)),
             max_buf_size: DEFAULT_MAX_BUFFER_SIZE,
@@ -478,7 +563,6 @@ impl<B> WriteBuf<B>
 where
     B: Buf,
 {
-    #[cfg(feature = "server")]
     fn set_strategy(&mut self, strategy: WriteStrategy) {
         self.strategy = strategy;
     }
@@ -488,6 +572,13 @@ where
         match self.strategy {
             WriteStrategy::Flatten => {
                 let head = self.headers_mut();
+
+                head.maybe_unshift(buf.remaining());
+                trace!(
+                    self.len = head.remaining(),
+                    buf.len = buf.remaining(),
+                    "buffer.flatten"
+                );
                 //perf: This is a little faster than <Vec as BufMut>>::put,
                 //but accomplishes the same result.
                 loop {
@@ -503,6 +594,11 @@ where
                 }
             }
             WriteStrategy::Queue => {
+                trace!(
+                    self.len = self.remaining(),
+                    buf.len = buf.remaining(),
+                    "buffer.queue"
+                );
                 self.queue.push(buf.into());
             }
         }
@@ -638,8 +734,21 @@ mod tests {
             let parse_ctx = ParseContext {
                 cached_headers: &mut None,
                 req_method: &mut None,
-                #[cfg(feature = "ffi")]
+                h1_parser_config: Default::default(),
+                #[cfg(feature = "runtime")]
+                h1_header_read_timeout: None,
+                #[cfg(feature = "runtime")]
+                h1_header_read_timeout_fut: &mut None,
+                #[cfg(feature = "runtime")]
+                h1_header_read_timeout_running: &mut false,
                 preserve_header_case: false,
+                #[cfg(feature = "ffi")]
+                preserve_header_order: false,
+                h09_responses: false,
+                #[cfg(feature = "ffi")]
+                on_informational: &mut None,
+                #[cfg(feature = "ffi")]
+                raw_headers: false,
             };
             assert!(buffered
                 .parse::<ClientTransaction>(cx, parse_ctx)
@@ -798,10 +907,7 @@ mod tests {
     async fn write_buf_flatten() {
         let _ = pretty_env_logger::try_init();
 
-        let mock = Mock::new()
-            // Just a single write
-            .write(b"hello world, it's hyper!")
-            .build();
+        let mock = Mock::new().write(b"hello world, it's hyper!").build();
 
         let mut buffered = Buffered::<_, Cursor<Vec<u8>>>::new(mock);
         buffered.write_buf.set_strategy(WriteStrategy::Flatten);
@@ -813,6 +919,41 @@ mod tests {
         assert_eq!(buffered.write_buf.queue.bufs_cnt(), 0);
 
         buffered.flush().await.expect("flush");
+    }
+
+    #[test]
+    fn write_buf_flatten_partially_flushed() {
+        let _ = pretty_env_logger::try_init();
+
+        let b = |s: &str| Cursor::new(s.as_bytes().to_vec());
+
+        let mut write_buf = WriteBuf::<Cursor<Vec<u8>>>::new(WriteStrategy::Flatten);
+
+        write_buf.buffer(b("hello "));
+        write_buf.buffer(b("world, "));
+
+        assert_eq!(write_buf.chunk(), b"hello world, ");
+
+        // advance most of the way, but not all
+        write_buf.advance(11);
+
+        assert_eq!(write_buf.chunk(), b", ");
+        assert_eq!(write_buf.headers.pos, 11);
+        assert_eq!(write_buf.headers.bytes.capacity(), INIT_BUFFER_SIZE);
+
+        // there's still room in the headers buffer, so just push on the end
+        write_buf.buffer(b("it's hyper!"));
+
+        assert_eq!(write_buf.chunk(), b", it's hyper!");
+        assert_eq!(write_buf.headers.pos, 11);
+
+        let rem1 = write_buf.remaining();
+        let cap = write_buf.headers.bytes.capacity();
+
+        // but when this would go over capacity, don't copy the old bytes
+        write_buf.buffer(Cursor::new(vec![b'X'; cap]));
+        assert_eq!(write_buf.remaining(), cap + rem1);
+        assert_eq!(write_buf.headers.pos, 0);
     }
 
     #[tokio::test]

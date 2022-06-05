@@ -1,3 +1,16 @@
+# Version 0.23.2
+- Update signal-hook and mio to version 0.8.
+
+# Version 0.23.1
+- Fix control key parsing problem.
+
+# Version 0.23
+- Update dependencies.
+- Add 0 check for all cursor functions to prevent undefined behaviour.
+- Add CSIu key parsing for unix.
+- Improve control character window key parsing supporting (e.g. CTRL [ and ])
+- Update library to 2021 edition.
+
 # Version 0.22.1
 - Update yanked version crossterm-winapi and move to  crossterm-winapi 0.9.0.
 - Changed panic to error when calling disable-mouse capture without setting it first.

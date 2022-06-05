@@ -53,7 +53,7 @@ impl Level {
         // However, that is only supported for arrays of size
         // 32 or fewer.  So in our case we have to explicitly
         // invoke the constructor for each array element.
-        let ctor = || EntryList::default();
+        let ctor = EntryList::default;
 
         Level {
             level,
@@ -143,8 +143,9 @@ impl Level {
         let level_range = level_range(self.level);
         let slot_range = slot_range(self.level);
 
-        // TODO: This can probably be simplified w/ power of 2 math
-        let level_start = now - (now % level_range);
+        // Compute the start date of the current level by masking the low bits
+        // of `now` (`level_range` is a power of 2).
+        let level_start = now & !(level_range - 1);
         let mut deadline = level_start + slot as u64 * slot_range;
 
         if deadline <= now {
@@ -250,7 +251,7 @@ fn level_range(level: usize) -> u64 {
     LEVEL_MULT as u64 * slot_range(level)
 }
 
-/// Convert a duration (milliseconds) and a level to a slot position
+/// Converts a duration (milliseconds) and a level to a slot position.
 fn slot_for(duration: u64, level: usize) -> usize {
     ((duration >> (level * 6)) % LEVEL_MULT as u64) as usize
 }

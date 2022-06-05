@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "rust-embed"
-version = "6.3.0"
+version = "6.4.0"
 authors = ["pyros2097 <pyros2097@gmail.com>"]
 description = "Rust Custom Derive Macro which loads files into the rust binary at compile time during release and loads the file from the fs during dev"
 documentation = "https://docs.rs/rust-embed"
@@ -62,7 +62,8 @@ optional = true
 default-features = false
 
 [dependencies.axum]
-version = "0.2.3"
+version = "0.4"
+features = ["http1"]
 optional = true
 default-features = false
 
@@ -80,12 +81,13 @@ version = "2"
 optional = true
 
 [dependencies.poem]
-version = "1.0.8"
+version = "1.3.18"
+features = ["server"]
 optional = true
 default-features = false
 
 [dependencies.rocket]
-version = "0.4.5"
+version = "0.5.0-rc.1"
 optional = true
 default-features = false
 
@@ -93,7 +95,12 @@ default-features = false
 version = "6.2.0"
 
 [dependencies.rust-embed-utils]
-version = "7.1.0"
+version = "7.2.0"
+
+[dependencies.salvo]
+version = "0.16"
+optional = true
+default-features = false
 
 [dependencies.tokio]
 version = "1.0"
@@ -117,8 +124,8 @@ compression = ["rust-embed-impl/compression", "include-flate"]
 debug-embed = ["rust-embed-impl/debug-embed", "rust-embed-utils/debug-embed"]
 include-exclude = ["rust-embed-impl/include-exclude", "rust-embed-utils/include-exclude"]
 interpolate-folder-path = ["rust-embed-impl/interpolate-folder-path"]
-nightly = ["rocket"]
 poem-ex = ["poem", "tokio", "mime_guess", "hex"]
+salvo-ex = ["salvo", "tokio", "mime_guess", "hex"]
 warp-ex = ["warp", "tokio", "mime_guess"]
 [badges.appveyor]
 repository = "pyros2097/rust-embed"

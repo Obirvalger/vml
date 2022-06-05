@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "net"), allow(dead_code))]
+
 use crate::io::driver::{Direction, Handle, Interest, ReadyEvent, ScheduledIo};
 use crate::util::slab;
 
@@ -12,8 +14,9 @@ cfg_io_driver! {
     /// that it will receive task notifications on readiness. This is the lowest
     /// level API for integrating with a reactor.
     ///
-    /// The association between an I/O resource is made by calling [`new`]. Once
-    /// the association is established, it remains established until the
+    /// The association between an I/O resource is made by calling
+    /// [`new_with_interest_and_handle`].
+    /// Once the association is established, it remains established until the
     /// registration instance is dropped.
     ///
     /// A registration instance represents two separate readiness streams. One
@@ -34,7 +37,7 @@ cfg_io_driver! {
     /// stream. The write readiness event stream is only for `Ready::writable()`
     /// events.
     ///
-    /// [`new`]: method@Self::new
+    /// [`new_with_interest_and_handle`]: method@Self::new_with_interest_and_handle
     /// [`poll_read_ready`]: method@Self::poll_read_ready`
     /// [`poll_write_ready`]: method@Self::poll_write_ready`
     #[derive(Debug)]
@@ -69,14 +72,7 @@ impl Registration {
         interest: Interest,
         handle: Handle,
     ) -> io::Result<Registration> {
-        let shared = if let Some(inner) = handle.inner() {
-            inner.add_source(io, interest)?
-        } else {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "failed to find event loop",
-            ));
-        };
+        let shared = handle.inner.add_source(io, interest)?;
 
         Ok(Registration { handle, shared })
     }
@@ -98,11 +94,7 @@ impl Registration {
     ///
     /// `Err` is returned if an error is encountered.
     pub(crate) fn deregister(&mut self, io: &mut impl Source) -> io::Result<()> {
-        let inner = match self.handle.inner() {
-            Some(inner) => inner,
-            None => return Err(io::Error::new(io::ErrorKind::Other, "reactor gone")),
-        };
-        inner.deregister_source(io)
+        self.handle.inner.deregister_source(io)
     }
 
     pub(crate) fn clear_readiness(&self, event: ReadyEvent) {
@@ -154,7 +146,7 @@ impl Registration {
         let coop = ready!(crate::coop::poll_proceed(cx));
         let ev = ready!(self.shared.poll_readiness(cx, direction));
 
-        if self.handle.inner().is_none() {
+        if self.handle.inner.is_shutdown() {
             return Poll::Ready(Err(gone()));
         }
 
@@ -232,8 +224,11 @@ cfg_io_readiness! {
             pin!(fut);
 
             crate::future::poll_fn(|cx| {
-                if self.handle.inner().is_none() {
-                    return Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, "reactor gone")));
+                if self.handle.inner.is_shutdown() {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        crate::util::error::RUNTIME_SHUTTING_DOWN_ERROR
+                    )));
                 }
 
                 Pin::new(&mut fut).poll(cx).map(Ok)

@@ -1,7 +1,9 @@
 use libc::size_t;
 
+/// A more detailed error object returned by some hyper functions.
 pub struct hyper_error(crate::Error);
 
+/// A return code for many of hyper's methods.
 #[repr(C)]
 pub enum hyper_code {
     /// All is well.
@@ -56,14 +58,14 @@ impl hyper_error {
 ffi_fn! {
     /// Frees a `hyper_error`.
     fn hyper_error_free(err: *mut hyper_error) {
-        drop(unsafe { Box::from_raw(err) });
+        drop(non_null!(Box::from_raw(err) ?= ()));
     }
 }
 
 ffi_fn! {
     /// Get an equivalent `hyper_code` from this error.
     fn hyper_error_code(err: *const hyper_error) -> hyper_code {
-        unsafe { &*err }.code()
+        non_null!(&*err ?= hyper_code::HYPERE_INVALID_ARG).code()
     }
 }
 
@@ -78,6 +80,6 @@ ffi_fn! {
         let dst = unsafe {
             std::slice::from_raw_parts_mut(dst, dst_len)
         };
-        unsafe { &*err }.print_to(dst)
+        non_null!(&*err ?= 0).print_to(dst)
     }
 }

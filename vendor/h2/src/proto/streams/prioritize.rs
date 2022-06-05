@@ -51,6 +51,9 @@ pub(super) struct Prioritize {
 
     /// What `DATA` frame is currently being sent in the codec.
     in_flight_data_frame: InFlightData,
+
+    /// The maximum amount of bytes a stream should buffer.
+    max_buffer_size: usize,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -93,7 +96,12 @@ impl Prioritize {
             flow,
             last_opened_id: StreamId::ZERO,
             in_flight_data_frame: InFlightData::Nothing,
+            max_buffer_size: config.local_max_buffer_size,
         }
+    }
+
+    pub(crate) fn max_buffer_size(&self) -> usize {
+        self.max_buffer_size
     }
 
     /// Queue a frame to be sent to the remote
@@ -158,7 +166,7 @@ impl Prioritize {
         }
 
         // Update the buffered data counter
-        stream.buffered_send_data += sz;
+        stream.buffered_send_data += sz as usize;
 
         let span =
             tracing::trace_span!("send_data", sz, requested = stream.requested_send_capacity);
@@ -167,9 +175,10 @@ impl Prioritize {
 
         // Implicitly request more send capacity if not enough has been
         // requested yet.
-        if stream.requested_send_capacity < stream.buffered_send_data {
+        if (stream.requested_send_capacity as usize) < stream.buffered_send_data {
             // Update the target requested capacity
-            stream.requested_send_capacity = stream.buffered_send_data;
+            stream.requested_send_capacity =
+                cmp::min(stream.buffered_send_data, WindowSize::MAX as usize) as WindowSize;
 
             self.try_assign_capacity(stream);
         }
@@ -217,28 +226,28 @@ impl Prioritize {
             "reserve_capacity",
             ?stream.id,
             requested = capacity,
-            effective = capacity + stream.buffered_send_data,
+            effective = (capacity as usize) + stream.buffered_send_data,
             curr = stream.requested_send_capacity
         );
         let _e = span.enter();
 
         // Actual capacity is `capacity` + the current amount of buffered data.
         // If it were less, then we could never send out the buffered data.
-        let capacity = capacity + stream.buffered_send_data;
+        let capacity = (capacity as usize) + stream.buffered_send_data;
 
-        if capacity == stream.requested_send_capacity {
+        if capacity == stream.requested_send_capacity as usize {
             // Nothing to do
-        } else if capacity < stream.requested_send_capacity {
+        } else if capacity < stream.requested_send_capacity as usize {
             // Update the target requested capacity
-            stream.requested_send_capacity = capacity;
+            stream.requested_send_capacity = capacity as WindowSize;
 
             // Currently available capacity assigned to the stream
             let available = stream.send_flow.available().as_size();
 
             // If the stream has more assigned capacity than requested, reclaim
             // some for the connection
-            if available > capacity {
-                let diff = available - capacity;
+            if available as usize > capacity {
+                let diff = available - capacity as WindowSize;
 
                 stream.send_flow.claim_capacity(diff);
 
@@ -252,7 +261,8 @@ impl Prioritize {
             }
 
             // Update the target requested capacity
-            stream.requested_send_capacity = capacity;
+            stream.requested_send_capacity =
+                cmp::min(capacity, WindowSize::MAX as usize) as WindowSize;
 
             // Try to assign additional capacity to the stream. If none is
             // currently available, the stream will be queued to receive some
@@ -316,8 +326,8 @@ impl Prioritize {
     /// it to the connection
     pub fn reclaim_reserved_capacity(&mut self, stream: &mut store::Ptr, counts: &mut Counts) {
         // only reclaim requested capacity that isn't already buffered
-        if stream.requested_send_capacity > stream.buffered_send_data {
-            let reserved = stream.requested_send_capacity - stream.buffered_send_data;
+        if stream.requested_send_capacity as usize > stream.buffered_send_data {
+            let reserved = stream.requested_send_capacity - stream.buffered_send_data as WindowSize;
 
             stream.send_flow.claim_capacity(reserved);
             self.assign_connection_capacity(reserved, stream, counts);
@@ -377,7 +387,7 @@ impl Prioritize {
 
         // Total requested should never go below actual assigned
         // (Note: the window size can go lower than assigned)
-        debug_assert!(total_requested >= stream.send_flow.available());
+        debug_assert!(stream.send_flow.available() <= total_requested as usize);
 
         // The amount of additional capacity that the stream requests.
         // Don't assign more than the window has available!
@@ -422,7 +432,7 @@ impl Prioritize {
             tracing::trace!(capacity = assign, "assigning");
 
             // Assign the capacity to the stream
-            stream.assign_capacity(assign);
+            stream.assign_capacity(assign, self.max_buffer_size);
 
             // Claim the capacity from the connection
             self.flow.claim_capacity(assign);
@@ -435,7 +445,7 @@ impl Prioritize {
             has_unavailable = %stream.send_flow.has_unavailable()
         );
 
-        if stream.send_flow.available() < stream.requested_send_capacity
+        if stream.send_flow.available() < stream.requested_send_capacity as usize
             && stream.send_flow.has_unavailable()
         {
             // The stream requires additional capacity and the stream's
@@ -735,9 +745,14 @@ impl Prioritize {
                                 stream.send_flow.send_data(len);
 
                                 // Decrement the stream's buffered data counter
-                                debug_assert!(stream.buffered_send_data >= len);
-                                stream.buffered_send_data -= len;
+                                debug_assert!(stream.buffered_send_data >= len as usize);
+                                stream.buffered_send_data -= len as usize;
                                 stream.requested_send_capacity -= len;
+
+                                // If the capacity was limited because of the
+                                // max_send_buffer_size, then consider waking
+                                // the send task again...
+                                stream.notify_if_can_buffer_more(self.max_buffer_size);
 
                                 // Assign the capacity back to the connection that
                                 // was just consumed from the stream in the previous
@@ -791,7 +806,10 @@ impl Prioritize {
                         }),
                         None => {
                             if let Some(reason) = stream.state.get_scheduled_reset() {
-                                stream.state.set_reset(reason);
+                                let stream_id = stream.id;
+                                stream
+                                    .state
+                                    .set_reset(stream_id, reason, Initiator::Library);
 
                                 let frame = frame::Reset::new(stream.id, reason);
                                 Frame::Reset(frame)

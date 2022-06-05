@@ -99,7 +99,7 @@
 //! [`LinkedHashMap<K, V>`]: https://docs.rs/linked-hash-map/*/linked_hash_map/struct.LinkedHashMap.html
 //! [`Serialize`]: ../trait.Serialize.html
 //! [`Serializer`]: ../trait.Serializer.html
-//! [`bincode`]: https://github.com/servo/bincode
+//! [`bincode`]: https://github.com/bincode-org/bincode
 //! [`linked-hash-map`]: https://crates.io/crates/linked-hash-map
 //! [`serde_derive`]: https://crates.io/crates/serde_derive
 //! [`serde_json`]: https://github.com/serde-rs/json
@@ -1280,13 +1280,13 @@ pub trait Serializer: Sized {
         let iter = iter.into_iter();
         let mut serializer = try!(self.serialize_seq(iterator_len_hint(&iter)));
 
-        #[cfg(iterator_try_fold)]
+        #[cfg(not(no_iterator_try_fold))]
         {
             let mut iter = iter;
             try!(iter.try_for_each(|item| serializer.serialize_element(&item)));
         }
 
-        #[cfg(not(iterator_try_fold))]
+        #[cfg(no_iterator_try_fold)]
         {
             for item in iter {
                 try!(serializer.serialize_element(&item));
@@ -1331,13 +1331,13 @@ pub trait Serializer: Sized {
         let iter = iter.into_iter();
         let mut serializer = try!(self.serialize_map(iterator_len_hint(&iter)));
 
-        #[cfg(iterator_try_fold)]
+        #[cfg(not(no_iterator_try_fold))]
         {
             let mut iter = iter;
             try!(iter.try_for_each(|(key, value)| serializer.serialize_entry(&key, &value)));
         }
 
-        #[cfg(not(iterator_try_fold))]
+        #[cfg(no_iterator_try_fold)]
         {
             for (key, value) in iter {
                 try!(serializer.serialize_entry(&key, &value));

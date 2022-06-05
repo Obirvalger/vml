@@ -2,10 +2,10 @@ use std::io;
 
 use anyhow::{bail, Result};
 use byte_unit::Byte;
-use clap::{App, AppSettings, Arg, ArgEnum, ArgGroup, ValueHint};
+use clap::{AppSettings, Arg, ArgEnum, ArgGroup, Command, ValueHint};
 use clap_complete::{generate, Generator, Shell};
 
-fn print_completions<G: Generator>(gen: G, app: &mut App) {
+fn print_completions<G: Generator>(gen: G, app: &mut Command) {
     generate(gen, app, app.get_name().to_string(), &mut io::stdout());
 }
 
@@ -20,13 +20,16 @@ pub fn completion(shell: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn build_cli() -> clap::App<'static> {
-    App::new("vml")
+pub fn build_cli() -> clap::Command<'static> {
+    Command::new("vml")
         .about("virtual machines manage utility")
         .version("0.1.5")
         .setting(AppSettings::NoAutoVersion)
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .global_setting(AppSettings::InferSubcommands)
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .infer_subcommands(true)
         .arg(Arg::new("all-vms").long("all-vms").help("Specify all vms"))
         .arg(
             Arg::new("host")
@@ -49,12 +52,13 @@ pub fn build_cli() -> clap::App<'static> {
         )
         .group(ArgGroup::new("vm-config-group").args(&["vm-config", "minimal-vm-config"]))
         .subcommand(
-            App::new("image")
+            Command::new("image")
                 .about("command to work with vm images")
-                .setting(AppSettings::SubcommandRequiredElseHelp)
-                .subcommand(App::new("available").about("list available to pull vm images"))
+                .subcommand_required(true)
+                .arg_required_else_help(true)
+                .subcommand(Command::new("available").about("list available to pull vm images"))
                 .subcommand(
-                    App::new("remove")
+                    Command::new("remove")
                         .about("remove images")
                         .visible_alias("rm")
                         .arg(Arg::new("all").long("all").short('a'))
@@ -67,9 +71,9 @@ pub fn build_cli() -> clap::App<'static> {
                         )
                         .arg(Arg::new("IMAGE").takes_value(true)),
                 )
-                .subcommand(App::new("list").about("list vm images").visible_alias("ls"))
+                .subcommand(Command::new("list").about("list vm images").visible_alias("ls"))
                 .subcommand(
-                    App::new("pull")
+                    Command::new("pull")
                         .about("pull vm images")
                         .arg(
                             Arg::new("available")
@@ -98,7 +102,7 @@ pub fn build_cli() -> clap::App<'static> {
                 )
                 .replace("update", &["pull", "--outdate"])
                 .subcommand(
-                    App::new("store")
+                    Command::new("store")
                         .about("store vm disk as image")
                         .arg(
                             Arg::new("image")
@@ -139,7 +143,7 @@ pub fn build_cli() -> clap::App<'static> {
         )
         .replace("images", &["image", "ls"])
         .subcommand(
-            App::new("create")
+            Command::new("create")
                 .about("create virtual machine")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(
@@ -212,7 +216,7 @@ pub fn build_cli() -> clap::App<'static> {
                 ),
         )
         .subcommand(
-            App::new("start")
+            Command::new("start")
                 .about("start virtual machines")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(
@@ -255,7 +259,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"])),
         )
         .subcommand(
-            App::new("run")
+            Command::new("run")
                 .about("shortcut to create and start")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(
@@ -342,7 +346,7 @@ pub fn build_cli() -> clap::App<'static> {
                 ),
         )
         .subcommand(
-            App::new("stop")
+            Command::new("stop")
                 .about("stop virtual machines")
                 .arg(Arg::new("force").long("force").short('f'))
                 .arg(Arg::new("NAME").takes_value(true))
@@ -370,7 +374,7 @@ pub fn build_cli() -> clap::App<'static> {
                 ),
         )
         .subcommand(
-            App::new("ssh")
+            Command::new("ssh")
                 .about("ssh to a virtual machine")
                 .arg(
                     Arg::new("ssh-options")
@@ -441,7 +445,7 @@ pub fn build_cli() -> clap::App<'static> {
                 ),
         )
         .subcommand(
-            App::new("rsync-to")
+            Command::new("rsync-to")
                 .about("rsync to a virtual machine, default destination is home")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(
@@ -519,7 +523,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .group(ArgGroup::new("action").args(&["destination", "list"])),
         )
         .subcommand(
-            App::new("rsync-from")
+            Command::new("rsync-from")
                 .about("rsync from a virtual machine, default destination is CWD")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(
@@ -591,7 +595,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .group(ArgGroup::new("action").args(&["destination", "list"])),
         )
         .subcommand(
-            App::new("show")
+            Command::new("show")
                 .about("show virtual machines")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(
@@ -622,9 +626,9 @@ pub fn build_cli() -> clap::App<'static> {
                 .arg(Arg::new("running").long("running").short('r'))
                 .group(ArgGroup::new("format").args(&["format-debug", "format-json"])),
         )
-        .subcommand(App::new("scp").about("show how to use scp with vml vms"))
+        .subcommand(Command::new("scp").about("show how to use scp with vml vms"))
         .subcommand(
-            App::new("list")
+            Command::new("list")
                 .about("list virtual machines")
                 .visible_alias("ls")
                 .arg(Arg::new("NAME").takes_value(true))
@@ -657,7 +661,7 @@ pub fn build_cli() -> clap::App<'static> {
                 .group(ArgGroup::new("fold_group").args(&["fold", "unfold"])),
         )
         .subcommand(
-            App::new("monitor")
+            Command::new("monitor")
                 .about("acces to qemu monitor")
                 .arg(Arg::new("command").long("command").short('c').takes_value(true))
                 .arg(Arg::new("NAME").takes_value(true))
@@ -684,7 +688,7 @@ pub fn build_cli() -> clap::App<'static> {
                 ),
         )
         .subcommand(
-            App::new("remove")
+            Command::new("remove")
                 .about("remove virtual machines")
                 .visible_alias("rm")
                 .arg(Arg::new("force").long("force").short('f'))
@@ -714,9 +718,11 @@ pub fn build_cli() -> clap::App<'static> {
                 ),
         )
         .subcommand(
-            App::new("get-file").about("show embedded file").arg(Arg::new("path").required(true)),
+            Command::new("get-file")
+                .about("show embedded file")
+                .arg(Arg::new("path").required(true)),
         )
-        .subcommand(App::new("completion").arg(
+        .subcommand(Command::new("completion").arg(
             Arg::new("SHELL").help("generate completions").required(true).possible_values(&[
                 "bash",
                 "elvish",

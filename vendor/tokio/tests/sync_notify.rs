@@ -1,5 +1,8 @@
 #![warn(rust_2018_idioms)]
-#![cfg(feature = "full")]
+#![cfg(feature = "sync")]
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
 
 use tokio::sync::Notify;
 use tokio_test::task::spawn;
@@ -133,4 +136,74 @@ fn notify_in_drop_after_wake() {
 
     // Now, notifying **should not** deadlock
     notify.notify_waiters();
+}
+
+#[test]
+fn notify_one_after_dropped_all() {
+    let notify = Notify::new();
+    let mut notified1 = spawn(async { notify.notified().await });
+
+    assert_pending!(notified1.poll());
+
+    notify.notify_waiters();
+    notify.notify_one();
+
+    drop(notified1);
+
+    let mut notified2 = spawn(async { notify.notified().await });
+
+    assert_ready!(notified2.poll());
+}
+
+#[test]
+fn test_notify_one_not_enabled() {
+    let notify = Notify::new();
+    let mut future = spawn(notify.notified());
+
+    notify.notify_one();
+    assert_ready!(future.poll());
+}
+
+#[test]
+fn test_notify_one_after_enable() {
+    let notify = Notify::new();
+    let mut future = spawn(notify.notified());
+
+    future.enter(|_, fut| assert!(!fut.enable()));
+
+    notify.notify_one();
+    assert_ready!(future.poll());
+    future.enter(|_, fut| assert!(fut.enable()));
+}
+
+#[test]
+fn test_poll_after_enable() {
+    let notify = Notify::new();
+    let mut future = spawn(notify.notified());
+
+    future.enter(|_, fut| assert!(!fut.enable()));
+    assert_pending!(future.poll());
+}
+
+#[test]
+fn test_enable_after_poll() {
+    let notify = Notify::new();
+    let mut future = spawn(notify.notified());
+
+    assert_pending!(future.poll());
+    future.enter(|_, fut| assert!(!fut.enable()));
+}
+
+#[test]
+fn test_enable_consumes_permit() {
+    let notify = Notify::new();
+
+    // Add a permit.
+    notify.notify_one();
+
+    let mut future1 = spawn(notify.notified());
+    future1.enter(|_, fut| assert!(fut.enable()));
+
+    let mut future2 = spawn(notify.notified());
+    future2.enter(|_, fut| assert!(!fut.enable()));
 }

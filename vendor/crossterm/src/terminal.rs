@@ -55,7 +55,7 @@
 //! - Input will not be forwarded to screen
 //! - Input will not be processed on enter press
 //! - Input will not be line buffered (input sent byte-by-byte to input buffer)
-//! - Special keys like backspace and CTL+C will not be processed by terminal driver
+//! - Special keys like backspace and CTRL+C will not be processed by terminal driver
 //! - New line character will not be processed therefore `println!` can't be used, use `write!` instead
 //!
 //! Raw mode can be enabled/disabled with the [enable_raw_mode](terminal::enable_raw_mode) and [disable_raw_mode](terminal::disable_raw_mode) functions.
@@ -100,7 +100,7 @@ pub(crate) mod sys;
 
 /// Tells whether the raw mode is enabled.
 ///
-/// Please have a look at the [raw mode](./#raw-mode) section.
+/// Please have a look at the [raw mode](./index.html#raw-mode) section.
 pub fn is_raw_mode_enabled() -> Result<bool> {
     #[cfg(unix)]
     {
@@ -115,14 +115,14 @@ pub fn is_raw_mode_enabled() -> Result<bool> {
 
 /// Enables raw mode.
 ///
-/// Please have a look at the [raw mode](./#raw-mode) section.
+/// Please have a look at the [raw mode](./index.html#raw-mode) section.
 pub fn enable_raw_mode() -> Result<()> {
     sys::enable_raw_mode()
 }
 
 /// Disables raw mode.
 ///
-/// Please have a look at the [raw mode](./#raw-mode) section.
+/// Please have a look at the [raw mode](./index.html#raw-mode) section.
 pub fn disable_raw_mode() -> Result<()> {
     sys::disable_raw_mode()
 }
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn test_raw_mode() {
         // check we start from normal mode (may fail on some test harnesses)
-        assert_eq!(is_raw_mode_enabled().unwrap(), false);
+        assert!(!is_raw_mode_enabled().unwrap());
 
         // enable the raw mode
         if enable_raw_mode().is_err() {
@@ -425,18 +425,18 @@ mod tests {
 
         // check it worked (on unix it doesn't really check the underlying
         // tty but rather check that the code is consistent)
-        assert_eq!(is_raw_mode_enabled().unwrap(), true);
+        assert!(is_raw_mode_enabled().unwrap());
 
         // enable it again, this should not change anything
         enable_raw_mode().unwrap();
 
         // check we're still in raw mode
-        assert_eq!(is_raw_mode_enabled().unwrap(), true);
+        assert!(is_raw_mode_enabled().unwrap());
 
         // now let's disable it
         disable_raw_mode().unwrap();
 
         // check we're back to normal mode
-        assert_eq!(is_raw_mode_enabled().unwrap(), false);
+        assert!(!is_raw_mode_enabled().unwrap());
     }
 }

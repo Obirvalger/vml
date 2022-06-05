@@ -30,7 +30,8 @@ fn debug_print_generated(ast: &DeriveInput, toks: &TokenStream) {
 
 /// Converts strings to enum variants based on their name.
 ///
-/// auto-derives `std::str::FromStr` on the enum. Each variant of the enum will match on it's own name.
+/// auto-derives `std::str::FromStr` on the enum (for Rust 1.34 and above, `std::convert::TryFrom<&str>`
+/// will be derived as well). Each variant of the enum will match on it's own name.
 /// This can be overridden using `serialize="DifferentName"` or `to_string="DifferentName"`
 /// on the attribute as shown below.
 /// Multiple deserializations can be added to the same variant. If the variant contains additional data,
@@ -46,7 +47,7 @@ fn debug_print_generated(ast: &DeriveInput, toks: &TokenStream) {
 /// See the [Additional Attributes](https://docs.rs/strum/0.22/strum/additional_attributes/index.html)
 /// Section for more information on using this feature.
 ///
-/// # Example howto use EnumString
+/// # Example howto use `EnumString`
 /// ```
 /// use std::str::FromStr;
 /// use strum_macros::EnumString;
@@ -77,14 +78,14 @@ fn debug_print_generated(ast: &DeriveInput, toks: &TokenStream) {
 /// impl std::str::FromStr for Color {
 ///     type Err = ::strum::ParseError;
 ///
-///     fn from_str(s: &str) -> ::std::result::Result<Color, Self::Err> {
+///     fn from_str(s: &str) -> ::core::result::Result<Color, Self::Err> {
 ///         match s {
-///             "Red" => ::std::result::Result::Ok(Color::Red),
-///             "Green" => ::std::result::Result::Ok(Color::Green { range:Default::default() }),
-///             "blue" => ::std::result::Result::Ok(Color::Blue(Default::default())),
-///             "b" => ::std::result::Result::Ok(Color::Blue(Default::default())),
-///             s if s.eq_ignore_ascii_case("Black") => ::std::result::Result::Ok(Color::Black),
-///             _ => ::std::result::Result::Err(::strum::ParseError::VariantNotFound),
+///             "Red" => ::core::result::Result::Ok(Color::Red),
+///             "Green" => ::core::result::Result::Ok(Color::Green { range:Default::default() }),
+///             "blue" => ::core::result::Result::Ok(Color::Blue(Default::default())),
+///             "b" => ::core::result::Result::Ok(Color::Blue(Default::default())),
+///             s if s.eq_ignore_ascii_case("Black") => ::core::result::Result::Ok(Color::Black),
+///             _ => ::core::result::Result::Err(::strum::ParseError::VariantNotFound),
 ///         }
 ///     }
 /// }
@@ -159,7 +160,7 @@ pub fn as_ref_str(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     toks.into()
 }
 
-/// Implements Strum::VariantNames which adds an associated constant `VARIANTS` which is an array of discriminant names.
+/// Implements `Strum::VariantNames` which adds an associated constant `VARIANTS` which is an array of discriminant names.
 ///
 /// Adds an `impl` block for the `enum` that adds a static `VARIANTS` array of `&'static str` that are the discriminant names.
 /// This will respect the `serialize_all` attribute on the `enum` (like `#[strum(serialize_all = "snake_case")]`.
@@ -191,13 +192,16 @@ pub fn variant_names(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 }
 
 #[proc_macro_derive(AsStaticStr, attributes(strum))]
-#[deprecated(since="0.22.0", note="please use `#[derive(IntoStaticStr)]` instead")]
+#[deprecated(
+    since = "0.22.0",
+    note = "please use `#[derive(IntoStaticStr)]` instead"
+)]
 pub fn as_static_str(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse_macro_input!(input as DeriveInput);
 
     let toks = macros::as_ref_str::as_static_str_inner(
         &ast,
-        macros::as_ref_str::GenerateTraitVariant::AsStaticStr,
+        &macros::as_ref_str::GenerateTraitVariant::AsStaticStr,
     )
     .unwrap_or_else(|err| err.to_compile_error());
     debug_print_generated(&ast, &toks);
@@ -239,7 +243,7 @@ pub fn into_static_str(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 
     let toks = macros::as_ref_str::as_static_str_inner(
         &ast,
-        macros::as_ref_str::GenerateTraitVariant::From,
+        &macros::as_ref_str::GenerateTraitVariant::From,
     )
     .unwrap_or_else(|err| err.to_compile_error());
     debug_print_generated(&ast, &toks);
@@ -271,7 +275,10 @@ pub fn into_static_str(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 /// let yellow = Color::Yellow;
 /// assert_eq!(String::from("Yellow"), yellow.to_string());
 /// ```
-#[deprecated(since="0.22.0", note="please use `#[derive(Display)]` instead. See issue https://github.com/Peternator7/strum/issues/132")]
+#[deprecated(
+    since = "0.22.0",
+    note = "please use `#[derive(Display)]` instead. See issue https://github.com/Peternator7/strum/issues/132"
+)]
 #[proc_macro_derive(ToString, attributes(strum))]
 pub fn to_string(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse_macro_input!(input as DeriveInput);
@@ -374,11 +381,101 @@ pub fn enum_iter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     toks.into()
 }
 
+/// Add a function to enum that allows accessing variants by its discriminant
+///
+/// This macro adds a standalone function to obtain an enum variant by its discriminant. The macro adds
+/// `from_repr(discriminant: usize) -> Option<YourEnum>` as a standalone function on the enum. For
+/// variants with additional data, the returned variant will use the `Default` trait to fill the
+/// data. The discriminant follows the same rules as `rustc`. The first discriminant is zero and each
+/// successive variant has a discriminant of one greater than the previous variant, expect where an
+/// explicit discriminant is specified. The type of the discriminant will match the `repr` type if
+/// it is specifed.
+///
+/// When the macro is applied using rustc >= 1.46 and when there is no additional data on any of
+/// the variants, the `from_repr` function is marked `const`. rustc >= 1.46 is required
+/// to allow `match` statements in `const fn`. The no additional data requirement is due to the
+/// inability to use `Default::default()` in a `const fn`.
+///
+/// You cannot derive `FromRepr` on any type with a lifetime bound (`<'a>`) because the function would surely
+/// create [unbounded lifetimes](https://doc.rust-lang.org/nightly/nomicon/unbounded-lifetimes.html).
+///
+/// ```
+///
+/// use strum_macros::FromRepr;
+///
+/// #[derive(FromRepr, Debug, PartialEq)]
+/// enum Color {
+///     Red,
+///     Green { range: usize },
+///     Blue(usize),
+///     Yellow,
+/// }
+///
+/// assert_eq!(Some(Color::Red), Color::from_repr(0));
+/// assert_eq!(Some(Color::Green {range: 0}), Color::from_repr(1));
+/// assert_eq!(Some(Color::Blue(0)), Color::from_repr(2));
+/// assert_eq!(Some(Color::Yellow), Color::from_repr(3));
+/// assert_eq!(None, Color::from_repr(4));
+///
+/// // Custom discriminant tests
+/// #[derive(FromRepr, Debug, PartialEq)]
+/// #[repr(u8)]
+/// enum Vehicle {
+///     Car = 1,
+///     Truck = 3,
+/// }
+///
+/// assert_eq!(None, Vehicle::from_repr(0));
+/// ```
+///
+/// On versions of rust >= 1.46, the `from_repr` function is marked `const`.
+///
+/// ```rust
+/// use strum_macros::FromRepr;
+///
+/// #[derive(FromRepr, Debug, PartialEq)]
+/// #[repr(u8)]
+/// enum Number {
+///     One = 1,
+///     Three = 3,
+/// }
+///
+/// # #[rustversion::since(1.46)]
+/// const fn number_from_repr(d: u8) -> Option<Number> {
+///     Number::from_repr(d)
+/// }
+///
+/// # #[rustversion::before(1.46)]
+/// # fn number_from_repr(d: u8) -> Option<Number> {
+/// #     Number::from_repr(d)
+/// # }
+/// assert_eq!(None, number_from_repr(0));
+/// assert_eq!(Some(Number::One), number_from_repr(1));
+/// assert_eq!(None, number_from_repr(2));
+/// assert_eq!(Some(Number::Three), number_from_repr(3));
+/// assert_eq!(None, number_from_repr(4));
+/// ```
+
+#[proc_macro_derive(FromRepr, attributes(strum))]
+pub fn from_repr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ast = syn::parse_macro_input!(input as DeriveInput);
+
+    let toks =
+        macros::from_repr::from_repr_inner(&ast).unwrap_or_else(|err| err.to_compile_error());
+    debug_print_generated(&ast, &toks);
+    toks.into()
+}
+
 /// Add a verbose message to an enum variant.
 ///
 /// Encode strings into the enum itself. The `strum_macros::EmumMessage` macro implements the `strum::EnumMessage` trait.
 /// `EnumMessage` looks for `#[strum(message="...")]` attributes on your variants.
 /// You can also provided a `detailed_message="..."` attribute to create a seperate more detailed message than the first.
+/// 
+/// `EnumMessage` also exposes the variants doc comments through `get_documentation()`. This is useful in some scenarios,
+/// but `get_message` should generally be preferred. Rust doc comments are intended for developer facing documentation,
+/// not end user messaging.
+/// 
 /// ```
 /// // You need to bring the trait into scope to use it
 /// use strum::EnumMessage;
@@ -387,6 +484,7 @@ pub fn enum_iter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// #[derive(strum_macros::EnumMessage, Debug)]
 /// #[allow(dead_code)]
 /// enum Color {
+///     /// Danger color.
 ///     #[strum(message = "Red", detailed_message = "This is very red")]
 ///     Red,
 ///     #[strum(message = "Simply Green")]
@@ -398,18 +496,25 @@ pub fn enum_iter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// // Generated code looks like more or less like this:
 /// /*
 /// impl ::strum::EnumMessage for Color {
-///     fn get_message(&self) -> ::std::option::Option<&'static str> {
+///     fn get_message(&self) -> ::core::option::Option<&'static str> {
 ///         match self {
-///             &Color::Red => ::std::option::Option::Some("Red"),
-///             &Color::Green {..} => ::std::option::Option::Some("Simply Green"),
+///             &Color::Red => ::core::option::Option::Some("Red"),
+///             &Color::Green {..} => ::core::option::Option::Some("Simply Green"),
 ///             _ => None
 ///         }
 ///     }
 ///
-///     fn get_detailed_message(&self) -> ::std::option::Option<&'static str> {
+///     fn get_detailed_message(&self) -> ::core::option::Option<&'static str> {
 ///         match self {
-///             &Color::Red => ::std::option::Option::Some("This is very red"),
-///             &Color::Green {..}=> ::std::option::Option::Some("Simply Green"),
+///             &Color::Red => ::core::option::Option::Some("This is very red"),
+///             &Color::Green {..}=> ::core::option::Option::Some("Simply Green"),
+///             _ => None
+///         }
+///     }
+///
+///     fn get_documentation(&self) -> ::std::option::Option<&'static str> {
+///         match self {
+///             &Color::Red => ::std::option::Option::Some("Danger color."),
 ///             _ => None
 ///         }
 ///     }
@@ -436,6 +541,7 @@ pub fn enum_iter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// let c = Color::Red;
 /// assert_eq!("Red", c.get_message().unwrap());
 /// assert_eq!("This is very red", c.get_detailed_message().unwrap());
+/// assert_eq!("Danger color.", c.get_documentation().unwrap());
 /// assert_eq!(["Red"], c.get_serializations());
 /// ```
 #[proc_macro_derive(EnumMessage, attributes(strum))]
@@ -521,7 +627,7 @@ pub fn enum_properties(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 /// // Bring trait into scope
 /// use std::str::FromStr;
 /// use strum::{IntoEnumIterator, EnumMessage};
-/// use strum_macros::{EnumDiscriminants, EnumIter, EnumString, EnumMessage};
+/// use strum_macros::{EnumDiscriminants, EnumIter, EnumString};
 ///
 /// #[derive(Debug)]
 /// struct NonDefault;

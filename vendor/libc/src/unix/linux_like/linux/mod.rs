@@ -39,7 +39,12 @@ pub type Elf64_Section = u16;
 
 // linux/can.h
 pub type canid_t = u32;
+
+// linux/can/j1939.h
 pub type can_err_mask_t = u32;
+pub type pgn_t = u32;
+pub type priority_t = u8;
+pub type name_t = u64;
 
 pub type iconv_t = *mut ::c_void;
 
@@ -543,6 +548,16 @@ s! {
         pub can_mask: canid_t,
     }
 
+    // linux/can/j1939.h
+    pub struct j1939_filter {
+        pub name: name_t,
+        pub name_mask: name_t,
+        pub pgn: pgn_t,
+        pub pgn_mask: pgn_t,
+        pub addr: u8,
+        pub addr_mask: u8,
+    }
+
     // linux/filter.h
     pub struct sock_filter {
         pub code: ::__u16,
@@ -562,6 +577,24 @@ s! {
         pub arch: ::__u32,
         pub instruction_pointer: ::__u64,
         pub args: [::__u64; 6],
+    }
+
+    pub struct nlmsghdr {
+        pub nlmsg_len: u32,
+        pub nlmsg_type: u16,
+        pub nlmsg_flags: u16,
+        pub nlmsg_seq: u32,
+        pub nlmsg_pid: u32,
+    }
+
+    pub struct nlmsgerr {
+        pub error: ::c_int,
+        pub msg: nlmsghdr,
+    }
+
+    pub struct nlattr {
+        pub nla_len: u16,
+        pub nla_type: u16,
     }
 }
 
@@ -649,6 +682,15 @@ s_no_extra_traits! {
         pub mq_curmsgs: ::c_long,
         #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
         pad: [::c_long; 4],
+    }
+}
+
+s_no_extra_traits! {
+    // linux/net_tstamp.h
+    #[allow(missing_debug_implementations)]
+    pub struct sock_txtime {
+        pub clockid: ::clockid_t,
+        pub flags: ::__u32,
     }
 }
 
@@ -1299,6 +1341,7 @@ pub const POSIX_MADV_NORMAL: ::c_int = 0;
 pub const POSIX_MADV_RANDOM: ::c_int = 1;
 pub const POSIX_MADV_SEQUENTIAL: ::c_int = 2;
 pub const POSIX_MADV_WILLNEED: ::c_int = 3;
+pub const POSIX_SPAWN_USEVFORK: ::c_int = 64;
 
 pub const S_IEXEC: mode_t = 64;
 pub const S_IWRITE: mode_t = 128;
@@ -1445,6 +1488,16 @@ pub const RTLD_NOW: ::c_int = 0x2;
 
 pub const AT_EACCESS: ::c_int = 0x200;
 
+// linux/mempolicy.h
+pub const MPOL_DEFAULT: ::c_int = 0;
+pub const MPOL_PREFERRED: ::c_int = 1;
+pub const MPOL_BIND: ::c_int = 2;
+pub const MPOL_INTERLEAVE: ::c_int = 3;
+pub const MPOL_LOCAL: ::c_int = 4;
+pub const MPOL_F_NUMA_BALANCING: ::c_int = 1 << 13;
+pub const MPOL_F_RELATIVE_NODES: ::c_int = 1 << 14;
+pub const MPOL_F_STATIC_NODES: ::c_int = 1 << 15;
+
 align_const! {
     pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
         size: [0; __SIZEOF_PTHREAD_MUTEX_T],
@@ -1460,6 +1513,11 @@ pub const PTHREAD_MUTEX_NORMAL: ::c_int = 0;
 pub const PTHREAD_MUTEX_RECURSIVE: ::c_int = 1;
 pub const PTHREAD_MUTEX_ERRORCHECK: ::c_int = 2;
 pub const PTHREAD_MUTEX_DEFAULT: ::c_int = PTHREAD_MUTEX_NORMAL;
+pub const PTHREAD_MUTEX_STALLED: ::c_int = 0;
+pub const PTHREAD_MUTEX_ROBUST: ::c_int = 1;
+pub const PTHREAD_PRIO_NONE: ::c_int = 0;
+pub const PTHREAD_PRIO_INHERIT: ::c_int = 1;
+pub const PTHREAD_PRIO_PROTECT: ::c_int = 2;
 pub const PTHREAD_PROCESS_PRIVATE: ::c_int = 0;
 pub const PTHREAD_PROCESS_SHARED: ::c_int = 1;
 pub const __SIZEOF_PTHREAD_COND_T: usize = 48;
@@ -1475,6 +1533,8 @@ pub const SCHED_BATCH: ::c_int = 3;
 pub const SCHED_IDLE: ::c_int = 5;
 
 pub const SCHED_RESET_ON_FORK: ::c_int = 0x40000000;
+
+pub const CLONE_PIDFD: ::c_int = 0x1000;
 
 // netinet/in.h
 // NOTE: These are in addition to the constants defined in src/unix/mod.rs
@@ -1519,11 +1579,6 @@ pub const SHM_UNLOCK: ::c_int = 12;
 pub const SHM_HUGETLB: ::c_int = 0o4000;
 #[cfg(not(all(target_env = "uclibc", target_arch = "mips")))]
 pub const SHM_NORESERVE: ::c_int = 0o10000;
-
-pub const EPOLLRDHUP: ::c_int = 0x2000;
-pub const EPOLLEXCLUSIVE: ::c_int = 0x10000000;
-pub const EPOLLWAKEUP: ::c_int = 0x20000000;
-pub const EPOLLONESHOT: ::c_int = 0x40000000;
 
 pub const QFMT_VFS_OLD: ::c_int = 1;
 pub const QFMT_VFS_V0: ::c_int = 2;
@@ -1598,6 +1653,7 @@ cfg_if! {
 
 pub const MREMAP_MAYMOVE: ::c_int = 1;
 pub const MREMAP_FIXED: ::c_int = 2;
+pub const MREMAP_DONTUNMAP: ::c_int = 4;
 
 pub const PR_SET_PDEATHSIG: ::c_int = 1;
 pub const PR_GET_PDEATHSIG: ::c_int = 2;
@@ -1719,8 +1775,12 @@ pub const PR_CAP_AMBIENT_RAISE: ::c_int = 2;
 pub const PR_CAP_AMBIENT_LOWER: ::c_int = 3;
 pub const PR_CAP_AMBIENT_CLEAR_ALL: ::c_int = 4;
 
+pub const PR_SET_VMA: ::c_int = 0x53564d41;
+pub const PR_SET_VMA_ANON_NAME: ::c_int = 0;
+
 pub const GRND_NONBLOCK: ::c_uint = 0x0001;
 pub const GRND_RANDOM: ::c_uint = 0x0002;
+pub const GRND_INSECURE: ::c_uint = 0x0004;
 
 pub const SECCOMP_MODE_DISABLED: ::c_uint = 0;
 pub const SECCOMP_MODE_STRICT: ::c_uint = 1;
@@ -1788,6 +1848,95 @@ pub const CMSPAR: ::tcflag_t = 0o10000000000;
 pub const MFD_CLOEXEC: ::c_uint = 0x0001;
 pub const MFD_ALLOW_SEALING: ::c_uint = 0x0002;
 pub const MFD_HUGETLB: ::c_uint = 0x0004;
+pub const MFD_HUGE_64KB: ::c_uint = 0x40000000;
+pub const MFD_HUGE_512KB: ::c_uint = 0x4c000000;
+pub const MFD_HUGE_1MB: ::c_uint = 0x50000000;
+pub const MFD_HUGE_2MB: ::c_uint = 0x54000000;
+pub const MFD_HUGE_8MB: ::c_uint = 0x5c000000;
+pub const MFD_HUGE_16MB: ::c_uint = 0x60000000;
+pub const MFD_HUGE_32MB: ::c_uint = 0x64000000;
+pub const MFD_HUGE_256MB: ::c_uint = 0x70000000;
+pub const MFD_HUGE_512MB: ::c_uint = 0x74000000;
+pub const MFD_HUGE_1GB: ::c_uint = 0x78000000;
+pub const MFD_HUGE_2GB: ::c_uint = 0x7c000000;
+pub const MFD_HUGE_16GB: ::c_uint = 0x88000000;
+pub const MFD_HUGE_MASK: ::c_uint = 63;
+pub const MFD_HUGE_SHIFT: ::c_uint = 26;
+
+// linux/close_range.h
+pub const CLOSE_RANGE_UNSHARE: ::c_uint = 1 << 1;
+pub const CLOSE_RANGE_CLOEXEC: ::c_uint = 1 << 2;
+
+// linux/filter.h
+pub const SKF_AD_OFF: ::c_int = -0x1000;
+pub const SKF_AD_PROTOCOL: ::c_int = 0;
+pub const SKF_AD_PKTTYPE: ::c_int = 4;
+pub const SKF_AD_IFINDEX: ::c_int = 8;
+pub const SKF_AD_NLATTR: ::c_int = 12;
+pub const SKF_AD_NLATTR_NEST: ::c_int = 16;
+pub const SKF_AD_MARK: ::c_int = 20;
+pub const SKF_AD_QUEUE: ::c_int = 24;
+pub const SKF_AD_HATYPE: ::c_int = 28;
+pub const SKF_AD_RXHASH: ::c_int = 32;
+pub const SKF_AD_CPU: ::c_int = 36;
+pub const SKF_AD_ALU_XOR_X: ::c_int = 40;
+pub const SKF_AD_VLAN_TAG: ::c_int = 44;
+pub const SKF_AD_VLAN_TAG_PRESENT: ::c_int = 48;
+pub const SKF_AD_PAY_OFFSET: ::c_int = 52;
+pub const SKF_AD_RANDOM: ::c_int = 56;
+pub const SKF_AD_VLAN_TPID: ::c_int = 60;
+pub const SKF_AD_MAX: ::c_int = 64;
+pub const SKF_NET_OFF: ::c_int = -0x100000;
+pub const SKF_LL_OFF: ::c_int = -0x200000;
+pub const BPF_NET_OFF: ::c_int = SKF_NET_OFF;
+pub const BPF_LL_OFF: ::c_int = SKF_LL_OFF;
+pub const BPF_MEMWORDS: ::c_int = 16;
+pub const BPF_MAXINSNS: ::c_int = 4096;
+
+// linux/bpf_common.h
+pub const BPF_LD: ::__u32 = 0x00;
+pub const BPF_LDX: ::__u32 = 0x01;
+pub const BPF_ST: ::__u32 = 0x02;
+pub const BPF_STX: ::__u32 = 0x03;
+pub const BPF_ALU: ::__u32 = 0x04;
+pub const BPF_JMP: ::__u32 = 0x05;
+pub const BPF_RET: ::__u32 = 0x06;
+pub const BPF_MISC: ::__u32 = 0x07;
+pub const BPF_W: ::__u32 = 0x00;
+pub const BPF_H: ::__u32 = 0x08;
+pub const BPF_B: ::__u32 = 0x10;
+pub const BPF_IMM: ::__u32 = 0x00;
+pub const BPF_ABS: ::__u32 = 0x20;
+pub const BPF_IND: ::__u32 = 0x40;
+pub const BPF_MEM: ::__u32 = 0x60;
+pub const BPF_LEN: ::__u32 = 0x80;
+pub const BPF_MSH: ::__u32 = 0xa0;
+pub const BPF_ADD: ::__u32 = 0x00;
+pub const BPF_SUB: ::__u32 = 0x10;
+pub const BPF_MUL: ::__u32 = 0x20;
+pub const BPF_DIV: ::__u32 = 0x30;
+pub const BPF_OR: ::__u32 = 0x40;
+pub const BPF_AND: ::__u32 = 0x50;
+pub const BPF_LSH: ::__u32 = 0x60;
+pub const BPF_RSH: ::__u32 = 0x70;
+pub const BPF_NEG: ::__u32 = 0x80;
+pub const BPF_MOD: ::__u32 = 0x90;
+pub const BPF_XOR: ::__u32 = 0xa0;
+pub const BPF_JA: ::__u32 = 0x00;
+pub const BPF_JEQ: ::__u32 = 0x10;
+pub const BPF_JGT: ::__u32 = 0x20;
+pub const BPF_JGE: ::__u32 = 0x30;
+pub const BPF_JSET: ::__u32 = 0x40;
+pub const BPF_K: ::__u32 = 0x00;
+pub const BPF_X: ::__u32 = 0x08;
+
+// linux/openat2.h
+pub const RESOLVE_NO_XDEV: ::__u64 = 0x01;
+pub const RESOLVE_NO_MAGICLINKS: ::__u64 = 0x02;
+pub const RESOLVE_NO_SYMLINKS: ::__u64 = 0x04;
+pub const RESOLVE_BENEATH: ::__u64 = 0x08;
+pub const RESOLVE_IN_ROOT: ::__u64 = 0x10;
+pub const RESOLVE_CACHED: ::__u64 = 0x20;
 
 // these are used in the p_type field of Elf32_Phdr and Elf64_Phdr, which has
 // the type Elf32Word and Elf64Word respectively. Luckily, both of those are u32
@@ -2361,6 +2510,8 @@ pub const NETLINK_TX_RING: ::c_int = 7;
 pub const NETLINK_LISTEN_ALL_NSID: ::c_int = 8;
 pub const NETLINK_LIST_MEMBERSHIPS: ::c_int = 9;
 pub const NETLINK_CAP_ACK: ::c_int = 10;
+pub const NETLINK_EXT_ACK: ::c_int = 11;
+pub const NETLINK_GET_STRICT_CHK: ::c_int = 12;
 
 pub const NLA_F_NESTED: ::c_int = 1 << 15;
 pub const NLA_F_NET_BYTEORDER: ::c_int = 1 << 14;
@@ -2509,6 +2660,8 @@ pub const SOF_TIMESTAMPING_RX_SOFTWARE: ::c_uint = 1 << 3;
 pub const SOF_TIMESTAMPING_SOFTWARE: ::c_uint = 1 << 4;
 pub const SOF_TIMESTAMPING_SYS_HARDWARE: ::c_uint = 1 << 5;
 pub const SOF_TIMESTAMPING_RAW_HARDWARE: ::c_uint = 1 << 6;
+pub const SOF_TXTIME_DEADLINE_MODE: u32 = 1 << 0;
+pub const SOF_TXTIME_REPORT_ERRORS: u32 = 1 << 1;
 
 // linux/if_alg.h
 pub const ALG_SET_KEY: ::c_int = 1;
@@ -2531,6 +2684,7 @@ pub const MAP_SHARED_VALIDATE: ::c_int = 0x3;
 
 // include/uapi/asm-generic/mman-common.h
 pub const MAP_FIXED_NOREPLACE: ::c_int = 0x100000;
+pub const MLOCK_ONFAULT: ::c_uint = 0x01;
 
 // uapi/linux/vm_sockets.h
 pub const VMADDR_CID_ANY: ::c_uint = 0xFFFFFFFF;
@@ -3036,10 +3190,55 @@ pub const SOL_CAN_BASE: ::c_int = 100;
 pub const CAN_INV_FILTER: canid_t = 0x20000000;
 pub const CAN_RAW_FILTER_MAX: ::c_int = 512;
 
-#[cfg(not(any(target_arch = "sparc", target_arch = "sparc64")))]
-pub const POLLRDHUP: ::c_int = 0x2000;
-#[cfg(any(target_arch = "sparc", target_arch = "sparc64"))]
-pub const POLLRDHUP: ::c_int = 0x800;
+// linux/can/raw.h
+pub const SOL_CAN_RAW: ::c_int = SOL_CAN_BASE + CAN_RAW;
+pub const CAN_RAW_FILTER: ::c_int = 1;
+pub const CAN_RAW_ERR_FILTER: ::c_int = 2;
+pub const CAN_RAW_LOOPBACK: ::c_int = 3;
+pub const CAN_RAW_RECV_OWN_MSGS: ::c_int = 4;
+pub const CAN_RAW_FD_FRAMES: ::c_int = 5;
+pub const CAN_RAW_JOIN_FILTERS: ::c_int = 6;
+
+// linux/can/j1939.h
+pub const SOL_CAN_J1939: ::c_int = SOL_CAN_BASE + CAN_J1939;
+
+pub const J1939_MAX_UNICAST_ADDR: ::c_uchar = 0xfd;
+pub const J1939_IDLE_ADDR: ::c_uchar = 0xfe;
+pub const J1939_NO_ADDR: ::c_uchar = 0xff;
+pub const J1939_NO_NAME: ::c_ulong = 0;
+pub const J1939_PGN_REQUEST: ::c_uint = 0x0ea00;
+pub const J1939_PGN_ADDRESS_CLAIMED: ::c_uint = 0x0ee00;
+pub const J1939_PGN_ADDRESS_COMMANDED: ::c_uint = 0x0fed8;
+pub const J1939_PGN_PDU1_MAX: ::c_uint = 0x3ff00;
+pub const J1939_PGN_MAX: ::c_uint = 0x3ffff;
+pub const J1939_NO_PGN: ::c_uint = 0x40000;
+
+pub const SO_J1939_FILTER: ::c_int = 1;
+pub const SO_J1939_PROMISC: ::c_int = 2;
+pub const SO_J1939_SEND_PRIO: ::c_int = 3;
+pub const SO_J1939_ERRQUEUE: ::c_int = 4;
+
+pub const SCM_J1939_DEST_ADDR: ::c_int = 1;
+pub const SCM_J1939_DEST_NAME: ::c_int = 2;
+pub const SCM_J1939_PRIO: ::c_int = 3;
+pub const SCM_J1939_ERRQUEUE: ::c_int = 4;
+
+pub const J1939_NLA_PAD: ::c_int = 0;
+pub const J1939_NLA_BYTES_ACKED: ::c_int = 1;
+pub const J1939_NLA_TOTAL_SIZE: ::c_int = 2;
+pub const J1939_NLA_PGN: ::c_int = 3;
+pub const J1939_NLA_SRC_NAME: ::c_int = 4;
+pub const J1939_NLA_DEST_NAME: ::c_int = 5;
+pub const J1939_NLA_SRC_ADDR: ::c_int = 6;
+pub const J1939_NLA_DEST_ADDR: ::c_int = 7;
+
+pub const J1939_EE_INFO_NONE: ::c_int = 0;
+pub const J1939_EE_INFO_TX_ABORT: ::c_int = 1;
+pub const J1939_EE_INFO_RX_RTS: ::c_int = 2;
+pub const J1939_EE_INFO_RX_DPO: ::c_int = 3;
+pub const J1939_EE_INFO_RX_ABORT: ::c_int = 4;
+
+pub const J1939_FILTER_MAX: ::c_int = 512;
 
 f! {
     pub fn NLA_ALIGN(len: ::c_int) -> ::c_int {
@@ -3163,6 +3362,22 @@ f! {
 
     pub fn SO_EE_OFFENDER(ee: *const ::sock_extended_err) -> *mut ::sockaddr {
         ee.offset(1) as *mut ::sockaddr
+    }
+
+    pub fn BPF_RVAL(code: ::__u32) -> ::__u32 {
+        code & 0x18
+    }
+
+    pub fn BPF_MISCOP(code: ::__u32) -> ::__u32 {
+        code & 0xf8
+    }
+
+    pub fn BPF_STMT(code: ::__u16, k: ::__u32) -> sock_filter {
+        sock_filter{code: code, jt: 0, jf: 0, k: k}
+    }
+
+    pub fn BPF_JUMP(code: ::__u16, k: ::__u32, jt: ::__u8, jf: ::__u8) -> sock_filter {
+        sock_filter{code: code, jt: jt, jf: jf, k: k}
     }
 }
 
@@ -3429,6 +3644,16 @@ extern "C" {
         len: *mut ::socklen_t,
         flg: ::c_int,
     ) -> ::c_int;
+    pub fn pthread_getaffinity_np(
+        thread: ::pthread_t,
+        cpusetsize: ::size_t,
+        cpuset: *mut ::cpu_set_t,
+    ) -> ::c_int;
+    pub fn pthread_setaffinity_np(
+        thread: ::pthread_t,
+        cpusetsize: ::size_t,
+        cpuset: *const ::cpu_set_t,
+    ) -> ::c_int;
     pub fn pthread_setschedprio(native: ::pthread_t, priority: ::c_int) -> ::c_int;
     pub fn reboot(how_to: ::c_int) -> ::c_int;
     pub fn setfsgid(gid: ::gid_t) -> ::c_int;
@@ -3559,6 +3784,15 @@ extern "C" {
         timeout: *const ::timespec,
         sigmask: *const sigset_t,
     ) -> ::c_int;
+    pub fn pthread_mutexattr_getprotocol(
+        attr: *const pthread_mutexattr_t,
+        protocol: *mut ::c_int,
+    ) -> ::c_int;
+    pub fn pthread_mutexattr_setprotocol(
+        attr: *mut pthread_mutexattr_t,
+        protocol: ::c_int,
+    ) -> ::c_int;
+    pub fn pthread_mutex_consistent(mutex: *mut pthread_mutex_t) -> ::c_int;
     pub fn pthread_mutex_timedlock(
         lock: *mut pthread_mutex_t,
         abstime: *const ::timespec,
@@ -3673,6 +3907,14 @@ extern "C" {
     pub fn pthread_mutexattr_getpshared(
         attr: *const pthread_mutexattr_t,
         pshared: *mut ::c_int,
+    ) -> ::c_int;
+    pub fn pthread_mutexattr_getrobust(
+        attr: *const pthread_mutexattr_t,
+        robustness: *mut ::c_int,
+    ) -> ::c_int;
+    pub fn pthread_mutexattr_setrobust(
+        attr: *mut pthread_mutexattr_t,
+        robustness: ::c_int,
     ) -> ::c_int;
     pub fn popen(command: *const c_char, mode: *const c_char) -> *mut ::FILE;
     pub fn faccessat(
@@ -3839,6 +4081,18 @@ extern "C" {
     ) -> ::c_int;
 
     pub fn gethostid() -> ::c_long;
+
+    pub fn pthread_getcpuclockid(thread: ::pthread_t, clk_id: *mut ::clockid_t) -> ::c_int;
+    pub fn memmem(
+        haystack: *const ::c_void,
+        haystacklen: ::size_t,
+        needle: *const ::c_void,
+        needlelen: ::size_t,
+    ) -> *mut ::c_void;
+    pub fn sched_getcpu() -> ::c_int;
+
+    pub fn pthread_getname_np(thread: ::pthread_t, name: *mut ::c_char, len: ::size_t) -> ::c_int;
+    pub fn pthread_setname_np(thread: ::pthread_t, name: *const ::c_char) -> ::c_int;
 }
 
 cfg_if! {
@@ -3867,3 +4121,10 @@ cfg_if! {
     }
 }
 expand_align!();
+
+cfg_if! {
+    if #[cfg(libc_non_exhaustive)] {
+        mod non_exhaustive;
+        pub use self::non_exhaustive::*;
+    }
+}

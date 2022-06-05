@@ -1,9 +1,10 @@
 use super::recv::RecvHeaderBlockError;
 use super::store::{self, Entry, Resolve, Store};
 use super::{Buffer, Config, Counts, Prioritized, Recv, Send, Stream, StreamId};
-use crate::codec::{Codec, RecvError, SendError, UserError};
+use crate::codec::{Codec, SendError, UserError};
+use crate::ext::Protocol;
 use crate::frame::{self, Frame, Reason};
-use crate::proto::{peer, Open, Peer, WindowSize};
+use crate::proto::{peer, Error, Initiator, Open, Peer, WindowSize};
 use crate::{client, proto, server};
 
 use bytes::{Buf, Bytes};
@@ -21,7 +22,7 @@ where
     P: Peer,
 {
     /// Holds most of the connection and stream related state for processing
-    /// HTTP/2.0 frames associated with streams.
+    /// HTTP/2 frames associated with streams.
     inner: Arc<Mutex<Inner>>,
 
     /// This is the queue of frames to be written to the wire. This is split out
@@ -180,7 +181,7 @@ where
         me.poll_complete(&self.send_buffer, cx, dst)
     }
 
-    pub fn apply_remote_settings(&mut self, frame: &frame::Settings) -> Result<(), RecvError> {
+    pub fn apply_remote_settings(&mut self, frame: &frame::Settings) -> Result<(), Error> {
         let mut me = self.inner.lock().unwrap();
         let me = &mut *me;
 
@@ -198,7 +199,7 @@ where
         )
     }
 
-    pub fn apply_local_settings(&mut self, frame: &frame::Settings) -> Result<(), RecvError> {
+    pub fn apply_local_settings(&mut self, frame: &frame::Settings) -> Result<(), Error> {
         let mut me = self.inner.lock().unwrap();
         let me = &mut *me;
 
@@ -207,12 +208,17 @@ where
 
     pub fn send_request(
         &mut self,
-        request: Request<()>,
+        mut request: Request<()>,
         end_of_stream: bool,
         pending: Option<&OpaqueStreamRef>,
     ) -> Result<StreamRef<B>, SendError> {
         use super::stream::ContentLength;
         use http::Method;
+
+        let protocol = request.extensions_mut().remove::<Protocol>();
+
+        // Clear before taking lock, incase extensions contain a StreamRef.
+        request.extensions_mut().clear();
 
         // TODO: There is a hazard with assigning a stream ID before the
         // prioritize layer. If prioritization reorders new streams, this
@@ -258,7 +264,8 @@ where
         }
 
         // Convert the message
-        let headers = client::Peer::convert_send_message(stream_id, request, end_of_stream)?;
+        let headers =
+            client::Peer::convert_send_message(stream_id, request, protocol, end_of_stream)?;
 
         let mut stream = me.store.insert(stream.id, stream);
 
@@ -291,33 +298,42 @@ where
             send_buffer: self.send_buffer.clone(),
         })
     }
+
+    pub(crate) fn is_extended_connect_protocol_enabled(&self) -> bool {
+        self.inner
+            .lock()
+            .unwrap()
+            .actions
+            .send
+            .is_extended_connect_protocol_enabled()
+    }
 }
 
 impl<B> DynStreams<'_, B> {
-    pub fn recv_headers(&mut self, frame: frame::Headers) -> Result<(), RecvError> {
+    pub fn recv_headers(&mut self, frame: frame::Headers) -> Result<(), Error> {
         let mut me = self.inner.lock().unwrap();
 
         me.recv_headers(self.peer, &self.send_buffer, frame)
     }
 
-    pub fn recv_data(&mut self, frame: frame::Data) -> Result<(), RecvError> {
+    pub fn recv_data(&mut self, frame: frame::Data) -> Result<(), Error> {
         let mut me = self.inner.lock().unwrap();
         me.recv_data(self.peer, &self.send_buffer, frame)
     }
 
-    pub fn recv_reset(&mut self, frame: frame::Reset) -> Result<(), RecvError> {
+    pub fn recv_reset(&mut self, frame: frame::Reset) -> Result<(), Error> {
         let mut me = self.inner.lock().unwrap();
 
         me.recv_reset(&self.send_buffer, frame)
     }
 
-    /// Handle a received error and return the ID of the last processed stream.
-    pub fn recv_err(&mut self, err: &proto::Error) -> StreamId {
+    /// Notify all streams that a connection-level error happened.
+    pub fn handle_error(&mut self, err: proto::Error) -> StreamId {
         let mut me = self.inner.lock().unwrap();
-        me.recv_err(&self.send_buffer, err)
+        me.handle_error(&self.send_buffer, err)
     }
 
-    pub fn recv_go_away(&mut self, frame: &frame::GoAway) -> Result<(), RecvError> {
+    pub fn recv_go_away(&mut self, frame: &frame::GoAway) -> Result<(), Error> {
         let mut me = self.inner.lock().unwrap();
         me.recv_go_away(&self.send_buffer, frame)
     }
@@ -326,12 +342,12 @@ impl<B> DynStreams<'_, B> {
         self.inner.lock().unwrap().actions.recv.last_processed_id()
     }
 
-    pub fn recv_window_update(&mut self, frame: frame::WindowUpdate) -> Result<(), RecvError> {
+    pub fn recv_window_update(&mut self, frame: frame::WindowUpdate) -> Result<(), Error> {
         let mut me = self.inner.lock().unwrap();
         me.recv_window_update(&self.send_buffer, frame)
     }
 
-    pub fn recv_push_promise(&mut self, frame: frame::PushPromise) -> Result<(), RecvError> {
+    pub fn recv_push_promise(&mut self, frame: frame::PushPromise) -> Result<(), Error> {
         let mut me = self.inner.lock().unwrap();
         me.recv_push_promise(&self.send_buffer, frame)
     }
@@ -372,7 +388,7 @@ impl Inner {
         peer: peer::Dyn,
         send_buffer: &SendBuffer<B>,
         frame: frame::Headers,
-    ) -> Result<(), RecvError> {
+    ) -> Result<(), Error> {
         let id = frame.stream_id();
 
         // The GOAWAY process has begun. All streams with a greater ID than
@@ -402,10 +418,7 @@ impl Inner {
                             "recv_headers for old stream={:?}, sending STREAM_CLOSED",
                             id,
                         );
-                        return Err(RecvError::Stream {
-                            id,
-                            reason: Reason::STREAM_CLOSED,
-                        });
+                        return Err(Error::library_reset(id, Reason::STREAM_CLOSED));
                     }
                 }
 
@@ -468,10 +481,7 @@ impl Inner {
 
                             Ok(())
                         } else {
-                            Err(RecvError::Stream {
-                                id: stream.id,
-                                reason: Reason::REFUSED_STREAM,
-                            })
+                            Err(Error::library_reset(stream.id, Reason::REFUSED_STREAM))
                         }
                     },
                     Err(RecvHeaderBlockError::State(err)) => Err(err),
@@ -481,10 +491,7 @@ impl Inner {
                     // Receiving trailers that don't set EOS is a "malformed"
                     // message. Malformed messages are a stream error.
                     proto_err!(stream: "recv_headers: trailers frame was not EOS; stream={:?}", stream.id);
-                    return Err(RecvError::Stream {
-                        id: stream.id,
-                        reason: Reason::PROTOCOL_ERROR,
-                    });
+                    return Err(Error::library_reset(stream.id, Reason::PROTOCOL_ERROR));
                 }
 
                 actions.recv.recv_trailers(frame, stream)
@@ -499,7 +506,7 @@ impl Inner {
         peer: peer::Dyn,
         send_buffer: &SendBuffer<B>,
         frame: frame::Data,
-    ) -> Result<(), RecvError> {
+    ) -> Result<(), Error> {
         let id = frame.stream_id();
 
         let stream = match self.store.find_mut(&id) {
@@ -526,14 +533,11 @@ impl Inner {
                     let sz = sz as WindowSize;
 
                     self.actions.recv.ignore_data(sz)?;
-                    return Err(RecvError::Stream {
-                        id,
-                        reason: Reason::STREAM_CLOSED,
-                    });
+                    return Err(Error::library_reset(id, Reason::STREAM_CLOSED));
                 }
 
                 proto_err!(conn: "recv_data: stream not found; id={:?}", id);
-                return Err(RecvError::Connection(Reason::PROTOCOL_ERROR));
+                return Err(Error::library_go_away(Reason::PROTOCOL_ERROR));
             }
         };
 
@@ -548,7 +552,7 @@ impl Inner {
             // Any stream error after receiving a DATA frame means
             // we won't give the data to the user, and so they can't
             // release the capacity. We do it automatically.
-            if let Err(RecvError::Stream { .. }) = res {
+            if let Err(Error::Reset(..)) = res {
                 actions
                     .recv
                     .release_connection_capacity(sz as WindowSize, &mut None);
@@ -561,12 +565,12 @@ impl Inner {
         &mut self,
         send_buffer: &SendBuffer<B>,
         frame: frame::Reset,
-    ) -> Result<(), RecvError> {
+    ) -> Result<(), Error> {
         let id = frame.stream_id();
 
         if id.is_zero() {
             proto_err!(conn: "recv_reset: invalid stream ID 0");
-            return Err(RecvError::Connection(Reason::PROTOCOL_ERROR));
+            return Err(Error::library_go_away(Reason::PROTOCOL_ERROR));
         }
 
         // The GOAWAY process has begun. All streams with a greater ID than
@@ -586,7 +590,7 @@ impl Inner {
                 // TODO: Are there other error cases?
                 self.actions
                     .ensure_not_idle(self.counts.peer(), id)
-                    .map_err(RecvError::Connection)?;
+                    .map_err(Error::library_go_away)?;
 
                 return Ok(());
             }
@@ -599,7 +603,7 @@ impl Inner {
 
         self.counts.transition(stream, |counts, stream| {
             actions.recv.recv_reset(frame, stream);
-            actions.send.recv_err(send_buffer, stream, counts);
+            actions.send.handle_error(send_buffer, stream, counts);
             assert!(stream.state.is_closed());
             Ok(())
         })
@@ -609,7 +613,7 @@ impl Inner {
         &mut self,
         send_buffer: &SendBuffer<B>,
         frame: frame::WindowUpdate,
-    ) -> Result<(), RecvError> {
+    ) -> Result<(), Error> {
         let id = frame.stream_id();
 
         let mut send_buffer = send_buffer.inner.lock().unwrap();
@@ -619,7 +623,7 @@ impl Inner {
             self.actions
                 .send
                 .recv_connection_window_update(frame, &mut self.store, &mut self.counts)
-                .map_err(RecvError::Connection)?;
+                .map_err(Error::library_go_away)?;
         } else {
             // The remote may send window updates for streams that the local now
             // considers closed. It's ok...
@@ -637,14 +641,14 @@ impl Inner {
             } else {
                 self.actions
                     .ensure_not_idle(self.counts.peer(), id)
-                    .map_err(RecvError::Connection)?;
+                    .map_err(Error::library_go_away)?;
             }
         }
 
         Ok(())
     }
 
-    fn recv_err<B>(&mut self, send_buffer: &SendBuffer<B>, err: &proto::Error) -> StreamId {
+    fn handle_error<B>(&mut self, send_buffer: &SendBuffer<B>, err: proto::Error) -> StreamId {
         let actions = &mut self.actions;
         let counts = &mut self.counts;
         let mut send_buffer = send_buffer.inner.lock().unwrap();
@@ -652,17 +656,14 @@ impl Inner {
 
         let last_processed_id = actions.recv.last_processed_id();
 
-        self.store
-            .for_each(|stream| {
-                counts.transition(stream, |counts, stream| {
-                    actions.recv.recv_err(err, &mut *stream);
-                    actions.send.recv_err(send_buffer, stream, counts);
-                    Ok::<_, ()>(())
-                })
+        self.store.for_each(|stream| {
+            counts.transition(stream, |counts, stream| {
+                actions.recv.handle_error(&err, &mut *stream);
+                actions.send.handle_error(send_buffer, stream, counts);
             })
-            .unwrap();
+        });
 
-        actions.conn_error = Some(err.shallow_clone());
+        actions.conn_error = Some(err);
 
         last_processed_id
     }
@@ -671,7 +672,7 @@ impl Inner {
         &mut self,
         send_buffer: &SendBuffer<B>,
         frame: &frame::GoAway,
-    ) -> Result<(), RecvError> {
+    ) -> Result<(), Error> {
         let actions = &mut self.actions;
         let counts = &mut self.counts;
         let mut send_buffer = send_buffer.inner.lock().unwrap();
@@ -681,21 +682,16 @@ impl Inner {
 
         actions.send.recv_go_away(last_stream_id)?;
 
-        let err = frame.reason().into();
+        let err = Error::remote_go_away(frame.debug_data().clone(), frame.reason());
 
-        self.store
-            .for_each(|stream| {
-                if stream.id > last_stream_id {
-                    counts.transition(stream, |counts, stream| {
-                        actions.recv.recv_err(&err, &mut *stream);
-                        actions.send.recv_err(send_buffer, stream, counts);
-                        Ok::<_, ()>(())
-                    })
-                } else {
-                    Ok::<_, ()>(())
-                }
-            })
-            .unwrap();
+        self.store.for_each(|stream| {
+            if stream.id > last_stream_id {
+                counts.transition(stream, |counts, stream| {
+                    actions.recv.handle_error(&err, &mut *stream);
+                    actions.send.handle_error(send_buffer, stream, counts);
+                })
+            }
+        });
 
         actions.conn_error = Some(err);
 
@@ -706,7 +702,7 @@ impl Inner {
         &mut self,
         send_buffer: &SendBuffer<B>,
         frame: frame::PushPromise,
-    ) -> Result<(), RecvError> {
+    ) -> Result<(), Error> {
         let id = frame.stream_id();
         let promised_id = frame.promised_id();
 
@@ -730,7 +726,7 @@ impl Inner {
             }
             None => {
                 proto_err!(conn: "recv_push_promise: initiating stream is in an invalid state");
-                return Err(RecvError::Connection(Reason::PROTOCOL_ERROR));
+                return Err(Error::library_go_away(Reason::PROTOCOL_ERROR).into());
             }
         };
 
@@ -816,18 +812,15 @@ impl Inner {
 
         tracing::trace!("Streams::recv_eof");
 
-        self.store
-            .for_each(|stream| {
-                counts.transition(stream, |counts, stream| {
-                    actions.recv.recv_eof(stream);
+        self.store.for_each(|stream| {
+            counts.transition(stream, |counts, stream| {
+                actions.recv.recv_eof(stream);
 
-                    // This handles resetting send state associated with the
-                    // stream
-                    actions.send.recv_err(send_buffer, stream, counts);
-                    Ok::<_, ()>(())
-                })
+                // This handles resetting send state associated with the
+                // stream
+                actions.send.handle_error(send_buffer, stream, counts);
             })
-            .expect("recv_eof");
+        });
 
         actions.clear_queues(clear_pending_accept, &mut self.store, counts);
         Ok(())
@@ -874,6 +867,28 @@ impl Inner {
         let key = match self.store.find_entry(id) {
             Entry::Occupied(e) => e.key(),
             Entry::Vacant(e) => {
+                // Resetting a stream we don't know about? That could be OK...
+                //
+                // 1. As a server, we just received a request, but that request
+                //    was bad, so we're resetting before even accepting it.
+                //    This is totally fine.
+                //
+                // 2. The remote may have sent us a frame on new stream that
+                //    it's *not* supposed to have done, and thus, we don't know
+                //    the stream. In that case, sending a reset will "open" the
+                //    stream in our store. Maybe that should be a connection
+                //    error instead? At least for now, we need to update what
+                //    our vision of the next stream is.
+                if self.counts.peer().is_local_init(id) {
+                    // We normally would open this stream, so update our
+                    // next-send-id record.
+                    self.actions.send.maybe_reset_next_stream_id(id);
+                } else {
+                    // We normally would recv this stream, so update our
+                    // next-recv-id record.
+                    self.actions.recv.maybe_reset_next_stream_id(id);
+                }
+
                 let stream = Stream::new(id, 0, 0);
 
                 e.insert(stream)
@@ -883,8 +898,13 @@ impl Inner {
         let stream = self.store.resolve(key);
         let mut send_buffer = send_buffer.inner.lock().unwrap();
         let send_buffer = &mut *send_buffer;
-        self.actions
-            .send_reset(stream, reason, &mut self.counts, send_buffer);
+        self.actions.send_reset(
+            stream,
+            reason,
+            Initiator::Library,
+            &mut self.counts,
+            send_buffer,
+        );
     }
 }
 
@@ -990,7 +1010,14 @@ where
     P: Peer,
 {
     fn drop(&mut self) {
-        let _ = self.inner.lock().map(|mut inner| inner.refs -= 1);
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.refs -= 1;
+            if inner.refs == 1 {
+                if let Some(task) = inner.actions.task.take() {
+                    task.wake();
+                }
+            }
+        }
     }
 }
 
@@ -1050,14 +1077,16 @@ impl<B> StreamRef<B> {
         let send_buffer = &mut *send_buffer;
 
         me.actions
-            .send_reset(stream, reason, &mut me.counts, send_buffer);
+            .send_reset(stream, reason, Initiator::User, &mut me.counts, send_buffer);
     }
 
     pub fn send_response(
         &mut self,
-        response: Response<()>,
+        mut response: Response<()>,
         end_of_stream: bool,
     ) -> Result<(), UserError> {
+        // Clear before taking lock, incase extensions contain a StreamRef.
+        response.extensions_mut().clear();
         let mut me = self.opaque.inner.lock().unwrap();
         let me = &mut *me;
 
@@ -1075,7 +1104,12 @@ impl<B> StreamRef<B> {
         })
     }
 
-    pub fn send_push_promise(&mut self, request: Request<()>) -> Result<StreamRef<B>, UserError> {
+    pub fn send_push_promise(
+        &mut self,
+        mut request: Request<()>,
+    ) -> Result<StreamRef<B>, UserError> {
+        // Clear before taking lock, incase extensions contain a StreamRef.
+        request.extensions_mut().clear();
         let mut me = self.opaque.inner.lock().unwrap();
         let me = &mut *me;
 
@@ -1451,12 +1485,19 @@ impl Actions {
         &mut self,
         stream: store::Ptr,
         reason: Reason,
+        initiator: Initiator,
         counts: &mut Counts,
         send_buffer: &mut Buffer<Frame<B>>,
     ) {
         counts.transition(stream, |counts, stream| {
-            self.send
-                .send_reset(reason, send_buffer, stream, counts, &mut self.task);
+            self.send.send_reset(
+                reason,
+                initiator,
+                send_buffer,
+                stream,
+                counts,
+                &mut self.task,
+            );
             self.recv.enqueue_reset_expiration(stream, counts);
             // if a RecvStream is parked, ensure it's notified
             stream.notify_recv();
@@ -1468,12 +1509,13 @@ impl Actions {
         buffer: &mut Buffer<Frame<B>>,
         stream: &mut store::Ptr,
         counts: &mut Counts,
-        res: Result<(), RecvError>,
-    ) -> Result<(), RecvError> {
-        if let Err(RecvError::Stream { reason, .. }) = res {
+        res: Result<(), Error>,
+    ) -> Result<(), Error> {
+        if let Err(Error::Reset(stream_id, reason, initiator)) = res {
+            debug_assert_eq!(stream_id, stream.id);
             // Reset the stream.
             self.send
-                .send_reset(reason, buffer, stream, counts, &mut self.task);
+                .send_reset(reason, initiator, buffer, stream, counts, &mut self.task);
             Ok(())
         } else {
             res
@@ -1490,7 +1532,7 @@ impl Actions {
 
     fn ensure_no_conn_error(&self) -> Result<(), proto::Error> {
         if let Some(ref err) = self.conn_error {
-            Err(err.shallow_clone())
+            Err(err.clone())
         } else {
             Ok(())
         }

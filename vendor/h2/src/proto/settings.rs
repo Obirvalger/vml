@@ -1,4 +1,4 @@
-use crate::codec::{RecvError, UserError};
+use crate::codec::UserError;
 use crate::error::Reason;
 use crate::frame;
 use crate::proto::*;
@@ -40,7 +40,7 @@ impl Settings {
         frame: frame::Settings,
         codec: &mut Codec<T, B>,
         streams: &mut Streams<C, P>,
-    ) -> Result<(), RecvError>
+    ) -> Result<(), Error>
     where
         T: AsyncWrite + Unpin,
         B: Buf,
@@ -68,7 +68,7 @@ impl Settings {
                     // We haven't sent any SETTINGS frames to be ACKed, so
                     // this is very bizarre! Remote is either buggy or malicious.
                     proto_err!(conn: "received unexpected settings ack");
-                    Err(RecvError::Connection(Reason::PROTOCOL_ERROR))
+                    Err(Error::library_go_away(Reason::PROTOCOL_ERROR))
                 }
             }
         } else {
@@ -97,7 +97,7 @@ impl Settings {
         cx: &mut Context,
         dst: &mut Codec<T, B>,
         streams: &mut Streams<C, P>,
-    ) -> Poll<Result<(), RecvError>>
+    ) -> Poll<Result<(), Error>>
     where
         T: AsyncWrite + Unpin,
         B: Buf,
@@ -117,6 +117,8 @@ impl Settings {
 
             tracing::trace!("ACK sent; applying settings");
 
+            streams.apply_remote_settings(settings)?;
+
             if let Some(val) = settings.header_table_size() {
                 dst.set_send_header_table_size(val as usize);
             }
@@ -124,8 +126,6 @@ impl Settings {
             if let Some(val) = settings.max_frame_size() {
                 dst.set_max_send_frame_size(val as usize);
             }
-
-            streams.apply_remote_settings(settings)?;
         }
 
         self.remote = None;

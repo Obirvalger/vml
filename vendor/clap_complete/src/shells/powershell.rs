@@ -14,11 +14,13 @@ impl Generator for PowerShell {
         format!("_{}.ps1", name)
     }
 
-    fn generate(&self, app: &App, buf: &mut dyn Write) {
-        let bin_name = app.get_bin_name().unwrap();
+    fn generate(&self, cmd: &Command, buf: &mut dyn Write) {
+        let bin_name = cmd
+            .get_bin_name()
+            .expect("crate::generate should have set the bin_name");
 
         let mut names = vec![];
-        let subcommands_cases = generate_inner(app, "", &mut names);
+        let subcommands_cases = generate_inner(cmd, "", &mut names);
 
         let result = format!(
             r#"
@@ -35,7 +37,8 @@ Register-ArgumentCompleter -Native -CommandName '{bin_name}' -ScriptBlock {{
             $element = $commandElements[$i]
             if ($element -isnot [StringConstantExpressionAst] -or
                 $element.StringConstantType -ne [StringConstantType]::BareWord -or
-                $element.Value.StartsWith('-')) {{
+                $element.Value.StartsWith('-') -or
+                $element.Value -eq $wordToComplete) {{
                 break
         }}
         $element.Value
@@ -69,7 +72,7 @@ fn get_tooltip<T: ToString>(help: Option<&str>, data: T) -> String {
 }
 
 fn generate_inner<'help>(
-    p: &App<'help>,
+    p: &Command<'help>,
     previous_command_name: &str,
     names: &mut Vec<&'help str>,
 ) -> String {

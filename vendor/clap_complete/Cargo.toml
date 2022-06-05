@@ -12,68 +12,145 @@
 [package]
 edition = "2018"
 name = "clap_complete"
-version = "3.0.4"
-include = ["src/**/*", "Cargo.toml", "LICENSE-*", "README.md"]
-description = "Generate shell completion scripts for your clap::App"
+version = "3.1.4"
+include = [
+    "build.rs",
+    "src/**/*",
+    "Cargo.toml",
+    "LICENSE*",
+    "README.md",
+    "benches/**/*",
+    "examples/**/*",
+]
+description = "Generate shell completion scripts for your clap::Command"
 documentation = "https://docs.rs/clap_complete"
 readme = "README.md"
-keywords = ["clap", "cli", "completion", "bash"]
+keywords = [
+    "clap",
+    "cli",
+    "completion",
+    "bash",
+]
 categories = ["command-line-interface"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/clap-rs/clap/tree/master/clap_complete"
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "Unreleased"
+replace = "{{version}}"
+min = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = '\.\.\.HEAD'
+replace = "...{{tag_name}}"
+exactly = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "ReleaseDate"
+replace = "{{date}}"
+min = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "<!-- next-header -->"
+replace = """
+<!-- next-header -->
+## [Unreleased] - ReleaseDate
+"""
+exactly = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "<!-- next-url -->"
+replace = """
+<!-- next-url -->
+[Unreleased]: https://github.com/clap-rs/clap/compare/{{tag_name}}...HEAD"""
+exactly = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "README.md"
+search = "github.com/clap-rs/clap/blob/[^/]+/"
+replace = "github.com/clap-rs/clap/blob/{{tag_name}}/"
+exactly = 4
+prerelease = true
+
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
-[[package.metadata.release.pre-release-replacements]]
-file = "CHANGELOG.md"
-min = 1
-replace = "{{version}}"
-search = "Unreleased"
-
-[[package.metadata.release.pre-release-replacements]]
-exactly = 1
-file = "CHANGELOG.md"
-replace = "...{{tag_name}}"
-search = "\\.\\.\\.HEAD"
-
-[[package.metadata.release.pre-release-replacements]]
-file = "CHANGELOG.md"
-min = 1
-replace = "{{date}}"
-search = "ReleaseDate"
-
-[[package.metadata.release.pre-release-replacements]]
-exactly = 1
-file = "CHANGELOG.md"
-replace = "<!-- next-header -->\n## [Unreleased] - ReleaseDate\n"
-search = "<!-- next-header -->"
-
-[[package.metadata.release.pre-release-replacements]]
-exactly = 1
-file = "CHANGELOG.md"
-replace = "<!-- next-url -->\n[Unreleased]: https://github.com/clap-rs/clap/compare/{{tag_name}}...HEAD"
-search = "<!-- next-url -->"
-
-[[package.metadata.release.pre-release-replacements]]
-exactly = 4
-file = "README.md"
-prerelease = true
-replace = "github.com/clap-rs/clap/blob/{{tag_name}}/"
-search = "github.com/clap-rs/clap/blob/[^/]+/"
 
 [lib]
 bench = false
+
+[[example]]
+name = "dynamic"
+required-features = ["unstable-dynamic"]
+
 [dependencies.clap]
-version = "3.0.0"
+version = "3.1.10"
 features = ["std"]
 default-features = false
+
+[dependencies.clap_lex]
+version = "0.2.0"
+optional = true
+
+[dependencies.is_executable]
+version = "1.0.1"
+optional = true
+
+[dependencies.os_str_bytes]
+version = "6.0"
+features = ["raw_os_str"]
+optional = true
+default-features = false
+
+[dependencies.pathdiff]
+version = "0.2.1"
+optional = true
+
+[dependencies.shlex]
+version = "1.1.0"
+optional = true
+
+[dependencies.unicode-xid]
+version = "0.2.2"
+optional = true
+
 [dev-dependencies.clap]
-version = "3.0.0"
-features = ["std", "derive"]
+version = "3.1.10"
+features = [
+    "std",
+    "derive",
+]
 default-features = false
 
 [dev-dependencies.pretty_assertions]
 version = "1.0"
 
+[dev-dependencies.snapbox]
+version = "0.2"
+features = ["diff"]
+
+[dev-dependencies.trycmd]
+version = "0.13"
+features = [
+    "color-auto",
+    "diff",
+    "examples",
+]
+default-features = false
+
 [features]
 debug = ["clap/debug"]
 default = []
+unstable-dynamic = [
+    "clap_lex",
+    "shlex",
+    "unicode-xid",
+    "os_str_bytes",
+    "clap/derive",
+    "is_executable",
+    "pathdiff",
+]

@@ -174,12 +174,29 @@
 
 // At the top due to macros
 #[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
 #[macro_use]
 mod tests;
 
 pub(crate) mod enter;
 
 pub(crate) mod task;
+
+cfg_metrics! {
+    mod metrics;
+    pub use metrics::RuntimeMetrics;
+
+    pub(crate) use metrics::{MetricsBatch, SchedulerMetrics, WorkerMetrics};
+
+    cfg_net! {
+       pub(crate) use metrics::IoDriverMetrics;
+    }
+}
+
+cfg_not_metrics! {
+    pub(crate) mod metrics;
+    pub(crate) use metrics::{SchedulerMetrics, WorkerMetrics, MetricsBatch};
+}
 
 cfg_rt! {
     mod basic_scheduler;
@@ -189,28 +206,32 @@ cfg_rt! {
     use blocking::BlockingPool;
     pub(crate) use blocking::spawn_blocking;
 
+    cfg_trace! {
+        pub(crate) use blocking::Mandatory;
+    }
+
+    cfg_fs! {
+        pub(crate) use blocking::spawn_mandatory_blocking;
+    }
+
     mod builder;
     pub use self::builder::Builder;
 
     pub(crate) mod context;
-    pub(crate) mod driver;
+    mod driver;
 
     use self::enter::enter;
 
     mod handle;
-    pub use handle::{EnterGuard, Handle};
+    pub use handle::{EnterGuard, Handle, TryCurrentError};
+    pub(crate) use handle::{HandleInner, ToHandle};
 
     mod spawner;
     use self::spawner::Spawner;
 }
 
 cfg_rt_multi_thread! {
-    mod park;
-    use park::Parker;
-}
-
-cfg_rt_multi_thread! {
-    mod queue;
+    use driver::Driver;
 
     pub(crate) mod thread_pool;
     use self::thread_pool::ThreadPool;
@@ -250,7 +271,7 @@ cfg_rt! {
     ///
     /// The Tokio runtime implements `Sync` and `Send` to allow you to wrap it
     /// in a `Arc`. Most fn take `&self` to allow you to call them concurrently
-    /// accross multiple threads.
+    /// across multiple threads.
     ///
     /// Calls to `shutdown` and `shutdown_timeout` require exclusive ownership of
     /// the runtime type and this can be achieved via `Arc::try_unwrap` when only
@@ -276,7 +297,7 @@ cfg_rt! {
     #[derive(Debug)]
     enum Kind {
         /// Execute all tasks on the current-thread.
-        CurrentThread(BasicScheduler<driver::Driver>),
+        CurrentThread(BasicScheduler),
 
         /// Execute tasks across multiple threads.
         #[cfg(feature = "rt-multi-thread")]
@@ -287,7 +308,7 @@ cfg_rt! {
     type Callback = std::sync::Arc<dyn Fn() + Send + Sync>;
 
     impl Runtime {
-        /// Create a new runtime instance with default configuration values.
+        /// Creates a new runtime instance with default configuration values.
         ///
         /// This results in the multi threaded scheduler, I/O driver, and time driver being
         /// initialized.
@@ -322,7 +343,7 @@ cfg_rt! {
             Builder::new_multi_thread().enable_all().build()
         }
 
-        /// Return a handle to the runtime's spawner.
+        /// Returns a handle to the runtime's spawner.
         ///
         /// The returned handle can be used to spawn tasks that run on this runtime, and can
         /// be cloned to allow moving the `Handle` to other threads.
@@ -343,7 +364,7 @@ cfg_rt! {
             &self.handle
         }
 
-        /// Spawn a future onto the Tokio runtime.
+        /// Spawns a future onto the Tokio runtime.
         ///
         /// This spawns the given future onto the runtime's executor, usually a
         /// thread pool. The thread pool is then responsible for polling the future
@@ -368,7 +389,7 @@ cfg_rt! {
         /// });
         /// # }
         /// ```
-        #[cfg_attr(tokio_track_caller, track_caller)]
+        #[track_caller]
         pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
         where
             F: Future + Send + 'static,
@@ -377,7 +398,7 @@ cfg_rt! {
             self.handle.spawn(future)
         }
 
-        /// Run the provided function on an executor dedicated to blocking operations.
+        /// Runs the provided function on an executor dedicated to blocking operations.
         ///
         /// # Examples
         ///
@@ -393,7 +414,7 @@ cfg_rt! {
         ///     println!("now running on a worker thread");
         /// });
         /// # }
-        #[cfg_attr(tokio_track_caller, track_caller)]
+        #[track_caller]
         pub fn spawn_blocking<F, R>(&self, func: F) -> JoinHandle<R>
         where
             F: FnOnce() -> R + Send + 'static,
@@ -402,10 +423,10 @@ cfg_rt! {
             self.handle.spawn_blocking(func)
         }
 
-        /// Run a future to completion on the Tokio runtime. This is the
+        /// Runs a future to completion on the Tokio runtime. This is the
         /// runtime's entry point.
         ///
-        /// This runs the given future on the runtime, blocking until it is
+        /// This runs the given future on the current thread, blocking until it is
         /// complete, and yielding its resolved result. Any tasks or timers
         /// which the future spawns internally will be executed on the runtime.
         ///
@@ -413,6 +434,8 @@ cfg_rt! {
         ///
         /// When the multi thread scheduler is used this will allow futures
         /// to run within the io driver and timer context of the overall runtime.
+        ///
+        /// Any spawned tasks will continue running after `block_on` returns.
         ///
         /// # Current thread scheduler
         ///
@@ -422,6 +445,9 @@ cfg_rt! {
         /// other threads which do not own the drivers will hook into that one.
         /// When the first `block_on` completes, other threads will be able to
         /// "steal" the driver to allow continued execution of their futures.
+        ///
+        /// Any spawned tasks will be suspended after `block_on` returns. Calling
+        /// `block_on` again will resume previously spawned tasks.
         ///
         /// # Panics
         ///
@@ -443,7 +469,11 @@ cfg_rt! {
         /// ```
         ///
         /// [handle]: fn@Handle::block_on
+        #[track_caller]
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+            #[cfg(all(tokio_unstable, feature = "tracing"))]
+            let future = crate::util::trace::task(future, "block_on", None, task::Id::next().as_u64());
+
             let _enter = self.enter();
 
             match &self.kind {
@@ -453,7 +483,7 @@ cfg_rt! {
             }
         }
 
-        /// Enter the runtime context.
+        /// Enters the runtime context.
         ///
         /// This allows you to construct types that must have an executor
         /// available on creation such as [`Sleep`] or [`TcpStream`]. It will
@@ -489,7 +519,7 @@ cfg_rt! {
             self.handle.enter()
         }
 
-        /// Shutdown the runtime, waiting for at most `duration` for all spawned
+        /// Shuts down the runtime, waiting for at most `duration` for all spawned
         /// task to shutdown.
         ///
         /// Usually, dropping a `Runtime` handle is sufficient as tasks are able to
@@ -526,11 +556,11 @@ cfg_rt! {
         /// ```
         pub fn shutdown_timeout(mut self, duration: Duration) {
             // Wakeup and shutdown all the worker threads
-            self.handle.spawner.shutdown();
+            self.handle.clone().shutdown();
             self.blocking_pool.shutdown(Some(duration));
         }
 
-        /// Shutdown the runtime, without waiting for any spawned tasks to shutdown.
+        /// Shuts down the runtime, without waiting for any spawned tasks to shutdown.
         ///
         /// This can be useful if you want to drop a runtime from within another runtime.
         /// Normally, dropping a runtime will block indefinitely for spawned blocking tasks
@@ -558,6 +588,41 @@ cfg_rt! {
         /// ```
         pub fn shutdown_background(self) {
             self.shutdown_timeout(Duration::from_nanos(0))
+        }
+    }
+
+    #[allow(clippy::single_match)] // there are comments in the error branch, so we don't want if-let
+    impl Drop for Runtime {
+        fn drop(&mut self) {
+            match &mut self.kind {
+                Kind::CurrentThread(basic) => {
+                    // This ensures that tasks spawned on the basic runtime are dropped inside the
+                    // runtime's context.
+                    match self::context::try_enter(self.handle.clone()) {
+                        Some(guard) => basic.set_context_guard(guard),
+                        None => {
+                            // The context thread-local has already been destroyed.
+                            //
+                            // We don't set the guard in this case. Calls to tokio::spawn in task
+                            // destructors would fail regardless if this happens.
+                        },
+                    }
+                },
+                #[cfg(feature = "rt-multi-thread")]
+                Kind::ThreadPool(_) => {
+                    // The threaded scheduler drops its tasks on its worker threads, which is
+                    // already in the runtime's context.
+                },
+            }
+        }
+    }
+
+    cfg_metrics! {
+        impl Runtime {
+            /// TODO
+            pub fn metrics(&self) -> RuntimeMetrics {
+                self.handle.metrics()
+            }
         }
     }
 }

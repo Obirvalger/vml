@@ -52,6 +52,11 @@ where
     /// calling [`split`] on the `Framed` returned by this method, which will
     /// break them into separate objects, allowing them to interact more easily.
     ///
+    /// Note that, for some byte sources, the stream can be resumed after an EOF
+    /// by reading from it, even after it has returned `None`. Repeated attempts
+    /// to do so, without new data available, continue to return `None` without
+    /// creating more (closing) frames.
+    ///
     /// [`Stream`]: futures_core::Stream
     /// [`Sink`]: futures_sink::Sink
     /// [`Decode`]: crate::codec::Decoder
@@ -101,6 +106,7 @@ where
                         eof: false,
                         is_readable: false,
                         buffer: BytesMut::with_capacity(capacity),
+                        has_errored: false,
                     },
                     write: WriteFrame::default(),
                 },
@@ -196,6 +202,35 @@ impl<T, U> Framed<T, U> {
     /// as it may corrupt the stream of frames otherwise being worked with.
     pub fn codec_mut(&mut self) -> &mut U {
         &mut self.inner.codec
+    }
+
+    /// Maps the codec `U` to `C`, preserving the read and write buffers
+    /// wrapped by `Framed`.
+    ///
+    /// Note that care should be taken to not tamper with the underlying codec
+    /// as it may corrupt the stream of frames otherwise being worked with.
+    pub fn map_codec<C, F>(self, map: F) -> Framed<T, C>
+    where
+        F: FnOnce(U) -> C,
+    {
+        // This could be potentially simplified once rust-lang/rust#86555 hits stable
+        let parts = self.into_parts();
+        Framed::from_parts(FramedParts {
+            io: parts.io,
+            codec: map(parts.codec),
+            read_buf: parts.read_buf,
+            write_buf: parts.write_buf,
+            _priv: (),
+        })
+    }
+
+    /// Returns a mutable reference to the underlying codec wrapped by
+    /// `Framed`.
+    ///
+    /// Note that care should be taken to not tamper with the underlying codec
+    /// as it may corrupt the stream of frames otherwise being worked with.
+    pub fn codec_pin_mut(self: Pin<&mut Self>) -> &mut U {
+        self.project().inner.project().codec
     }
 
     /// Returns a reference to the read buffer.

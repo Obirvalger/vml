@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use tokio::net::TcpListener;
 use tokio::time::Sleep;
+use tracing::{debug, error, trace};
 
 use crate::common::{task, Future, Pin, Poll};
 
@@ -36,6 +37,16 @@ impl AddrIncoming {
             .set_nonblocking(true)
             .map_err(crate::Error::new_listen)?;
         let listener = TcpListener::from_std(std_listener).map_err(crate::Error::new_listen)?;
+        AddrIncoming::from_listener(listener)
+    }
+
+    /// Creates a new `AddrIncoming` binding to provided socket address.
+    pub fn bind(addr: &SocketAddr) -> crate::Result<Self> {
+        AddrIncoming::new(addr)
+    }
+
+    /// Creates a new `AddrIncoming` from an existing `tokio::net::TcpListener`.
+    pub fn from_listener(listener: TcpListener) -> crate::Result<Self> {
         let addr = listener.local_addr().map_err(crate::Error::new_listen)?;
         Ok(AddrIncoming {
             listener,
@@ -45,11 +56,6 @@ impl AddrIncoming {
             tcp_nodelay: false,
             timeout: None,
         })
-    }
-
-    /// Creates a new `AddrIncoming` binding to provided socket address.
-    pub fn bind(addr: &SocketAddr) -> crate::Result<Self> {
-        AddrIncoming::new(addr)
     }
 
     /// Get the local address bound to this listener.
@@ -101,53 +107,19 @@ impl AddrIncoming {
 
         loop {
             match ready!(self.listener.poll_accept(cx)) {
-                Ok((socket, addr)) => {
+                Ok((socket, remote_addr)) => {
                     if let Some(dur) = self.tcp_keepalive_timeout {
-                        // Convert the Tokio `TcpStream` into a `socket2` socket
-                        // so we can call `set_keepalive`.
-                        // TODO(eliza): if Tokio's `TcpSocket` API grows a few
-                        // more methods in the future, hopefully we shouldn't
-                        // have to do the `from_raw_fd` dance any longer...
-                        #[cfg(unix)]
-                        let socket = unsafe {
-                            // Safety: `socket2`'s socket will try to close the
-                            // underlying fd when it's dropped. However, we
-                            // can't take ownership of the fd from the tokio
-                            // TcpStream, so instead we will call `into_raw_fd`
-                            // on the socket2 socket before dropping it. This
-                            // prevents it from trying to close the fd.
-                            use std::os::unix::io::{AsRawFd, FromRawFd};
-                            socket2::Socket::from_raw_fd(socket.as_raw_fd())
-                        };
-                        #[cfg(windows)]
-                        let socket = unsafe {
-                            // Safety: `socket2`'s socket will try to close the
-                            // underlying SOCKET when it's dropped. However, we
-                            // can't take ownership of the SOCKET from the tokio
-                            // TcpStream, so instead we will call `into_raw_socket`
-                            // on the socket2 socket before dropping it. This
-                            // prevents it from trying to close the SOCKET.
-                            use std::os::windows::io::{AsRawSocket, FromRawSocket};
-                            socket2::Socket::from_raw_socket(socket.as_raw_socket())
-                        };
-
-                        // Actually set the TCP keepalive timeout.
-                        if let Err(e) = socket.set_keepalive(Some(dur)) {
+                        let socket = socket2::SockRef::from(&socket);
+                        let conf = socket2::TcpKeepalive::new().with_time(dur);
+                        if let Err(e) = socket.set_tcp_keepalive(&conf) {
                             trace!("error trying to set TCP keepalive: {}", e);
                         }
-
-                        // Take ownershop of the fd/socket back from the socket2
-                        // `Socket`, so that socket2 doesn't try to close it
-                        // when it's dropped.
-                        #[cfg(unix)]
-                        drop(std::os::unix::io::IntoRawFd::into_raw_fd(socket));
-                        #[cfg(windows)]
-                        drop(std::os::windows::io::IntoRawSocket::into_raw_socket(socket));
                     }
                     if let Err(e) = socket.set_nodelay(self.tcp_nodelay) {
                         trace!("error trying to set TCP nodelay: {}", e);
                     }
-                    return Poll::Ready(Ok(AddrStream::new(socket, addr)));
+                    let local_addr = socket.local_addr()?;
+                    return Poll::Ready(Ok(AddrStream::new(socket, remote_addr, local_addr)));
                 }
                 Err(e) => {
                     // Connection errors can be ignored directly, continue by
@@ -203,9 +175,12 @@ impl Accept for AddrIncoming {
 /// The timeout is useful to handle resource exhaustion errors like ENFILE
 /// and EMFILE. Otherwise, could enter into tight loop.
 fn is_connection_error(e: &io::Error) -> bool {
-    matches!(e.kind(), io::ErrorKind::ConnectionRefused
-        | io::ErrorKind::ConnectionAborted
-        | io::ErrorKind::ConnectionReset)
+    matches!(
+        e.kind(),
+        io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionReset
+    )
 }
 
 impl fmt::Debug for AddrIncoming {
@@ -229,20 +204,27 @@ mod addr_stream {
 
     use crate::common::{task, Pin, Poll};
 
-    /// A transport returned yieled by `AddrIncoming`.
-    #[pin_project::pin_project]
-    #[derive(Debug)]
-    pub struct AddrStream {
-        #[pin]
-        inner: TcpStream,
-        pub(super) remote_addr: SocketAddr,
+    pin_project_lite::pin_project! {
+        /// A transport returned yieled by `AddrIncoming`.
+        #[derive(Debug)]
+        pub struct AddrStream {
+            #[pin]
+            inner: TcpStream,
+            pub(super) remote_addr: SocketAddr,
+            pub(super) local_addr: SocketAddr
+        }
     }
 
     impl AddrStream {
-        pub(super) fn new(tcp: TcpStream, addr: SocketAddr) -> AddrStream {
+        pub(super) fn new(
+            tcp: TcpStream,
+            remote_addr: SocketAddr,
+            local_addr: SocketAddr,
+        ) -> AddrStream {
             AddrStream {
                 inner: tcp,
-                remote_addr: addr,
+                remote_addr,
+                local_addr,
             }
         }
 
@@ -250,6 +232,12 @@ mod addr_stream {
         #[inline]
         pub fn remote_addr(&self) -> SocketAddr {
             self.remote_addr
+        }
+
+        /// Returns the local address of this connection.
+        #[inline]
+        pub fn local_addr(&self) -> SocketAddr {
+            self.local_addr
         }
 
         /// Consumes the AddrStream and returns the underlying IO object

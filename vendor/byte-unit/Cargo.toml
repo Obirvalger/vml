@@ -10,9 +10,9 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
 name = "byte-unit"
-version = "4.0.13"
+version = "4.0.14"
 authors = ["Magic Len <len@magiclen.org>"]
 include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE"]
 description = "A library for interaction with units of bytes."
@@ -22,6 +22,7 @@ keywords = ["byte", "unit", "kb", "mb", "gb"]
 categories = ["no-std", "parser-implementations", "value-formatting"]
 license = "MIT"
 repository = "https://github.com/magiclen/byte-unit"
+resolver = "2"
 [dependencies.serde]
 version = "1"
 optional = true

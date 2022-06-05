@@ -7,10 +7,15 @@
 use crate::time::wheel::{self, Wheel};
 
 use futures_core::ready;
-use tokio::time::{error::Error, sleep_until, Duration, Instant, Sleep};
+use tokio::time::{sleep_until, Duration, Instant, Sleep};
 
+use core::ops::{Index, IndexMut};
 use slab::Slab;
 use std::cmp;
+use std::collections::HashMap;
+use std::convert::From;
+use std::fmt;
+use std::fmt::Debug;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -30,24 +35,24 @@ use std::task::{self, Poll, Waker};
 ///
 /// Once delays have been configured, the `DelayQueue` is used via its
 /// [`Stream`] implementation. [`poll_expired`] is called. If an entry has reached its
-/// deadline, it is returned. If not, `Poll::Pending` indicating that the
+/// deadline, it is returned. If not, `Poll::Pending` is returned indicating that the
 /// current task will be notified once the deadline has been reached.
 ///
 /// # `Stream` implementation
 ///
 /// Items are retrieved from the queue via [`DelayQueue::poll_expired`]. If no delays have
-/// expired, no items are returned. In this case, `Pending` is returned and the
+/// expired, no items are returned. In this case, `Poll::Pending` is returned and the
 /// current task is registered to be notified once the next item's delay has
 /// expired.
 ///
 /// If no items are in the queue, i.e. `is_empty()` returns `true`, then `poll`
-/// returns `Ready(None)`. This indicates that the stream has reached an end.
+/// returns `Poll::Ready(None)`. This indicates that the stream has reached an end.
 /// However, if a new item is inserted *after*, `poll` will once again start
-/// returning items or `Pending.
+/// returning items or `Poll::Pending`.
 ///
 /// Items are returned ordered by their expirations. Items that are configured
 /// to expire first will be returned first. There are no ordering guarantees
-/// for items configured to expire the same instant. Also note that delays are
+/// for items configured to expire at the same instant. Also note that delays are
 /// rounded to the closest millisecond.
 ///
 /// # Implementation
@@ -67,7 +72,6 @@ use std::task::{self, Poll, Waker};
 /// Using `DelayQueue` to manage cache entries.
 ///
 /// ```rust,no_run
-/// use tokio::time::error::Error;
 /// use tokio_util::time::{DelayQueue, delay_queue};
 ///
 /// use futures::ready;
@@ -103,13 +107,12 @@ use std::task::{self, Poll, Waker};
 ///         }
 ///     }
 ///
-///     fn poll_purge(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-///         while let Some(res) = ready!(self.expirations.poll_expired(cx)) {
-///             let entry = res?;
+///     fn poll_purge(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+///         while let Some(entry) = ready!(self.expirations.poll_expired(cx)) {
 ///             self.entries.remove(entry.get_ref());
 ///         }
 ///
-///         Poll::Ready(Ok(()))
+///         Poll::Ready(())
 ///     }
 /// }
 /// ```
@@ -128,7 +131,7 @@ use std::task::{self, Poll, Waker};
 #[derive(Debug)]
 pub struct DelayQueue<T> {
     /// Stores data associated with entries
-    slab: Slab<Data<T>>,
+    slab: SlabStorage<T>,
 
     /// Lookup structure tracking all delays in the queue
     wheel: Wheel<Stack<T>>,
@@ -152,7 +155,217 @@ pub struct DelayQueue<T> {
     waker: Option<Waker>,
 }
 
-/// An entry in `DelayQueue` that has expired and removed.
+#[derive(Default)]
+struct SlabStorage<T> {
+    inner: Slab<Data<T>>,
+
+    // A `compact` call requires a re-mapping of the `Key`s that were changed
+    // during the `compact` call of the `slab`. Since the keys that were given out
+    // cannot be changed retroactively we need to keep track of these re-mappings.
+    // The keys of `key_map` correspond to the old keys that were given out and
+    // the values to the `Key`s that were re-mapped by the `compact` call.
+    key_map: HashMap<Key, KeyInternal>,
+
+    // Index used to create new keys to hand out.
+    next_key_index: usize,
+
+    // Whether `compact` has been called, necessary in order to decide whether
+    // to include keys in `key_map`.
+    compact_called: bool,
+}
+
+impl<T> SlabStorage<T> {
+    pub(crate) fn with_capacity(capacity: usize) -> SlabStorage<T> {
+        SlabStorage {
+            inner: Slab::with_capacity(capacity),
+            key_map: HashMap::new(),
+            next_key_index: 0,
+            compact_called: false,
+        }
+    }
+
+    // Inserts data into the inner slab and re-maps keys if necessary
+    pub(crate) fn insert(&mut self, val: Data<T>) -> Key {
+        let mut key = KeyInternal::new(self.inner.insert(val));
+        let key_contained = self.key_map.contains_key(&key.into());
+
+        if key_contained {
+            // It's possible that a `compact` call creates capacitiy in `self.inner` in
+            // such a way that a `self.inner.insert` call creates a `key` which was
+            // previously given out during an `insert` call prior to the `compact` call.
+            // If `key` is contained in `self.key_map`, we have encountered this exact situation,
+            // We need to create a new key `key_to_give_out` and include the relation
+            // `key_to_give_out` -> `key` in `self.key_map`.
+            let key_to_give_out = self.create_new_key();
+            assert!(!self.key_map.contains_key(&key_to_give_out.into()));
+            self.key_map.insert(key_to_give_out.into(), key);
+            key = key_to_give_out;
+        } else if self.compact_called {
+            // Include an identity mapping in `self.key_map` in order to allow us to
+            // panic if a key that was handed out is removed more than once.
+            self.key_map.insert(key.into(), key);
+        }
+
+        key.into()
+    }
+
+    // Re-map the key in case compact was previously called.
+    // Note: Since we include identity mappings in key_map after compact was called,
+    // we have information about all keys that were handed out. In the case in which
+    // compact was called and we try to remove a Key that was previously removed
+    // we can detect invalid keys if no key is found in `key_map`. This is necessary
+    // in order to prevent situations in which a previously removed key
+    // corresponds to a re-mapped key internally and which would then be incorrectly
+    // removed from the slab.
+    //
+    // Example to illuminate this problem:
+    //
+    // Let's assume our `key_map` is {1 -> 2, 2 -> 1} and we call remove(1). If we
+    // were to remove 1 again, we would not find it inside `key_map` anymore.
+    // If we were to imply from this that no re-mapping was necessary, we would
+    // incorrectly remove 1 from `self.slab.inner`, which corresponds to the
+    // handed-out key 2.
+    pub(crate) fn remove(&mut self, key: &Key) -> Data<T> {
+        let remapped_key = if self.compact_called {
+            match self.key_map.remove(key) {
+                Some(key_internal) => key_internal,
+                None => panic!("invalid key"),
+            }
+        } else {
+            (*key).into()
+        };
+
+        self.inner.remove(remapped_key.index)
+    }
+
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.inner.shrink_to_fit();
+        self.key_map.shrink_to_fit();
+    }
+
+    pub(crate) fn compact(&mut self) {
+        if !self.compact_called {
+            for (key, _) in self.inner.iter() {
+                self.key_map.insert(Key::new(key), KeyInternal::new(key));
+            }
+        }
+
+        let mut remapping = HashMap::new();
+        self.inner.compact(|_, from, to| {
+            remapping.insert(from, to);
+            true
+        });
+
+        // At this point `key_map` contains a mapping for every element.
+        for internal_key in self.key_map.values_mut() {
+            if let Some(new_internal_key) = remapping.get(&internal_key.index) {
+                *internal_key = KeyInternal::new(*new_internal_key);
+            }
+        }
+
+        if self.key_map.capacity() > 2 * self.key_map.len() {
+            self.key_map.shrink_to_fit();
+        }
+
+        self.compact_called = true;
+    }
+
+    // Tries to re-map a `Key` that was given out to the user to its
+    // corresponding internal key.
+    fn remap_key(&self, key: &Key) -> Option<KeyInternal> {
+        let key_map = &self.key_map;
+        if self.compact_called {
+            key_map.get(&*key).copied()
+        } else {
+            Some((*key).into())
+        }
+    }
+
+    fn create_new_key(&mut self) -> KeyInternal {
+        while self.key_map.contains_key(&Key::new(self.next_key_index)) {
+            self.next_key_index = self.next_key_index.wrapping_add(1);
+        }
+
+        KeyInternal::new(self.next_key_index)
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub(crate) fn capacity(&self) -> usize {
+        self.inner.capacity()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.inner.clear();
+        self.key_map.clear();
+        self.compact_called = false;
+    }
+
+    pub(crate) fn reserve(&mut self, additional: usize) {
+        self.inner.reserve(additional);
+
+        if self.compact_called {
+            self.key_map.reserve(additional);
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    pub(crate) fn contains(&self, key: &Key) -> bool {
+        let remapped_key = self.remap_key(key);
+
+        match remapped_key {
+            Some(internal_key) => self.inner.contains(internal_key.index),
+            None => false,
+        }
+    }
+}
+
+impl<T> fmt::Debug for SlabStorage<T>
+where
+    T: fmt::Debug,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if fmt.alternate() {
+            fmt.debug_map().entries(self.inner.iter()).finish()
+        } else {
+            fmt.debug_struct("Slab")
+                .field("len", &self.len())
+                .field("cap", &self.capacity())
+                .finish()
+        }
+    }
+}
+
+impl<T> Index<Key> for SlabStorage<T> {
+    type Output = Data<T>;
+
+    fn index(&self, key: Key) -> &Self::Output {
+        let remapped_key = self.remap_key(&key);
+
+        match remapped_key {
+            Some(internal_key) => &self.inner[internal_key.index],
+            None => panic!("Invalid index {}", key.index),
+        }
+    }
+}
+
+impl<T> IndexMut<Key> for SlabStorage<T> {
+    fn index_mut(&mut self, key: Key) -> &mut Data<T> {
+        let remapped_key = self.remap_key(&key);
+
+        match remapped_key {
+            Some(internal_key) => &mut self.inner[internal_key.index],
+            None => panic!("Invalid index {}", key.index),
+        }
+    }
+}
+
+/// An entry in `DelayQueue` that has expired and been removed.
 ///
 /// Values are returned by [`DelayQueue::poll_expired`].
 ///
@@ -176,15 +389,23 @@ pub struct Expired<T> {
 ///
 /// [`DelayQueue`]: struct@DelayQueue
 /// [`DelayQueue::insert`]: method@DelayQueue::insert
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Key {
+    index: usize,
+}
+
+// Whereas `Key` is given out to users that use `DelayQueue`, internally we use
+// `KeyInternal` as the key type in order to make the logic of mapping between keys
+// as a result of `compact` calls clearer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct KeyInternal {
     index: usize,
 }
 
 #[derive(Debug)]
 struct Stack<T> {
     /// Head of the stack
-    head: Option<usize>,
+    head: Option<Key>,
     _p: PhantomData<fn() -> T>,
 }
 
@@ -201,17 +422,17 @@ struct Data<T> {
     expired: bool,
 
     /// Next entry in the stack
-    next: Option<usize>,
+    next: Option<Key>,
 
     /// Previous entry in the stack
-    prev: Option<usize>,
+    prev: Option<Key>,
 }
 
 /// Maximum number of entries the queue can handle
 const MAX_ENTRIES: usize = (1 << 30) - 1;
 
 impl<T> DelayQueue<T> {
-    /// Creates a new, empty, `DelayQueue`
+    /// Creates a new, empty, `DelayQueue`.
     ///
     /// The queue will not allocate storage until items are inserted into it.
     ///
@@ -239,21 +460,21 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::with_capacity(10);
+    /// let mut delay_queue = DelayQueue::with_capacity(10);
     ///
-    ///     // These insertions are done without further allocation
-    ///     for i in 0..10 {
-    ///         delay_queue.insert(i, Duration::from_secs(i));
-    ///     }
+    /// // These insertions are done without further allocation
+    /// for i in 0..10 {
+    ///     delay_queue.insert(i, Duration::from_secs(i));
+    /// }
     ///
-    ///     // This will make the queue allocate additional storage
-    ///     delay_queue.insert(11, Duration::from_secs(11));
+    /// // This will make the queue allocate additional storage
+    /// delay_queue.insert(11, Duration::from_secs(11));
     /// # }
     /// ```
     pub fn with_capacity(capacity: usize) -> DelayQueue<T> {
         DelayQueue {
             wheel: Wheel::new(),
-            slab: Slab::with_capacity(capacity),
+            slab: SlabStorage::with_capacity(capacity),
             expired: Stack::default(),
             delay: None,
             wheel_now: 0,
@@ -272,8 +493,8 @@ impl<T> DelayQueue<T> {
     /// `value` will be returned from [`poll_expired`]. If `when` has already been
     /// reached, then `value` is immediately made available to poll.
     ///
-    /// The return value represents the insertion and is used at an argument to
-    /// [`remove`] and [`reset`]. Note that [`Key`] is token and is reused once
+    /// The return value represents the insertion and is used as an argument to
+    /// [`remove`] and [`reset`]. Note that [`Key`] is a token and is reused once
     /// `value` is removed from the queue either by calling [`poll_expired`] after
     /// `when` is reached or by calling [`remove`]. At this point, the caller
     /// must take care to not use the returned [`Key`] again as it may reference
@@ -295,13 +516,13 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::new();
-    ///     let key = delay_queue.insert_at(
-    ///         "foo", Instant::now() + Duration::from_secs(5));
+    /// let mut delay_queue = DelayQueue::new();
+    /// let key = delay_queue.insert_at(
+    ///     "foo", Instant::now() + Duration::from_secs(5));
     ///
-    ///     // Remove the entry
-    ///     let item = delay_queue.remove(&key);
-    ///     assert_eq!(*item.get_ref(), "foo");
+    /// // Remove the entry
+    /// let item = delay_queue.remove(&key);
+    /// assert_eq!(*item.get_ref(), "foo");
     /// # }
     /// ```
     ///
@@ -348,16 +569,13 @@ impl<T> DelayQueue<T> {
             }
         }
 
-        Key::new(key)
+        key
     }
 
     /// Attempts to pull out the next value of the delay queue, registering the
     /// current task for wakeup if the value is not yet available, and returning
-    /// None if the queue is exhausted.
-    pub fn poll_expired(
-        &mut self,
-        cx: &mut task::Context<'_>,
-    ) -> Poll<Option<Result<Expired<T>, Error>>> {
+    /// `None` if the queue is exhausted.
+    pub fn poll_expired(&mut self, cx: &mut task::Context<'_>) -> Poll<Option<Expired<T>>> {
         if !self
             .waker
             .as_ref()
@@ -368,18 +586,16 @@ impl<T> DelayQueue<T> {
         }
 
         let item = ready!(self.poll_idx(cx));
-        Poll::Ready(item.map(|result| {
-            result.map(|idx| {
-                let data = self.slab.remove(idx);
-                debug_assert!(data.next.is_none());
-                debug_assert!(data.prev.is_none());
+        Poll::Ready(item.map(|key| {
+            let data = self.slab.remove(&key);
+            debug_assert!(data.next.is_none());
+            debug_assert!(data.prev.is_none());
 
-                Expired {
-                    key: Key::new(idx),
-                    data: data.inner,
-                    deadline: self.start + Duration::from_millis(data.when),
-                }
-            })
+            Expired {
+                key,
+                data: data.inner,
+                deadline: self.start + Duration::from_millis(data.when),
+            }
         }))
     }
 
@@ -391,7 +607,7 @@ impl<T> DelayQueue<T> {
     ///
     /// `value` is stored in the queue until `timeout` duration has
     /// elapsed after `insert` was called. At that point, `value` will
-    /// be returned from [`poll_expired`]. If `timeout` a Duration of
+    /// be returned from [`poll_expired`]. If `timeout` is a `Duration` of
     /// zero, then `value` is immediately made available to poll.
     ///
     /// The return value represents the insertion and is used as an
@@ -419,12 +635,12 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::new();
-    ///     let key = delay_queue.insert("foo", Duration::from_secs(5));
+    /// let mut delay_queue = DelayQueue::new();
+    /// let key = delay_queue.insert("foo", Duration::from_secs(5));
     ///
-    ///     // Remove the entry
-    ///     let item = delay_queue.remove(&key);
-    ///     assert_eq!(*item.get_ref(), "foo");
+    /// // Remove the entry
+    /// let item = delay_queue.remove(&key);
+    /// assert_eq!(*item.get_ref(), "foo");
     /// # }
     /// ```
     ///
@@ -437,7 +653,7 @@ impl<T> DelayQueue<T> {
         self.insert_at(value, Instant::now() + timeout)
     }
 
-    fn insert_idx(&mut self, when: u64, key: usize) {
+    fn insert_idx(&mut self, when: u64, key: Key) {
         use self::wheel::{InsertError, Stack};
 
         // Register the deadline with the timer wheel
@@ -452,19 +668,20 @@ impl<T> DelayQueue<T> {
         }
     }
 
-    /// Removes the key fom the expired queue or the timer wheel
-    /// depending on its expiration status
+    /// Removes the key from the expired queue or the timer wheel
+    /// depending on its expiration status.
     ///
     /// # Panics
-    /// Panics if the key is not contained in the expired queue or the wheel
+    ///
+    /// Panics if the key is not contained in the expired queue or the wheel.
     fn remove_key(&mut self, key: &Key) {
         use crate::time::wheel::Stack;
 
         // Special case the `expired` queue
-        if self.slab[key.index].expired {
-            self.expired.remove(&key.index, &mut self.slab);
+        if self.slab[*key].expired {
+            self.expired.remove(key, &mut self.slab);
         } else {
-            self.wheel.remove(&key.index, &mut self.slab);
+            self.wheel.remove(key, &mut self.slab);
         }
     }
 
@@ -488,17 +705,28 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::new();
-    ///     let key = delay_queue.insert("foo", Duration::from_secs(5));
+    /// let mut delay_queue = DelayQueue::new();
+    /// let key = delay_queue.insert("foo", Duration::from_secs(5));
     ///
-    ///     // Remove the entry
-    ///     let item = delay_queue.remove(&key);
-    ///     assert_eq!(*item.get_ref(), "foo");
+    /// // Remove the entry
+    /// let item = delay_queue.remove(&key);
+    /// assert_eq!(*item.get_ref(), "foo");
     /// # }
     /// ```
     pub fn remove(&mut self, key: &Key) -> Expired<T> {
+        let prev_deadline = self.next_deadline();
+
         self.remove_key(key);
-        let data = self.slab.remove(key.index);
+        let data = self.slab.remove(key);
+
+        let next_deadline = self.next_deadline();
+        if prev_deadline != next_deadline {
+            match (next_deadline, &mut self.delay) {
+                (None, _) => self.delay = None,
+                (Some(deadline), Some(delay)) => delay.as_mut().reset(deadline),
+                (Some(deadline), None) => self.delay = Some(Box::pin(sleep_until(deadline))),
+            }
+        }
 
         Expired {
             key: Key::new(key.index),
@@ -531,14 +759,14 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::new();
-    ///     let key = delay_queue.insert("foo", Duration::from_secs(5));
+    /// let mut delay_queue = DelayQueue::new();
+    /// let key = delay_queue.insert("foo", Duration::from_secs(5));
     ///
-    ///     // "foo" is scheduled to be returned in 5 seconds
+    /// // "foo" is scheduled to be returned in 5 seconds
     ///
-    ///     delay_queue.reset_at(&key, Instant::now() + Duration::from_secs(10));
+    /// delay_queue.reset_at(&key, Instant::now() + Duration::from_secs(10));
     ///
-    ///     // "foo" is now scheduled to be returned in 10 seconds
+    /// // "foo" is now scheduled to be returned in 10 seconds
     /// # }
     /// ```
     pub fn reset_at(&mut self, key: &Key, when: Instant) {
@@ -547,10 +775,10 @@ impl<T> DelayQueue<T> {
         // Normalize the deadline. Values cannot be set to expire in the past.
         let when = self.normalize_deadline(when);
 
-        self.slab[key.index].when = when;
-        self.slab[key.index].expired = false;
+        self.slab[*key].when = when;
+        self.slab[*key].expired = false;
 
-        self.insert_idx(when, key.index);
+        self.insert_idx(when, *key);
 
         let next_deadline = self.next_deadline();
         if let (Some(ref mut delay), Some(deadline)) = (&mut self.delay, next_deadline) {
@@ -559,7 +787,51 @@ impl<T> DelayQueue<T> {
         }
     }
 
-    /// Returns the next time poll as determined by the wheel
+    /// Shrink the capacity of the slab, which `DelayQueue` uses internally for storage allocation.
+    /// This function is not guaranteed to, and in most cases, won't decrease the capacity of the slab
+    /// to the number of elements still contained in it, because elements cannot be moved to a different
+    /// index. To decrease the capacity to the size of the slab use [`compact`].
+    ///
+    /// This function can take O(n) time even when the capacity cannot be reduced or the allocation is
+    /// shrunk in place. Repeated calls run in O(1) though.
+    ///
+    /// [`compact`]: method@Self::compact
+    pub fn shrink_to_fit(&mut self) {
+        self.slab.shrink_to_fit();
+    }
+
+    /// Shrink the capacity of the slab, which `DelayQueue` uses internally for storage allocation,
+    /// to the number of elements that are contained in it.
+    ///
+    /// This methods runs in O(n).
+    ///
+    /// # Examples
+    ///
+    /// Basic usage
+    ///
+    /// ```rust
+    /// use tokio_util::time::DelayQueue;
+    /// use std::time::Duration;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut delay_queue = DelayQueue::with_capacity(10);
+    ///
+    /// let key1 = delay_queue.insert(5, Duration::from_secs(5));
+    /// let key2 = delay_queue.insert(10, Duration::from_secs(10));
+    /// let key3 = delay_queue.insert(15, Duration::from_secs(15));
+    ///
+    /// delay_queue.remove(&key2);
+    ///
+    /// delay_queue.compact();
+    /// assert_eq!(delay_queue.capacity(), 2);
+    /// # }
+    /// ```
+    pub fn compact(&mut self) {
+        self.slab.compact();
+    }
+
+    /// Returns the next time to poll as determined by the wheel
     fn next_deadline(&mut self) -> Option<Instant> {
         self.wheel
             .poll_at()
@@ -591,14 +863,14 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::new();
-    ///     let key = delay_queue.insert("foo", Duration::from_secs(5));
+    /// let mut delay_queue = DelayQueue::new();
+    /// let key = delay_queue.insert("foo", Duration::from_secs(5));
     ///
-    ///     // "foo" is scheduled to be returned in 5 seconds
+    /// // "foo" is scheduled to be returned in 5 seconds
     ///
-    ///     delay_queue.reset(&key, Duration::from_secs(10));
+    /// delay_queue.reset(&key, Duration::from_secs(10));
     ///
-    ///     // "foo"is now scheduled to be returned in 10 seconds
+    /// // "foo"is now scheduled to be returned in 10 seconds
     /// # }
     /// ```
     pub fn reset(&mut self, key: &Key, timeout: Duration) {
@@ -621,15 +893,15 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::new();
+    /// let mut delay_queue = DelayQueue::new();
     ///
-    ///     delay_queue.insert("foo", Duration::from_secs(5));
+    /// delay_queue.insert("foo", Duration::from_secs(5));
     ///
-    ///     assert!(!delay_queue.is_empty());
+    /// assert!(!delay_queue.is_empty());
     ///
-    ///     delay_queue.clear();
+    /// delay_queue.clear();
     ///
-    ///     assert!(delay_queue.is_empty());
+    /// assert!(delay_queue.is_empty());
     /// # }
     /// ```
     pub fn clear(&mut self) {
@@ -663,10 +935,10 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue: DelayQueue<i32> = DelayQueue::with_capacity(10);
-    ///     assert_eq!(delay_queue.len(), 0);
-    ///     delay_queue.insert(3, Duration::from_secs(5));
-    ///     assert_eq!(delay_queue.len(), 1);
+    /// let mut delay_queue: DelayQueue<i32> = DelayQueue::with_capacity(10);
+    /// assert_eq!(delay_queue.len(), 0);
+    /// delay_queue.insert(3, Duration::from_secs(5));
+    /// assert_eq!(delay_queue.len(), 1);
     /// # }
     /// ```
     pub fn len(&self) -> usize {
@@ -698,12 +970,12 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::new();
+    /// let mut delay_queue = DelayQueue::new();
     ///
-    ///     delay_queue.insert("hello", Duration::from_secs(10));
-    ///     delay_queue.reserve(10);
+    /// delay_queue.insert("hello", Duration::from_secs(10));
+    /// delay_queue.reserve(10);
     ///
-    ///     assert!(delay_queue.capacity() >= 11);
+    /// assert!(delay_queue.capacity() >= 11);
     /// # }
     /// ```
     pub fn reserve(&mut self, additional: usize) {
@@ -713,7 +985,7 @@ impl<T> DelayQueue<T> {
     /// Returns `true` if there are no items in the queue.
     ///
     /// Note that this function returns `false` even if all items have not yet
-    /// expired and a call to `poll` will return `Pending`.
+    /// expired and a call to `poll` will return `Poll::Pending`.
     ///
     /// # Examples
     ///
@@ -723,11 +995,11 @@ impl<T> DelayQueue<T> {
     ///
     /// # #[tokio::main]
     /// # async fn main() {
-    ///     let mut delay_queue = DelayQueue::new();
-    ///     assert!(delay_queue.is_empty());
+    /// let mut delay_queue = DelayQueue::new();
+    /// assert!(delay_queue.is_empty());
     ///
-    ///     delay_queue.insert("hello", Duration::from_secs(5));
-    ///     assert!(!delay_queue.is_empty());
+    /// delay_queue.insert("hello", Duration::from_secs(5));
+    /// assert!(!delay_queue.is_empty());
     /// # }
     /// ```
     pub fn is_empty(&self) -> bool {
@@ -738,13 +1010,13 @@ impl<T> DelayQueue<T> {
     /// should be returned.
     ///
     /// A slot should be returned when the associated deadline has been reached.
-    fn poll_idx(&mut self, cx: &mut task::Context<'_>) -> Poll<Option<Result<usize, Error>>> {
+    fn poll_idx(&mut self, cx: &mut task::Context<'_>) -> Poll<Option<Key>> {
         use self::wheel::Stack;
 
         let expired = self.expired.pop(&mut self.slab);
 
         if expired.is_some() {
-            return Poll::Ready(expired.map(Ok));
+            return Poll::Ready(expired);
         }
 
         loop {
@@ -764,7 +1036,7 @@ impl<T> DelayQueue<T> {
             self.delay = self.next_deadline().map(|when| Box::pin(sleep_until(when)));
 
             if let Some(idx) = wheel_idx {
-                return Poll::Ready(Some(Ok(idx)));
+                return Poll::Ready(Some(idx));
             }
 
             if self.delay.is_none() {
@@ -796,7 +1068,7 @@ impl<T> Default for DelayQueue<T> {
 impl<T> futures_core::Stream for DelayQueue<T> {
     // DelayQueue seems much more specific, where a user may care that it
     // has reached capacity, so return those errors instead of panicking.
-    type Item = Result<Expired<T>, Error>;
+    type Item = Expired<T>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         DelayQueue::poll_expired(self.get_mut(), cx)
@@ -804,9 +1076,9 @@ impl<T> futures_core::Stream for DelayQueue<T> {
 }
 
 impl<T> wheel::Stack for Stack<T> {
-    type Owned = usize;
-    type Borrowed = usize;
-    type Store = Slab<Data<T>>;
+    type Owned = Key;
+    type Borrowed = Key;
+    type Store = SlabStorage<T>;
 
     fn is_empty(&self) -> bool {
         self.head.is_none()
@@ -825,28 +1097,29 @@ impl<T> wheel::Stack for Stack<T> {
         }
 
         store[item].next = old;
-        self.head = Some(item)
+        self.head = Some(item);
     }
 
     fn pop(&mut self, store: &mut Self::Store) -> Option<Self::Owned> {
-        if let Some(idx) = self.head {
-            self.head = store[idx].next;
+        if let Some(key) = self.head {
+            self.head = store[key].next;
 
             if let Some(idx) = self.head {
                 store[idx].prev = None;
             }
 
-            store[idx].next = None;
-            debug_assert!(store[idx].prev.is_none());
+            store[key].next = None;
+            debug_assert!(store[key].prev.is_none());
 
-            Some(idx)
+            Some(key)
         } else {
             None
         }
     }
 
     fn remove(&mut self, item: &Self::Borrowed, store: &mut Self::Store) {
-        assert!(store.contains(*item));
+        let key = *item;
+        assert!(store.contains(item));
 
         // Ensure that the entry is in fact contained by the stack
         debug_assert!({
@@ -855,29 +1128,31 @@ impl<T> wheel::Stack for Stack<T> {
             let mut contains = false;
 
             while let Some(idx) = next {
+                let data = &store[idx];
+
                 if idx == *item {
                     debug_assert!(!contains);
                     contains = true;
                 }
 
-                next = store[idx].next;
+                next = data.next;
             }
 
             contains
         });
 
-        if let Some(next) = store[*item].next {
-            store[next].prev = store[*item].prev;
+        if let Some(next) = store[key].next {
+            store[next].prev = store[key].prev;
         }
 
-        if let Some(prev) = store[*item].prev {
-            store[prev].next = store[*item].next;
+        if let Some(prev) = store[key].prev {
+            store[prev].next = store[key].next;
         } else {
-            self.head = store[*item].next;
+            self.head = store[key].next;
         }
 
-        store[*item].next = None;
-        store[*item].prev = None;
+        store[key].next = None;
+        store[key].prev = None;
     }
 
     fn when(item: &Self::Borrowed, store: &Self::Store) -> u64 {
@@ -900,6 +1175,24 @@ impl Key {
     }
 }
 
+impl KeyInternal {
+    pub(crate) fn new(index: usize) -> KeyInternal {
+        KeyInternal { index }
+    }
+}
+
+impl From<Key> for KeyInternal {
+    fn from(item: Key) -> Self {
+        KeyInternal::new(item.index)
+    }
+}
+
+impl From<KeyInternal> for Key {
+    fn from(item: KeyInternal) -> Self {
+        Key::new(item.index)
+    }
+}
+
 impl<T> Expired<T> {
     /// Returns a reference to the inner value.
     pub fn get_ref(&self) -> &T {
@@ -919,5 +1212,10 @@ impl<T> Expired<T> {
     /// Returns the deadline that the expiration was set to.
     pub fn deadline(&self) -> Instant {
         self.deadline
+    }
+
+    /// Returns the key that the expiration is indexed by.
+    pub fn key(&self) -> Key {
+        self.key
     }
 }

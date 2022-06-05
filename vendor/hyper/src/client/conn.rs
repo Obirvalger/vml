@@ -13,17 +13,16 @@
 //! ```no_run
 //! # #[cfg(all(feature = "client", feature = "http1", feature = "runtime"))]
 //! # mod rt {
+//! use tower::ServiceExt;
 //! use http::{Request, StatusCode};
-//! use hyper::{client::conn::Builder, Body};
+//! use hyper::{client::conn, Body};
 //! use tokio::net::TcpStream;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let target_stream = TcpStream::connect("example.com:80").await?;
 //!
-//!     let (mut request_sender, connection) = Builder::new()
-//!         .handshake::<TcpStream, Body>(target_stream)
-//!         .await?;
+//!     let (mut request_sender, connection) = conn::handshake(target_stream).await?;
 //!
 //!     // spawn a task to poll the connection and drive the HTTP state
 //!     tokio::spawn(async move {
@@ -33,11 +32,20 @@
 //!     });
 //!
 //!     let request = Request::builder()
-//!     // We need to manually add the host header because SendRequest does not
+//!         // We need to manually add the host header because SendRequest does not
 //!         .header("Host", "example.com")
 //!         .method("GET")
 //!         .body(Body::from(""))?;
+//!     let response = request_sender.send_request(request).await?;
+//!     assert!(response.status() == StatusCode::OK);
 //!
+//!     // To send via the same connection again, it may not work as it may not be ready,
+//!     // so we have to wait until the request_sender becomes ready.
+//!     request_sender.ready().await?;
+//!     let request = Request::builder()
+//!         .header("Host", "example.com")
+//!         .method("GET")
+//!         .body(Body::from(""))?;
 //!     let response = request_sender.send_request(request).await?;
 //!     assert!(response.status() == StatusCode::OK);
 //!     Ok(())
@@ -48,7 +56,7 @@
 
 use std::error::Error as StdError;
 use std::fmt;
-#[cfg(feature = "http2")]
+#[cfg(not(all(feature = "http1", feature = "http2")))]
 use std::marker::PhantomData;
 use std::sync::Arc;
 #[cfg(all(feature = "runtime", feature = "http2"))]
@@ -56,12 +64,16 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::future::{self, Either, FutureExt as _};
-use pin_project::pin_project;
+use httparse::ParserConfig;
+use pin_project_lite::pin_project;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tower_service::Service;
+use tracing::{debug, trace};
 
 use super::dispatch;
 use crate::body::HttpBody;
+#[cfg(not(all(feature = "http1", feature = "http2")))]
+use crate::common::Never;
 use crate::common::{
     exec::{BoxSendFuture, Exec},
     task, Future, Pin, Poll,
@@ -73,22 +85,39 @@ use crate::upgrade::Upgraded;
 use crate::{Body, Request, Response};
 
 #[cfg(feature = "http1")]
-type Http1Dispatcher<T, B, R> = proto::dispatch::Dispatcher<proto::dispatch::Client<B>, B, T, R>;
+type Http1Dispatcher<T, B> =
+    proto::dispatch::Dispatcher<proto::dispatch::Client<B>, B, T, proto::h1::ClientTransaction>;
 
-#[pin_project(project = ProtoClientProj)]
-enum ProtoClient<T, B>
-where
-    B: HttpBody,
-{
-    #[cfg(feature = "http1")]
-    H1(#[pin] Http1Dispatcher<T, B, proto::h1::ClientTransaction>),
-    #[cfg(feature = "http2")]
-    H2(#[pin] proto::h2::ClientTask<B>, PhantomData<fn(T)>),
+#[cfg(not(feature = "http1"))]
+type Http1Dispatcher<T, B> = (Never, PhantomData<(T, Pin<Box<B>>)>);
+
+#[cfg(feature = "http2")]
+type Http2ClientTask<B> = proto::h2::ClientTask<B>;
+
+#[cfg(not(feature = "http2"))]
+type Http2ClientTask<B> = (Never, PhantomData<Pin<Box<B>>>);
+
+pin_project! {
+    #[project = ProtoClientProj]
+    enum ProtoClient<T, B>
+    where
+        B: HttpBody,
+    {
+        H1 {
+            #[pin]
+            h1: Http1Dispatcher<T, B>,
+        },
+        H2 {
+            #[pin]
+            h2: Http2ClientTask<B>,
+        },
+    }
 }
 
 /// Returns a handshake future over some IO.
 ///
 /// This is a shortcut for `Builder::new().handshake(io)`.
+/// See [`client::conn`](crate::client::conn) for more.
 pub async fn handshake<T>(
     io: T,
 ) -> crate::Result<(SendRequest<crate::Body>, Connection<T, crate::Body>)>
@@ -122,9 +151,17 @@ where
 #[derive(Clone, Debug)]
 pub struct Builder {
     pub(super) exec: Exec,
+    h09_responses: bool,
+    h1_parser_config: ParserConfig,
+    h1_writev: Option<bool>,
     h1_title_case_headers: bool,
+    h1_preserve_header_case: bool,
+    #[cfg(feature = "ffi")]
+    h1_preserve_header_order: bool,
     h1_read_buf_exact_size: Option<usize>,
     h1_max_buf_size: Option<usize>,
+    #[cfg(feature = "ffi")]
+    h1_headers_raw: bool,
     #[cfg(feature = "http2")]
     h2_builder: proto::h2::client::Config,
     version: Proto,
@@ -192,12 +229,13 @@ impl<B> SendRequest<B> {
         self.dispatch.poll_ready(cx)
     }
 
-    pub(super) fn when_ready(self) -> impl Future<Output = crate::Result<Self>> {
+    pub(super) async fn when_ready(self) -> crate::Result<Self> {
         let mut me = Some(self);
         future::poll_fn(move |cx| {
             ready!(me.as_mut().unwrap().poll_ready(cx))?;
             Poll::Ready(Ok(me.take().unwrap()))
         })
+        .await
     }
 
     pub(super) fn is_ready(&self) -> bool {
@@ -400,7 +438,7 @@ where
     pub fn into_parts(self) -> Parts<T> {
         match self.inner.expect("already upgraded") {
             #[cfg(feature = "http1")]
-            ProtoClient::H1(h1) => {
+            ProtoClient::H1 { h1 } => {
                 let (io, read_buf, _) = h1.into_inner();
                 Parts {
                     io,
@@ -408,10 +446,12 @@ where
                     _inner: (),
                 }
             }
-            #[cfg(feature = "http2")]
-            ProtoClient::H2(..) => {
+            ProtoClient::H2 { .. } => {
                 panic!("http2 cannot into_inner");
             }
+
+            #[cfg(not(feature = "http1"))]
+            ProtoClient::H1 { h1 } => match h1.0 {},
         }
     }
 
@@ -429,9 +469,14 @@ where
     pub fn poll_without_shutdown(&mut self, cx: &mut task::Context<'_>) -> Poll<crate::Result<()>> {
         match *self.inner.as_mut().expect("already upgraded") {
             #[cfg(feature = "http1")]
-            ProtoClient::H1(ref mut h1) => h1.poll_without_shutdown(cx),
+            ProtoClient::H1 { ref mut h1 } => h1.poll_without_shutdown(cx),
             #[cfg(feature = "http2")]
-            ProtoClient::H2(ref mut h2, _) => Pin::new(h2).poll(cx).map_ok(|_| ()),
+            ProtoClient::H2 { ref mut h2, .. } => Pin::new(h2).poll(cx).map_ok(|_| ()),
+
+            #[cfg(not(feature = "http1"))]
+            ProtoClient::H1 { ref mut h1 } => match h1.0 {},
+            #[cfg(not(feature = "http2"))]
+            ProtoClient::H2 { ref mut h2, .. } => match h2.0 {},
         }
     }
 
@@ -443,6 +488,23 @@ where
             ready!(conn.as_mut().unwrap().poll_without_shutdown(cx))?;
             Poll::Ready(Ok(conn.take().unwrap().into_parts()))
         })
+    }
+
+    /// Returns whether the [extended CONNECT protocol][1] is enabled or not.
+    ///
+    /// This setting is configured by the server peer by sending the
+    /// [`SETTINGS_ENABLE_CONNECT_PROTOCOL` parameter][2] in a `SETTINGS` frame.
+    /// This method returns the currently acknowledged value received from the
+    /// remote.
+    ///
+    /// [1]: https://datatracker.ietf.org/doc/html/rfc8441#section-4
+    /// [2]: https://datatracker.ietf.org/doc/html/rfc8441#section-3
+    #[cfg(feature = "http2")]
+    pub fn http2_is_extended_connect_protocol_enabled(&self) -> bool {
+        match self.inner.as_ref().unwrap() {
+            ProtoClient::H1 { .. } => false,
+            ProtoClient::H2 { h2 } => h2.is_extended_connect_protocol_enabled(),
+        }
     }
 }
 
@@ -460,7 +522,7 @@ where
             proto::Dispatched::Shutdown => Poll::Ready(Ok(())),
             #[cfg(feature = "http1")]
             proto::Dispatched::Upgrade(pending) => match self.inner.take() {
-                Some(ProtoClient::H1(h1)) => {
+                Some(ProtoClient::H1 { h1 }) => {
                     let (io, buf, _) = h1.into_inner();
                     pending.fulfill(Upgraded::new(io, buf));
                     Poll::Ready(Ok(()))
@@ -492,9 +554,17 @@ impl Builder {
     pub fn new() -> Builder {
         Builder {
             exec: Exec::Default,
+            h09_responses: false,
+            h1_writev: None,
             h1_read_buf_exact_size: None,
+            h1_parser_config: Default::default(),
             h1_title_case_headers: false,
+            h1_preserve_header_case: false,
+            #[cfg(feature = "ffi")]
+            h1_preserve_header_order: false,
             h1_max_buf_size: None,
+            #[cfg(feature = "ffi")]
+            h1_headers_raw: false,
             #[cfg(feature = "http2")]
             h2_builder: Default::default(),
             #[cfg(feature = "http1")]
@@ -513,19 +583,169 @@ impl Builder {
         self
     }
 
-    pub(super) fn h1_title_case_headers(&mut self, enabled: bool) -> &mut Builder {
+    /// Set whether HTTP/0.9 responses should be tolerated.
+    ///
+    /// Default is false.
+    pub fn http09_responses(&mut self, enabled: bool) -> &mut Builder {
+        self.h09_responses = enabled;
+        self
+    }
+
+    /// Set whether HTTP/1 connections will accept spaces between header names
+    /// and the colon that follow them in responses.
+    ///
+    /// You probably don't need this, here is what [RFC 7230 Section 3.2.4.] has
+    /// to say about it:
+    ///
+    /// > No whitespace is allowed between the header field-name and colon. In
+    /// > the past, differences in the handling of such whitespace have led to
+    /// > security vulnerabilities in request routing and response handling. A
+    /// > server MUST reject any received request message that contains
+    /// > whitespace between a header field-name and colon with a response code
+    /// > of 400 (Bad Request). A proxy MUST remove any such whitespace from a
+    /// > response message before forwarding the message downstream.
+    ///
+    /// Note that this setting does not affect HTTP/2.
+    ///
+    /// Default is false.
+    ///
+    /// [RFC 7230 Section 3.2.4.]: https://tools.ietf.org/html/rfc7230#section-3.2.4
+    pub fn http1_allow_spaces_after_header_name_in_responses(
+        &mut self,
+        enabled: bool,
+    ) -> &mut Builder {
+        self.h1_parser_config
+            .allow_spaces_after_header_name_in_responses(enabled);
+        self
+    }
+
+    /// Set whether HTTP/1 connections will accept obsolete line folding for
+    /// header values.
+    ///
+    /// Newline codepoints (`\r` and `\n`) will be transformed to spaces when
+    /// parsing.
+    ///
+    /// You probably don't need this, here is what [RFC 7230 Section 3.2.4.] has
+    /// to say about it:
+    ///
+    /// > A server that receives an obs-fold in a request message that is not
+    /// > within a message/http container MUST either reject the message by
+    /// > sending a 400 (Bad Request), preferably with a representation
+    /// > explaining that obsolete line folding is unacceptable, or replace
+    /// > each received obs-fold with one or more SP octets prior to
+    /// > interpreting the field value or forwarding the message downstream.
+    ///
+    /// > A proxy or gateway that receives an obs-fold in a response message
+    /// > that is not within a message/http container MUST either discard the
+    /// > message and replace it with a 502 (Bad Gateway) response, preferably
+    /// > with a representation explaining that unacceptable line folding was
+    /// > received, or replace each received obs-fold with one or more SP
+    /// > octets prior to interpreting the field value or forwarding the
+    /// > message downstream.
+    ///
+    /// > A user agent that receives an obs-fold in a response message that is
+    /// > not within a message/http container MUST replace each received
+    /// > obs-fold with one or more SP octets prior to interpreting the field
+    /// > value.
+    ///
+    /// Note that this setting does not affect HTTP/2.
+    ///
+    /// Default is false.
+    ///
+    /// [RFC 7230 Section 3.2.4.]: https://tools.ietf.org/html/rfc7230#section-3.2.4
+    pub fn http1_allow_obsolete_multiline_headers_in_responses(
+        &mut self,
+        enabled: bool,
+    ) -> &mut Builder {
+        self.h1_parser_config
+            .allow_obsolete_multiline_headers_in_responses(enabled);
+        self
+    }
+
+    /// Set whether HTTP/1 connections should try to use vectored writes,
+    /// or always flatten into a single buffer.
+    ///
+    /// Note that setting this to false may mean more copies of body data,
+    /// but may also improve performance when an IO transport doesn't
+    /// support vectored writes well, such as most TLS implementations.
+    ///
+    /// Setting this to true will force hyper to use queued strategy
+    /// which may eliminate unnecessary cloning on some TLS backends
+    ///
+    /// Default is `auto`. In this mode hyper will try to guess which
+    /// mode to use
+    pub fn http1_writev(&mut self, enabled: bool) -> &mut Builder {
+        self.h1_writev = Some(enabled);
+        self
+    }
+
+    /// Set whether HTTP/1 connections will write header names as title case at
+    /// the socket level.
+    ///
+    /// Note that this setting does not affect HTTP/2.
+    ///
+    /// Default is false.
+    pub fn http1_title_case_headers(&mut self, enabled: bool) -> &mut Builder {
         self.h1_title_case_headers = enabled;
         self
     }
 
-    pub(super) fn h1_read_buf_exact_size(&mut self, sz: Option<usize>) -> &mut Builder {
+    /// Set whether to support preserving original header cases.
+    ///
+    /// Currently, this will record the original cases received, and store them
+    /// in a private extension on the `Response`. It will also look for and use
+    /// such an extension in any provided `Request`.
+    ///
+    /// Since the relevant extension is still private, there is no way to
+    /// interact with the original cases. The only effect this can have now is
+    /// to forward the cases in a proxy-like fashion.
+    ///
+    /// Note that this setting does not affect HTTP/2.
+    ///
+    /// Default is false.
+    pub fn http1_preserve_header_case(&mut self, enabled: bool) -> &mut Builder {
+        self.h1_preserve_header_case = enabled;
+        self
+    }
+
+    /// Set whether to support preserving original header order.
+    ///
+    /// Currently, this will record the order in which headers are received, and store this
+    /// ordering in a private extension on the `Response`. It will also look for and use
+    /// such an extension in any provided `Request`.
+    ///
+    /// Note that this setting does not affect HTTP/2.
+    ///
+    /// Default is false.
+    #[cfg(feature = "ffi")]
+    pub fn http1_preserve_header_order(&mut self, enabled: bool) -> &mut Builder {
+        self.h1_preserve_header_order = enabled;
+        self
+    }
+
+    /// Sets the exact size of the read buffer to *always* use.
+    ///
+    /// Note that setting this option unsets the `http1_max_buf_size` option.
+    ///
+    /// Default is an adaptive read buffer.
+    pub fn http1_read_buf_exact_size(&mut self, sz: Option<usize>) -> &mut Builder {
         self.h1_read_buf_exact_size = sz;
         self.h1_max_buf_size = None;
         self
     }
 
+    /// Set the maximum buffer size for the connection.
+    ///
+    /// Default is ~400kb.
+    ///
+    /// Note that setting this option unsets the `http1_read_exact_buf_size` option.
+    ///
+    /// # Panics
+    ///
+    /// The minimum value allowed is 8192. This method panics if the passed `max` is less than the minimum.
     #[cfg(feature = "http1")]
-    pub(super) fn h1_max_buf_size(&mut self, max: usize) -> &mut Self {
+    #[cfg_attr(docsrs, doc(cfg(feature = "http1")))]
+    pub fn http1_max_buf_size(&mut self, max: usize) -> &mut Self {
         assert!(
             max >= proto::h1::MINIMUM_MAX_BUFFER_SIZE,
             "the max_buf_size cannot be smaller than the minimum that h1 specifies."
@@ -533,6 +753,12 @@ impl Builder {
 
         self.h1_max_buf_size = Some(max);
         self.h1_read_buf_exact_size = None;
+        self
+    }
+
+    #[cfg(feature = "ffi")]
+    pub(crate) fn http1_headers_raw(&mut self, enabled: bool) -> &mut Self {
+        self.h1_headers_raw = enabled;
         self
     }
 
@@ -675,7 +901,41 @@ impl Builder {
         self
     }
 
+    /// Sets the maximum number of HTTP2 concurrent locally reset streams.
+    ///
+    /// See the documentation of [`h2::client::Builder::max_concurrent_reset_streams`] for more
+    /// details.
+    ///
+    /// The default value is determined by the `h2` crate.
+    ///
+    /// [`h2::client::Builder::max_concurrent_reset_streams`]: https://docs.rs/h2/client/struct.Builder.html#method.max_concurrent_reset_streams
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_max_concurrent_reset_streams(&mut self, max: usize) -> &mut Self {
+        self.h2_builder.max_concurrent_reset_streams = Some(max);
+        self
+    }
+
+    /// Set the maximum write buffer size for each HTTP/2 stream.
+    ///
+    /// Default is currently 1MB, but may change.
+    ///
+    /// # Panics
+    ///
+    /// The value must be no larger than `u32::MAX`.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_max_send_buf_size(&mut self, max: usize) -> &mut Self {
+        assert!(max <= std::u32::MAX as usize);
+        self.h2_builder.max_send_buffer_size = max;
+        self
+    }
+
     /// Constructs a connection with the configured options and IO.
+    /// See [`client::conn`](crate::client::conn) for more.
+    ///
+    /// Note, if [`Connection`] is not `await`-ed, [`SendRequest`] will
+    /// do nothing.
     pub fn handshake<T, B>(
         &self,
         io: T,
@@ -696,9 +956,31 @@ impl Builder {
                 #[cfg(feature = "http1")]
                 Proto::Http1 => {
                     let mut conn = proto::Conn::new(io);
+                    conn.set_h1_parser_config(opts.h1_parser_config);
+                    if let Some(writev) = opts.h1_writev {
+                        if writev {
+                            conn.set_write_strategy_queue();
+                        } else {
+                            conn.set_write_strategy_flatten();
+                        }
+                    }
                     if opts.h1_title_case_headers {
                         conn.set_title_case_headers();
                     }
+                    if opts.h1_preserve_header_case {
+                        conn.set_preserve_header_case();
+                    }
+                    #[cfg(feature = "ffi")]
+                    if opts.h1_preserve_header_order {
+                        conn.set_preserve_header_order();
+                    }
+                    if opts.h09_responses {
+                        conn.set_h09_responses();
+                    }
+
+                    #[cfg(feature = "ffi")]
+                    conn.set_raw_headers(opts.h1_headers_raw);
+
                     if let Some(sz) = opts.h1_read_buf_exact_size {
                         conn.set_read_buf_exact_size(sz);
                     }
@@ -707,14 +989,14 @@ impl Builder {
                     }
                     let cd = proto::h1::dispatch::Client::new(rx);
                     let dispatch = proto::h1::Dispatcher::new(cd, conn);
-                    ProtoClient::H1(dispatch)
+                    ProtoClient::H1 { h1: dispatch }
                 }
                 #[cfg(feature = "http2")]
                 Proto::Http2 => {
                     let h2 =
                         proto::h2::client::handshake(io, rx, &opts.h2_builder, opts.exec.clone())
                             .await?;
-                    ProtoClient::H2(h2, PhantomData)
+                    ProtoClient::H2 { h2 }
                 }
             };
 
@@ -768,9 +1050,14 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         match self.project() {
             #[cfg(feature = "http1")]
-            ProtoClientProj::H1(c) => c.poll(cx),
+            ProtoClientProj::H1 { h1 } => h1.poll(cx),
             #[cfg(feature = "http2")]
-            ProtoClientProj::H2(c, _) => c.poll(cx),
+            ProtoClientProj::H2 { h2, .. } => h2.poll(cx),
+
+            #[cfg(not(feature = "http1"))]
+            ProtoClientProj::H1 { h1 } => match h1.0 {},
+            #[cfg(not(feature = "http2"))]
+            ProtoClientProj::H2 { h2, .. } => match h2.0 {},
         }
     }
 }

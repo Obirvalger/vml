@@ -8,7 +8,7 @@ You can use this to embed your css, js and images into a single executable which
 
 ```toml
 [dependencies]
-rust-embed="6.3.0"
+rust-embed="6.4.0"
 ```
 
 ## Documentation
@@ -151,9 +151,9 @@ Note: To run the `actix-web` example:
 
 `cargo run --example actix --features actix`
 
-Note: To run the `rocket` example, add the `nightly` feature flag and run on a nightly build:
+Note: To run the `rocket` example:
 
-`cargo +nightly run --example rocket --features nightly`
+`cargo run --example rocket --features rocket`
 
 Note: To run the `warp` example:
 
@@ -166,6 +166,10 @@ Note: To run the `axum` example:
 Note: To run the [poem](https://github.com/poem-web/poem) example:
 
 `cargo run --example poem --features poem-ex`
+
+Note: To run the [salvo](https://github.com/salvo-rs/salvo) example:
+
+`cargo run --example salvo --features salvo-ex`
 
 ## Testing
 

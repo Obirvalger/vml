@@ -29,6 +29,9 @@ type TrailersSender = oneshot::Sender<HeaderMap>;
 ///
 /// A good default [`HttpBody`](crate::body::HttpBody) to use in many
 /// applications.
+///
+/// Note: To read the full body, use [`body::to_bytes`](crate::body::to_bytes)
+/// or [`body::aggregate`](crate::body::aggregate).
 #[must_use = "streams do nothing unless polled"]
 pub struct Body {
     kind: Kind,
@@ -201,9 +204,14 @@ impl Body {
     #[cfg(all(feature = "http2", any(feature = "client", feature = "server")))]
     pub(crate) fn h2(
         recv: h2::RecvStream,
-        content_length: DecodedLength,
+        mut content_length: DecodedLength,
         ping: ping::Recorder,
     ) -> Self {
+        // If the stream is already EOS, then the "unknown length" is clearly
+        // actually ZERO.
+        if !content_length.is_exact() && recv.is_end_stream() {
+            content_length = DecodedLength::ZERO;
+        }
         let body = Body::new(Kind::H2 {
             ping,
             content_length,

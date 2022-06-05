@@ -5,7 +5,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::cell::{Cell, Cells};
 
 /// Each row contains [Cells](crate::Cell) and can be added to a [Table](crate::Table).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Row {
     /// Index of the row.
     /// This will be set as soon as the row is added to the table.
@@ -14,22 +14,18 @@ pub struct Row {
     pub(crate) max_height: Option<usize>,
 }
 
-impl Default for Row {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Row {
-    pub fn new() -> Row {
-        Row {
-            index: None,
-            cells: Vec::new(),
-            max_height: None,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Add a cell to the row.
+    ///
+    /// **Attention:**
+    /// If a row has already been added to a table and you add more cells to it
+    /// than there're columns currently know to the [Table](crate::Table) struct,
+    /// these columns won't be known to the table unless you call
+    /// [Table::discover_columns].
     ///
     /// ```rust
     /// use comfy_table::{Row, Cell};
@@ -102,8 +98,8 @@ impl Row {
 /// let row = Row::from(vec![1, 2, 3, 4]);
 /// ```
 impl<T: Into<Cells>> From<T> for Row {
-    fn from(cells: T) -> Row {
-        Row {
+    fn from(cells: T) -> Self {
+        Self {
             index: None,
             cells: cells.into().0,
             max_height: None,
@@ -142,7 +138,7 @@ mod tests {
         let mut cell_content_iter = cells.iter();
         for cell in row.cell_iter() {
             assert_eq!(
-                cell.get_content(),
+                cell.content(),
                 cell_content_iter.next().unwrap().to_string()
             );
         }

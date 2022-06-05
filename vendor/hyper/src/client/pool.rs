@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::error::Error as StdError;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, Weak};
@@ -9,9 +10,10 @@ use std::time::{Duration, Instant};
 use futures_channel::oneshot;
 #[cfg(feature = "runtime")]
 use tokio::time::{Duration, Instant, Interval};
+use tracing::{debug, trace};
 
 use super::client::Ver;
-use crate::common::{task, exec::Exec, Future, Pin, Poll, Unpin};
+use crate::common::{exec::Exec, task, Future, Pin, Poll, Unpin};
 
 // FIXME: allow() required due to `impl Trait` leaking types to this lint
 #[allow(missing_debug_implementations)]
@@ -456,7 +458,9 @@ impl<T: Poolable> PoolInner<T> {
                     trace!("idle interval evicting closed for {:?}", key);
                     return false;
                 }
-                if now - entry.idle_at > dur {
+
+                // Avoid `Instant::sub` to avoid issues like rust-lang/rust#86470.
+                if now.saturating_duration_since(entry.idle_at) > dur {
                     trace!("idle interval evicting expired for {:?}", key);
                     return false;
                 }
@@ -560,28 +564,40 @@ pub(super) struct Checkout<T> {
     waiter: Option<oneshot::Receiver<T>>,
 }
 
+#[derive(Debug)]
+pub(super) struct CheckoutIsClosedError;
+
+impl StdError for CheckoutIsClosedError {}
+
+impl fmt::Display for CheckoutIsClosedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("checked out connection was closed")
+    }
+}
+
 impl<T: Poolable> Checkout<T> {
     fn poll_waiter(
         &mut self,
         cx: &mut task::Context<'_>,
     ) -> Poll<Option<crate::Result<Pooled<T>>>> {
-        static CANCELED: &str = "pool checkout failed";
         if let Some(mut rx) = self.waiter.take() {
             match Pin::new(&mut rx).poll(cx) {
                 Poll::Ready(Ok(value)) => {
                     if value.is_open() {
                         Poll::Ready(Some(Ok(self.pool.reuse(&self.key, value))))
                     } else {
-                        Poll::Ready(Some(Err(crate::Error::new_canceled().with(CANCELED))))
+                        Poll::Ready(Some(Err(
+                            crate::Error::new_canceled().with(CheckoutIsClosedError)
+                        )))
                     }
                 }
                 Poll::Pending => {
                     self.waiter = Some(rx);
                     Poll::Pending
                 }
-                Poll::Ready(Err(_canceled)) => {
-                    Poll::Ready(Some(Err(crate::Error::new_canceled().with(CANCELED))))
-                }
+                Poll::Ready(Err(_canceled)) => Poll::Ready(Some(Err(
+                    crate::Error::new_canceled().with("request has been canceled")
+                ))),
             }
         } else {
             Poll::Ready(None)
@@ -707,23 +723,25 @@ impl Expiration {
 
     fn expires(&self, instant: Instant) -> bool {
         match self.0 {
-            Some(timeout) => instant.elapsed() > timeout,
+            // Avoid `Instant::elapsed` to avoid issues like rust-lang/rust#86470.
+            Some(timeout) => Instant::now().saturating_duration_since(instant) > timeout,
             None => false,
         }
     }
 }
 
 #[cfg(feature = "runtime")]
-#[pin_project::pin_project]
-struct IdleTask<T> {
-    #[pin]
-    interval: Interval,
-    pool: WeakOpt<Mutex<PoolInner<T>>>,
-    // This allows the IdleTask to be notified as soon as the entire
-    // Pool is fully dropped, and shutdown. This channel is never sent on,
-    // but Err(Canceled) will be received when the Pool is dropped.
-    #[pin]
-    pool_drop_notifier: oneshot::Receiver<crate::common::Never>,
+pin_project_lite::pin_project! {
+    struct IdleTask<T> {
+        #[pin]
+        interval: Interval,
+        pool: WeakOpt<Mutex<PoolInner<T>>>,
+        // This allows the IdleTask to be notified as soon as the entire
+        // Pool is fully dropped, and shutdown. This channel is never sent on,
+        // but Err(Canceled) will be received when the Pool is dropped.
+        #[pin]
+        pool_drop_notifier: oneshot::Receiver<crate::common::Never>,
+    }
 }
 
 #[cfg(feature = "runtime")]
@@ -776,7 +794,7 @@ mod tests {
     use std::time::Duration;
 
     use super::{Connecting, Key, Pool, Poolable, Reservation, WeakOpt};
-    use crate::common::{task, exec::Exec, Future, Pin};
+    use crate::common::{exec::Exec, task, Future, Pin};
 
     /// Test unique reservations.
     #[derive(Debug, PartialEq, Eq)]
@@ -990,6 +1008,7 @@ mod tests {
 
     #[derive(Debug)]
     struct CanClose {
+        #[allow(unused)]
         val: i32,
         closed: bool,
     }
