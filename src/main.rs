@@ -154,27 +154,30 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
         config.commands.start.running
     };
 
-    match running {
-        StartRunningAction::Fail => {
-            vmc.with_pid(WithPid::Without);
-            vmc.error_on_empty();
-        }
-        StartRunningAction::Ignore => {
-            vmc.with_pid(WithPid::Without);
-        }
-        StartRunningAction::Restart => {
-            vmc.with_pid(WithPid::Option);
-        }
-    };
+    vmc.with_pid(WithPid::Option);
 
     let mut vms = vmc.create()?;
+    let mut freshly_started = true;
 
     for vm in &mut vms {
         if vm.has_pid() {
-            vm.stop(false)?;
+            match running {
+                StartRunningAction::Fail => {
+                    bail!(Error::StartRunningVM(vm.name.to_string()))
+                }
+                StartRunningAction::Ignore => {
+                    freshly_started = false;
+                }
+                StartRunningAction::Restart => {
+                    vm.stop(false)?;
+                    vm.start(cloud_init, &drives)?;
+                    openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
+                }
+            };
+        } else {
+            vm.start(cloud_init, &drives)?;
+            openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
         }
-        vm.start(cloud_init, &drives)?;
-        openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
     }
 
     if wait_ssh {
@@ -188,16 +191,20 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
         let cmd: Option<Vec<&str>> = None;
         let flags: Vec<&str> = vec![];
         for vm in &vms {
-            for _ in 0..repeat {
-                if vm.ssh(&user, &options, &flags, &Some(vec!["true"]))? == Some(0) {
-                    if ssh {
-                        vm.ssh(&user, &options, &flags, &cmd)?;
-                    };
-                    break;
-                } else {
-                    thread::sleep(Duration::from_secs(sleep));
+            if freshly_started {
+                for _ in 0..repeat {
+                    if vm.ssh(&user, &options, &flags, &Some(vec!["true"]))? == Some(0) {
+                        if ssh {
+                            vm.ssh(&user, &options, &flags, &cmd)?;
+                        };
+                        break;
+                    } else {
+                        thread::sleep(Duration::from_secs(sleep));
+                    }
                 }
-            }
+            } else if ssh {
+                vm.ssh(&user, &options, &flags, &cmd)?;
+            };
         }
     }
 

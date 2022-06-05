@@ -24,6 +24,8 @@ pub enum Error {
     RemoveRuuningVM(String),
     #[error("try to store image to existing file `{0}`")]
     RewriteExistsPath(String),
+    #[error("start runnig vm `{0}`")]
+    StartRunningVM(String),
     #[error("can't ssh to vm `{0}`")]
     SshFailed(String),
     #[error("can't find private ssh key for vm `{0}`")]
