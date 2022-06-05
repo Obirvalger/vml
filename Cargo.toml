@@ -31,6 +31,3 @@ walkdir = "2.3.2"
 default = ["rustls-tls"]
 rustls-tls = ["reqwest/rustls-tls"]
 native-tls = ["reqwest/native-tls"]
-
-[patch.crates-io]
-faccess = { git = "https://github.com/Obirvalger/faccess" }

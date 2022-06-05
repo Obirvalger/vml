@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-#![warn(missing_doc_code_examples)]
+#![warn(rustdoc::missing_doc_code_examples)]
 
 //! `faccess` provides an extension trait for `std::path::Path` which adds an
 //! [`access`] method for checking the accessibility of a path for the given access
@@ -80,7 +80,7 @@ mod imp {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
 
-    use libc::{c_int, c_char, faccessat, AT_FDCWD, F_OK, R_OK, W_OK, X_OK};
+    use libc::{c_char, c_int, faccessat, AT_FDCWD, F_OK, R_OK, W_OK, X_OK};
 
     // Not provided on Android
     #[cfg(not(target_os = "android"))]
@@ -369,7 +369,7 @@ mod imp {
                 Err(io::Error::new(io::ErrorKind::NotFound, "Not Found"))
             }
         } else {
-            eaccess(&p, imode)
+            eaccess(p, imode)
         }
     }
 }
@@ -504,7 +504,7 @@ pub trait PathExt {
 
 impl PathExt for Path {
     fn access(&self, mode: AccessMode) -> io::Result<()> {
-        imp::access(&self, mode)
+        imp::access(self, mode)
     }
 }
 

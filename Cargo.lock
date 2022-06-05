@@ -360,7 +360,8 @@ dependencies = [
 [[package]]
 name = "faccess"
 version = "0.2.4"
-source = "git+https://github.com/Obirvalger/faccess#0c94ef6d4b08a650ecaa31d4dcbd1b769f8cb56b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59ae66425802d6a903e268ae1a08b8c38ba143520f227a205edf4e9c7e3e26d5"
 dependencies = [
  "bitflags",
  "libc",
