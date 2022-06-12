@@ -7,6 +7,6 @@
 # apropriate item. Do not forget to update `change` section to keep
 # `get-url-prog` from updating.
 
-url="https://mirror.pkgbuild.com/images/latest/"
+url="https://geo.mirror.pkgbuild.com/images/latest/"
 name="$(curl "$url" | sed -n -E 's/.*href="(.*cloudimg.*\.qcow2)".*/\1/p' | sort -rV | head -1)"
 echo "$url$name"
