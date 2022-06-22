@@ -1,9 +1,9 @@
 // Internal
-use crate::build::{AppSettings, Arg, ArgPredicate, Command, PossibleValue};
+use crate::builder::{AppSettings, Arg, ArgPredicate, Command, PossibleValue};
 use crate::error::{Error, Result as ClapResult};
 use crate::output::fmt::Stream;
 use crate::output::Usage;
-use crate::parse::{ArgMatcher, MatchedArg, ParseState};
+use crate::parser::{ArgMatcher, MatchedArg, ParseState};
 use crate::util::ChildGraph;
 use crate::util::Id;
 use crate::{INTERNAL_ERROR_MSG, INVALID_UTF8};
@@ -40,22 +40,19 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
             if should_err {
                 return Err(Error::empty_value(
                     self.cmd,
-                    &o.possible_vals
+                    &get_possible_values(o)
                         .iter()
                         .filter(|pv| !pv.is_hide_set())
                         .map(PossibleValue::get_name)
                         .collect::<Vec<_>>(),
-                    o,
-                    Usage::new(self.cmd)
-                        .required(&self.required)
-                        .create_usage_with_title(&[]),
+                    o.to_string(),
                 ));
             }
         }
 
         if !has_subcmd && self.cmd.is_arg_required_else_help_set() {
             let num_user_values = matcher
-                .arg_names()
+                .arg_ids()
                 .filter(|arg_id| matcher.check_explicit(arg_id, ArgPredicate::IsPresent))
                 .count();
             if num_user_values == 0 {
@@ -91,26 +88,9 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
         Ok(())
     }
 
-    fn validate_arg_values(
-        &self,
-        arg: &Arg,
-        ma: &MatchedArg,
-        matcher: &ArgMatcher,
-    ) -> ClapResult<()> {
+    fn validate_arg_values(&self, arg: &Arg, ma: &MatchedArg) -> ClapResult<()> {
         debug!("Validator::validate_arg_values: arg={:?}", arg.name);
-        for val in ma.vals_flatten() {
-            if !arg.is_allow_invalid_utf8_set() && val.to_str().is_none() {
-                debug!(
-                    "Validator::validate_arg_values: invalid UTF-8 found in val {:?}",
-                    val
-                );
-                return Err(Error::invalid_utf8(
-                    self.cmd,
-                    Usage::new(self.cmd)
-                        .required(&self.required)
-                        .create_usage_with_title(&[]),
-                ));
-            }
+        for val in ma.raw_vals_flatten() {
             if !arg.possible_vals.is_empty() {
                 debug!(
                     "Validator::validate_arg_values: possible_vals={:?}",
@@ -122,12 +102,6 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
                     .iter()
                     .any(|pv| pv.matches(&val_str, arg.is_ignore_case_set()));
                 if !ok {
-                    let used: Vec<Id> = matcher
-                        .arg_names()
-                        .filter(|arg_id| matcher.check_explicit(arg_id, ArgPredicate::IsPresent))
-                        .filter(|&n| self.cmd.find(n).map_or(true, |a| !a.is_hide_set()))
-                        .cloned()
-                        .collect();
                     return Err(Error::invalid_value(
                         self.cmd,
                         val_str.into_owned(),
@@ -136,27 +110,24 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
                             .filter(|pv| !pv.is_hide_set())
                             .map(PossibleValue::get_name)
                             .collect::<Vec<_>>(),
-                        arg,
-                        Usage::new(self.cmd)
-                            .required(&self.required)
-                            .create_usage_with_title(&used),
+                        arg.to_string(),
                     ));
                 }
             }
-            if arg.is_forbid_empty_values_set() && val.is_empty() && matcher.contains(&arg.id) {
-                debug!("Validator::validate_arg_values: illegal empty val found");
-                return Err(Error::empty_value(
-                    self.cmd,
-                    &arg.possible_vals
-                        .iter()
-                        .filter(|pv| !pv.is_hide_set())
-                        .map(PossibleValue::get_name)
-                        .collect::<Vec<_>>(),
-                    arg,
-                    Usage::new(self.cmd)
-                        .required(&self.required)
-                        .create_usage_with_title(&[]),
-                ));
+            {
+                #![allow(deprecated)]
+                if arg.is_forbid_empty_values_set() && val.is_empty() {
+                    debug!("Validator::validate_arg_values: illegal empty val found");
+                    return Err(Error::empty_value(
+                        self.cmd,
+                        &get_possible_values(arg)
+                            .iter()
+                            .filter(|pv| !pv.is_hide_set())
+                            .map(PossibleValue::get_name)
+                            .collect::<Vec<_>>(),
+                        arg.to_string(),
+                    ));
+                }
             }
 
             if let Some(ref vtor) = arg.validator {
@@ -203,7 +174,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
         self.validate_exclusive(matcher)?;
 
         for arg_id in matcher
-            .arg_names()
+            .arg_ids()
             .filter(|arg_id| matcher.check_explicit(arg_id, ArgPredicate::IsPresent))
             .filter(|arg_id| self.cmd.find(arg_id).is_some())
         {
@@ -217,15 +188,22 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
 
     fn validate_exclusive(&self, matcher: &ArgMatcher) -> ClapResult<()> {
         debug!("Validator::validate_exclusive");
-        // Not bothering to filter for `check_explicit` since defaults shouldn't play into this
-        let args_count = matcher.arg_names().count();
+        let args_count = matcher
+            .arg_ids()
+            .filter(|arg_id| {
+                matcher.check_explicit(arg_id, crate::builder::ArgPredicate::IsPresent)
+            })
+            .count();
         if args_count <= 1 {
             // Nothing present to conflict with
             return Ok(());
         }
 
         matcher
-            .arg_names()
+            .arg_ids()
+            .filter(|arg_id| {
+                matcher.check_explicit(arg_id, crate::builder::ArgPredicate::IsPresent)
+            })
             .filter_map(|name| {
                 debug!("Validator::validate_exclusive:iter:{:?}", name);
                 self.cmd
@@ -237,7 +215,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
             .try_for_each(|arg| {
                 Err(Error::argument_conflict(
                     self.cmd,
-                    arg,
+                    arg.to_string(),
                     Vec::new(),
                     Usage::new(self.cmd)
                         .required(&self.required)
@@ -278,13 +256,16 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
         let former_arg = self.cmd.find(name).expect(INTERNAL_ERROR_MSG);
         let usg = self.build_conflict_err_usage(matcher, conflict_ids);
         Err(Error::argument_conflict(
-            self.cmd, former_arg, conflicts, usg,
+            self.cmd,
+            former_arg.to_string(),
+            conflicts,
+            usg,
         ))
     }
 
     fn build_conflict_err_usage(&self, matcher: &ArgMatcher, conflicting_keys: &[Id]) -> String {
         let used_filtered: Vec<Id> = matcher
-            .arg_names()
+            .arg_ids()
             .filter(|arg_id| matcher.check_explicit(arg_id, ArgPredicate::IsPresent))
             .filter(|n| {
                 // Filter out the args we don't want to specify.
@@ -309,7 +290,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
     fn gather_requires(&mut self, matcher: &ArgMatcher) {
         debug!("Validator::gather_requires");
         for name in matcher
-            .arg_names()
+            .arg_ids()
             .filter(|arg_id| matcher.check_explicit(arg_id, ArgPredicate::IsPresent))
         {
             debug!("Validator::gather_requires:iter:{:?}", name);
@@ -341,7 +322,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
             );
             if let Some(arg) = self.cmd.find(name) {
                 self.validate_arg_num_vals(arg, ma)?;
-                self.validate_arg_values(arg, ma, matcher)?;
+                self.validate_arg_values(arg, ma)?;
                 self.validate_arg_num_occurs(arg, ma)?;
             }
             Ok(())
@@ -349,6 +330,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
     }
 
     fn validate_arg_num_occurs(&self, a: &Arg, ma: &MatchedArg) -> ClapResult<()> {
+        #![allow(deprecated)]
         debug!(
             "Validator::validate_arg_num_occurs: {:?}={}",
             a.name,
@@ -360,7 +342,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
             // Not the first time, and we don't allow multiples
             return Err(Error::unexpected_multiple_usage(
                 self.cmd,
-                a,
+                a.to_string(),
                 Usage::new(self.cmd)
                     .required(&self.required)
                     .create_usage_with_title(&[]),
@@ -375,7 +357,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
             if occurs > max_occurs {
                 return Err(Error::too_many_occurrences(
                     self.cmd,
-                    a,
+                    a.to_string(),
                     max_occurs,
                     occurs,
                     Usage::new(self.cmd)
@@ -393,6 +375,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
         if let Some(num) = a.num_vals {
             let total_num = ma.num_vals();
             debug!("Validator::validate_arg_num_vals: num_vals set...{}", num);
+            #[allow(deprecated)]
             let should_err = if a.is_multiple_occurrences_set() {
                 total_num % num != 0
             } else {
@@ -402,8 +385,9 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
                 debug!("Validator::validate_arg_num_vals: Sending error WrongNumberOfValues");
                 return Err(Error::wrong_number_of_values(
                     self.cmd,
-                    a,
+                    a.to_string(),
                     num,
+                    #[allow(deprecated)]
                     if a.is_multiple_occurrences_set() {
                         total_num % num
                     } else {
@@ -421,7 +405,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
                 debug!("Validator::validate_arg_num_vals: Sending error TooManyValues");
                 return Err(Error::too_many_values(
                     self.cmd,
-                    ma.vals_flatten()
+                    ma.raw_vals_flatten()
                         .last()
                         .expect(INTERNAL_ERROR_MSG)
                         .to_str()
@@ -440,7 +424,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
                 debug!("Validator::validate_arg_num_vals: Sending error TooFewValues");
                 return Err(Error::too_few_values(
                     self.cmd,
-                    a,
+                    a.to_string(),
                     num,
                     ma.num_vals(),
                     Usage::new(self.cmd)
@@ -457,15 +441,12 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
         if a.is_takes_value_set() && !min_vals_zero && ma.all_val_groups_empty() {
             return Err(Error::empty_value(
                 self.cmd,
-                &a.possible_vals
+                &get_possible_values(a)
                     .iter()
                     .filter(|pv| !pv.is_hide_set())
                     .map(PossibleValue::get_name)
                     .collect::<Vec<_>>(),
-                a,
-                Usage::new(self.cmd)
-                    .required(&self.required)
-                    .create_usage_with_title(&[]),
+                a.to_string(),
             ));
         }
         Ok(())
@@ -479,18 +460,25 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
         debug!("Validator::validate_required: required={:?}", self.required);
         self.gather_requires(matcher);
 
-        let is_exclusive_present = matcher.arg_names().any(|name| {
-            self.cmd
-                .find(name)
-                .map(|arg| arg.is_exclusive_set())
-                .unwrap_or_default()
-        });
+        let is_exclusive_present = matcher
+            .arg_ids()
+            .filter(|arg_id| matcher.check_explicit(arg_id, ArgPredicate::IsPresent))
+            .any(|id| {
+                self.cmd
+                    .find(id)
+                    .map(|arg| arg.is_exclusive_set())
+                    .unwrap_or_default()
+            });
         debug!(
             "Validator::validate_required: is_exclusive_present={}",
             is_exclusive_present
         );
 
-        for arg_or_group in self.required.iter().filter(|r| !matcher.contains(r)) {
+        for arg_or_group in self
+            .required
+            .iter()
+            .filter(|r| !matcher.check_explicit(r, ArgPredicate::IsPresent))
+        {
             debug!("Validator::validate_required:iter:aog={:?}", arg_or_group);
             if let Some(arg) = self.cmd.find(arg_or_group) {
                 debug!("Validator::validate_required:iter: This is an arg");
@@ -503,7 +491,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
                     .cmd
                     .unroll_args_in_group(&group.id)
                     .iter()
-                    .any(|a| matcher.contains(a))
+                    .any(|a| matcher.check_explicit(a, ArgPredicate::IsPresent))
                 {
                     return self.missing_required_error(matcher, vec![]);
                 }
@@ -514,7 +502,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
         for a in self.cmd.get_arguments() {
             for (other, val) in &a.r_ifs {
                 if matcher.check_explicit(other, ArgPredicate::Equals(std::ffi::OsStr::new(*val)))
-                    && !matcher.contains(&a.id)
+                    && !matcher.check_explicit(&a.id, ArgPredicate::IsPresent)
                 {
                     return self.missing_required_error(matcher, vec![a.id.clone()]);
                 }
@@ -523,7 +511,10 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
             let match_all = a.r_ifs_all.iter().all(|(other, val)| {
                 matcher.check_explicit(other, ArgPredicate::Equals(std::ffi::OsStr::new(*val)))
             });
-            if match_all && !a.r_ifs_all.is_empty() && !matcher.contains(&a.id) {
+            if match_all
+                && !a.r_ifs_all.is_empty()
+                && !matcher.check_explicit(&a.id, ArgPredicate::IsPresent)
+            {
                 return self.missing_required_error(matcher, vec![a.id.clone()]);
             }
         }
@@ -551,7 +542,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
             .get_arguments()
             .filter(|&a| {
                 (!a.r_unless.is_empty() || !a.r_unless_all.is_empty())
-                    && !matcher.contains(&a.id)
+                    && !matcher.check_explicit(&a.id, ArgPredicate::IsPresent)
                     && self.fails_arg_required_unless(a, matcher)
             })
             .map(|a| a.id.clone())
@@ -593,7 +584,7 @@ impl<'help, 'cmd> Validator<'help, 'cmd> {
         );
 
         let used: Vec<Id> = matcher
-            .arg_names()
+            .arg_ids()
             .filter(|arg_id| matcher.check_explicit(arg_id, ArgPredicate::IsPresent))
             .filter(|n| {
                 // Filter out the args we don't want to specify.
@@ -625,7 +616,7 @@ impl Conflicts {
         debug!("Conflicts::gather_conflicts: arg={:?}", arg_id);
         let mut conflicts = Vec::new();
         for other_arg_id in matcher
-            .arg_names()
+            .arg_ids()
             .filter(|arg_id| matcher.check_explicit(arg_id, ArgPredicate::IsPresent))
         {
             if arg_id == other_arg_id {
@@ -681,5 +672,21 @@ impl Conflicts {
             );
             conf
         })
+    }
+}
+
+fn get_possible_values<'help>(a: &Arg<'help>) -> Vec<PossibleValue<'help>> {
+    #![allow(deprecated)]
+    if !a.is_takes_value_set() {
+        vec![]
+    } else if let Some(pvs) = a.get_possible_values() {
+        // Check old first in case the user explicitly set possible values and the derive inferred
+        // a `ValueParser` with some.
+        pvs.to_vec()
+    } else {
+        a.get_value_parser()
+            .possible_values()
+            .map(|pvs| pvs.collect())
+            .unwrap_or_default()
     }
 }

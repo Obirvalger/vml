@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "tera"
-version = "1.15.0"
+version = "1.16.0"
 authors = ["Vincent Prouillet <hello@prouilletvincent.com>"]
 include = ["/src/**/*", "/LICENSE", "/README.md", "/CHANGELOG.md"]
 description = "Template engine based on Jinja2/Django templates"
@@ -81,8 +81,9 @@ version = "1.0"
 version = "3"
 
 [features]
-builtins = ["slug", "percent-encoding", "humansize", "chrono", "chrono-tz", "rand"]
+builtins = ["urlencode", "slug", "humansize", "chrono", "chrono-tz", "rand"]
 default = ["builtins"]
 preserve_order = ["serde_json/preserve_order"]
+urlencode = ["percent-encoding"]
 [badges.maintenance]
 status = "actively-developed"

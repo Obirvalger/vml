@@ -10,9 +10,10 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
+rust-version = "1.56.1"
 name = "clap_complete"
-version = "3.1.4"
+version = "3.2.2"
 include = [
     "build.rs",
     "src/**/*",
@@ -23,8 +24,6 @@ include = [
     "examples/**/*",
 ]
 description = "Generate shell completion scripts for your clap::Command"
-documentation = "https://docs.rs/clap_complete"
-readme = "README.md"
 keywords = [
     "clap",
     "cli",
@@ -34,6 +33,10 @@ keywords = [
 categories = ["command-line-interface"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/clap-rs/clap/tree/master/clap_complete"
+resolver = "2"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [[package.metadata.release.pre-release-replacements]]
 file = "CHANGELOG.md"
@@ -77,9 +80,6 @@ replace = "github.com/clap-rs/clap/blob/{{tag_name}}/"
 exactly = 4
 prerelease = true
 
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
-
 [lib]
 bench = false
 
@@ -88,12 +88,12 @@ name = "dynamic"
 required-features = ["unstable-dynamic"]
 
 [dependencies.clap]
-version = "3.1.10"
+version = "3.2.1"
 features = ["std"]
 default-features = false
 
 [dependencies.clap_lex]
-version = "0.2.0"
+version = "0.2.2"
 optional = true
 
 [dependencies.is_executable]
@@ -119,7 +119,7 @@ version = "0.2.2"
 optional = true
 
 [dev-dependencies.clap]
-version = "3.1.10"
+version = "3.2.1"
 features = [
     "std",
     "derive",

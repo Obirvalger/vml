@@ -174,7 +174,7 @@ fn option_details_for_path(cmd: &Command, path: &str) -> String {
 fn vals_for(o: &Arg) -> String {
     debug!("vals_for: o={}", o.get_id());
 
-    if let Some(vals) = o.get_possible_values() {
+    if let Some(vals) = crate::generator::utils::possible_values(o) {
         format!(
             "$(compgen -W \"{}\" -- \"${{cur}}\")",
             vals.iter()
@@ -201,7 +201,7 @@ fn all_options_for_path(cmd: &Command, path: &str) -> String {
         write!(&mut opts, "--{} ", long).unwrap();
     }
     for pos in p.get_positionals() {
-        if let Some(vals) = pos.get_possible_values() {
+        if let Some(vals) = utils::possible_values(pos) {
             for value in vals {
                 write!(&mut opts, "{} ", value.get_name()).unwrap();
             }

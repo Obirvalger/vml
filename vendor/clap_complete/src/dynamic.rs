@@ -22,7 +22,7 @@ pub mod bash {
     #[derive(Clone, Debug)]
     pub struct CompleteArgs {
         /// Path to write completion-registration to
-        #[clap(long, required = true, parse(from_os_str))]
+        #[clap(long, required = true, value_parser)]
         register: Option<std::path::PathBuf>,
 
         #[clap(
@@ -30,34 +30,36 @@ pub mod bash {
             required = true,
             value_name = "COMP_CWORD",
             hide_short_help = true,
-            group = "complete"
+            group = "complete",
+            value_parser
         )]
         index: Option<usize>,
 
-        #[clap(long, hide_short_help = true, group = "complete")]
+        #[clap(long, hide_short_help = true, group = "complete", value_parser)]
         ifs: Option<String>,
 
         #[clap(
             long = "type",
             required = true,
-            arg_enum,
             hide_short_help = true,
-            group = "complete"
+            group = "complete",
+            value_parser
         )]
         comp_type: Option<CompType>,
 
-        #[clap(long, hide_short_help = true, group = "complete")]
+        #[clap(long, hide_short_help = true, group = "complete", action)]
         space: bool,
 
         #[clap(
             long,
             conflicts_with = "space",
             hide_short_help = true,
-            group = "complete"
+            group = "complete",
+            action
         )]
         no_space: bool,
 
-        #[clap(raw = true, hide_short_help = true, group = "complete")]
+        #[clap(raw = true, hide_short_help = true, group = "complete", value_parser)]
         comp_words: Vec<OsString>,
     }
 
@@ -438,7 +440,7 @@ complete OPTIONS -F _clap_complete_NAME EXECUTABLES
         let mut values = Vec::new();
         debug!("complete_arg_value: arg={:?}, value={:?}", arg, value);
 
-        if let Some(possible_values) = arg.get_possible_values() {
+        if let Some(possible_values) = crate::generator::utils::possible_values(arg) {
             if let Ok(value) = value {
                 values.extend(possible_values.into_iter().filter_map(|p| {
                     let name = p.get_name();

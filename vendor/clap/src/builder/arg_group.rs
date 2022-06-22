@@ -68,7 +68,7 @@ use yaml_rust::Yaml;
 /// assert!(result.is_ok());
 /// let matches = result.unwrap();
 /// // We may not know which of the args was used, so we can test for the group...
-/// assert!(matches.is_present("vers"));
+/// assert!(matches.contains_id("vers"));
 /// // we could also alternatively check each arg individually (not shown here)
 /// ```
 /// [`ArgGroup::multiple(true)`]: ArgGroup::multiple()
@@ -129,7 +129,10 @@ impl<'help> ArgGroup<'help> {
     }
 
     /// Deprecated, replaced with [`ArgGroup::id`]
-    #[deprecated(since = "3.1.0", note = "Replaced with `ArgGroup::id`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `ArgGroup::id`")
+    )]
     pub fn name<S: Into<&'help str>>(self, n: S) -> Self {
         self.id(n)
     }
@@ -150,9 +153,9 @@ impl<'help> ArgGroup<'help> {
     ///         .arg("color"))
     ///     .get_matches_from(vec!["myprog", "-f"]);
     /// // maybe we don't know which of the two flags was used...
-    /// assert!(m.is_present("req_flags"));
+    /// assert!(m.contains_id("req_flags"));
     /// // but we can also check individually if needed
-    /// assert!(m.is_present("flag"));
+    /// assert!(m.contains_id("flag"));
     /// ```
     /// [argument]: crate::Arg
     #[must_use]
@@ -176,9 +179,9 @@ impl<'help> ArgGroup<'help> {
     ///         .args(&["flag", "color"]))
     ///     .get_matches_from(vec!["myprog", "-f"]);
     /// // maybe we don't know which of the two flags was used...
-    /// assert!(m.is_present("req_flags"));
+    /// assert!(m.contains_id("req_flags"));
     /// // but we can also check individually if needed
-    /// assert!(m.is_present("flag"));
+    /// assert!(m.contains_id("flag"));
     /// ```
     /// [arguments]: crate::Arg
     #[must_use]
@@ -208,7 +211,7 @@ impl<'help> ArgGroup<'help> {
     ///         .multiple(true))
     ///     .get_matches_from(vec!["myprog", "-f", "-c"]);
     /// // maybe we don't know which of the two flags was used...
-    /// assert!(m.is_present("req_flags"));
+    /// assert!(m.contains_id("req_flags"));
     /// ```
     /// In this next example, we show the default behavior (i.e. `multiple(false)) which will throw
     /// an error if more than one of the args in the group was used.
@@ -433,7 +436,10 @@ impl<'help> ArgGroup<'help> {
     }
 
     /// Deprecated, replaced with [`ArgGroup::new`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `ArgGroup::new`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `ArgGroup::new`")
+    )]
     #[doc(hidden)]
     pub fn with_name<S: Into<&'help str>>(n: S) -> Self {
         Self::new(n)
@@ -441,9 +447,12 @@ impl<'help> ArgGroup<'help> {
 
     /// Deprecated in [Issue #3087](https://github.com/clap-rs/clap/issues/3087), maybe [`clap::Parser`][crate::Parser] would fit your use case?
     #[cfg(feature = "yaml")]
-    #[deprecated(
-        since = "3.0.0",
-        note = "Maybe clap::Parser would fit your use case? (Issue #3087)"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.0.0",
+            note = "Maybe clap::Parser would fit your use case? (Issue #3087)"
+        )
     )]
     #[doc(hidden)]
     pub fn from_yaml(yaml: &'help Yaml) -> Self {

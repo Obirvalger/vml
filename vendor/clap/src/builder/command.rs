@@ -14,22 +14,22 @@ use std::path::Path;
 use yaml_rust::Yaml;
 
 // Internal
-use crate::build::app_settings::{AppFlags, AppSettings};
-use crate::build::arg_settings::ArgSettings;
-use crate::build::{arg::ArgProvider, Arg, ArgGroup, ArgPredicate};
+use crate::builder::app_settings::{AppFlags, AppSettings};
+use crate::builder::arg_settings::ArgSettings;
+use crate::builder::{arg::ArgProvider, Arg, ArgGroup, ArgPredicate};
 use crate::error::ErrorKind;
 use crate::error::Result as ClapResult;
 use crate::mkeymap::MKeyMap;
 use crate::output::fmt::Stream;
 use crate::output::{fmt::Colorizer, Help, HelpWriter, Usage};
-use crate::parse::{ArgMatcher, ArgMatches, Parser};
+use crate::parser::{ArgMatcher, ArgMatches, Parser};
 use crate::util::ChildGraph;
 use crate::util::{color::ColorChoice, Id, Key};
 use crate::PossibleValue;
 use crate::{Error, INTERNAL_ERROR_MSG};
 
 #[cfg(debug_assertions)]
-use crate::build::debug_asserts::assert_app;
+use crate::builder::debug_asserts::assert_app;
 
 /// Build a command-line interface.
 ///
@@ -70,7 +70,10 @@ use crate::build::debug_asserts::assert_app;
 pub type Command<'help> = App<'help>;
 
 /// Deprecated, replaced with [`Command`]
-#[deprecated(since = "3.1.0", note = "Replaced with `Command`")]
+#[cfg_attr(
+    feature = "deprecated",
+    deprecated(since = "3.1.0", note = "Replaced with `Command`")
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct App<'help> {
     id: Id,
@@ -409,11 +412,12 @@ impl<'help> App<'help> {
     /// # Examples
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// fn cmd() -> Command<'static> {
     ///     Command::new("foo")
-    ///         .arg(Arg::new("bar").short('b')
-    ///     )
+    ///         .arg(
+    ///             Arg::new("bar").short('b').action(ArgAction::SetTrue)
+    ///         )
     /// }
     ///
     /// #[test]
@@ -423,7 +427,7 @@ impl<'help> App<'help> {
     ///
     /// fn main() {
     ///     let m = cmd().get_matches_from(vec!["foo", "-b"]);
-    ///     println!("{}", m.is_present("bar"));
+    ///     println!("{}", *m.get_one::<bool>("bar").expect("defaulted by clap"));
     /// }
     /// ```
     pub fn debug_assert(mut self) {
@@ -637,7 +641,6 @@ impl<'help> App<'help> {
         let mut raw_args = clap_lex::RawArgs::new(itr.into_iter());
         let mut cursor = raw_args.cursor();
 
-        #[cfg(feature = "unstable-multicall")]
         if self.settings.is_set(AppSettings::Multicall) {
             if let Some(argv0) = raw_args.next_os(&mut cursor) {
                 let argv0 = Path::new(&argv0);
@@ -911,17 +914,11 @@ impl<'help> App<'help> {
         }
     }
 
-    /// Specifies that all arguments override themselves.
-    ///
-    /// This is the equivalent to saying the `foo` arg using [`Arg::overrides_with("foo")`] for all
-    /// defined arguments.
-    ///
-    /// **NOTE:** This will not be applied when [`Arg::multiple_occurrences(true)`].
-    ///
-    /// **NOTE:** This choice is propagated to all child subcommands.
-    ///
-    /// [`Arg::overrides_with("foo")`]: crate::Arg::overrides_with()
-    #[inline]
+    /// Deprecated, replaced with [`ArgAction::Set`][super::ArgAction::Set]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.2.0", note = "Replaced with `Arg::action(ArgAction::Set)`")
+    )]
     pub fn args_override_self(self, yes: bool) -> Self {
         if yes {
             self.global_setting(AppSettings::AllArgsOverrideSelf)
@@ -1817,7 +1814,10 @@ impl<'help> App<'help> {
     /// Deprecated, replaced with [`Command::next_help_heading`]
     #[inline]
     #[must_use]
-    #[deprecated(since = "3.1.0", note = "Replaced with `App::next_help_heading`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `App::next_help_heading`")
+    )]
     pub fn help_heading<O>(self, heading: O) -> Self
     where
         O: Into<Option<&'help str>>,
@@ -1920,17 +1920,19 @@ impl<'help> App<'help> {
     /// need to change!
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let m = Command::new("cmd")
     ///     .arg(Arg::new("save-context")
-    ///         .long("save-context"))
+    ///         .long("save-context")
+    ///         .action(ArgAction::SetTrue))
     ///     .arg(Arg::new("save-runtime")
-    ///         .long("save-runtime"))
+    ///         .long("save-runtime")
+    ///         .action(ArgAction::SetTrue))
     ///     .replace("--save-all", &["--save-context", "--save-runtime"])
     ///     .get_matches_from(vec!["cmd", "--save-all"]);
     ///
-    /// assert!(m.is_present("save-context"));
-    /// assert!(m.is_present("save-runtime"));
+    /// assert!(*m.get_one::<bool>("save-context").expect("defaulted by clap"));
+    /// assert!(*m.get_one::<bool>("save-runtime").expect("defaulted by clap"));
     /// ```
     ///
     /// This can also be used with options, for example if our application with
@@ -1940,21 +1942,23 @@ impl<'help> App<'help> {
     /// above to enforce this:
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let m = Command::new("cmd")
     ///     .arg(Arg::new("save-context")
-    ///         .long("save-context"))
+    ///         .long("save-context")
+    ///         .action(ArgAction::SetTrue))
     ///     .arg(Arg::new("save-runtime")
-    ///         .long("save-runtime"))
+    ///         .long("save-runtime")
+    ///         .action(ArgAction::SetTrue))
     ///     .arg(Arg::new("format")
     ///         .long("format")
     ///         .takes_value(true)
-    ///         .possible_values(["txt", "json"]))
+    ///         .value_parser(["txt", "json"]))
     ///     .replace("--save-all", &["--save-context", "--save-runtime", "--format=json"])
     ///     .get_matches_from(vec!["cmd", "--save-all"]);
     ///
-    /// assert!(m.is_present("save-context"));
-    /// assert!(m.is_present("save-runtime"));
+    /// assert!(*m.get_one::<bool>("save-context").expect("defaulted by clap"));
+    /// assert!(*m.get_one::<bool>("save-runtime").expect("defaulted by clap"));
     /// assert_eq!(m.value_of("format"), Some("json"));
     /// ```
     ///
@@ -2207,13 +2211,14 @@ impl<'help> App<'help> {
     /// # Examples
     ///
     /// ```
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let matches = Command::new("pacman")
     ///     .subcommand(
     ///         Command::new("sync").short_flag('S').arg(
     ///             Arg::new("search")
     ///                 .short('s')
     ///                 .long("search")
+    ///                 .action(ArgAction::SetTrue)
     ///                 .help("search remote repositories for matching strings"),
     ///         ),
     ///     )
@@ -2221,7 +2226,7 @@ impl<'help> App<'help> {
     ///
     /// assert_eq!(matches.subcommand_name().unwrap(), "sync");
     /// let sync_matches = matches.subcommand_matches("sync").unwrap();
-    /// assert!(sync_matches.is_present("search"));
+    /// assert!(*sync_matches.get_one::<bool>("search").expect("defaulted by clap"));
     /// ```
     /// [`Arg::short`]: Arg::short()
     #[must_use]
@@ -2243,13 +2248,14 @@ impl<'help> App<'help> {
     /// will *not* be stripped (i.e. `sync-file` is allowed).
     ///
     /// ```
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let matches = Command::new("pacman")
     ///     .subcommand(
     ///         Command::new("sync").long_flag("sync").arg(
     ///             Arg::new("search")
     ///                 .short('s')
     ///                 .long("search")
+    ///                 .action(ArgAction::SetTrue)
     ///                 .help("search remote repositories for matching strings"),
     ///         ),
     ///     )
@@ -2257,7 +2263,7 @@ impl<'help> App<'help> {
     ///
     /// assert_eq!(matches.subcommand_name().unwrap(), "sync");
     /// let sync_matches = matches.subcommand_matches("sync").unwrap();
-    /// assert!(sync_matches.is_present("search"));
+    /// assert!(*sync_matches.get_one::<bool>("search").expect("defaulted by clap"));
     /// ```
     ///
     /// [`Arg::long`]: Arg::long()
@@ -3062,7 +3068,6 @@ impl<'help> App<'help> {
     /// [`App::subcommand_value_name`]: crate::Command::subcommand_value_name
     /// [`App::subcommand_help_heading`]: crate::Command::subcommand_help_heading
     #[inline]
-    #[cfg(feature = "unstable-multicall")]
     pub fn multicall(self, yes: bool) -> Self {
         if yes {
             self.setting(AppSettings::Multicall)
@@ -3288,7 +3293,10 @@ impl<'help> App<'help> {
 
     /// Deprecated, replaced with [`Command::get_next_help_heading`]
     #[inline]
-    #[deprecated(since = "3.1.0", note = "Replaced with `App::get_next_help_heading`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `App::get_next_help_heading`")
+    )]
     pub fn get_help_heading(&self) -> Option<&'help str> {
         self.get_next_help_heading()
     }
@@ -3402,9 +3410,12 @@ impl<'help> App<'help> {
 
     /// Deprecated, replaced with [`App::get_subcommand_help_heading`]
     #[inline]
-    #[deprecated(
-        since = "3.1.0",
-        note = "Replaced with `App::get_subcommand_help_heading`"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.1.0",
+            note = "Replaced with `App::get_subcommand_help_heading`"
+        )
     )]
     pub fn get_subommand_help_heading(&self) -> Option<&str> {
         self.get_subcommand_help_heading()
@@ -3678,6 +3689,29 @@ impl<'help> App<'help> {
         self.is_set(AppSettings::AllowInvalidUtf8ForExternalSubcommands)
     }
 
+    /// Configured parser for values passed to an external subcommand
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let cmd = clap::Command::new("raw")
+    ///     .allow_external_subcommands(true)
+    ///     .allow_invalid_utf8_for_external_subcommands(true);
+    /// let value_parser = cmd.get_external_subcommand_value_parser();
+    /// println!("{:?}", value_parser);
+    /// ```
+    pub fn get_external_subcommand_value_parser(&self) -> Option<&super::ValueParser> {
+        if !self.is_allow_external_subcommands_set() {
+            None
+        } else if self.is_allow_invalid_utf8_for_external_subcommands_set() {
+            static DEFAULT: super::ValueParser = super::ValueParser::os_string();
+            Some(&DEFAULT)
+        } else {
+            static DEFAULT: super::ValueParser = super::ValueParser::string();
+            Some(&DEFAULT)
+        }
+    }
+
     /// Report whether [`Command::args_conflicts_with_subcommands`] is set
     pub fn is_args_conflicts_with_subcommands_set(&self) -> bool {
         self.is_set(AppSettings::ArgsNegateSubcommands)
@@ -3694,14 +3728,8 @@ impl<'help> App<'help> {
     }
 
     /// Report whether [`Command::multicall`] is set
-    #[cfg(feature = "unstable-multicall")]
     pub fn is_multicall_set(&self) -> bool {
         self.is_set(AppSettings::Multicall)
-    }
-
-    #[cfg(not(feature = "unstable-multicall"))]
-    fn is_multicall_set(&self) -> bool {
-        false
     }
 }
 
@@ -3709,9 +3737,12 @@ impl<'help> App<'help> {
 impl<'help> App<'help> {
     /// Deprecated in [Issue #3087](https://github.com/clap-rs/clap/issues/3087), maybe [`clap::Parser`][crate::Parser] would fit your use case?
     #[cfg(feature = "yaml")]
-    #[deprecated(
-        since = "3.0.0",
-        note = "Deprecated in Issue #3087, maybe clap::Parser would fit your use case?"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.0.0",
+            note = "Deprecated in Issue #3087, maybe clap::Parser would fit your use case?"
+        )
     )]
     #[doc(hidden)]
     pub fn from_yaml(y: &'help Yaml) -> Self {
@@ -3800,7 +3831,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::override_usage`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::override_usage`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::override_usage`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn usage<S: Into<&'help str>>(self, usage: S) -> Self {
@@ -3808,7 +3842,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::override_help`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::override_help`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::override_help`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn help<S: Into<&'help str>>(self, help: S) -> Self {
@@ -3816,7 +3853,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::mut_arg`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::mut_arg`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::mut_arg`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn help_short(self, c: char) -> Self {
@@ -3824,7 +3864,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::mut_arg`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::mut_arg`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::mut_arg`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn version_short(self, c: char) -> Self {
@@ -3832,7 +3875,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::mut_arg`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::mut_arg`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::mut_arg`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn help_message(self, s: impl Into<&'help str>) -> Self {
@@ -3840,7 +3886,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::mut_arg`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::mut_arg`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::mut_arg`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn version_message(self, s: impl Into<&'help str>) -> Self {
@@ -3848,7 +3897,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::help_template`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::help_template`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::help_template`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn template<S: Into<&'help str>>(self, s: S) -> Self {
@@ -3856,7 +3908,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::setting(a| b)`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::setting(a | b)`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::setting(a | b)`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn settings(mut self, settings: &[AppSettings]) -> Self {
@@ -3867,7 +3922,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::unset_setting(a| b)`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::unset_setting(a | b)`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::unset_setting(a | b)`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn unset_settings(mut self, settings: &[AppSettings]) -> Self {
@@ -3878,7 +3936,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::global_setting(a| b)`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::global_setting(a | b)`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::global_setting(a | b)`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn global_settings(mut self, settings: &[AppSettings]) -> Self {
@@ -3890,7 +3951,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::term_width`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::term_width`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::term_width`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn set_term_width(self, width: usize) -> Self {
@@ -3898,7 +3962,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated in [Issue #3086](https://github.com/clap-rs/clap/issues/3086), see [`arg!`][crate::arg!].
-    #[deprecated(since = "3.0.0", note = "Deprecated in Issue #3086, see `clap::arg!")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Deprecated in Issue #3086, see `clap::arg!")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn arg_from_usage(self, usage: &'help str) -> Self {
@@ -3907,7 +3974,10 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated in [Issue #3086](https://github.com/clap-rs/clap/issues/3086), see [`arg!`][crate::arg!].
-    #[deprecated(since = "3.0.0", note = "Deprecated in Issue #3086, see `clap::arg!")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Deprecated in Issue #3086, see `clap::arg!")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn args_from_usage(mut self, usage: &'help str) -> Self {
@@ -3923,28 +3993,40 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::render_version`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::render_version`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::render_version`")
+    )]
     #[doc(hidden)]
     pub fn write_version<W: io::Write>(&self, w: &mut W) -> ClapResult<()> {
         write!(w, "{}", self.render_version()).map_err(From::from)
     }
 
     /// Deprecated, replaced with [`Command::render_long_version`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::render_long_version`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::render_long_version`")
+    )]
     #[doc(hidden)]
     pub fn write_long_version<W: io::Write>(&self, w: &mut W) -> ClapResult<()> {
         write!(w, "{}", self.render_long_version()).map_err(From::from)
     }
 
     /// Deprecated, replaced with [`Command::try_get_matches`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::try_get_matches`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::try_get_matches`")
+    )]
     #[doc(hidden)]
     pub fn get_matches_safe(self) -> ClapResult<ArgMatches> {
         self.try_get_matches()
     }
 
     /// Deprecated, replaced with [`Command::try_get_matches_from`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `App::try_get_matches_from`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `App::try_get_matches_from`")
+    )]
     #[doc(hidden)]
     pub fn get_matches_from_safe<I, T>(self, itr: I) -> ClapResult<ArgMatches>
     where
@@ -3955,9 +4037,12 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`Command::try_get_matches_from_mut`]
-    #[deprecated(
-        since = "3.0.0",
-        note = "Replaced with `App::try_get_matches_from_mut`"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.0.0",
+            note = "Replaced with `App::try_get_matches_from_mut`"
+        )
     )]
     #[doc(hidden)]
     pub fn get_matches_from_safe_borrow<I, T>(&mut self, itr: I) -> ClapResult<ArgMatches>
@@ -4049,19 +4134,28 @@ impl<'help> App<'help> {
     }
 
     #[doc(hidden)]
-    #[deprecated(since = "3.1.10", note = "Replaced with `Command::build`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.10", note = "Replaced with `Command::build`")
+    )]
     pub fn _build_all(&mut self) {
         self.build();
     }
 
     #[doc(hidden)]
-    #[deprecated(since = "3.1.10", note = "Replaced with `Command::build`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.10", note = "Replaced with `Command::build`")
+    )]
     pub fn _build(&mut self) {
         self._build_self()
     }
 
     #[doc(hidden)]
-    #[deprecated(since = "3.1.13", note = "Replaced with `Command::build`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.13", note = "Replaced with `Command::build`")
+    )]
     pub fn _build_bin_names(&mut self) {
         self._build_bin_names_internal();
     }
@@ -4088,13 +4182,10 @@ impl<'help> App<'help> {
             // Make sure all the globally set flags apply to us as well
             self.settings = self.settings | self.g_settings;
 
-            #[cfg(feature = "unstable-multicall")]
-            {
-                if self.is_multicall_set() {
-                    self.settings.insert(AppSettings::SubcommandRequired.into());
-                    self.settings.insert(AppSettings::DisableHelpFlag.into());
-                    self.settings.insert(AppSettings::DisableVersionFlag.into());
-                }
+            if self.is_multicall_set() {
+                self.settings.insert(AppSettings::SubcommandRequired.into());
+                self.settings.insert(AppSettings::DisableHelpFlag.into());
+                self.settings.insert(AppSettings::DisableVersionFlag.into());
             }
 
             self._propagate();
@@ -4105,6 +4196,10 @@ impl<'help> App<'help> {
             let mut pos_counter = 1;
             let self_override = self.is_set(AppSettings::AllArgsOverrideSelf);
             let hide_pv = self.is_set(AppSettings::HidePossibleValues);
+            let auto_help =
+                !self.is_set(AppSettings::NoAutoHelp) && !self.is_disable_help_flag_set();
+            let auto_version =
+                !self.is_set(AppSettings::NoAutoVersion) && !self.is_disable_version_flag_set();
             for a in self.args.args_mut() {
                 // Fill in the groups
                 for g in &a.groups {
@@ -4131,6 +4226,24 @@ impl<'help> App<'help> {
                     a.overrides.push(self_id);
                 }
                 a._build();
+                // HACK: Setting up action at this level while auto-help / disable help flag is
+                // required.  Otherwise, most of this won't be needed because when we can break
+                // compat, actions will reign supreme (default to `Store`)
+                if a.action.is_none() {
+                    if a.get_id() == "help" && auto_help && !a.is_takes_value_set() {
+                        let action = super::ArgAction::Help;
+                        a.action = Some(action);
+                    } else if a.get_id() == "version" && auto_version && !a.is_takes_value_set() {
+                        let action = super::ArgAction::Version;
+                        a.action = Some(action);
+                    } else if a.is_takes_value_set() {
+                        let action = super::ArgAction::StoreValue;
+                        a.action = Some(action);
+                    } else {
+                        let action = super::ArgAction::IncOccurrence;
+                        a.action = Some(action);
+                    }
+                }
                 if a.is_positional() && a.index.is_none() {
                     a.index = Some(pos_counter);
                     pos_counter += 1;
@@ -4159,7 +4272,7 @@ impl<'help> App<'help> {
                 mid_string.push(' ');
             }
         }
-        let is_multicall_set = cfg!(feature = "unstable-multicall") && self.is_multicall_set();
+        let is_multicall_set = self.is_multicall_set();
 
         let sc = self.subcommands.iter_mut().find(|s| s.name == name)?;
 
@@ -4242,7 +4355,7 @@ impl<'help> App<'help> {
                     mid_string.push(' ');
                 }
             }
-            let is_multicall_set = cfg!(feature = "unstable-multicall") && self.is_multicall_set();
+            let is_multicall_set = self.is_multicall_set();
 
             let self_bin_name = if is_multicall_set {
                 self.bin_name.as_deref().unwrap_or("")
@@ -4350,7 +4463,7 @@ impl<'help> App<'help> {
                 .collect();
 
             assert!(args_missing_help.is_empty(),
-                    "AppSettings::HelpExpected is enabled for the Command {}, but at least one of its arguments does not have either `help` or `long_help` set. List of such arguments: {}",
+                    "Command::help_expected is enabled for the Command {}, but at least one of its arguments does not have either `help` or `long_help` set. List of such arguments: {}",
                     self.name,
                     args_missing_help.join(", ")
                 );
@@ -4400,12 +4513,22 @@ impl<'help> App<'help> {
                         .position(|x| x.id == a.id && x.provider == ArgProvider::Generated);
 
                     if let Some(index) = generated_pos {
+                        debug!(
+                            "Command::_propagate removing {}'s {:?}",
+                            sc.get_name(),
+                            a.id
+                        );
                         sc.args.remove(index);
                         propagate = true;
                     }
                 }
 
                 if propagate || sc.find(&a.id).is_none() {
+                    debug!(
+                        "Command::_propagate pushing {:?} to {}",
+                        a.id,
+                        sc.get_name(),
+                    );
                     sc.args.push(a.clone());
                 }
             }
@@ -4892,7 +5015,9 @@ impl<'help> App<'help> {
                 || v.is_hide_long_help_set()
                 || v.is_hide_short_help_set()
                 || cfg!(feature = "unstable-v4")
-                    && v.possible_vals.iter().any(PossibleValue::should_show_help)
+                    && v.get_possible_values2()
+                        .iter()
+                        .any(PossibleValue::should_show_help)
         };
 
         // Subcommands aren't checked because we prefer short help for them, deferring to

@@ -8,22 +8,22 @@ use std::{
 use clap_lex::RawOsStr;
 
 // Internal
-use crate::build::AppSettings as AS;
-use crate::build::{Arg, Command};
+use crate::builder::AppSettings as AS;
+use crate::builder::{Arg, Command};
 use crate::error::Error as ClapError;
 use crate::error::Result as ClapResult;
 use crate::mkeymap::KeyType;
 use crate::output::fmt::Stream;
 use crate::output::{fmt::Colorizer, Usage};
-use crate::parse::features::suggestions;
-use crate::parse::{ArgMatcher, SubCommand};
-use crate::parse::{Validator, ValueSource};
+use crate::parser::features::suggestions;
+use crate::parser::{ArgMatcher, SubCommand};
+use crate::parser::{Validator, ValueSource};
 use crate::util::Id;
+use crate::ArgAction;
 use crate::{INTERNAL_ERROR_MSG, INVALID_UTF8};
 
 pub(crate) struct Parser<'help, 'cmd> {
     cmd: &'cmd mut Command<'help>,
-    seen: Vec<Id>,
     cur_idx: Cell<usize>,
     /// Index of the previous flag subcommand in a group of flags.
     flag_subcmd_at: Option<usize>,
@@ -37,7 +37,6 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
     pub(crate) fn new(cmd: &'cmd mut Command<'help>) -> Self {
         Parser {
             cmd,
-            seen: Vec::new(),
             cur_idx: Cell::new(0),
             flag_subcmd_at: None,
             flag_subcmd_skip: 0,
@@ -131,17 +130,17 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
 
                 if low_index_mults || missing_pos {
                     let skip_current = if let Some(n) = raw_args.peek(&args_cursor) {
-                        if let Some(p) = self
+                        if let Some(arg) = self
                             .cmd
                             .get_positionals()
-                            .find(|p| p.index == Some(pos_counter))
+                            .find(|a| a.index == Some(pos_counter))
                         {
                             // If next value looks like a new_arg or it's a
                             // subcommand, skip positional argument under current
                             // pos_counter(which means current value cannot be a
                             // positional argument with a value next to it), assume
                             // current value matches the next arg.
-                            self.is_new_arg(&n, p)
+                            self.is_new_arg(&n, arg)
                                 || self
                                     .possible_subcommand(n.to_value(), valid_arg_found)
                                     .is_some()
@@ -179,13 +178,16 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                     let sc_name = self.possible_subcommand(arg_os.to_value(), valid_arg_found);
                     debug!("Parser::get_matches_with: sc={:?}", sc_name);
                     if let Some(sc_name) = sc_name {
+                        #[allow(deprecated)]
                         if sc_name == "help"
                             && !self.is_set(AS::NoAutoHelp)
                             && !self.cmd.is_disable_help_subcommand_set()
                         {
                             self.parse_help_subcommand(raw_args.remaining(&mut args_cursor))?;
+                            unreachable!("`parse_help_subcommand` always errors");
+                        } else {
+                            subcmd_name = Some(sc_name.to_owned());
                         }
-                        subcmd_name = Some(sc_name.to_owned());
                         break;
                     }
                 }
@@ -208,7 +210,7 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                         &parse_state,
                         &mut valid_arg_found,
                         trailing_values,
-                    );
+                    )?;
                     debug!(
                         "Parser::get_matches_with: After parse_long_arg {:?}",
                         parse_result
@@ -234,6 +236,7 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                             break;
                         }
                         ParseResult::EqualsNotProvided { arg } => {
+                            let _ = self.resolve_pending(matcher);
                             return Err(ClapError::no_equals(
                                 self.cmd,
                                 arg,
@@ -241,6 +244,7 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                             ));
                         }
                         ParseResult::NoMatchingArg { arg } => {
+                            let _ = self.resolve_pending(matcher);
                             let remaining_args: Vec<_> = raw_args
                                 .remaining(&mut args_cursor)
                                 .map(|x| x.to_str().expect(INVALID_UTF8))
@@ -248,18 +252,13 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                             return Err(self.did_you_mean_error(&arg, matcher, &remaining_args));
                         }
                         ParseResult::UnneededAttachedValue { rest, used, arg } => {
+                            let _ = self.resolve_pending(matcher);
                             return Err(ClapError::too_many_values(
                                 self.cmd,
                                 rest,
                                 arg,
                                 Usage::new(self.cmd).create_usage_no_title(&used),
-                            ))
-                        }
-                        ParseResult::HelpFlag => {
-                            return Err(self.help_err(true, Stream::Stdout));
-                        }
-                        ParseResult::VersionFlag => {
-                            return Err(self.version_err(true));
+                            ));
                         }
                         ParseResult::MaybeHyphenValue => {
                             // Maybe a hyphen value, do nothing.
@@ -281,7 +280,7 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                         pos_counter,
                         &mut valid_arg_found,
                         trailing_values,
-                    );
+                    )?;
                     // If it's None, we then check if one of those two AppSettings was set
                     debug!(
                         "Parser::get_matches_with: After parse_short_arg {:?}",
@@ -324,25 +323,21 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                             break;
                         }
                         ParseResult::EqualsNotProvided { arg } => {
+                            let _ = self.resolve_pending(matcher);
                             return Err(ClapError::no_equals(
                                 self.cmd,
                                 arg,
                                 Usage::new(self.cmd).create_usage_with_title(&[]),
-                            ))
+                            ));
                         }
                         ParseResult::NoMatchingArg { arg } => {
+                            let _ = self.resolve_pending(matcher);
                             return Err(ClapError::unknown_argument(
                                 self.cmd,
                                 arg,
                                 None,
                                 Usage::new(self.cmd).create_usage_with_title(&[]),
                             ));
-                        }
-                        ParseResult::HelpFlag => {
-                            return Err(self.help_err(false, Stream::Stdout));
-                        }
-                        ParseResult::VersionFlag => {
-                            return Err(self.version_err(false));
                         }
                         ParseResult::MaybeHyphenValue => {
                             // Maybe a hyphen value, do nothing.
@@ -356,14 +351,21 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                     // Assume this is a value of a previous arg.
 
                     // get the option so we can check the settings
-                    let parse_result = self.add_val_to_arg(
-                        &self.cmd[id],
+                    let arg_values = matcher.pending_values_mut(id, None);
+                    let arg = &self.cmd[id];
+                    let parse_result = self.split_arg_values(
+                        arg,
                         arg_os.to_value_os(),
-                        matcher,
-                        ValueSource::CommandLine,
-                        true,
                         trailing_values,
+                        arg_values,
                     );
+                    let parse_result = parse_result.unwrap_or_else(|| {
+                        if matcher.needs_more_vals(arg) {
+                            ParseResult::Opt(arg.id.clone())
+                        } else {
+                            ParseResult::ValuesDone
+                        }
+                    });
                     parse_state = match parse_result {
                         ParseResult::Opt(id) => ParseState::Opt(id),
                         ParseResult::ValuesDone => ParseState::ValuesDone,
@@ -374,8 +376,9 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                 }
             }
 
-            if let Some(p) = self.cmd.get_keymap().get(&pos_counter) {
-                if p.is_last_set() && !trailing_values {
+            if let Some(arg) = self.cmd.get_keymap().get(&pos_counter) {
+                if arg.is_last_set() && !trailing_values {
+                    let _ = self.resolve_pending(matcher);
                     return Err(ClapError::unknown_argument(
                         self.cmd,
                         arg_os.display().to_string(),
@@ -388,37 +391,37 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                     trailing_values = true;
                 }
 
-                self.seen.push(p.id.clone());
-                // Increase occurrence no matter if we are appending, occurrences
-                // of positional argument equals to number of values rather than
-                // the number of value groups.
-                self.inc_occurrence_of_arg(matcher, p);
-                // Creating new value group rather than appending when the arg
-                // doesn't have any value. This behaviour is right because
-                // positional arguments are always present continuously.
-                let append = self.has_val_groups(matcher, p);
-                self.add_val_to_arg(
-                    p,
-                    arg_os.to_value_os(),
-                    matcher,
-                    ValueSource::CommandLine,
-                    append,
-                    trailing_values,
-                );
+                if matcher.pending_arg_id() != Some(&arg.id) || !arg.is_multiple_values_set() {
+                    self.resolve_pending(matcher)?;
+                }
+                let arg_values = matcher.pending_values_mut(&arg.id, Some(Identifier::Index));
+                let _parse_result =
+                    self.split_arg_values(arg, arg_os.to_value_os(), trailing_values, arg_values);
+                if let Some(_parse_result) = _parse_result {
+                    if _parse_result != ParseResult::ValuesDone {
+                        debug!(
+                            "Parser::get_matches_with: Ignoring state {:?}; positionals do their own thing",
+                            _parse_result
+                        );
+                    }
+                }
 
                 // Only increment the positional counter if it doesn't allow multiples
-                if !p.is_multiple() {
+                if !arg.is_multiple() {
                     pos_counter += 1;
                     parse_state = ParseState::ValuesDone;
                 } else {
-                    parse_state = ParseState::Pos(p.id.clone());
+                    parse_state = ParseState::Pos(arg.id.clone());
                 }
                 valid_arg_found = true;
-            } else if self.cmd.is_allow_external_subcommands_set() {
+            } else if let Some(external_parser) =
+                self.cmd.get_external_subcommand_value_parser().cloned()
+            {
                 // Get external subcommand name
                 let sc_name = match arg_os.to_value() {
                     Ok(s) => s.to_string(),
                     Err(_) => {
+                        let _ = self.resolve_pending(matcher);
                         return Err(ClapError::invalid_utf8(
                             self.cmd,
                             Usage::new(self.cmd).create_usage_with_title(&[]),
@@ -428,34 +431,14 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
 
                 // Collect the external subcommand args
                 let mut sc_m = ArgMatcher::new(self.cmd);
-                let allow_invalid_utf8 = self
-                    .cmd
-                    .is_allow_invalid_utf8_for_external_subcommands_set();
-                #[cfg(feature = "unstable-v4")]
-                {
-                    sc_m.inc_occurrence_of_external(allow_invalid_utf8);
+                if cfg!(feature = "unstable-v4") || !raw_args.is_end(&args_cursor) {
+                    sc_m.start_occurrence_of_external(self.cmd);
                 }
 
-                for v in raw_args.remaining(&mut args_cursor) {
-                    if !allow_invalid_utf8 && v.to_str().is_none() {
-                        return Err(ClapError::invalid_utf8(
-                            self.cmd,
-                            Usage::new(self.cmd).create_usage_with_title(&[]),
-                        ));
-                    }
+                for raw_val in raw_args.remaining(&mut args_cursor) {
+                    let val = external_parser.parse_ref(self.cmd, None, raw_val)?;
                     let external_id = &Id::empty_hash();
-                    sc_m.add_val_to(
-                        external_id,
-                        v.to_os_string(),
-                        ValueSource::CommandLine,
-                        false,
-                    );
-                    #[cfg(not(feature = "unstable-v4"))]
-                    {
-                        sc_m.get_mut(external_id)
-                            .expect("just inserted")
-                            .invalid_utf8_allowed(allow_invalid_utf8);
-                    }
+                    sc_m.add_val_to(external_id, val, raw_val.to_os_string());
                 }
 
                 matcher.subcommand(SubCommand {
@@ -464,12 +447,14 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                     matches: sc_m.into_inner(),
                 });
 
+                self.resolve_pending(matcher)?;
                 #[cfg(feature = "env")]
-                self.add_env(matcher, trailing_values)?;
-                self.add_defaults(matcher, trailing_values);
+                self.add_env(matcher)?;
+                self.add_defaults(matcher)?;
                 return Validator::new(self.cmd).validate(parse_state, matcher);
             } else {
                 // Start error processing
+                let _ = self.resolve_pending(matcher);
                 return Err(self.match_arg_error(&arg_os, valid_arg_found, trailing_values));
             }
         }
@@ -484,9 +469,10 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
             self.parse_subcommand(&sc_name, matcher, raw_args, args_cursor, keep_state)?;
         }
 
+        self.resolve_pending(matcher)?;
         #[cfg(feature = "env")]
-        self.add_env(matcher, trailing_values)?;
-        self.add_defaults(matcher, trailing_values);
+        self.add_env(matcher)?;
+        self.add_defaults(matcher)?;
         Validator::new(self.cmd).validate(parse_state, matcher)
     }
 
@@ -615,7 +601,7 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
     fn parse_help_subcommand(
         &self,
         cmds: impl Iterator<Item = &'cmd OsStr>,
-    ) -> ClapResult<ParseResult> {
+    ) -> ClapResult<std::convert::Infallible> {
         debug!("Parser::parse_help_subcommand");
 
         let mut cmd = self.cmd.clone();
@@ -724,74 +710,6 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
         Ok(())
     }
 
-    // Retrieves the names of all args the user has supplied thus far, except required ones
-    // because those will be listed in self.required
-    fn check_for_help_and_version_str(&self, arg: &RawOsStr) -> Option<ParseResult> {
-        debug!("Parser::check_for_help_and_version_str");
-        debug!(
-            "Parser::check_for_help_and_version_str: Checking if --{:?} is help or version...",
-            arg
-        );
-
-        if let Some(help) = self.cmd.find(&Id::help_hash()) {
-            if let Some(h) = help.long {
-                if arg == h && !self.is_set(AS::NoAutoHelp) && !self.cmd.is_disable_help_flag_set()
-                {
-                    debug!("Help");
-                    return Some(ParseResult::HelpFlag);
-                }
-            }
-        }
-
-        if let Some(version) = self.cmd.find(&Id::version_hash()) {
-            if let Some(v) = version.long {
-                if arg == v
-                    && !self.is_set(AS::NoAutoVersion)
-                    && !self.cmd.is_disable_version_flag_set()
-                {
-                    debug!("Version");
-                    return Some(ParseResult::VersionFlag);
-                }
-            }
-        }
-
-        debug!("Neither");
-        None
-    }
-
-    fn check_for_help_and_version_char(&self, arg: char) -> Option<ParseResult> {
-        debug!("Parser::check_for_help_and_version_char");
-        debug!(
-            "Parser::check_for_help_and_version_char: Checking if -{} is help or version...",
-            arg
-        );
-
-        if let Some(help) = self.cmd.find(&Id::help_hash()) {
-            if let Some(h) = help.short {
-                if arg == h && !self.is_set(AS::NoAutoHelp) && !self.cmd.is_disable_help_flag_set()
-                {
-                    debug!("Help");
-                    return Some(ParseResult::HelpFlag);
-                }
-            }
-        }
-
-        if let Some(version) = self.cmd.find(&Id::version_hash()) {
-            if let Some(v) = version.short {
-                if arg == v
-                    && !self.is_set(AS::NoAutoVersion)
-                    && !self.cmd.is_disable_version_flag_set()
-                {
-                    debug!("Version");
-                    return Some(ParseResult::VersionFlag);
-                }
-            }
-        }
-
-        debug!("Neither");
-        None
-    }
-
     fn parse_long_arg(
         &mut self,
         matcher: &mut ArgMatcher,
@@ -800,66 +718,74 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
         parse_state: &ParseState,
         valid_arg_found: &mut bool,
         trailing_values: bool,
-    ) -> ParseResult {
+    ) -> ClapResult<ParseResult> {
         // maybe here lifetime should be 'a
         debug!("Parser::parse_long_arg");
 
         if matches!(parse_state, ParseState::Opt(opt) | ParseState::Pos(opt) if
             self.cmd[opt].is_allow_hyphen_values_set())
         {
-            return ParseResult::MaybeHyphenValue;
+            return Ok(ParseResult::MaybeHyphenValue);
         }
-
-        // Update the current index
-        self.cur_idx.set(self.cur_idx.get() + 1);
-        debug!("Parser::parse_long_arg: cur_idx:={}", self.cur_idx.get());
 
         debug!("Parser::parse_long_arg: Does it contain '='...");
         let long_arg = match long_arg {
             Ok(long_arg) => long_arg,
             Err(long_arg) => {
-                return ParseResult::NoMatchingArg {
+                return Ok(ParseResult::NoMatchingArg {
                     arg: long_arg.to_str_lossy().into_owned(),
-                };
+                });
             }
         };
         if long_arg.is_empty() {
-            debug_assert!(long_value.is_none(), "{:?}", long_value);
-            return ParseResult::NoArg;
+            debug_assert!(
+                long_value.is_some(),
+                "`--` should be filtered out before this point"
+            );
         }
 
-        let opt = if let Some(opt) = self.cmd.get_keymap().get(long_arg) {
+        let arg = if let Some(arg) = self.cmd.get_keymap().get(long_arg) {
             debug!(
-                "Parser::parse_long_arg: Found valid opt or flag '{}'",
-                opt.to_string()
+                "Parser::parse_long_arg: Found valid arg or flag '{}'",
+                arg.to_string()
             );
-            Some(opt)
+            Some((long_arg, arg))
         } else if self.cmd.is_infer_long_args_set() {
-            self.cmd.get_arguments().find(|a| {
-                a.long.map_or(false, |long| long.starts_with(long_arg))
-                    || a.aliases
-                        .iter()
-                        .any(|(alias, _)| alias.starts_with(long_arg))
+            self.cmd.get_arguments().find_map(|a| {
+                if let Some(long) = a.long {
+                    if long.starts_with(long_arg) {
+                        return Some((long, a));
+                    }
+                }
+                a.aliases
+                    .iter()
+                    .find_map(|(alias, _)| alias.starts_with(long_arg).then(|| (*alias, a)))
             })
         } else {
             None
         };
 
-        if let Some(opt) = opt {
+        if let Some((_long_arg, arg)) = arg {
+            let ident = Identifier::Long;
             *valid_arg_found = true;
-            self.seen.push(opt.id.clone());
-            if opt.is_takes_value_set() {
+            if arg.is_takes_value_set() {
                 debug!(
-                    "Parser::parse_long_arg: Found an opt with value '{:?}'",
-                    &long_value
+                    "Parser::parse_long_arg({:?}): Found an arg with value '{:?}'",
+                    long_arg, &long_value
                 );
                 let has_eq = long_value.is_some();
-                self.parse_opt(long_value, opt, matcher, trailing_values, has_eq)
+                self.parse_opt_value(ident, long_value, arg, matcher, trailing_values, has_eq)
             } else if let Some(rest) = long_value {
                 let required = self.cmd.required_graph();
-                debug!("Parser::parse_long_arg: Got invalid literal `{:?}`", rest);
+                debug!(
+                    "Parser::parse_long_arg({:?}): Got invalid literal `{:?}`",
+                    long_arg, rest
+                );
                 let used: Vec<Id> = matcher
-                    .arg_names()
+                    .arg_ids()
+                    .filter(|arg_id| {
+                        matcher.check_explicit(arg_id, crate::builder::ArgPredicate::IsPresent)
+                    })
                     .filter(|&n| {
                         self.cmd
                             .find(n)
@@ -868,27 +794,23 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                     .cloned()
                     .collect();
 
-                ParseResult::UnneededAttachedValue {
+                Ok(ParseResult::UnneededAttachedValue {
                     rest: rest.to_str_lossy().into_owned(),
                     used,
-                    arg: opt.to_string(),
-                }
-            } else if let Some(parse_result) =
-                self.check_for_help_and_version_str(RawOsStr::from_str(long_arg))
-            {
-                parse_result
+                    arg: arg.to_string(),
+                })
             } else {
-                debug!("Parser::parse_long_arg: Presence validated");
-                self.parse_flag(opt, matcher)
+                debug!("Parser::parse_long_arg({:?}): Presence validated", long_arg);
+                self.react(Some(ident), ValueSource::CommandLine, arg, vec![], matcher)
             }
         } else if let Some(sc_name) = self.possible_long_flag_subcommand(long_arg) {
-            ParseResult::FlagSubCommand(sc_name.to_string())
+            Ok(ParseResult::FlagSubCommand(sc_name.to_string()))
         } else if self.cmd.is_allow_hyphen_values_set() {
-            ParseResult::MaybeHyphenValue
+            Ok(ParseResult::MaybeHyphenValue)
         } else {
-            ParseResult::NoMatchingArg {
+            Ok(ParseResult::NoMatchingArg {
                 arg: long_arg.to_owned(),
-            }
+            })
         }
     }
 
@@ -901,25 +823,25 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
         pos_counter: usize,
         valid_arg_found: &mut bool,
         trailing_values: bool,
-    ) -> ParseResult {
+    ) -> ClapResult<ParseResult> {
         debug!("Parser::parse_short_arg: short_arg={:?}", short_arg);
 
         #[allow(clippy::blocks_in_if_conditions)]
         if self.cmd.is_allow_negative_numbers_set() && short_arg.is_number() {
             debug!("Parser::parse_short_arg: negative number");
-            return ParseResult::MaybeHyphenValue;
+            return Ok(ParseResult::MaybeHyphenValue);
         } else if self.cmd.is_allow_hyphen_values_set()
             && short_arg
                 .clone()
                 .any(|c| !c.map(|c| self.cmd.contains_short(c)).unwrap_or_default())
         {
             debug!("Parser::parse_short_args: contains non-short flag");
-            return ParseResult::MaybeHyphenValue;
+            return Ok(ParseResult::MaybeHyphenValue);
         } else if matches!(parse_state, ParseState::Opt(opt) | ParseState::Pos(opt)
                 if self.cmd[opt].is_allow_hyphen_values_set())
         {
             debug!("Parser::parse_short_args: prior arg accepts hyphenated values",);
-            return ParseResult::MaybeHyphenValue;
+            return Ok(ParseResult::MaybeHyphenValue);
         } else if self
             .cmd
             .get_keymap()
@@ -932,7 +854,7 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                 "Parser::parse_short_args: positional at {} allows hyphens",
                 pos_counter
             );
-            return ParseResult::MaybeHyphenValue;
+            return Ok(ParseResult::MaybeHyphenValue);
         }
 
         let mut ret = ParseResult::NoArg;
@@ -950,37 +872,27 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
             let c = match c {
                 Ok(c) => c,
                 Err(rest) => {
-                    return ParseResult::NoMatchingArg {
+                    return Ok(ParseResult::NoMatchingArg {
                         arg: format!("-{}", rest.to_str_lossy()),
-                    };
+                    });
                 }
             };
             debug!("Parser::parse_short_arg:iter:{}", c);
-
-            // update each index because `-abcd` is four indices to clap
-            self.cur_idx.set(self.cur_idx.get() + 1);
-            debug!(
-                "Parser::parse_short_arg:iter:{}: cur_idx:={}",
-                c,
-                self.cur_idx.get()
-            );
 
             // Check for matching short options, and return the name if there is no trailing
             // concatenated value: -oval
             // Option: -o
             // Value: val
-            if let Some(opt) = self.cmd.get_keymap().get(&c) {
+            if let Some(arg) = self.cmd.get_keymap().get(&c) {
+                let ident = Identifier::Short;
                 debug!(
                     "Parser::parse_short_arg:iter:{}: Found valid opt or flag",
                     c
                 );
                 *valid_arg_found = true;
-                self.seen.push(opt.id.clone());
-                if !opt.is_takes_value_set() {
-                    if let Some(parse_result) = self.check_for_help_and_version_char(c) {
-                        return parse_result;
-                    }
-                    ret = self.parse_flag(opt, matcher);
+                if !arg.is_takes_value_set() {
+                    ret =
+                        self.react(Some(ident), ValueSource::CommandLine, arg, vec![], matcher)?;
                     continue;
                 }
 
@@ -1006,14 +918,19 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                 } else {
                     (val, false)
                 };
-                match self.parse_opt(val, opt, matcher, trailing_values, has_eq) {
+                match self.parse_opt_value(ident, val, arg, matcher, trailing_values, has_eq)? {
                     ParseResult::AttachedValueNotConsumed => continue,
-                    x => return x,
+                    x => return Ok(x),
                 }
             }
 
             return if let Some(sc_name) = self.cmd.find_short_subcmd(c) {
                 debug!("Parser::parse_short_arg:iter:{}: subcommand={}", c, sc_name);
+                // Make sure indices get updated before reading `self.cur_idx`
+                self.resolve_pending(matcher)?;
+                self.cur_idx.set(self.cur_idx.get() + 1);
+                debug!("Parser::parse_short_arg: cur_idx:={}", self.cur_idx.get());
+
                 let name = sc_name.to_string();
                 // Get the index of the previously saved flag subcommand in the group of flags (if exists).
                 // If it is a new flag subcommand, then the formentioned index should be the current one
@@ -1024,186 +941,383 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
                 if done_short_args {
                     self.flag_subcmd_at = None;
                 }
-                ParseResult::FlagSubCommand(name)
+                Ok(ParseResult::FlagSubCommand(name))
             } else {
-                ParseResult::NoMatchingArg {
+                Ok(ParseResult::NoMatchingArg {
                     arg: format!("-{}", c),
-                }
+                })
             };
         }
-        ret
+        Ok(ret)
     }
 
-    fn parse_opt(
+    fn parse_opt_value(
         &self,
+        ident: Identifier,
         attached_value: Option<&RawOsStr>,
-        opt: &Arg<'help>,
+        arg: &Arg<'help>,
         matcher: &mut ArgMatcher,
         trailing_values: bool,
         has_eq: bool,
-    ) -> ParseResult {
+    ) -> ClapResult<ParseResult> {
         debug!(
-            "Parser::parse_opt; opt={}, val={:?}, has_eq={:?}",
-            opt.name, attached_value, has_eq
+            "Parser::parse_opt_value; arg={}, val={:?}, has_eq={:?}",
+            arg.name, attached_value, has_eq
         );
-        debug!("Parser::parse_opt; opt.settings={:?}", opt.settings);
+        debug!("Parser::parse_opt_value; arg.settings={:?}", arg.settings);
 
-        debug!("Parser::parse_opt; Checking for val...");
+        debug!("Parser::parse_opt_value; Checking for val...");
         // require_equals is set, but no '=' is provided, try throwing error.
-        if opt.is_require_equals_set() && !has_eq {
-            if opt.min_vals == Some(0) {
+        if arg.is_require_equals_set() && !has_eq {
+            if arg.min_vals == Some(0) {
                 debug!("Requires equals, but min_vals == 0");
-                self.inc_occurrence_of_arg(matcher, opt);
+                let mut arg_values = Vec::new();
                 // We assume this case is valid: require equals, but min_vals == 0.
-                if !opt.default_missing_vals.is_empty() {
-                    debug!("Parser::parse_opt: has default_missing_vals");
-                    self.add_multiple_vals_to_arg(
-                        opt,
-                        opt.default_missing_vals.iter().map(OsString::from),
-                        matcher,
-                        ValueSource::CommandLine,
-                        false,
-                    );
+                if !arg.default_missing_vals.is_empty() {
+                    debug!("Parser::parse_opt_value: has default_missing_vals");
+                    for v in arg.default_missing_vals.iter() {
+                        let trailing_values = false; // CLI should not be affecting default_missing_values
+                        let _parse_result = self.split_arg_values(
+                            arg,
+                            &RawOsStr::new(v),
+                            trailing_values,
+                            &mut arg_values,
+                        );
+                        if let Some(_parse_result) = _parse_result {
+                            if _parse_result != ParseResult::ValuesDone {
+                                debug!("Parser::parse_opt_value: Ignoring state {:?}; no values accepted after default_missing_values", _parse_result);
+                            }
+                        }
+                    }
                 };
+                let react_result = self.react(
+                    Some(ident),
+                    ValueSource::CommandLine,
+                    arg,
+                    arg_values,
+                    matcher,
+                )?;
+                debug_assert_eq!(react_result, ParseResult::ValuesDone);
                 if attached_value.is_some() {
-                    ParseResult::AttachedValueNotConsumed
+                    Ok(ParseResult::AttachedValueNotConsumed)
                 } else {
-                    ParseResult::ValuesDone
+                    Ok(ParseResult::ValuesDone)
                 }
             } else {
                 debug!("Requires equals but not provided. Error.");
-                ParseResult::EqualsNotProvided {
-                    arg: opt.to_string(),
-                }
+                Ok(ParseResult::EqualsNotProvided {
+                    arg: arg.to_string(),
+                })
             }
         } else if let Some(v) = attached_value {
-            self.inc_occurrence_of_arg(matcher, opt);
-            self.add_val_to_arg(
-                opt,
-                v,
-                matcher,
+            let mut arg_values = Vec::new();
+            let parse_result = self.split_arg_values(arg, v, trailing_values, &mut arg_values);
+            let react_result = self.react(
+                Some(ident),
                 ValueSource::CommandLine,
-                false,
-                trailing_values,
-            );
-            ParseResult::ValuesDone
-        } else {
-            debug!("Parser::parse_opt: More arg vals required...");
-            self.inc_occurrence_of_arg(matcher, opt);
-            matcher.new_val_group(&opt.id);
-            for group in self.cmd.groups_for_arg(&opt.id) {
-                matcher.new_val_group(&group);
+                arg,
+                arg_values,
+                matcher,
+            )?;
+            debug_assert_eq!(react_result, ParseResult::ValuesDone);
+            let mut parse_result = parse_result.unwrap_or_else(|| {
+                if matcher.needs_more_vals(arg) {
+                    ParseResult::Opt(arg.id.clone())
+                } else {
+                    ParseResult::ValuesDone
+                }
+            });
+            if parse_result != ParseResult::ValuesDone {
+                debug!("Parser::parse_opt_value: Overriding state {:?}; no values accepted after attached", parse_result);
+                parse_result = ParseResult::ValuesDone;
             }
-            ParseResult::Opt(opt.id.clone())
+            Ok(parse_result)
+        } else {
+            debug!("Parser::parse_opt_value: More arg vals required...");
+            self.resolve_pending(matcher)?;
+            matcher.pending_values_mut(&arg.id, Some(ident));
+            Ok(ParseResult::Opt(arg.id.clone()))
         }
     }
 
-    fn add_val_to_arg(
+    fn split_arg_values(
         &self,
         arg: &Arg<'help>,
         val: &RawOsStr,
-        matcher: &mut ArgMatcher,
-        ty: ValueSource,
-        append: bool,
         trailing_values: bool,
-    ) -> ParseResult {
-        debug!("Parser::add_val_to_arg; arg={}, val={:?}", arg.name, val);
+        output: &mut Vec<OsString>,
+    ) -> Option<ParseResult> {
+        debug!("Parser::split_arg_values; arg={}, val={:?}", arg.name, val);
         debug!(
-            "Parser::add_val_to_arg; trailing_values={:?}, DontDelimTrailingVals={:?}",
+            "Parser::split_arg_values; trailing_values={:?}, DontDelimTrailingVals={:?}",
             trailing_values,
             self.cmd.is_dont_delimit_trailing_values_set()
         );
-        if !(trailing_values && self.cmd.is_dont_delimit_trailing_values_set()) {
-            if let Some(delim) = arg.val_delim {
-                let terminator = arg.terminator.map(OsStr::new);
-                let vals = val
-                    .split(delim)
-                    .map(|x| x.to_os_str().into_owned())
-                    .take_while(|val| Some(val.as_os_str()) != terminator);
-                self.add_multiple_vals_to_arg(arg, vals, matcher, ty, append);
-                // If there was a delimiter used or we must use the delimiter to
-                // separate the values or no more vals is needed, we're not
-                // looking for more values.
-                return if val.contains(delim)
-                    || arg.is_require_value_delimiter_set()
-                    || !matcher.needs_more_vals(arg)
-                {
-                    ParseResult::ValuesDone
+
+        let mut delim = arg.val_delim;
+        if trailing_values && self.cmd.is_dont_delimit_trailing_values_set() {
+            delim = None;
+        }
+        match delim {
+            Some(delim) if val.contains(delim) => {
+                let vals = val.split(delim).map(|x| x.to_os_str().into_owned());
+                for raw_val in vals {
+                    if Some(raw_val.as_os_str()) == arg.terminator.map(OsStr::new) {
+                        return Some(ParseResult::ValuesDone);
+                    }
+                    output.push(raw_val);
+                }
+                // Delimited values are always considered the final value
+                Some(ParseResult::ValuesDone)
+            }
+            _ if Some(val) == arg.terminator.map(RawOsStr::from_str) => {
+                Some(ParseResult::ValuesDone)
+            }
+            _ => {
+                output.push(val.to_os_str().into_owned());
+                if arg.is_require_value_delimiter_set() {
+                    Some(ParseResult::ValuesDone)
                 } else {
-                    ParseResult::Opt(arg.id.clone())
-                };
+                    None
+                }
             }
-        }
-        if let Some(t) = arg.terminator {
-            if t == val {
-                return ParseResult::ValuesDone;
-            }
-        }
-        self.add_single_val_to_arg(arg, val.to_os_str().into_owned(), matcher, ty, append);
-        if matcher.needs_more_vals(arg) {
-            ParseResult::Opt(arg.id.clone())
-        } else {
-            ParseResult::ValuesDone
         }
     }
 
-    fn add_multiple_vals_to_arg(
+    fn push_arg_values(
         &self,
         arg: &Arg<'help>,
-        vals: impl Iterator<Item = OsString>,
+        raw_vals: Vec<OsString>,
         matcher: &mut ArgMatcher,
-        ty: ValueSource,
-        append: bool,
-    ) {
-        // If not appending, create a new val group and then append vals in.
-        if !append {
-            matcher.new_val_group(&arg.id);
+    ) -> ClapResult<()> {
+        debug!("Parser::push_arg_values: {:?}", raw_vals);
+
+        for raw_val in raw_vals {
+            // update the current index because each value is a distinct index to clap
+            self.cur_idx.set(self.cur_idx.get() + 1);
+            debug!(
+                "Parser::add_single_val_to_arg: cur_idx:={}",
+                self.cur_idx.get()
+            );
+            let value_parser = arg.get_value_parser();
+            let val = value_parser.parse_ref(self.cmd, Some(arg), &raw_val)?;
+
+            // Increment or create the group "args"
             for group in self.cmd.groups_for_arg(&arg.id) {
-                matcher.new_val_group(&group);
+                matcher.add_val_to(&group, val.clone(), raw_val.clone());
+            }
+
+            matcher.add_val_to(&arg.id, val, raw_val);
+            matcher.add_index_to(&arg.id, self.cur_idx.get());
+        }
+
+        Ok(())
+    }
+
+    fn resolve_pending(&self, matcher: &mut ArgMatcher) -> ClapResult<()> {
+        let pending = match matcher.take_pending() {
+            Some(pending) => pending,
+            None => {
+                return Ok(());
+            }
+        };
+
+        debug!("Parser::resolve_pending: id={:?}", pending.id);
+        let arg = self.cmd.find(&pending.id).expect(INTERNAL_ERROR_MSG);
+        let _ = self.react(
+            pending.ident,
+            ValueSource::CommandLine,
+            arg,
+            pending.raw_vals,
+            matcher,
+        )?;
+
+        Ok(())
+    }
+
+    fn react(
+        &self,
+        ident: Option<Identifier>,
+        source: ValueSource,
+        arg: &Arg<'help>,
+        raw_vals: Vec<OsString>,
+        matcher: &mut ArgMatcher,
+    ) -> ClapResult<ParseResult> {
+        self.resolve_pending(matcher)?;
+
+        debug!(
+            "Parser::react action={:?}, identifier={:?}, source={:?}",
+            arg.get_action(),
+            ident,
+            source
+        );
+        match arg.get_action() {
+            ArgAction::Set => {
+                if source == ValueSource::CommandLine
+                    && matches!(ident, Some(Identifier::Short) | Some(Identifier::Long))
+                {
+                    // Record flag's index
+                    self.cur_idx.set(self.cur_idx.get() + 1);
+                    debug!("Parser::react: cur_idx:={}", self.cur_idx.get());
+                }
+                matcher.remove(&arg.id);
+                self.start_custom_arg(matcher, arg, source);
+                self.push_arg_values(arg, raw_vals, matcher)?;
+                if cfg!(debug_assertions) && matcher.needs_more_vals(arg) {
+                    debug!(
+                        "Parser::react not enough values passed in, leaving it to the validator to complain",
+                    );
+                }
+                Ok(ParseResult::ValuesDone)
+            }
+            ArgAction::Append => {
+                if source == ValueSource::CommandLine
+                    && matches!(ident, Some(Identifier::Short) | Some(Identifier::Long))
+                {
+                    // Record flag's index
+                    self.cur_idx.set(self.cur_idx.get() + 1);
+                    debug!("Parser::react: cur_idx:={}", self.cur_idx.get());
+                }
+                self.start_custom_arg(matcher, arg, source);
+                self.push_arg_values(arg, raw_vals, matcher)?;
+                if cfg!(debug_assertions) && matcher.needs_more_vals(arg) {
+                    debug!(
+                        "Parser::react not enough values passed in, leaving it to the validator to complain",
+                    );
+                }
+                Ok(ParseResult::ValuesDone)
+            }
+            #[allow(deprecated)]
+            ArgAction::StoreValue => {
+                if ident == Some(Identifier::Index)
+                    && arg.is_multiple_values_set()
+                    && matcher.contains(&arg.id)
+                {
+                    // HACK: Reuse existing occurrence
+                } else if source == ValueSource::CommandLine {
+                    if matches!(ident, Some(Identifier::Short) | Some(Identifier::Long)) {
+                        // Record flag's index
+                        self.cur_idx.set(self.cur_idx.get() + 1);
+                        debug!("Parser::react: cur_idx:={}", self.cur_idx.get());
+                    }
+                    self.start_occurrence_of_arg(matcher, arg);
+                } else {
+                    self.start_custom_arg(matcher, arg, source);
+                }
+                self.push_arg_values(arg, raw_vals, matcher)?;
+                if ident == Some(Identifier::Index) && arg.is_multiple_values_set() {
+                    // HACK: Maintain existing occurrence behavior
+                    let matched = matcher.get_mut(&arg.id).unwrap();
+                    #[allow(deprecated)]
+                    matched.set_occurrences(matched.num_vals() as u64);
+                }
+                if cfg!(debug_assertions) && matcher.needs_more_vals(arg) {
+                    debug!(
+                        "Parser::react not enough values passed in, leaving it to the validator to complain",
+                    );
+                }
+                Ok(ParseResult::ValuesDone)
+            }
+            #[allow(deprecated)]
+            ArgAction::IncOccurrence => {
+                debug_assert_eq!(raw_vals, Vec::<OsString>::new());
+                if source == ValueSource::CommandLine {
+                    if matches!(ident, Some(Identifier::Short) | Some(Identifier::Long)) {
+                        // Record flag's index
+                        self.cur_idx.set(self.cur_idx.get() + 1);
+                        debug!("Parser::react: cur_idx:={}", self.cur_idx.get());
+                    }
+                    self.start_occurrence_of_arg(matcher, arg);
+                } else {
+                    self.start_custom_arg(matcher, arg, source);
+                }
+                matcher.add_index_to(&arg.id, self.cur_idx.get());
+                Ok(ParseResult::ValuesDone)
+            }
+            ArgAction::SetTrue => {
+                let raw_vals = match raw_vals.len() {
+                    0 => {
+                        vec![OsString::from("true")]
+                    }
+                    1 => raw_vals,
+                    _ => {
+                        debug!("Parser::react ignoring trailing values: {:?}", raw_vals);
+                        let mut raw_vals = raw_vals;
+                        raw_vals.resize(1, Default::default());
+                        raw_vals
+                    }
+                };
+
+                matcher.remove(&arg.id);
+                self.start_custom_arg(matcher, arg, source);
+                self.push_arg_values(arg, raw_vals, matcher)?;
+                Ok(ParseResult::ValuesDone)
+            }
+            ArgAction::SetFalse => {
+                let raw_vals = match raw_vals.len() {
+                    0 => {
+                        vec![OsString::from("false")]
+                    }
+                    1 => raw_vals,
+                    _ => {
+                        debug!("Parser::react ignoring trailing values: {:?}", raw_vals);
+                        let mut raw_vals = raw_vals;
+                        raw_vals.resize(1, Default::default());
+                        raw_vals
+                    }
+                };
+
+                matcher.remove(&arg.id);
+                self.start_custom_arg(matcher, arg, source);
+                self.push_arg_values(arg, raw_vals, matcher)?;
+                Ok(ParseResult::ValuesDone)
+            }
+            ArgAction::Count => {
+                let raw_vals = match raw_vals.len() {
+                    0 => {
+                        let existing_value = *matcher
+                            .get_one::<crate::builder::CountType>(arg.get_id())
+                            .unwrap_or(&0);
+                        let next_value = existing_value.saturating_add(1);
+                        vec![OsString::from(next_value.to_string())]
+                    }
+                    1 => raw_vals,
+                    _ => {
+                        debug!("Parser::react ignoring trailing values: {:?}", raw_vals);
+                        let mut raw_vals = raw_vals;
+                        raw_vals.resize(1, Default::default());
+                        raw_vals
+                    }
+                };
+
+                matcher.remove(&arg.id);
+                self.start_custom_arg(matcher, arg, source);
+                self.push_arg_values(arg, raw_vals, matcher)?;
+                Ok(ParseResult::ValuesDone)
+            }
+            ArgAction::Help => {
+                debug_assert_eq!(raw_vals, Vec::<OsString>::new());
+                let use_long = match ident {
+                    Some(Identifier::Long) => true,
+                    Some(Identifier::Short) => false,
+                    Some(Identifier::Index) => true,
+                    None => true,
+                };
+                debug!("Help: use_long={}", use_long);
+                Err(self.help_err(use_long, Stream::Stdout))
+            }
+            ArgAction::Version => {
+                debug_assert_eq!(raw_vals, Vec::<OsString>::new());
+                let use_long = match ident {
+                    Some(Identifier::Long) => true,
+                    Some(Identifier::Short) => false,
+                    Some(Identifier::Index) => true,
+                    None => true,
+                };
+                debug!("Version: use_long={}", use_long);
+                Err(self.version_err(use_long))
             }
         }
-        for val in vals {
-            self.add_single_val_to_arg(arg, val, matcher, ty, true);
-        }
-    }
-
-    fn add_single_val_to_arg(
-        &self,
-        arg: &Arg<'help>,
-        val: OsString,
-        matcher: &mut ArgMatcher,
-        ty: ValueSource,
-        append: bool,
-    ) {
-        debug!("Parser::add_single_val_to_arg: adding val...{:?}", val);
-
-        // update the current index because each value is a distinct index to clap
-        self.cur_idx.set(self.cur_idx.get() + 1);
-        debug!(
-            "Parser::add_single_val_to_arg: cur_idx:={}",
-            self.cur_idx.get()
-        );
-
-        // Increment or create the group "args"
-        for group in self.cmd.groups_for_arg(&arg.id) {
-            matcher.add_val_to(&group, val.clone(), ty, append);
-        }
-
-        matcher.add_val_to(&arg.id, val, ty, append);
-        matcher.add_index_to(&arg.id, self.cur_idx.get(), ty);
-    }
-
-    fn has_val_groups(&self, matcher: &mut ArgMatcher, arg: &Arg<'help>) -> bool {
-        matcher.has_val_groups(&arg.id)
-    }
-
-    fn parse_flag(&self, flag: &Arg<'help>, matcher: &mut ArgMatcher) -> ParseResult {
-        debug!("Parser::parse_flag");
-
-        self.inc_occurrence_of_arg(matcher, flag);
-        matcher.add_index_to(&flag.id, self.cur_idx.get(), ValueSource::CommandLine);
-
-        ParseResult::ValuesDone
     }
 
     fn remove_overrides(&self, arg: &Arg<'help>, matcher: &mut ArgMatcher) {
@@ -1215,7 +1329,7 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
 
         // Override anything that can override us
         let mut transitive = Vec::new();
-        for arg_id in matcher.arg_names() {
+        for arg_id in matcher.arg_ids() {
             if let Some(overrider) = self.cmd.find(arg_id) {
                 if overrider.overrides.contains(&arg.id) {
                     transitive.push(&overrider.id);
@@ -1228,37 +1342,164 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
         }
     }
 
-    pub(crate) fn add_defaults(&mut self, matcher: &mut ArgMatcher, trailing_values: bool) {
-        debug!("Parser::add_defaults");
+    #[cfg(feature = "env")]
+    fn add_env(&mut self, matcher: &mut ArgMatcher) -> ClapResult<()> {
+        debug!("Parser::add_env");
+        use crate::util::str_to_bool;
 
-        for o in self.cmd.get_opts() {
-            debug!("Parser::add_defaults:iter:{}:", o.name);
-            self.add_value(o, matcher, ValueSource::DefaultValue, trailing_values);
+        let trailing_values = false; // defaults are independent of the commandline
+        for arg in self.cmd.get_arguments() {
+            // Use env only if the arg was absent among command line args,
+            // early return if this is not the case.
+            if matcher.contains(&arg.id) {
+                debug!("Parser::add_env: Skipping existing arg `{}`", arg);
+                continue;
+            }
+
+            debug!("Parser::add_env: Checking arg `{}`", arg);
+            if let Some((_, Some(ref val))) = arg.env {
+                let val = RawOsStr::new(val);
+
+                if arg.is_takes_value_set() {
+                    debug!(
+                        "Parser::add_env: Found an opt with value={:?}, trailing={:?}",
+                        val, trailing_values
+                    );
+                    let mut arg_values = Vec::new();
+                    let _parse_result =
+                        self.split_arg_values(arg, &val, trailing_values, &mut arg_values);
+                    let _ = self.react(None, ValueSource::EnvVariable, arg, arg_values, matcher)?;
+                    if let Some(_parse_result) = _parse_result {
+                        if _parse_result != ParseResult::ValuesDone {
+                            debug!("Parser::add_env: Ignoring state {:?}; env variables are outside of the parse loop", _parse_result);
+                        }
+                    }
+                } else {
+                    match arg.get_action() {
+                        #[allow(deprecated)]
+                        ArgAction::StoreValue => unreachable!("{:?} is not a flag", arg.get_id()),
+                        #[allow(deprecated)]
+                        ArgAction::IncOccurrence => {
+                            debug!("Parser::add_env: Found a flag with value `{:?}`", val);
+                            let predicate = str_to_bool(val.to_str_lossy());
+                            debug!("Parser::add_env: Found boolean literal `{:?}`", predicate);
+                            if predicate.unwrap_or(true) {
+                                let _ = self.react(
+                                    None,
+                                    ValueSource::EnvVariable,
+                                    arg,
+                                    vec![],
+                                    matcher,
+                                )?;
+                            }
+                        }
+                        ArgAction::Set
+                        | ArgAction::Append
+                        | ArgAction::SetTrue
+                        | ArgAction::SetFalse
+                        | ArgAction::Count => {
+                            let mut arg_values = Vec::new();
+                            let _parse_result =
+                                self.split_arg_values(arg, &val, trailing_values, &mut arg_values);
+                            let _ = self.react(
+                                None,
+                                ValueSource::EnvVariable,
+                                arg,
+                                arg_values,
+                                matcher,
+                            )?;
+                            if let Some(_parse_result) = _parse_result {
+                                if _parse_result != ParseResult::ValuesDone {
+                                    debug!("Parser::add_env: Ignoring state {:?}; env variables are outside of the parse loop", _parse_result);
+                                }
+                            }
+                        }
+                        // Early return on `Help` or `Version`.
+                        ArgAction::Help | ArgAction::Version => {
+                            let _ =
+                                self.react(None, ValueSource::EnvVariable, arg, vec![], matcher)?;
+                        }
+                    }
+                }
+            }
         }
 
-        for p in self.cmd.get_positionals() {
-            debug!("Parser::add_defaults:iter:{}:", p.name);
-            self.add_value(p, matcher, ValueSource::DefaultValue, trailing_values);
-        }
+        Ok(())
     }
 
-    fn add_value(
-        &self,
-        arg: &Arg<'help>,
-        matcher: &mut ArgMatcher,
-        ty: ValueSource,
-        trailing_values: bool,
-    ) {
+    fn add_defaults(&self, matcher: &mut ArgMatcher) -> ClapResult<()> {
+        debug!("Parser::add_defaults");
+
+        for arg in self.cmd.get_arguments() {
+            debug!("Parser::add_defaults:iter:{}:", arg.name);
+            self.add_default_value(arg, matcher)?;
+        }
+
+        Ok(())
+    }
+
+    fn add_default_value(&self, arg: &Arg<'help>, matcher: &mut ArgMatcher) -> ClapResult<()> {
+        let trailing_values = false; // defaults are independent of the commandline
+
+        if !arg.default_missing_vals.is_empty() {
+            debug!(
+                "Parser::add_default_value:iter:{}: has default missing vals",
+                arg.name
+            );
+            match matcher.get(&arg.id) {
+                Some(ma) if ma.all_val_groups_empty() => {
+                    debug!(
+                        "Parser::add_default_value:iter:{}: has no user defined vals",
+                        arg.name
+                    );
+                    // The flag occurred, we just want to add the val groups
+                    let mut arg_values = Vec::new();
+                    for v in arg.default_missing_vals.iter() {
+                        let _parse_result = self.split_arg_values(
+                            arg,
+                            &RawOsStr::new(v),
+                            trailing_values,
+                            &mut arg_values,
+                        );
+                        if let Some(_parse_result) = _parse_result {
+                            if _parse_result != ParseResult::ValuesDone {
+                                debug!("Parser::add_default_value: Ignoring state {:?}; defaults are outside of the parse loop", _parse_result);
+                            }
+                        }
+                    }
+                    self.start_custom_arg(matcher, arg, ValueSource::CommandLine);
+                    self.push_arg_values(arg, arg_values, matcher)?;
+                }
+                None => {
+                    debug!("Parser::add_default_value:iter:{}: wasn't used", arg.name);
+                    // do nothing
+                }
+                _ => {
+                    debug!(
+                        "Parser::add_default_value:iter:{}: has user defined vals",
+                        arg.name
+                    );
+                    // do nothing
+                }
+            }
+        } else {
+            debug!(
+                "Parser::add_default_value:iter:{}: doesn't have default missing vals",
+                arg.name
+            );
+            // do nothing
+        }
+
         if !arg.default_vals_ifs.is_empty() {
-            debug!("Parser::add_value: has conditional defaults");
-            if matcher.get(&arg.id).is_none() {
+            debug!("Parser::add_default_value: has conditional defaults");
+            if !matcher.contains(&arg.id) {
                 for (id, val, default) in arg.default_vals_ifs.iter() {
                     let add = if let Some(a) = matcher.get(id) {
                         match val {
-                            crate::build::ArgPredicate::Equals(v) => {
-                                a.vals_flatten().any(|value| v == value)
+                            crate::builder::ArgPredicate::Equals(v) => {
+                                a.raw_vals_flatten().any(|value| v == value)
                             }
-                            crate::build::ArgPredicate::IsPresent => true,
+                            crate::builder::ArgPredicate::IsPresent => true,
                         }
                     } else {
                         false
@@ -1266,173 +1507,92 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
 
                     if add {
                         if let Some(default) = default {
-                            self.add_val_to_arg(
+                            let mut arg_values = Vec::new();
+                            let _parse_result = self.split_arg_values(
                                 arg,
                                 &RawOsStr::new(default),
-                                matcher,
-                                ty,
-                                false,
                                 trailing_values,
+                                &mut arg_values,
                             );
+                            let _ = self.react(
+                                None,
+                                ValueSource::DefaultValue,
+                                arg,
+                                arg_values,
+                                matcher,
+                            )?;
+                            if let Some(_parse_result) = _parse_result {
+                                if _parse_result != ParseResult::ValuesDone {
+                                    debug!("Parser::add_default_value: Ignoring state {:?}; defaults are outside of the parse loop", _parse_result);
+                                }
+                            }
                         }
-                        return;
+                        return Ok(());
                     }
                 }
             }
         } else {
-            debug!("Parser::add_value: doesn't have conditional defaults");
-        }
-
-        fn process_default_vals(arg: &Arg<'_>, default_vals: &[&OsStr]) -> Vec<OsString> {
-            if let Some(delim) = arg.val_delim {
-                let mut vals = vec![];
-                for val in default_vals {
-                    let val = RawOsStr::new(val);
-                    for val in val.split(delim) {
-                        vals.push(val.to_os_str().into_owned());
-                    }
-                }
-                vals
-            } else {
-                default_vals.iter().map(OsString::from).collect()
-            }
+            debug!("Parser::add_default_value: doesn't have conditional defaults");
         }
 
         if !arg.default_vals.is_empty() {
-            debug!("Parser::add_value:iter:{}: has default vals", arg.name);
-            if matcher.get(&arg.id).is_some() {
-                debug!("Parser::add_value:iter:{}: was used", arg.name);
+            debug!(
+                "Parser::add_default_value:iter:{}: has default vals",
+                arg.name
+            );
+            if matcher.contains(&arg.id) {
+                debug!("Parser::add_default_value:iter:{}: was used", arg.name);
             // do nothing
             } else {
-                debug!("Parser::add_value:iter:{}: wasn't used", arg.name);
-
-                self.add_multiple_vals_to_arg(
-                    arg,
-                    process_default_vals(arg, &arg.default_vals).into_iter(),
-                    matcher,
-                    ty,
-                    false,
-                );
-            }
-        } else {
-            debug!(
-                "Parser::add_value:iter:{}: doesn't have default vals",
-                arg.name
-            );
-
-            // do nothing
-        }
-
-        if !arg.default_missing_vals.is_empty() {
-            debug!(
-                "Parser::add_value:iter:{}: has default missing vals",
-                arg.name
-            );
-            match matcher.get(&arg.id) {
-                Some(ma) if ma.all_val_groups_empty() => {
-                    debug!(
-                        "Parser::add_value:iter:{}: has no user defined vals",
-                        arg.name
-                    );
-                    self.add_multiple_vals_to_arg(
+                debug!("Parser::add_default_value:iter:{}: wasn't used", arg.name);
+                let mut arg_values = Vec::new();
+                for v in arg.default_vals.iter() {
+                    let _parse_result = self.split_arg_values(
                         arg,
-                        process_default_vals(arg, &arg.default_missing_vals).into_iter(),
-                        matcher,
-                        ty,
-                        false,
+                        &RawOsStr::new(v),
+                        trailing_values,
+                        &mut arg_values,
                     );
+                    if let Some(_parse_result) = _parse_result {
+                        if _parse_result != ParseResult::ValuesDone {
+                            debug!("Parser::add_default_value: Ignoring state {:?}; defaults are outside of the parse loop", _parse_result);
+                        }
+                    }
                 }
-                None => {
-                    debug!("Parser::add_value:iter:{}: wasn't used", arg.name);
-                    // do nothing
-                }
-                _ => {
-                    debug!("Parser::add_value:iter:{}: has user defined vals", arg.name);
-                    // do nothing
-                }
+                let _ = self.react(None, ValueSource::DefaultValue, arg, arg_values, matcher)?;
             }
         } else {
             debug!(
-                "Parser::add_value:iter:{}: doesn't have default missing vals",
+                "Parser::add_default_value:iter:{}: doesn't have default vals",
                 arg.name
             );
 
             // do nothing
         }
+
+        Ok(())
     }
 
-    #[cfg(feature = "env")]
-    pub(crate) fn add_env(
-        &mut self,
-        matcher: &mut ArgMatcher,
-        trailing_values: bool,
-    ) -> ClapResult<()> {
-        use crate::util::str_to_bool;
-
-        self.cmd.get_arguments().try_for_each(|a| {
-            // Use env only if the arg was absent among command line args,
-            // early return if this is not the case.
-            if matcher
-                .get(&a.id)
-                .map_or(false, |a| a.get_occurrences() != 0)
-            {
-                debug!("Parser::add_env: Skipping existing arg `{}`", a);
-                return Ok(());
-            }
-
-            debug!("Parser::add_env: Checking arg `{}`", a);
-            if let Some((_, Some(ref val))) = a.env {
-                let val = RawOsStr::new(val);
-
-                if a.is_takes_value_set() {
-                    debug!(
-                        "Parser::add_env: Found an opt with value={:?}, trailing={:?}",
-                        val, trailing_values
-                    );
-                    self.add_val_to_arg(
-                        a,
-                        &val,
-                        matcher,
-                        ValueSource::EnvVariable,
-                        false,
-                        trailing_values,
-                    );
-                    return Ok(());
-                }
-
-                debug!("Parser::add_env: Checking for help and version");
-                // Early return on `HelpFlag` or `VersionFlag`.
-                match self.check_for_help_and_version_str(&val) {
-                    Some(ParseResult::HelpFlag) => {
-                        return Err(self.help_err(true, Stream::Stdout));
-                    }
-                    Some(ParseResult::VersionFlag) => {
-                        return Err(self.version_err(true));
-                    }
-                    _ => (),
-                }
-
-                debug!("Parser::add_env: Found a flag with value `{:?}`", val);
-                let predicate = str_to_bool(val.to_str_lossy());
-                debug!("Parser::add_env: Found boolean literal `{}`", predicate);
-                if predicate {
-                    matcher.add_index_to(&a.id, self.cur_idx.get(), ValueSource::EnvVariable);
-                }
-            }
-
-            Ok(())
-        })
+    fn start_custom_arg(&self, matcher: &mut ArgMatcher, arg: &Arg<'help>, source: ValueSource) {
+        if source == ValueSource::CommandLine {
+            // With each new occurrence, remove overrides from prior occurrences
+            self.remove_overrides(arg, matcher);
+        }
+        matcher.start_custom_arg(arg, source);
+        for group in self.cmd.groups_for_arg(&arg.id) {
+            matcher.start_custom_group(&group, source);
+        }
     }
 
     /// Increase occurrence of specific argument and the grouped arg it's in.
-    fn inc_occurrence_of_arg(&self, matcher: &mut ArgMatcher, arg: &Arg<'help>) {
+    fn start_occurrence_of_arg(&self, matcher: &mut ArgMatcher, arg: &Arg<'help>) {
         // With each new occurrence, remove overrides from prior occurrences
         self.remove_overrides(arg, matcher);
 
-        matcher.inc_occurrence_of_arg(arg);
+        matcher.start_occurrence_of_arg(arg);
         // Increment or create the group "args"
         for group in self.cmd.groups_for_arg(&arg.id) {
-            matcher.inc_occurrence_of_group(&group);
+            matcher.start_occurrence_of_group(&group);
         }
     }
 }
@@ -1468,14 +1628,17 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
 
         // Add the arg to the matches to build a proper usage string
         if let Some((name, _)) = did_you_mean.as_ref() {
-            if let Some(opt) = self.cmd.get_keymap().get(&name.as_ref()) {
-                self.inc_occurrence_of_arg(matcher, opt);
+            if let Some(arg) = self.cmd.get_keymap().get(&name.as_ref()) {
+                self.start_occurrence_of_arg(matcher, arg);
             }
         }
 
         let required = self.cmd.required_graph();
         let used: Vec<Id> = matcher
-            .arg_names()
+            .arg_ids()
+            .filter(|arg_id| {
+                matcher.check_explicit(arg_id, crate::builder::ArgPredicate::IsPresent)
+            })
             .filter(|n| self.cmd.find(n).map_or(true, |a| !a.is_hide_set()))
             .cloned()
             .collect();
@@ -1514,7 +1677,7 @@ impl<'help, 'cmd> Parser<'help, 'cmd> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ParseState {
     ValuesDone,
     Opt(Id),
@@ -1523,6 +1686,7 @@ pub(crate) enum ParseState {
 
 /// Recoverable Parsing results.
 #[derive(Debug, PartialEq, Clone)]
+#[must_use]
 enum ParseResult {
     FlagSubCommand(String),
     Opt(Id),
@@ -1548,8 +1712,18 @@ enum ParseResult {
     },
     /// No argument found e.g. parser is given `-` when parsing a flag.
     NoArg,
-    /// This is a Help flag.
-    HelpFlag,
-    /// This is a version flag.
-    VersionFlag,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PendingArg {
+    pub(crate) id: Id,
+    pub(crate) ident: Option<Identifier>,
+    pub(crate) raw_vals: Vec<OsString>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Identifier {
+    Short,
+    Long,
+    Index,
 }

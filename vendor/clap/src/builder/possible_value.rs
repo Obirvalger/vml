@@ -14,14 +14,16 @@ use crate::util::eq_ignore_case;
 /// ```rust
 /// # use clap::{Arg, PossibleValue};
 /// let cfg = Arg::new("config")
-///       .takes_value(true)
-///       .value_name("FILE")
-///       .possible_value(PossibleValue::new("fast"))
-///       .possible_value(PossibleValue::new("slow").help("slower than fast"))
-///       .possible_value(PossibleValue::new("secret speed").hide(true));
+///     .takes_value(true)
+///     .value_name("FILE")
+///     .value_parser([
+///         PossibleValue::new("fast"),
+///         PossibleValue::new("slow").help("slower than fast"),
+///         PossibleValue::new("secret speed").hide(true)
+///     ]);
 /// ```
 /// [Args]: crate::Arg
-/// [possible values]: crate::Arg::possible_value()
+/// [possible values]: crate::builder::ValueParser::possible_values
 /// [hide]: PossibleValue::hide()
 /// [help]: PossibleValue::help()
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -162,7 +164,10 @@ impl<'help> PossibleValue<'help> {
 
     /// Deprecated, replaced with [`PossibleValue::is_hide_set`]
     #[inline]
-    #[deprecated(since = "3.1.0", note = "Replaced with `PossibleValue::is_hide_set`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `PossibleValue::is_hide_set`")
+    )]
     pub fn is_hidden(&self) -> bool {
         self.is_hide_set()
     }
@@ -179,9 +184,12 @@ impl<'help> PossibleValue<'help> {
     }
 
     /// Get the name if argument value is not hidden, `None` otherwise
-    #[deprecated(
-        since = "3.1.4",
-        note = "Use `PossibleValue::is_hide_set` and `PossibleValue::get_name`"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.1.4",
+            note = "Use `PossibleValue::is_hide_set` and `PossibleValue::get_name`"
+        )
     )]
     pub fn get_visible_name(&self) -> Option<&'help str> {
         if self.hide {

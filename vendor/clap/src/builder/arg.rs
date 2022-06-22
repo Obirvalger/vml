@@ -17,16 +17,17 @@ use std::{env, ffi::OsString};
 use yaml_rust::Yaml;
 
 // Internal
-use crate::build::usage_parser::UsageParser;
-use crate::build::ArgPredicate;
+use crate::builder::usage_parser::UsageParser;
+use crate::builder::ArgPredicate;
 use crate::util::{Id, Key};
+use crate::ArgAction;
 use crate::PossibleValue;
 use crate::ValueHint;
 use crate::INTERNAL_ERROR_MSG;
 use crate::{ArgFlags, ArgSettings};
 
 #[cfg(feature = "regex")]
-use crate::build::RegexRef;
+use crate::builder::RegexRef;
 
 /// The abstract representation of a command line argument. Used to set all the options and
 /// relationships that define a valid argument for the program.
@@ -63,6 +64,8 @@ pub struct Arg<'help> {
     pub(crate) name: &'help str,
     pub(crate) help: Option<&'help str>,
     pub(crate) long_help: Option<&'help str>,
+    pub(crate) action: Option<ArgAction>,
+    pub(crate) value_parser: Option<super::ValueParser>,
     pub(crate) blacklist: Vec<Id>,
     pub(crate) settings: ArgFlags,
     pub(crate) overrides: Vec<Id>,
@@ -94,7 +97,7 @@ pub struct Arg<'help> {
     pub(crate) terminator: Option<&'help str>,
     pub(crate) index: Option<usize>,
     pub(crate) help_heading: Option<Option<&'help str>>,
-    pub(crate) value_hint: ValueHint,
+    pub(crate) value_hint: Option<ValueHint>,
 }
 
 /// # Basic API
@@ -132,7 +135,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::id`]
-    #[deprecated(since = "3.1.0", note = "Replaced with `Arg::id`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `Arg::id`")
+    )]
     pub fn name<S: Into<&'help str>>(self, n: S) -> Self {
         self.id(n)
     }
@@ -153,12 +159,13 @@ impl<'help> Arg<'help> {
     /// # use clap::{Command, Arg};
     /// let m = Command::new("prog")
     ///     .arg(Arg::new("config")
-    ///         .short('c'))
+    ///         .short('c')
+    ///         .takes_value(true))
     ///     .get_matches_from(vec![
-    ///         "prog", "-c"
+    ///         "prog", "-c", "file.toml"
     ///     ]);
     ///
-    /// assert!(m.is_present("config"));
+    /// assert_eq!(m.get_one::<String>("config").map(String::as_str), Some("file.toml"));
     /// ```
     #[inline]
     #[must_use]
@@ -190,12 +197,13 @@ impl<'help> Arg<'help> {
     /// # use clap::{Command, Arg};
     /// let m = Command::new("prog")
     ///     .arg(Arg::new("cfg")
-    ///         .long("config"))
+    ///         .long("config")
+    ///         .takes_value(true))
     ///     .get_matches_from(vec![
-    ///         "prog", "--config"
+    ///         "prog", "--config", "file.toml"
     ///     ]);
     ///
-    /// assert!(m.is_present("cfg"));
+    /// assert_eq!(m.get_one::<String>("cfg").map(String::as_str), Some("file.toml"));
     /// ```
     #[inline]
     #[must_use]
@@ -228,7 +236,7 @@ impl<'help> Arg<'help> {
     ///        .get_matches_from(vec![
     ///             "prog", "--alias", "cool"
     ///         ]);
-    /// assert!(m.is_present("test"));
+    /// assert!(m.contains_id("test"));
     /// assert_eq!(m.value_of("test"), Some("cool"));
     /// ```
     #[must_use]
@@ -254,7 +262,7 @@ impl<'help> Arg<'help> {
     ///        .get_matches_from(vec![
     ///             "prog", "-e", "cool"
     ///         ]);
-    /// assert!(m.is_present("test"));
+    /// assert!(m.contains_id("test"));
     /// assert_eq!(m.value_of("test"), Some("cool"));
     /// ```
     #[must_use]
@@ -273,17 +281,18 @@ impl<'help> Arg<'help> {
     /// # Examples
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let m = Command::new("prog")
     ///             .arg(Arg::new("test")
     ///                     .long("test")
     ///                     .aliases(&["do-stuff", "do-tests", "tests"])
+    ///                     .action(ArgAction::SetTrue)
     ///                     .help("the file to add")
     ///                     .required(false))
     ///             .get_matches_from(vec![
     ///                 "prog", "--do-tests"
     ///             ]);
-    /// assert!(m.is_present("test"));
+    /// assert_eq!(*m.get_one::<bool>("test").expect("defaulted by clap"), true);
     /// ```
     #[must_use]
     pub fn aliases(mut self, names: &[&'help str]) -> Self {
@@ -299,17 +308,18 @@ impl<'help> Arg<'help> {
     /// # Examples
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let m = Command::new("prog")
     ///             .arg(Arg::new("test")
     ///                     .short('t')
     ///                     .short_aliases(&['e', 's'])
+    ///                     .action(ArgAction::SetTrue)
     ///                     .help("the file to add")
     ///                     .required(false))
     ///             .get_matches_from(vec![
     ///                 "prog", "-s"
     ///             ]);
-    /// assert!(m.is_present("test"));
+    /// assert_eq!(*m.get_one::<bool>("test").expect("defaulted by clap"), true);
     /// ```
     #[must_use]
     pub fn short_aliases(mut self, names: &[char]) -> Self {
@@ -336,7 +346,7 @@ impl<'help> Arg<'help> {
     ///        .get_matches_from(vec![
     ///             "prog", "--something-awesome", "coffee"
     ///         ]);
-    /// assert!(m.is_present("test"));
+    /// assert!(m.contains_id("test"));
     /// assert_eq!(m.value_of("test"), Some("coffee"));
     /// ```
     /// [`Command::alias`]: Arg::alias()
@@ -362,7 +372,7 @@ impl<'help> Arg<'help> {
     ///        .get_matches_from(vec![
     ///             "prog", "-t", "coffee"
     ///         ]);
-    /// assert!(m.is_present("test"));
+    /// assert!(m.contains_id("test"));
     /// assert_eq!(m.value_of("test"), Some("coffee"));
     /// ```
     #[must_use]
@@ -380,15 +390,16 @@ impl<'help> Arg<'help> {
     /// # Examples
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let m = Command::new("prog")
     ///             .arg(Arg::new("test")
     ///                 .long("test")
+    ///                 .action(ArgAction::SetTrue)
     ///                 .visible_aliases(&["something", "awesome", "cool"]))
     ///        .get_matches_from(vec![
     ///             "prog", "--awesome"
     ///         ]);
-    /// assert!(m.is_present("test"));
+    /// assert_eq!(*m.get_one::<bool>("test").expect("defaulted by clap"), true);
     /// ```
     /// [`Command::aliases`]: Arg::aliases()
     #[must_use]
@@ -404,15 +415,16 @@ impl<'help> Arg<'help> {
     /// # Examples
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let m = Command::new("prog")
     ///             .arg(Arg::new("test")
     ///                 .long("test")
+    ///                 .action(ArgAction::SetTrue)
     ///                 .visible_short_aliases(&['t', 'e']))
     ///        .get_matches_from(vec![
     ///             "prog", "-t"
     ///         ]);
-    /// assert!(m.is_present("test"));
+    /// assert_eq!(*m.get_one::<bool>("test").expect("defaulted by clap"), true);
     /// ```
     #[must_use]
     pub fn visible_short_aliases(mut self, names: &[char]) -> Self {
@@ -464,7 +476,7 @@ impl<'help> Arg<'help> {
     ///         "prog", "--debug", "fast"
     ///     ]);
     ///
-    /// assert!(m.is_present("mode"));
+    /// assert!(m.contains_id("mode"));
     /// assert_eq!(m.value_of("mode"), Some("fast")); // notice index(1) means "first positional"
     ///                                               // *not* first argument
     /// ```
@@ -744,11 +756,12 @@ impl<'help> Arg<'help> {
     /// want to clutter the source with three duplicate [`Arg`] definitions.
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let m = Command::new("prog")
     ///     .arg(Arg::new("verb")
     ///         .long("verbose")
     ///         .short('v')
+    ///         .action(ArgAction::SetTrue)
     ///         .global(true))
     ///     .subcommand(Command::new("test"))
     ///     .subcommand(Command::new("do-stuff"))
@@ -758,11 +771,10 @@ impl<'help> Arg<'help> {
     ///
     /// assert_eq!(m.subcommand_name(), Some("do-stuff"));
     /// let sub_m = m.subcommand_matches("do-stuff").unwrap();
-    /// assert!(sub_m.is_present("verb"));
+    /// assert_eq!(*sub_m.get_one::<bool>("verb").expect("defaulted by clap"), true);
     /// ```
     ///
     /// [`Subcommand`]: crate::Subcommand
-    /// [`ArgMatches::is_present("flag")`]: ArgMatches::is_present()
     #[inline]
     #[must_use]
     pub fn global(self, yes: bool) -> Self {
@@ -773,53 +785,13 @@ impl<'help> Arg<'help> {
         }
     }
 
-    /// Specifies that the argument may appear more than once.
-    ///
-    /// For flags, this results in the number of occurrences of the flag being recorded. For
-    /// example `-ddd` or `-d -d -d` would count as three occurrences. For options or arguments
-    /// that take a value, this *does not* affect how many values they can accept. (i.e. only one
-    /// at a time is allowed)
-    ///
-    /// For example, `--opt val1 --opt val2` is allowed, but `--opt val1 val2` is not.
-    ///
-    /// # Examples
-    ///
-    /// An example with flags
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// let m = Command::new("prog")
-    ///     .arg(Arg::new("verbose")
-    ///         .multiple_occurrences(true)
-    ///         .short('v'))
-    ///     .get_matches_from(vec![
-    ///         "prog", "-v", "-v", "-v"    // note, -vvv would have same result
-    ///     ]);
-    ///
-    /// assert!(m.is_present("verbose"));
-    /// assert_eq!(m.occurrences_of("verbose"), 3);
-    /// ```
-    ///
-    /// An example with options
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// let m = Command::new("prog")
-    ///     .arg(Arg::new("file")
-    ///         .multiple_occurrences(true)
-    ///         .takes_value(true)
-    ///         .short('F'))
-    ///     .get_matches_from(vec![
-    ///         "prog", "-F", "file1", "-F", "file2", "-F", "file3"
-    ///     ]);
-    ///
-    /// assert!(m.is_present("file"));
-    /// assert_eq!(m.occurrences_of("file"), 3);
-    /// let files: Vec<_> = m.values_of("file").unwrap().collect();
-    /// assert_eq!(files, ["file1", "file2", "file3"]);
-    /// ```
+    /// Deprecated, replaced with [`Arg::action`] ([Issue #3772](https://github.com/clap-rs/clap/issues/3772))
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.2.0", note = "Replaced with `Arg::action` (Issue #3772)")
+    )]
     pub fn multiple_occurrences(self, yes: bool) -> Self {
         if yes {
             self.setting(ArgSettings::MultipleOccurrences)
@@ -828,57 +800,16 @@ impl<'help> Arg<'help> {
         }
     }
 
-    /// The *maximum* number of occurrences for this argument.
-    ///
-    /// For example, if you had a
-    /// `-v` flag and you wanted up to 3 levels of verbosity you would set `.max_occurrences(3)`, and
-    /// this argument would be satisfied if the user provided it once or twice or thrice.
-    ///
-    /// **NOTE:** This implicitly sets [`Arg::multiple_occurrences(true)`] if the value is greater than 1.
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// Arg::new("verbosity")
-    ///     .short('v')
-    ///     .max_occurrences(3);
-    /// ```
-    ///
-    /// Supplying less than the maximum number of arguments is allowed
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("verbosity")
-    ///         .max_occurrences(3)
-    ///         .short('v'))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "-vvv"
-    ///     ]);
-    ///
-    /// assert!(res.is_ok());
-    /// let m = res.unwrap();
-    /// assert_eq!(m.occurrences_of("verbosity"), 3);
-    /// ```
-    ///
-    /// Supplying more than the maximum number of arguments is an error
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg, ErrorKind};
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("verbosity")
-    ///         .max_occurrences(2)
-    ///         .short('v'))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "-vvv"
-    ///     ]);
-    ///
-    /// assert!(res.is_err());
-    /// assert_eq!(res.unwrap_err().kind(), ErrorKind::TooManyOccurrences);
-    /// ```
-    /// [`Arg::multiple_occurrences(true)`]: Arg::multiple_occurrences()
+    /// Deprecated, for flags this is replaced with `action(ArgAction::Count).value_parser(value_parser!(u8).range(..max))`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.2.0",
+            note = "For flags, replaced with `action(ArgAction::Count).value_parser(value_parser!(u8).range(..max))`"
+        )
+    )]
     pub fn max_occurrences(mut self, qty: usize) -> Self {
         self.max_occurs = Some(qty);
         if qty > 1 {
@@ -985,7 +916,7 @@ impl<'help> Arg<'help> {
     ///         "prog", "--mode", "fast"
     ///     ]);
     ///
-    /// assert!(m.is_present("mode"));
+    /// assert!(m.contains_id("mode"));
     /// assert_eq!(m.value_of("mode"), Some("fast"));
     /// ```
     /// [`Arg::value_delimiter(char)`]: Arg::value_delimiter()
@@ -998,6 +929,92 @@ impl<'help> Arg<'help> {
         } else {
             self.unset_setting(ArgSettings::TakesValue)
         }
+    }
+
+    /// Specify the behavior when parsing an argument
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use clap::Command;
+    /// # use clap::Arg;
+    /// let cmd = Command::new("mycmd")
+    ///     .arg(
+    ///         Arg::new("flag")
+    ///             .long("flag")
+    ///             .action(clap::ArgAction::Set)
+    ///     );
+    ///
+    /// let matches = cmd.try_get_matches_from(["mycmd", "--flag", "value"]).unwrap();
+    /// assert!(matches.contains_id("flag"));
+    /// assert_eq!(matches.occurrences_of("flag"), 0);
+    /// assert_eq!(
+    ///     matches.get_many::<String>("flag").unwrap_or_default().map(|v| v.as_str()).collect::<Vec<_>>(),
+    ///     vec!["value"]
+    /// );
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn action(mut self, action: ArgAction) -> Self {
+        self.action = Some(action);
+        self
+    }
+
+    /// Specify the type of the argument.
+    ///
+    /// This allows parsing and validating a value before storing it into
+    /// [`ArgMatches`][crate::ArgMatches].
+    ///
+    /// See also
+    /// - [`value_parser!`][crate::value_parser!] for auto-selecting a value parser for a given type
+    ///   - [`BoolishValueParser`][crate::builder::BoolishValueParser], and [`FalseyValueParser`][crate::builder::FalseyValueParser] for alternative `bool` implementations
+    ///   - [`NonEmptyStringValueParser`][crate::builder::NonEmptyStringValueParser] for basic validation for strings
+    /// - [`RangedI64ValueParser`][crate::builder::RangedI64ValueParser] and [`RangedU64ValueParser`][crate::builder::RangedU64ValueParser] for numeric ranges
+    /// - [`EnumValueParser`][crate::builder::EnumValueParser] and  [`PossibleValuesParser`][crate::builder::PossibleValuesParser] for static enumerated values
+    /// - or any other [`TypedValueParser`][crate::builder::TypedValueParser] implementation
+    ///
+    /// ```rust
+    /// let mut cmd = clap::Command::new("raw")
+    ///     .arg(
+    ///         clap::Arg::new("color")
+    ///             .long("color")
+    ///             .value_parser(["always", "auto", "never"])
+    ///             .default_value("auto")
+    ///     )
+    ///     .arg(
+    ///         clap::Arg::new("hostname")
+    ///             .long("hostname")
+    ///             .value_parser(clap::builder::NonEmptyStringValueParser::new())
+    ///             .takes_value(true)
+    ///             .required(true)
+    ///     )
+    ///     .arg(
+    ///         clap::Arg::new("port")
+    ///             .long("port")
+    ///             .value_parser(clap::value_parser!(u16).range(3000..))
+    ///             .takes_value(true)
+    ///             .required(true)
+    ///     );
+    ///
+    /// let m = cmd.try_get_matches_from_mut(
+    ///     ["cmd", "--hostname", "rust-lang.org", "--port", "3001"]
+    /// ).unwrap();
+    ///
+    /// let color: &String = m.get_one("color")
+    ///     .expect("default");
+    /// assert_eq!(color, "auto");
+    ///
+    /// let hostname: &String = m.get_one("hostname")
+    ///     .expect("required");
+    /// assert_eq!(hostname, "rust-lang.org");
+    ///
+    /// let port: u16 = *m.get_one("port")
+    ///     .expect("required");
+    /// assert_eq!(port, 3001);
+    /// ```
+    pub fn value_parser(mut self, parser: impl Into<super::ValueParser>) -> Self {
+        self.value_parser = Some(parser.into());
+        self
     }
 
     /// Specifies that the argument may have an unknown number of values
@@ -1044,7 +1061,7 @@ impl<'help> Arg<'help> {
     /// until another argument is reached and it knows `--ui-paths` is done parsing.
     ///
     /// By adding additional parameters to `--ui-paths` we can solve this issue. Consider adding
-    /// [`Arg::number_of_values(1)`] or using *only* [`Arg::multiple_occurrences`]. The following are all
+    /// [`Arg::number_of_values(1)`] or using *only* [`ArgAction::Append`]. The following are all
     /// valid, and `signer` is parsed as a subcommand in the first case, but a value in the second
     /// case.
     ///
@@ -1068,8 +1085,7 @@ impl<'help> Arg<'help> {
     ///         "prog", "-F", "file1", "file2", "file3"
     ///     ]);
     ///
-    /// assert!(m.is_present("file"));
-    /// assert_eq!(m.occurrences_of("file"), 1); // notice only one occurrence
+    /// assert!(m.contains_id("file"));
     /// let files: Vec<_> = m.values_of("file").unwrap().collect();
     /// assert_eq!(files, ["file1", "file2", "file3"]);
     /// ```
@@ -1106,10 +1122,10 @@ impl<'help> Arg<'help> {
     ///         "prog", "-F", "file1", "file2", "file3", "word"
     ///     ]);
     ///
-    /// assert!(m.is_present("file"));
+    /// assert!(m.contains_id("file"));
     /// let files: Vec<_> = m.values_of("file").unwrap().collect();
     /// assert_eq!(files, ["file1", "file2", "file3", "word"]); // wait...what?!
-    /// assert!(!m.is_present("word")); // but we clearly used word!
+    /// assert!(!m.contains_id("word")); // but we clearly used word!
     /// ```
     ///
     /// The problem is `clap` doesn't know when to stop parsing values for "files". This is further
@@ -1117,35 +1133,35 @@ impl<'help> Arg<'help> {
     /// appear to only fail sometimes...not good!
     ///
     /// A solution for the example above is to limit how many values with a [maximum], or [specific]
-    /// number, or to say [`Arg::multiple_occurrences`] is ok, but multiple values is not.
+    /// number, or to say [`ArgAction::Append`] is ok, but multiple values is not.
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ArgAction};
     /// let m = Command::new("prog")
     ///     .arg(Arg::new("file")
     ///         .takes_value(true)
-    ///         .multiple_occurrences(true)
+    ///         .action(ArgAction::Append)
     ///         .short('F'))
     ///     .arg(Arg::new("word"))
     ///     .get_matches_from(vec![
     ///         "prog", "-F", "file1", "-F", "file2", "-F", "file3", "word"
     ///     ]);
     ///
-    /// assert!(m.is_present("file"));
+    /// assert!(m.contains_id("file"));
     /// let files: Vec<_> = m.values_of("file").unwrap().collect();
     /// assert_eq!(files, ["file1", "file2", "file3"]);
-    /// assert!(m.is_present("word"));
+    /// assert!(m.contains_id("word"));
     /// assert_eq!(m.value_of("word"), Some("word"));
     /// ```
     ///
     /// As a final example, let's fix the above error and get a pretty message to the user :)
     ///
     /// ```rust
-    /// # use clap::{Command, Arg, ErrorKind};
+    /// # use clap::{Command, Arg, ErrorKind, ArgAction};
     /// let res = Command::new("prog")
     ///     .arg(Arg::new("file")
     ///         .takes_value(true)
-    ///         .multiple_occurrences(true)
+    ///         .action(ArgAction::Append)
     ///         .short('F'))
     ///     .arg(Arg::new("word"))
     ///     .try_get_matches_from(vec![
@@ -1295,6 +1311,11 @@ impl<'help> Arg<'help> {
     /// [`Arg::multiple_occurrences(true)`] because there is no way to determine the difference between multiple
     /// occurrences and multiple values.
     ///
+    /// **NOTE:** Passing a non-zero value is not the same as specifying [`Arg::required(true)`].
+    /// This is due to min and max validation only being performed for present arguments,
+    /// marking them as required will thus perform validation and a min value of 1
+    /// is unnecessary, ignored if not required.
+    ///
     /// # Examples
     ///
     /// ```rust
@@ -1340,6 +1361,7 @@ impl<'help> Arg<'help> {
     /// assert_eq!(res.unwrap_err().kind(), ErrorKind::TooFewValues);
     /// ```
     /// [`Arg::multiple_occurrences(true)`]: Arg::multiple_occurrences()
+    /// [`Arg::required(true)`]: Arg::required()
     #[inline]
     #[must_use]
     pub fn min_values(mut self, qty: usize) -> Self {
@@ -1489,47 +1511,17 @@ impl<'help> Arg<'help> {
     /// ```
     #[must_use]
     pub fn value_hint(mut self, value_hint: ValueHint) -> Self {
-        self.value_hint = value_hint;
+        self.value_hint = Some(value_hint);
         self.takes_value(true)
     }
 
-    /// Perform a custom validation on the argument value.
-    ///
-    /// You provide a closure
-    /// which accepts a [`&str`] value, and return a [`Result`] where the [`Err(String)`] is a
-    /// message displayed to the user.
-    ///
-    /// **NOTE:** The error message does *not* need to contain the `error:` portion, only the
-    /// message as all errors will appear as
-    /// `error: Invalid value for '<arg>': <YOUR MESSAGE>` where `<arg>` is replaced by the actual
-    /// arg, and `<YOUR MESSAGE>` is the `String` you return as the error.
-    ///
-    /// **NOTE:** There is a small performance hit for using validators, as they are implemented
-    /// with [`Arc`] pointers. And the value to be checked will be allocated an extra time in order
-    /// to be passed to the closure. This performance hit is extremely minimal in the grand
-    /// scheme of things.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// fn has_at(v: &str) -> Result<(), String> {
-    ///     if v.contains("@") { return Ok(()); }
-    ///     Err(String::from("The value did not contain the required @ sigil"))
-    /// }
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("file")
-    ///         .validator(has_at))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "some@file"
-    ///     ]);
-    /// assert!(res.is_ok());
-    /// assert_eq!(res.unwrap().value_of("file"), Some("some@file"));
-    /// ```
-    /// [`Result`]: std::result::Result
-    /// [`Err(String)`]: std::result::Result::Err
-    /// [`Arc`]: std::sync::Arc
+    /// Deprecated, replaced with [`Arg::value_parser(...)`]
+    #[inline]
     #[must_use]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.2.0", note = "Replaced with `Arg::value_parser(...)`")
+    )]
     pub fn validator<F, O, E>(mut self, mut f: F) -> Self
     where
         F: FnMut(&str) -> Result<O, E> + Send + 'help,
@@ -1541,37 +1533,12 @@ impl<'help> Arg<'help> {
         self
     }
 
-    /// Perform a custom validation on the argument value.
-    ///
-    /// See [validator][Arg::validator].
-    ///
-    /// # Examples
-    ///
-    #[cfg_attr(not(unix), doc = " ```ignore")]
-    #[cfg_attr(unix, doc = " ```rust")]
-    /// # use clap::{Command, Arg};
-    /// # use std::ffi::{OsStr, OsString};
-    /// # use std::os::unix::ffi::OsStrExt;
-    /// fn has_ampersand(v: &OsStr) -> Result<(), String> {
-    ///     if v.as_bytes().iter().any(|b| *b == b'&') { return Ok(()); }
-    ///     Err(String::from("The value did not contain the required & sigil"))
-    /// }
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("file")
-    ///         .validator_os(has_ampersand))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "Fish & chips"
-    ///     ]);
-    /// assert!(res.is_ok());
-    /// assert_eq!(res.unwrap().value_of("file"), Some("Fish & chips"));
-    /// ```
-    /// [`String`]: std::string::String
-    /// [`OsStr`]: std::ffi::OsStr
-    /// [`OsString`]: std::ffi::OsString
-    /// [`Result`]: std::result::Result
-    /// [`Err(String)`]: std::result::Result::Err
-    /// [`Rc`]: std::rc::Rc
+    /// Deprecated, replaced with [`Arg::value_parser(...)`]
     #[must_use]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.2.0", note = "Replaced with `Arg::value_parser(...)`")
+    )]
     pub fn validator_os<F, O, E>(mut self, mut f: F) -> Self
     where
         F: FnMut(&OsStr) -> Result<O, E> + Send + 'help,
@@ -1583,57 +1550,14 @@ impl<'help> Arg<'help> {
         self
     }
 
-    /// Validates the argument via the given regular expression.
-    ///
-    /// As regular expressions are not very user friendly, the additional `err_message` should
-    /// describe the expected format in clear words. All notes for [`Arg::validator()`] regarding the
-    /// error message and performance also hold for `validator_regex`.
-    ///
-    /// The regular expression can either be borrowed or moved into `validator_regex`. This happens
-    /// automatically via [`RegexRef`]'s `Into` implementation.
-    ///
-    /// # Performance
-    /// Regular expressions are expensive to compile. You should prefer sharing your regular expression.
-    /// We use a [`Cow`]-like internal structure to enable both sharing as well as taking ownership of a
-    /// provided regular expression.
-    ///
-    /// # Examples
-    ///
-    /// You can use the classical `"\d+"` regular expression to match digits only:
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// use regex::Regex;
-    ///
-    /// let digits = Regex::new(r"\d+").unwrap();
-    ///
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("digits")
-    ///         .validator_regex(&digits, "only digits are allowed"))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "12345"
-    ///     ]);
-    /// assert!(res.is_ok());
-    /// assert_eq!(res.unwrap().value_of("digits"), Some("12345"));
-    /// ```
-    ///
-    /// However, any valid `Regex` can be used:
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg, ErrorKind};
-    /// use regex::Regex;
-    ///
-    /// let priority = Regex::new(r"[A-C]").unwrap();
-    ///
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("priority")
-    ///         .validator_regex(priority, "only priorities A, B or C are allowed"))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "12345"
-    ///     ]);
-    /// assert!(res.is_err());
-    /// assert_eq!(res.err().unwrap().kind(), ErrorKind::ValueValidation)
-    /// ```
+    /// Deprecated in [Issue #3743](https://github.com/clap-rs/clap/issues/3743), replaced with [`Arg::value_parser(...)`]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.2.0",
+            note = "Deprecated in Issue #3743; eplaced with `Arg::value_parser(...)`"
+        )
+    )]
     #[cfg(feature = "regex")]
     #[must_use]
     pub fn validator_regex(
@@ -1651,76 +1575,14 @@ impl<'help> Arg<'help> {
         })
     }
 
-    /// Add a possible value for this argument.
-    ///
-    /// At runtime, `clap` verifies that only one of the specified values was used, or fails with
-    /// error message.
-    ///
-    /// **NOTE:** This setting only applies to [options] and [positional arguments]
-    ///
-    /// **NOTE:** You can use both strings directly or use [`PossibleValue`] if you want more control
-    /// over single possible values.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// Arg::new("mode")
-    ///     .takes_value(true)
-    ///     .possible_value("fast")
-    ///     .possible_value("slow")
-    ///     .possible_value("medium")
-    /// # ;
-    /// ```
-    /// The same using [`PossibleValue`]:
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg, PossibleValue};
-    /// Arg::new("mode").takes_value(true)
-    ///     .possible_value(PossibleValue::new("fast"))
-    /// // value with a help text
-    ///     .possible_value(PossibleValue::new("slow").help("not that fast"))
-    /// // value that is hidden from completion and help text
-    ///     .possible_value(PossibleValue::new("medium").hide(true))
-    /// # ;
-    /// ```
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// let m = Command::new("prog")
-    ///     .arg(Arg::new("mode")
-    ///         .long("mode")
-    ///         .takes_value(true)
-    ///         .possible_value("fast")
-    ///         .possible_value("slow")
-    ///         .possible_value("medium"))
-    ///     .get_matches_from(vec![
-    ///         "prog", "--mode", "fast"
-    ///     ]);
-    /// assert!(m.is_present("mode"));
-    /// assert_eq!(m.value_of("mode"), Some("fast"));
-    /// ```
-    ///
-    /// The next example shows a failed parse from using a value which wasn't defined as one of the
-    /// possible values.
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg, ErrorKind};
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("mode")
-    ///         .long("mode")
-    ///         .takes_value(true)
-    ///         .possible_value("fast")
-    ///         .possible_value("slow")
-    ///         .possible_value("medium"))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "--mode", "wrong"
-    ///     ]);
-    /// assert!(res.is_err());
-    /// assert_eq!(res.unwrap_err().kind(), ErrorKind::InvalidValue);
-    /// ```
-    /// [options]: Arg::takes_value()
-    /// [positional arguments]: Arg::index()
+    /// Deprecated, replaced with [`Arg::value_parser(PossibleValuesParser::new(...))`]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `Arg::value_parser(PossibleValuesParser::new(...)).takes_value(true)`"
+        )
+    )]
     #[must_use]
     pub fn possible_value<T>(mut self, value: T) -> Self
     where
@@ -1730,73 +1592,14 @@ impl<'help> Arg<'help> {
         self.takes_value(true)
     }
 
-    /// Possible values for this argument.
-    ///
-    /// At runtime, `clap` verifies that
-    /// only one of the specified values was used, or fails with an error message.
-    ///
-    /// **NOTE:** This setting only applies to [options] and [positional arguments]
-    ///
-    /// **NOTE:** You can use both strings directly or use [`PossibleValue`] if you want more control
-    /// over single possible values.
-    ///
-    /// See also [hide_possible_values][Arg::hide_possible_values].
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// Arg::new("mode")
-    ///     .takes_value(true)
-    ///     .possible_values(["fast", "slow", "medium"])
-    /// # ;
-    /// ```
-    /// The same using [`PossibleValue`]:
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg, PossibleValue};
-    /// Arg::new("mode").takes_value(true).possible_values([
-    ///     PossibleValue::new("fast"),
-    /// // value with a help text
-    ///     PossibleValue::new("slow").help("not that fast"),
-    /// // value that is hidden from completion and help text
-    ///     PossibleValue::new("medium").hide(true),
-    /// ])
-    /// # ;
-    /// ```
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg};
-    /// let m = Command::new("prog")
-    ///     .arg(Arg::new("mode")
-    ///         .long("mode")
-    ///         .takes_value(true)
-    ///         .possible_values(["fast", "slow", "medium"]))
-    ///     .get_matches_from(vec![
-    ///         "prog", "--mode", "fast"
-    ///     ]);
-    /// assert!(m.is_present("mode"));
-    /// assert_eq!(m.value_of("mode"), Some("fast"));
-    /// ```
-    ///
-    /// The next example shows a failed parse from using a value which wasn't defined as one of the
-    /// possible values.
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg, ErrorKind};
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("mode")
-    ///         .long("mode")
-    ///         .takes_value(true)
-    ///         .possible_values(["fast", "slow", "medium"]))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "--mode", "wrong"
-    ///     ]);
-    /// assert!(res.is_err());
-    /// assert_eq!(res.unwrap_err().kind(), ErrorKind::InvalidValue);
-    /// ```
-    /// [options]: Arg::takes_value()
-    /// [positional arguments]: Arg::index()
+    /// Deprecated, replaced with [`Arg::value_parser(PossibleValuesParser::new(...))`]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `Arg::value_parser(PossibleValuesParser::new(...)).takes_value(true)`"
+        )
+    )]
     #[must_use]
     pub fn possible_values<I, T>(mut self, values: I) -> Self
     where
@@ -1829,7 +1632,7 @@ impl<'help> Arg<'help> {
     ///         .long("option")
     ///         .takes_value(true)
     ///         .ignore_case(true)
-    ///         .possible_value("test123"))
+    ///         .value_parser(["test123"]))
     ///     .get_matches_from(vec![
     ///         "pv", "--option", "TeSt123",
     ///     ]);
@@ -1848,7 +1651,7 @@ impl<'help> Arg<'help> {
     ///         .takes_value(true)
     ///         .ignore_case(true)
     ///         .multiple_values(true)
-    ///         .possible_values(&["test123", "test321"]))
+    ///         .value_parser(["test123", "test321"]))
     ///     .get_matches_from(vec![
     ///         "pv", "--option", "TeSt123", "teST123", "tESt321"
     ///     ]);
@@ -1926,39 +1729,17 @@ impl<'help> Arg<'help> {
         }
     }
 
-    /// The argument's values can be invalid UTF-8 and should *not* be treated as an error.
-    ///
-    /// **NOTE:** Using argument values with invalid UTF-8 code points requires using
-    /// [`ArgMatches::value_of_os`], [`ArgMatches::values_of_os`], [`ArgMatches::value_of_lossy`],
-    /// or [`ArgMatches::values_of_lossy`] for those particular arguments which may contain invalid
-    /// UTF-8 values.
-    ///
-    /// **NOTE:** Setting this requires [`Arg::takes_value`]
-    ///
-    /// # Examples
-    ///
-    #[cfg_attr(not(unix), doc = " ```ignore")]
-    #[cfg_attr(unix, doc = " ```rust")]
-    /// # use clap::{Command, Arg};
-    /// use std::ffi::OsString;
-    /// use std::os::unix::ffi::{OsStrExt,OsStringExt};
-    /// let r = Command::new("myprog")
-    ///     .arg(Arg::new("arg").allow_invalid_utf8(true))
-    ///     .try_get_matches_from(vec![
-    ///         OsString::from("myprog"),
-    ///         OsString::from_vec(vec![0xe9])
-    ///     ]);
-    ///
-    /// assert!(r.is_ok());
-    /// let m = r.unwrap();
-    /// assert_eq!(m.value_of_os("arg").unwrap().as_bytes(), &[0xe9]);
-    /// ```
-    /// [`ArgMatches::value_of_os`]: crate::ArgMatches::value_of_os()
-    /// [`ArgMatches::values_of_os`]: crate::ArgMatches::values_of_os()
-    /// [`ArgMatches::value_of_lossy`]: crate::ArgMatches::value_of_lossy()
-    /// [`ArgMatches::values_of_lossy`]: crate::ArgMatches::values_of_lossy()
+    /// Deprecated, replaced with [`Arg::value_parser(...)`] with either [`ValueParser::os_string()`][crate::builder::ValueParser::os_string]
+    /// or [`ValueParser::path_buf()`][crate::builder::ValueParser::path_buf]
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `Arg::value_parser(...)` with either `ValueParser::os_string()` or `ValueParser::path_buf()`"
+        )
+    )]
     pub fn allow_invalid_utf8(self, yes: bool) -> Self {
         if yes {
             self.setting(ArgSettings::AllowInvalidUtf8)
@@ -1967,53 +1748,16 @@ impl<'help> Arg<'help> {
         }
     }
 
-    /// Don't allow an argument to accept explicitly empty values.
-    ///
-    /// An empty value must be specified at the command line with an explicit `""`, `''`, or
-    /// `--option=`
-    ///
-    /// **NOTE:** By default empty values are allowed.
-    ///
-    /// **NOTE:** Setting this requires [`Arg::takes_value`].
-    ///
-    /// # Examples
-    ///
-    /// The default is allowing empty values.
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg, ErrorKind};
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("cfg")
-    ///         .long("config")
-    ///         .short('v')
-    ///         .takes_value(true))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "--config="
-    ///     ]);
-    ///
-    /// assert!(res.is_ok());
-    /// assert_eq!(res.unwrap().value_of("cfg"), Some(""));
-    /// ```
-    ///
-    /// By adding this setting, we can forbid empty values.
-    ///
-    /// ```rust
-    /// # use clap::{Command, Arg, ErrorKind};
-    /// let res = Command::new("prog")
-    ///     .arg(Arg::new("cfg")
-    ///         .long("config")
-    ///         .short('v')
-    ///         .takes_value(true)
-    ///         .forbid_empty_values(true))
-    ///     .try_get_matches_from(vec![
-    ///         "prog", "--config="
-    ///     ]);
-    ///
-    /// assert!(res.is_err());
-    /// assert_eq!(res.unwrap_err().kind(), ErrorKind::EmptyValue);
-    /// ```
+    /// Deprecated, replaced with [`Arg::value_parser(NonEmptyStringValueParser::new())`]
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `Arg::value_parser(NonEmptyStringValueParser::new())`"
+        )
+    )]
     pub fn forbid_empty_values(self, yes: bool) -> Self {
         if yes {
             self.setting(ArgSettings::ForbidEmptyValues)
@@ -2101,8 +1845,7 @@ impl<'help> Arg<'help> {
     ///         "prog", "--option=val1,val2,val3",
     ///     ]);
     ///
-    /// assert!(delims.is_present("option"));
-    /// assert_eq!(delims.occurrences_of("option"), 1);
+    /// assert!(delims.contains_id("option"));
     /// assert_eq!(delims.values_of("option").unwrap().collect::<Vec<_>>(), ["val1", "val2", "val3"]);
     /// ```
     /// The next example shows the difference when turning delimiters off. This is the default
@@ -2118,8 +1861,7 @@ impl<'help> Arg<'help> {
     ///         "prog", "--option=val1,val2,val3",
     ///     ]);
     ///
-    /// assert!(nodelims.is_present("option"));
-    /// assert_eq!(nodelims.occurrences_of("option"), 1);
+    /// assert!(nodelims.contains_id("option"));
     /// assert_eq!(nodelims.value_of("option").unwrap(), "val1,val2,val3");
     /// ```
     /// [`Arg::value_delimiter`]: Arg::value_delimiter()
@@ -2141,7 +1883,10 @@ impl<'help> Arg<'help> {
     /// Deprecated, replaced with [`Arg::use_value_delimiter`]
     #[inline]
     #[must_use]
-    #[deprecated(since = "3.1.0", note = "Replaced with `Arg::use_value_delimiter`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `Arg::use_value_delimiter`")
+    )]
     pub fn use_delimiter(self, yes: bool) -> Self {
         self.use_value_delimiter(yes)
     }
@@ -2208,7 +1953,7 @@ impl<'help> Arg<'help> {
     ///         "prog", "-o", "val1,val2,val3",
     ///     ]);
     ///
-    /// assert!(delims.is_present("opt"));
+    /// assert!(delims.contains_id("opt"));
     /// assert_eq!(delims.values_of("opt").unwrap().collect::<Vec<_>>(), ["val1", "val2", "val3"]);
     /// ```
     ///
@@ -2249,7 +1994,7 @@ impl<'help> Arg<'help> {
     ///         "prog", "-o", "val1", "val2", "val3",
     ///     ]);
     ///
-    /// assert!(delims.is_present("opt"));
+    /// assert!(delims.contains_id("opt"));
     /// assert_eq!(delims.values_of("opt").unwrap().collect::<Vec<_>>(), ["val1", "val2", "val3"]);
     /// ```
     #[inline]
@@ -2265,7 +2010,10 @@ impl<'help> Arg<'help> {
     /// Deprecated, replaced with [`Arg::require_value_delimiter`]
     #[inline]
     #[must_use]
-    #[deprecated(since = "3.1.0", note = "Replaced with `Arg::require_value_delimiter`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `Arg::require_value_delimiter`")
+    )]
     pub fn require_delimiter(self, yes: bool) -> Self {
         self.require_value_delimiter(yes)
     }
@@ -2362,10 +2110,9 @@ impl<'help> Arg<'help> {
     /// **NOTE:** If the user *does not* use this argument at runtime, [`ArgMatches::occurrences_of`]
     /// will return `0` even though the [`ArgMatches::value_of`] will return the default specified.
     ///
-    /// **NOTE:** If the user *does not* use this argument at runtime [`ArgMatches::is_present`] will
+    /// **NOTE:** If the user *does not* use this argument at runtime [`ArgMatches::contains_id`] will
     /// still return `true`. If you wish to determine whether the argument was used at runtime or
-    /// not, consider [`ArgMatches::occurrences_of`] which will return `0` if the argument was *not*
-    /// used at runtime.
+    /// not, consider [`ArgMatches::value_source`][crate::ArgMatches::value_source].
     ///
     /// **NOTE:** This setting is perfectly compatible with [`Arg::default_value_if`] but slightly
     /// different. `Arg::default_value` *only* takes effect when the user has not provided this arg
@@ -2382,7 +2129,7 @@ impl<'help> Arg<'help> {
     /// First we use the default value without providing any value at runtime.
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ValueSource};
     /// let m = Command::new("prog")
     ///     .arg(Arg::new("opt")
     ///         .long("myopt")
@@ -2392,14 +2139,14 @@ impl<'help> Arg<'help> {
     ///     ]);
     ///
     /// assert_eq!(m.value_of("opt"), Some("myval"));
-    /// assert!(m.is_present("opt"));
-    /// assert_eq!(m.occurrences_of("opt"), 0);
+    /// assert!(m.contains_id("opt"));
+    /// assert_eq!(m.value_source("opt"), Some(ValueSource::DefaultValue));
     /// ```
     ///
     /// Next we provide a value at runtime to override the default.
     ///
     /// ```rust
-    /// # use clap::{Command, Arg};
+    /// # use clap::{Command, Arg, ValueSource};
     /// let m = Command::new("prog")
     ///     .arg(Arg::new("opt")
     ///         .long("myopt")
@@ -2409,13 +2156,13 @@ impl<'help> Arg<'help> {
     ///     ]);
     ///
     /// assert_eq!(m.value_of("opt"), Some("non_default"));
-    /// assert!(m.is_present("opt"));
-    /// assert_eq!(m.occurrences_of("opt"), 1);
+    /// assert!(m.contains_id("opt"));
+    /// assert_eq!(m.value_source("opt"), Some(ValueSource::CommandLine));
     /// ```
     /// [`ArgMatches::occurrences_of`]: crate::ArgMatches::occurrences_of()
     /// [`ArgMatches::value_of`]: crate::ArgMatches::value_of()
     /// [`Arg::takes_value(true)`]: Arg::takes_value()
-    /// [`ArgMatches::is_present`]: crate::ArgMatches::is_present()
+    /// [`ArgMatches::contains_id`]: crate::ArgMatches::contains_id()
     /// [`Arg::default_value_if`]: Arg::default_value_if()
     #[inline]
     #[must_use]
@@ -2473,63 +2220,81 @@ impl<'help> Arg<'help> {
     ///
     /// # Examples
     ///
-    /// Here is an implementation of the common POSIX style `--color` argument.
-    ///
+    /// For POSIX style `--color`:
     /// ```rust
-    /// # use clap::{Command, Arg};
-    ///
-    /// macro_rules! cmd {
-    ///     () => {{
-    ///         Command::new("prog")
-    ///             .arg(Arg::new("color").long("color")
-    ///                 .value_name("WHEN")
-    ///                 .possible_values(["always", "auto", "never"])
-    ///                 .default_value("auto")
-    ///                 .overrides_with("color")
-    ///                 .min_values(0)
-    ///                 .require_equals(true)
-    ///                 .default_missing_value("always")
-    ///                 .help("Specify WHEN to colorize output.")
-    ///             )
-    ///    }};
+    /// # use clap::{Command, Arg, ValueSource};
+    /// fn cli() -> Command<'static> {
+    ///     Command::new("prog")
+    ///         .arg(Arg::new("color").long("color")
+    ///             .value_name("WHEN")
+    ///             .value_parser(["always", "auto", "never"])
+    ///             .default_value("auto")
+    ///             .min_values(0)
+    ///             .require_equals(true)
+    ///             .default_missing_value("always")
+    ///             .help("Specify WHEN to colorize output.")
+    ///         )
     /// }
     ///
-    /// let mut m;
-    ///
     /// // first, we'll provide no arguments
-    ///
-    /// m  = cmd!().get_matches_from(vec![
+    /// let m  = cli().get_matches_from(vec![
     ///         "prog"
     ///     ]);
-    ///
     /// assert_eq!(m.value_of("color"), Some("auto"));
-    /// assert!(m.is_present("color"));
-    /// assert_eq!(m.occurrences_of("color"), 0);
+    /// assert_eq!(m.value_source("color"), Some(ValueSource::DefaultValue));
     ///
     /// // next, we'll provide a runtime value to override the default (as usually done).
-    ///
-    /// m  = cmd!().get_matches_from(vec![
+    /// let m  = cli().get_matches_from(vec![
     ///         "prog", "--color=never"
     ///     ]);
-    ///
     /// assert_eq!(m.value_of("color"), Some("never"));
-    /// assert!(m.is_present("color"));
-    /// assert_eq!(m.occurrences_of("color"), 1);
+    /// assert_eq!(m.value_source("color"), Some(ValueSource::CommandLine));
     ///
     /// // finally, we will use the shortcut and only provide the argument without a value.
-    ///
-    /// m  = cmd!().get_matches_from(vec![
+    /// let m  = cli().get_matches_from(vec![
     ///         "prog", "--color"
     ///     ]);
-    ///
     /// assert_eq!(m.value_of("color"), Some("always"));
-    /// assert!(m.is_present("color"));
-    /// assert_eq!(m.occurrences_of("color"), 1);
+    /// assert_eq!(m.value_source("color"), Some(ValueSource::CommandLine));
     /// ```
-    /// [`ArgMatches::occurrences_of`]: ArgMatches::occurrences_of()
+    ///
+    /// For bool literals:
+    /// ```rust
+    /// # use clap::{Command, Arg, ValueSource, value_parser};
+    /// fn cli() -> Command<'static> {
+    ///     Command::new("prog")
+    ///         .arg(Arg::new("create").long("create")
+    ///             .value_name("BOOL")
+    ///             .value_parser(value_parser!(bool))
+    ///             .min_values(0)
+    ///             .require_equals(true)
+    ///             .default_missing_value("true")
+    ///         )
+    /// }
+    ///
+    /// // first, we'll provide no arguments
+    /// let m  = cli().get_matches_from(vec![
+    ///         "prog"
+    ///     ]);
+    /// assert_eq!(m.get_one::<bool>("create").copied(), None);
+    ///
+    /// // next, we'll provide a runtime value to override the default (as usually done).
+    /// let m  = cli().get_matches_from(vec![
+    ///         "prog", "--create=false"
+    ///     ]);
+    /// assert_eq!(m.get_one::<bool>("create").copied(), Some(false));
+    /// assert_eq!(m.value_source("create"), Some(ValueSource::CommandLine));
+    ///
+    /// // finally, we will use the shortcut and only provide the argument without a value.
+    /// let m  = cli().get_matches_from(vec![
+    ///         "prog", "--create"
+    ///     ]);
+    /// assert_eq!(m.get_one::<bool>("create").copied(), Some(true));
+    /// assert_eq!(m.value_source("create"), Some(ValueSource::CommandLine));
+    /// ```
+    ///
     /// [`ArgMatches::value_of`]: ArgMatches::value_of()
     /// [`Arg::takes_value(true)`]: Arg::takes_value()
-    /// [`ArgMatches::is_present`]: ArgMatches::is_present()
     /// [`Arg::default_value`]: Arg::default_value()
     #[inline]
     #[must_use]
@@ -2707,9 +2472,7 @@ impl<'help> Arg<'help> {
     ///
     /// assert_eq!(m.values_of("flag").unwrap().collect::<Vec<_>>(), vec!["env1", "env2"]);
     /// ```
-    /// [`ArgMatches::occurrences_of`]: ArgMatches::occurrences_of()
     /// [`ArgMatches::value_of`]: crate::ArgMatches::value_of()
-    /// [`ArgMatches::is_present`]: ArgMatches::is_present()
     /// [`Arg::takes_value(true)`]: Arg::takes_value()
     /// [`Arg::use_value_delimiter(true)`]: Arg::use_value_delimiter()
     #[cfg(feature = "env")]
@@ -3012,7 +2775,7 @@ impl<'help> Arg<'help> {
         }
     }
 
-    /// Do not display the [possible values][Arg::possible_values] in the help message.
+    /// Do not display the [possible values][crate::builder::ValueParser::possible_values] in the help message.
     ///
     /// This is useful for args with many values, or ones which are explained elsewhere in the
     /// help text.
@@ -3029,7 +2792,7 @@ impl<'help> Arg<'help> {
     /// let m = Command::new("prog")
     ///     .arg(Arg::new("mode")
     ///         .long("mode")
-    ///         .possible_values(["fast", "slow"])
+    ///         .value_parser(["fast", "slow"])
     ///         .takes_value(true)
     ///         .hide_possible_values(true));
     /// ```
@@ -3317,7 +3080,7 @@ impl<'help> Arg<'help> {
     ///     .get_matches_from(vec![
     ///         "prog", "--debug"
     ///     ]);
-    /// assert!(m.is_present("mode"));
+    /// assert!(m.contains_id("mode"));
     /// ```
     ///
     /// [`ArgGroup`]: crate::ArgGroup
@@ -3354,8 +3117,8 @@ impl<'help> Arg<'help> {
     ///     .get_matches_from(vec![
     ///         "prog", "--debug"
     ///     ]);
-    /// assert!(m.is_present("mode"));
-    /// assert!(m.is_present("verbosity"));
+    /// assert!(m.contains_id("mode"));
+    /// assert!(m.contains_id("verbosity"));
     /// ```
     ///
     /// [`ArgGroup`]: crate::ArgGroup
@@ -3600,7 +3363,7 @@ impl<'help> Arg<'help> {
         ifs: &[(T, Option<&'help OsStr>, Option<&'help OsStr>)],
     ) -> Self {
         for (arg, val, default) in ifs {
-            self = self.default_value_if_os(arg.key(), *val, *default);
+            self = self.default_value_if_os(arg, *val, *default);
         }
         self
     }
@@ -4356,7 +4119,7 @@ impl<'help> Arg<'help> {
     ///
     /// # Examples
     ///
-    /// ```rust # use clap::{Command, Arg};
+    /// ```rust
     /// # use clap::{Command, arg};
     /// let m = Command::new("prog")
     ///     .arg(arg!(-f --flag "some flag")
@@ -4387,7 +4150,6 @@ impl<'help> Arg<'help> {
     ///             .arg(arg!(--flag  "some flag").overrides_with("flag"))
     ///             .get_matches_from(vec!["posix", "--flag", "--flag"]);
     /// assert!(m.is_present("flag"));
-    /// assert_eq!(m.occurrences_of("flag"), 1);
     /// ```
     ///
     /// Making an arg [`Arg::multiple_occurrences`] and override itself
@@ -4400,7 +4162,6 @@ impl<'help> Arg<'help> {
     ///             .arg(arg!(--flag ...  "some flag").overrides_with("flag"))
     ///             .get_matches_from(vec!["", "--flag", "--flag", "--flag", "--flag"]);
     /// assert!(m.is_present("flag"));
-    /// assert_eq!(m.occurrences_of("flag"), 4);
     /// ```
     ///
     /// Now notice with options (which *do not* set
@@ -4413,7 +4174,6 @@ impl<'help> Arg<'help> {
     ///             .arg(arg!(--opt <val> "some option").overrides_with("opt"))
     ///             .get_matches_from(vec!["", "--opt=some", "--opt=other"]);
     /// assert!(m.is_present("opt"));
-    /// assert_eq!(m.occurrences_of("opt"), 1);
     /// assert_eq!(m.value_of("opt"), Some("other"));
     /// ```
     ///
@@ -4431,7 +4191,6 @@ impl<'help> Arg<'help> {
     ///             )
     ///             .get_matches_from(vec!["", "--opt", "1", "2", "--opt", "3", "4", "5"]);
     /// assert!(m.is_present("opt"));
-    /// assert_eq!(m.occurrences_of("opt"), 1);
     /// assert_eq!(m.values_of("opt").unwrap().collect::<Vec<_>>(), &["3", "4", "5"]);
     /// ```
     ///
@@ -4446,7 +4205,6 @@ impl<'help> Arg<'help> {
     ///                 .overrides_with("opt"))
     ///             .get_matches_from(vec!["", "--opt", "first", "over", "--opt", "other", "val"]);
     /// assert!(m.is_present("opt"));
-    /// assert_eq!(m.occurrences_of("opt"), 2);
     /// assert_eq!(m.values_of("opt").unwrap().collect::<Vec<_>>(), &["first", "over", "other", "val"]);
     /// ```
     #[must_use]
@@ -4501,7 +4259,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::get_id`]
-    #[deprecated(since = "3.1.0", note = "Replaced with `Arg::get_id`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `Arg::get_id`")
+    )]
     pub fn get_name(&self) -> &'help str {
         self.get_id()
     }
@@ -4603,13 +4364,35 @@ impl<'help> Arg<'help> {
         Some(longs)
     }
 
-    /// Get the list of the possible values for this argument, if any
-    #[inline]
-    pub fn get_possible_values(&self) -> Option<&[PossibleValue]> {
+    /// Deprecated, replaced with [`Arg::get_value_parser().possible_values()`]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `Arg::get_value_parser().possible_values()`"
+        )
+    )]
+    pub fn get_possible_values(&self) -> Option<&[PossibleValue<'help>]> {
         if self.possible_vals.is_empty() {
             None
         } else {
             Some(&self.possible_vals)
+        }
+    }
+
+    pub(crate) fn get_possible_values2(&self) -> Vec<PossibleValue<'help>> {
+        #![allow(deprecated)]
+        if !self.is_takes_value_set() {
+            vec![]
+        } else if let Some(pvs) = self.get_possible_values() {
+            // Check old first in case the user explicitly set possible values and the derive inferred
+            // a `ValueParser` with some.
+            pvs.to_vec()
+        } else {
+            self.get_value_parser()
+                .possible_values()
+                .map(|pvs| pvs.collect())
+                .unwrap_or_default()
         }
     }
 
@@ -4643,11 +4426,25 @@ impl<'help> Arg<'help> {
 
     /// Get the value hint of this argument
     pub fn get_value_hint(&self) -> ValueHint {
-        self.value_hint
+        self.value_hint.unwrap_or_else(|| {
+            if self.is_takes_value_set() {
+                let type_id = self.get_value_parser().type_id();
+                if type_id == crate::parser::AnyValueId::of::<std::path::PathBuf>() {
+                    ValueHint::AnyPath
+                } else {
+                    ValueHint::default()
+                }
+            } else {
+                ValueHint::default()
+            }
+        })
     }
 
     /// Deprecated, replaced with [`Arg::is_global_set`]
-    #[deprecated(since = "3.1.0", note = "Replaced with `Arg::is_global_set`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.1.0", note = "Replaced with `Arg::is_global_set`")
+    )]
     pub fn get_global(&self) -> bool {
         self.is_global_set()
     }
@@ -4706,7 +4503,11 @@ impl<'help> Arg<'help> {
         self.is_set(ArgSettings::MultipleValues)
     }
 
-    /// Report whether [`Arg::multiple_occurrences`] is set
+    /// [`Arg::multiple_occurrences`] is going away  ([Issue #3772](https://github.com/clap-rs/clap/issues/3772))
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.2.0", note = "`multiple_occurrences` away (Issue #3772)")
+    )]
     pub fn is_multiple_occurrences_set(&self) -> bool {
         self.is_set(ArgSettings::MultipleOccurrences)
     }
@@ -4721,14 +4522,55 @@ impl<'help> Arg<'help> {
         self.is_set(ArgSettings::AllowHyphenValues)
     }
 
-    /// Report whether [`Arg::forbid_empty_values`] is set
+    /// Deprecated, replaced with [`Arg::get_value_parser()`]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.2.0", note = "Replaced with `Arg::get_value_parser()`")
+    )]
     pub fn is_forbid_empty_values_set(&self) -> bool {
         self.is_set(ArgSettings::ForbidEmptyValues)
     }
 
-    /// Report whether [`Arg::is_allow_invalid_utf8_set`] is set
+    /// Deprecated, replaced with [`Arg::get_value_parser()`
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.2.0", note = "Replaced with `Arg::get_value_parser()`")
+    )]
     pub fn is_allow_invalid_utf8_set(&self) -> bool {
         self.is_set(ArgSettings::AllowInvalidUtf8)
+    }
+
+    /// Behavior when parsing the argument
+    pub fn get_action(&self) -> &super::ArgAction {
+        const DEFAULT: super::ArgAction = super::ArgAction::StoreValue;
+        self.action.as_ref().unwrap_or(&DEFAULT)
+    }
+
+    /// Configured parser for argument values
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let cmd = clap::Command::new("raw")
+    ///     .arg(
+    ///         clap::Arg::new("port")
+    ///             .value_parser(clap::value_parser!(usize))
+    ///     );
+    /// let value_parser = cmd.get_arguments()
+    ///     .find(|a| a.get_id() == "port").unwrap()
+    ///     .get_value_parser();
+    /// println!("{:?}", value_parser);
+    /// ```
+    pub fn get_value_parser(&self) -> &super::ValueParser {
+        if let Some(value_parser) = self.value_parser.as_ref() {
+            value_parser
+        } else if self.is_allow_invalid_utf8_set() {
+            static DEFAULT: super::ValueParser = super::ValueParser::os_string();
+            &DEFAULT
+        } else {
+            static DEFAULT: super::ValueParser = super::ValueParser::string();
+            &DEFAULT
+        }
     }
 
     /// Report whether [`Arg::global`] is set
@@ -4812,7 +4654,10 @@ impl<'help> Arg<'help> {
 /// # Deprecated
 impl<'help> Arg<'help> {
     /// Deprecated, replaced with [`Arg::new`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::new`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::new`")
+    )]
     #[doc(hidden)]
     pub fn with_name<S: Into<&'help str>>(n: S) -> Self {
         Self::new(n)
@@ -4820,9 +4665,12 @@ impl<'help> Arg<'help> {
 
     /// Deprecated in [Issue #3087](https://github.com/clap-rs/clap/issues/3087), maybe [`clap::Parser`][crate::Parser] would fit your use case?
     #[cfg(feature = "yaml")]
-    #[deprecated(
-        since = "3.0.0",
-        note = "Deprecated in Issue #3087, maybe clap::Parser would fit your use case?"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.0.0",
+            note = "Deprecated in Issue #3087, maybe clap::Parser would fit your use case?"
+        )
     )]
     #[doc(hidden)]
     pub fn from_yaml(y: &'help Yaml) -> Self {
@@ -4893,14 +4741,20 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated in [Issue #3086](https://github.com/clap-rs/clap/issues/3086), see [`arg!`][crate::arg!].
-    #[deprecated(since = "3.0.0", note = "Deprecated in Issue #3086, see `clap::arg!")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Deprecated in Issue #3086, see `clap::arg!")
+    )]
     #[doc(hidden)]
     pub fn from_usage(u: &'help str) -> Self {
         UsageParser::from_usage(u).parse()
     }
 
     /// Deprecated, replaced with [`Arg::required_unless_present`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::required_unless_present`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::required_unless_present`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn required_unless<T: Key>(self, arg_id: T) -> Self {
@@ -4908,9 +4762,12 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::required_unless_present_all`]
-    #[deprecated(
-        since = "3.0.0",
-        note = "Replaced with `Arg::required_unless_present_all`"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.0.0",
+            note = "Replaced with `Arg::required_unless_present_all`"
+        )
     )]
     #[doc(hidden)]
     #[must_use]
@@ -4923,9 +4780,12 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::required_unless_present_any`]
-    #[deprecated(
-        since = "3.0.0",
-        note = "Replaced with `Arg::required_unless_present_any`"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.0.0",
+            note = "Replaced with `Arg::required_unless_present_any`"
+        )
     )]
     #[doc(hidden)]
     #[must_use]
@@ -4938,7 +4798,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::required_if_eq`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::required_if_eq`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::required_if_eq`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn required_if<T: Key>(self, arg_id: T, val: &'help str) -> Self {
@@ -4946,7 +4809,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::required_if_eq_any`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::required_if_eq_any`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::required_if_eq_any`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn required_ifs<T: Key>(self, ifs: &[(T, &'help str)]) -> Self {
@@ -4954,7 +4820,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::hide`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::hide`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::hide`")
+    )]
     #[doc(hidden)]
     #[inline]
     #[must_use]
@@ -4963,7 +4832,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::ignore_case`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::ignore_case`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::ignore_case`")
+    )]
     #[doc(hidden)]
     #[inline]
     #[must_use]
@@ -4972,7 +4844,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::forbid_empty_values`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::forbid_empty_values`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::forbid_empty_values`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn empty_values(self, yes: bool) -> Self {
@@ -4981,9 +4856,12 @@ impl<'help> Arg<'help> {
 
     /// Deprecated, replaced with [`Arg::multiple_occurrences`] (most likely what you want) and
     /// [`Arg::multiple_values`]
-    #[deprecated(
-        since = "3.0.0",
-        note = "Split into `Arg::multiple_occurrences` (most likely what you want)  and `Arg::multiple_values`"
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(
+            since = "3.0.0",
+            note = "Split into `Arg::multiple_occurrences` (most likely what you want)  and `Arg::multiple_values`"
+        )
     )]
     #[doc(hidden)]
     #[must_use]
@@ -4992,7 +4870,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::hide_short_help`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::hide_short_help`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::hide_short_help`")
+    )]
     #[doc(hidden)]
     #[inline]
     #[must_use]
@@ -5001,7 +4882,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::hide_long_help`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::hide_long_help`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::hide_long_help`")
+    )]
     #[doc(hidden)]
     #[inline]
     #[must_use]
@@ -5010,7 +4894,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::setting`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::setting`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::setting`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn set(self, s: ArgSettings) -> Self {
@@ -5018,7 +4905,10 @@ impl<'help> Arg<'help> {
     }
 
     /// Deprecated, replaced with [`Arg::unset_setting`]
-    #[deprecated(since = "3.0.0", note = "Replaced with `Arg::unset_setting`")]
+    #[cfg_attr(
+        feature = "deprecated",
+        deprecated(since = "3.0.0", note = "Replaced with `Arg::unset_setting`")
+    )]
     #[doc(hidden)]
     #[must_use]
     pub fn unset(self, s: ArgSettings) -> Self {
@@ -5031,6 +4921,43 @@ impl<'help> Arg<'help> {
     pub(crate) fn _build(&mut self) {
         if self.is_positional() {
             self.settings.set(ArgSettings::TakesValue);
+        }
+        if let Some(action) = self.action.as_ref() {
+            if let Some(default_value) = action.default_value() {
+                if self.default_vals.is_empty() {
+                    self.default_vals = vec![default_value];
+                }
+            }
+            if action.takes_values() {
+                self.settings.set(ArgSettings::TakesValue);
+            } else {
+                self.settings.unset(ArgSettings::TakesValue);
+            }
+            match action {
+                ArgAction::StoreValue
+                | ArgAction::IncOccurrence
+                | ArgAction::Help
+                | ArgAction::Version => {}
+                ArgAction::Set
+                | ArgAction::Append
+                | ArgAction::SetTrue
+                | ArgAction::SetFalse
+                | ArgAction::Count => {
+                    if !self.is_positional() {
+                        self.settings.set(ArgSettings::MultipleOccurrences);
+                    }
+                }
+            }
+        }
+
+        if self.value_parser.is_none() {
+            if let Some(default) = self.action.as_ref().and_then(|a| a.default_value_parser()) {
+                self.value_parser = Some(default);
+            } else if self.is_allow_invalid_utf8_set() {
+                self.value_parser = Some(super::ValueParser::os_string());
+            } else {
+                self.value_parser = Some(super::ValueParser::string());
+            }
         }
 
         if (self.is_use_value_delimiter_set() || self.is_require_value_delimiter_set())
@@ -5192,6 +5119,8 @@ impl<'help> fmt::Debug for Arg<'help> {
             .field("name", &self.name)
             .field("help", &self.help)
             .field("long_help", &self.long_help)
+            .field("action", &self.action)
+            .field("value_parser", &self.value_parser)
             .field("blacklist", &self.blacklist)
             .field("settings", &self.settings)
             .field("overrides", &self.overrides)

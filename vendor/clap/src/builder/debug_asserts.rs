@@ -2,10 +2,10 @@ use std::cmp::Ordering;
 
 use clap_lex::RawOsStr;
 
-use crate::build::arg::ArgProvider;
+use crate::builder::arg::ArgProvider;
 use crate::mkeymap::KeyType;
-use crate::util::Id;
-use crate::{AppSettings, Arg, Command, ValueHint};
+use crate::ArgAction;
+use crate::{Arg, Command, ValueHint};
 
 pub(crate) fn assert_app(cmd: &Command) {
     debug!("Command::_debug_asserts");
@@ -23,16 +23,25 @@ pub(crate) fn assert_app(cmd: &Command) {
         );
 
         // Used `Command::mut_arg("version", ..) but did not provide any version information to display
-        let has_mutated_version = cmd
+        let version_needed = cmd
             .get_arguments()
-            .any(|x| x.id == Id::version_hash() && x.provider == ArgProvider::GeneratedMutated);
-
-        if has_mutated_version {
-            assert!(cmd.is_set(AppSettings::NoAutoVersion),
-                "Command {}: Used Command::mut_arg(\"version\", ..) without providing Command::version, Command::long_version or using AppSettings::NoAutoVersion"
-            ,cmd.get_name()
+            .filter(|x| {
+                let action_set = matches!(x.get_action(), ArgAction::Version);
+                #[cfg(not(feature = "unstable-v4"))]
+                let provider_set = matches!(x.provider, ArgProvider::GeneratedMutated);
+                #[cfg(feature = "unstable-v4")]
+                let provider_set = matches!(
+                    x.provider,
+                    ArgProvider::User | ArgProvider::GeneratedMutated
                 );
-        }
+                action_set && provider_set
+            })
+            .map(|x| x.get_id())
+            .collect::<Vec<_>>();
+
+        assert_eq!(version_needed, Vec::<&str>::new(), "Command {}: `ArgAction::Version` used without providing Command::version or Command::long_version"
+            ,cmd.get_name()
+        );
     }
 
     for sc in cmd.get_subcommands() {
@@ -60,15 +69,12 @@ pub(crate) fn assert_app(cmd: &Command) {
     for arg in cmd.get_arguments() {
         assert_arg(arg);
 
-        #[cfg(feature = "unstable-multicall")]
-        {
-            assert!(
-                !cmd.is_multicall_set(),
-                "Command {}: Arguments like {} cannot be set on a multicall command",
-                cmd.get_name(),
-                arg.name
-            );
-        }
+        assert!(
+            !cmd.is_multicall_set(),
+            "Command {}: Arguments like {} cannot be set on a multicall command",
+            cmd.get_name(),
+            arg.name
+        );
 
         if let Some(s) = arg.short.as_ref() {
             short_flags.push(Flag::Arg(format!("-{}", s), &*arg.name));
@@ -267,7 +273,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             arg.name
         );
 
-        if arg.value_hint == ValueHint::CommandWithArguments {
+        if arg.get_value_hint() == ValueHint::CommandWithArguments {
             assert!(
                 arg.is_positional(),
                 "Command {}: Argument '{}' has hint CommandWithArguments and must be positional.",
@@ -310,19 +316,6 @@ pub(crate) fn assert_app(cmd: &Command) {
                 group.name,
                 arg
             );
-        }
-
-        // Required groups should have at least one arg without default values
-        if group.required && !group.args.is_empty() {
-            assert!(
-                group.args.iter().any(|arg| {
-                    cmd.get_arguments()
-                        .any(|x| x.id == *arg && x.default_vals.is_empty())
-                }),
-                "Command {}: Argument group '{}' is required but all of it's arguments have a default value.",
-                    cmd.get_name(),
-                group.name
-            )
         }
     }
 
@@ -467,7 +460,6 @@ fn assert_app_flags(cmd: &Command) {
     }
 
     checker!(is_allow_invalid_utf8_for_external_subcommands_set requires is_allow_external_subcommands_set);
-    #[cfg(feature = "unstable-multicall")]
     checker!(is_multicall_set conflicts is_no_binary_name_set);
 }
 
@@ -542,8 +534,11 @@ fn _verify_positionals(cmd: &Command) -> bool {
         let count = cmd
             .get_positionals()
             .filter(|p| {
-                p.is_multiple_occurrences_set()
-                    || (p.is_multiple_values_set() && p.num_vals.is_none())
+                #[allow(deprecated)]
+                {
+                    p.is_multiple_occurrences_set()
+                        || (p.is_multiple_values_set() && p.num_vals.is_none())
+                }
             })
             .count();
         let ok = count <= 1
@@ -646,14 +641,32 @@ fn assert_arg(arg: &Arg) {
         arg.name,
     );
 
-    if arg.value_hint != ValueHint::Unknown {
+    assert_eq!(
+        arg.get_action().takes_values(),
+        arg.is_takes_value_set(),
+        "Argument `{}`'s selected action {:?} contradicts `takes_value`",
+        arg.name,
+        arg.get_action()
+    );
+    if let Some(action_type_id) = arg.get_action().value_type_id() {
+        assert_eq!(
+            action_type_id,
+            arg.get_value_parser().type_id(),
+            "Argument `{}`'s selected action {:?} contradicts `value_parser` ({:?})",
+            arg.name,
+            arg.get_action(),
+            arg.get_value_parser()
+        );
+    }
+
+    if arg.get_value_hint() != ValueHint::Unknown {
         assert!(
             arg.is_takes_value_set(),
             "Argument '{}' has value hint but takes no value",
             arg.name
         );
 
-        if arg.value_hint == ValueHint::CommandWithArguments {
+        if arg.get_value_hint() == ValueHint::CommandWithArguments {
             assert!(
                 arg.is_multiple_values_set(),
                 "Argument '{}' uses hint CommandWithArguments and must accept multiple values",
@@ -668,12 +681,9 @@ fn assert_arg(arg: &Arg) {
             "Argument '{}' is a positional argument and can't have short or long name versions",
             arg.name
         );
-    }
-
-    if arg.is_required_set() {
         assert!(
-            arg.default_vals.is_empty(),
-            "Argument '{}' is required and can't have a default value",
+            arg.is_takes_value_set(),
+            "Argument '{}` is positional, it must take a value",
             arg.name
         );
     }
@@ -726,7 +736,6 @@ fn assert_arg_flags(arg: &Arg) {
         }
     }
 
-    checker!(is_forbid_empty_values_set requires is_takes_value_set);
     checker!(is_require_value_delimiter_set requires is_takes_value_set);
     checker!(is_require_value_delimiter_set requires is_use_value_delimiter_set);
     checker!(is_hide_possible_values_set requires is_takes_value_set);
@@ -736,7 +745,11 @@ fn assert_arg_flags(arg: &Arg) {
     checker!(is_hide_default_value_set requires is_takes_value_set);
     checker!(is_multiple_values_set requires is_takes_value_set);
     checker!(is_ignore_case_set requires is_takes_value_set);
-    checker!(is_allow_invalid_utf8_set requires is_takes_value_set);
+    {
+        #![allow(deprecated)]
+        checker!(is_forbid_empty_values_set requires is_takes_value_set);
+        checker!(is_allow_invalid_utf8_set requires is_takes_value_set);
+    }
 }
 
 fn assert_defaults<'d>(
@@ -810,6 +823,29 @@ fn assert_defaults<'d>(
                     arg.name, field, default_os, err
                 );
             }
+        }
+
+        let value_parser = arg.get_value_parser();
+        let assert_cmd = Command::new("assert");
+        if let Some(delim) = arg.get_value_delimiter() {
+            let default_os = RawOsStr::new(default_os);
+            for part in default_os.split(delim) {
+                if let Err(err) = value_parser.parse_ref(&assert_cmd, Some(arg), &part.to_os_str())
+                {
+                    panic!(
+                        "Argument `{}`'s {}={:?} failed validation: {}",
+                        arg.name,
+                        field,
+                        part.to_str_lossy(),
+                        err
+                    );
+                }
+            }
+        } else if let Err(err) = value_parser.parse_ref(&assert_cmd, Some(arg), default_os) {
+            panic!(
+                "Argument `{}`'s {}={:?} failed validation: {}",
+                arg.name, field, default_os, err
+            );
         }
     }
 }
