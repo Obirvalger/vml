@@ -152,7 +152,7 @@
 //! stdout.execute(cursor::MoveTo(5,5));
 //! ```
 //! The [execute](./trait.ExecutableCommand.html) function returns itself, therefore you can use this to queue
-//! another command. Like `stdout.execute(Goto(5,5))?.execute(Clear(ClearType::All))`.
+//! another command. Like `stdout.queue(Goto(5,5)).queue(Clear(ClearType::All))`.
 //!
 //! Macros:
 //!
@@ -250,7 +250,7 @@ pub mod terminal;
 pub mod tty;
 
 #[cfg(windows)]
-/// A module that exposes one function to check if the current terminal supports ANSI sequences.
+/// A module that exposes one function to check if the current terminal supports ansi sequences.
 pub mod ansi_support;
 mod command;
 mod error;

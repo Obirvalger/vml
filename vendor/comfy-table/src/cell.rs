@@ -24,13 +24,12 @@ pub struct Cell {
 
 impl Cell {
     /// Create a new Cell
-    #[allow(clippy::needless_pass_by_value)]
     pub fn new<T: ToString>(content: T) -> Self {
-        Self {
+        Cell {
             content: content
                 .to_string()
                 .split('\n')
-                .map(ToString::to_string)
+                .map(|content| content.to_string())
                 .collect(),
             delimiter: None,
             alignment: None,
@@ -44,14 +43,13 @@ impl Cell {
     }
 
     /// Return a copy of the content contained in this cell.
-    pub fn content(&self) -> String {
+    pub fn get_content(&self) -> String {
         self.content.join("\n")
     }
 
     /// Set the delimiter used to split text for this cell. \
     /// Normal text uses spaces (` `) as delimiters. This is necessary to help comfy-table
     /// understand the concept of _words_.
-    #[must_use]
     pub fn set_delimiter(mut self, delimiter: char) -> Self {
         self.delimiter = Some(delimiter);
 
@@ -69,7 +67,6 @@ impl Cell {
     /// let mut cell = Cell::new("Some content")
     ///     .set_alignment(CellAlignment::Center);
     /// ```
-    #[must_use]
     pub fn set_alignment(mut self, alignment: CellAlignment) -> Self {
         self.alignment = Some(alignment);
 
@@ -88,7 +85,6 @@ impl Cell {
     ///     .fg(Color::Red);
     /// ```
     #[cfg(feature = "tty")]
-    #[must_use]
     pub fn fg(mut self, color: Color) -> Self {
         self.fg = Some(color);
 
@@ -107,7 +103,6 @@ impl Cell {
     ///     .bg(Color::Red);
     /// ```
     #[cfg(feature = "tty")]
-    #[must_use]
     pub fn bg(mut self, color: Color) -> Self {
         self.bg = Some(color);
 
@@ -127,7 +122,6 @@ impl Cell {
     ///     .add_attribute(Attribute::Bold);
     /// ```
     #[cfg(feature = "tty")]
-    #[must_use]
     pub fn add_attribute(mut self, attribute: Attribute) -> Self {
         self.attributes.push(attribute);
 
@@ -136,7 +130,6 @@ impl Cell {
 
     /// Same as add_attribute, but you can pass a vector of [Attributes](Attribute)
     #[cfg(feature = "tty")]
-    #[must_use]
     pub fn add_attributes(mut self, mut attribute: Vec<Attribute>) -> Self {
         self.attributes.append(&mut attribute);
 
@@ -152,8 +145,8 @@ impl Cell {
 /// let cell: Cell = 5u32.into();
 /// ```
 impl<T: ToString> From<T> for Cell {
-    fn from(content: T) -> Self {
-        Self::new(content)
+    fn from(content: T) -> Cell {
+        Cell::new(content)
     }
 }
 
@@ -178,8 +171,8 @@ where
     T: IntoIterator,
     T::Item: Into<Cell>,
 {
-    fn from(cells: T) -> Self {
-        Self(cells.into_iter().map(Into::into).collect())
+    fn from(cells: T) -> Cells {
+        Cells(cells.into_iter().map(|item| item.into()).collect())
     }
 }
 
@@ -192,6 +185,6 @@ mod tests {
         let content = "This is\nsome multiline\nstring".to_string();
         let cell = Cell::new(content.clone());
 
-        assert_eq!(cell.content(), content);
+        assert_eq!(cell.get_content(), content);
     }
 }

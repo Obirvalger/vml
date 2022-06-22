@@ -21,7 +21,7 @@ fn multi_character_utf8_symbols() {
             "✅",
         ]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +----------------------+----------------------+------------------------+
 | Header1              | Header2              | Header3                |
@@ -40,12 +40,12 @@ fn multi_character_utf8_symbols() {
 fn multi_character_utf8_word_splitting() {
     let mut table = Table::new();
     table
-        .set_width(8)
+        .set_table_width(8)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(&vec!["test"])
         .add_row(&vec!["abc✅def"]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +------+
 | test |
@@ -54,6 +54,6 @@ fn multi_character_utf8_word_splitting() {
 | ✅de |
 | f    |
 +------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }

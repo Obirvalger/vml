@@ -32,7 +32,7 @@ fn fixed_max_min_constraints() {
         Absolute(Fixed(10)),
     ]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +----------+--------+----------+
 | smol     | Header | Header3  |
@@ -50,7 +50,7 @@ fn fixed_max_min_constraints() {
 |          | line   |          |
 |          | stuff  |          |
 +----------+--------+----------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 
     // Now try this again when using dynamic content arrangement
@@ -60,9 +60,9 @@ fn fixed_max_min_constraints() {
     // Since the left and right column are fixed, the middle column should only get a width of 2
     table
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(28);
+        .set_table_width(28);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +----------+----+----------+
 | smol     | He | Header3  |
@@ -95,7 +95,7 @@ fn fixed_max_min_constraints() {
 |          | uf |          |
 |          | f  |          |
 +----------+----+----------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
 
@@ -107,7 +107,7 @@ fn unnecessary_max_min_constraints() {
 
     table.set_constraints(vec![LowerBoundary(Fixed(1)), UpperBoundary(Fixed(30))]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +------+----------------------+------------------------+
 | smol | Header2              | Header3                |
@@ -118,12 +118,12 @@ fn unnecessary_max_min_constraints() {
 |      | add some             |                        |
 |      | multi line stuff     |                        |
 +------+----------------------+------------------------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 
     // Now test for dynamic content arrangement
     table.set_content_arrangement(ContentArrangement::Dynamic);
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +------+----------------------+------------------------+
 | smol | Header2              | Header3                |
@@ -134,7 +134,7 @@ fn unnecessary_max_min_constraints() {
 |      | add some             |                        |
 |      | multi line stuff     |                        |
 +------+----------------------+------------------------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
 
@@ -147,14 +147,14 @@ fn constraints_bigger_than_table_width() {
 
     table
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(28)
+        .set_table_width(28)
         .set_constraints(vec![
             UpperBoundary(Fixed(50)),
             LowerBoundary(Fixed(30)),
             ContentWidth,
         ]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +---+------------------------------+------------------------+
 | s | Header2                      | Header3                |
@@ -172,7 +172,7 @@ fn constraints_bigger_than_table_width() {
 | o | multi line stuff             |                        |
 | l |                              |                        |
 +---+------------------------------+------------------------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
 
@@ -186,10 +186,10 @@ fn percentage() {
     // The the rest should arrange accordingly.
     table
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(40)
+        .set_table_width(40)
         .set_constraints(vec![Absolute(Percentage(20))]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +-------+---------------+--------------+
 | smol  | Header2       | Header3      |
@@ -202,7 +202,7 @@ fn percentage() {
 |       | multi line    |              |
 |       | stuff         |              |
 +-------+---------------+--------------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
 
@@ -214,17 +214,17 @@ fn max_100_percentage() {
         .set_header(&vec!["smol"])
         .add_row(&vec!["smol"])
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(40)
+        .set_table_width(40)
         .set_constraints(vec![Absolute(Percentage(200))]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +--------------------------------------+
 | smol                                 |
 +======================================+
 | smol                                 |
 +--------------------------------------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
 
@@ -234,14 +234,14 @@ fn percentage_second() {
 
     table
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(40)
+        .set_table_width(40)
         .set_constraints(vec![
             LowerBoundary(Percentage(40)),
             UpperBoundary(Percentage(30)),
             Absolute(Percentage(30)),
         ]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +--------------+----------+----------+
 | smol         | Header2  | Header3  |
@@ -257,7 +257,7 @@ fn percentage_second() {
 |              | line     |          |
 |              | stuff    |          |
 +--------------+----------+----------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
 
@@ -267,14 +267,14 @@ fn max_percentage() {
 
     table
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(40)
+        .set_table_width(40)
         .set_constraints(vec![
             ContentWidth,
             UpperBoundary(Percentage(30)),
             Absolute(Percentage(30)),
         ]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +------+----------+----------+
 | smol | Header2  | Header3  |
@@ -290,7 +290,7 @@ fn max_percentage() {
 |      | line     |          |
 |      | stuff    |          |
 +------+----------+----------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
 
@@ -301,7 +301,7 @@ fn min_max_boundary() {
 
     table
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(40)
+        .set_table_width(40)
         .set_constraints(vec![
             Boundaries {
                 lower: Percentage(50),
@@ -314,7 +314,7 @@ fn min_max_boundary() {
             Absolute(Percentage(30)),
         ]);
 
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 +------------------+---------------+----------+
 | smol             | Header2       | Header3  |
@@ -329,6 +329,6 @@ fn min_max_boundary() {
 |                  | multi line    |          |
 |                  | stuff         |          |
 +------------------+---------------+----------+";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }

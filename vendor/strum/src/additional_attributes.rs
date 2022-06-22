@@ -1,12 +1,12 @@
 //! # Documentation for Additional Attributes
-//!
+//! 
 //! ## Attributes on Enums
 //!
 //! Strum supports several custom attributes to modify the generated code. At the enum level, the following attributes are supported:
-//!
-//! - `#[strum(serialize_all = "case_style")]` attribute can be used to change the case used when serializing to and deserializing
+//! 
+//! - `#[strum(serialize_all = "case_style")]` attribute can be used to change the case used when serializing to and deserializing 
 //!   from strings. This feature is enabled by [withoutboats/heck](https://github.com/withoutboats/heck) and supported case styles are:
-//!
+//! 
 //!   - `camelCase`
 //!   - `PascalCase`
 //!   - `kebab-case`
@@ -17,7 +17,7 @@
 //!   - `UPPERCASE`
 //!   - `title_case`
 //!   - `mixed_case`
-//!
+//! 
 //!   ```rust
 //!   use std::string::ToString;
 //!   use strum;
@@ -50,7 +50,7 @@
 //!
 //! - You can also apply the `#[strum(ascii_case_insensitive)]` attribute to the enum,
 //!   and this has the same effect of applying it to every variant.
-//!
+//! 
 //! ## Attributes on Variants
 //!
 //! Custom attributes are applied to a variant by adding `#[strum(parameter="value")]` to the variant.
@@ -66,7 +66,7 @@
 //!    The generated code will now return the variant with the input string captured as shown below
 //!    instead of failing.
 //!
-//!     ```text
+//!     ```rust,ignore
 //!     // Replaces this:
 //!     _ => Err(strum::ParseError::VariantNotFound)
 //!     // With this in generated code:
@@ -83,11 +83,9 @@
 //!
 //! - `message=".."`: Adds a message to enum variant. This is used in conjunction with the `EnumMessage`
 //!    trait to associate a message with a variant. If `detailed_message` is not provided,
-//!    then `message` will also be returned when `get_detailed_message` is called.
+//!    then `message` will also be returned when get_detailed_message() is called.
 //!
 //! - `detailed_message=".."`: Adds a more detailed message to a variant. If this value is omitted, then
 //!    `message` will be used in it's place.
-//!
-//! - Structured documentation, as in `/// ...`: If using `EnumMessage`, is accessible via get_documentation().
 //!
 //! - `props(key="value")`: Enables associating additional information with a given variant.

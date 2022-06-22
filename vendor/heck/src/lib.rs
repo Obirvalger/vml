@@ -30,57 +30,37 @@
 //!
 //! ### Cases contained in this library:
 //!
-//! 1. UpperCamelCase
-//! 2. lowerCamelCase
-//! 3. snake_case
-//! 4. kebab-case
-//! 5. SHOUTY_SNAKE_CASE
+//! 1. CamelCase
+//! 2. snake_case
+//! 3. kebab-case
+//! 4. SHOUTY_SNAKE_CASE
+//! 5. mixedCase
 //! 6. Title Case
 //! 7. SHOUTY-KEBAB-CASE
 #![deny(missing_docs)]
-#![forbid(unsafe_code)]
 
+mod camel;
 mod kebab;
-mod lower_camel;
+mod mixed;
 mod shouty_kebab;
 mod shouty_snake;
 mod snake;
 mod title;
-mod upper_camel;
 
-pub use kebab::{AsKebabCase, ToKebabCase};
-pub use lower_camel::{AsLowerCamelCase, ToLowerCamelCase};
-pub use shouty_kebab::{AsShoutyKebabCase, ToShoutyKebabCase};
-pub use shouty_snake::{
-    AsShoutySnakeCase, AsShoutySnakeCase as AsShoutySnekCase, ToShoutySnakeCase, ToShoutySnekCase,
-};
-pub use snake::{AsSnakeCase, AsSnakeCase as AsSnekCase, ToSnakeCase, ToSnekCase};
-pub use title::{AsTitleCase, ToTitleCase};
-pub use upper_camel::{
-    AsUpperCamelCase, AsUpperCamelCase as AsPascalCase, ToPascalCase, ToUpperCamelCase,
-};
+pub use camel::CamelCase;
+pub use kebab::KebabCase;
+pub use mixed::MixedCase;
+pub use shouty_kebab::ShoutyKebabCase;
+pub use shouty_snake::{ShoutySnakeCase, ShoutySnekCase};
+pub use snake::{SnakeCase, SnekCase};
+pub use title::TitleCase;
 
-use std::fmt;
+use unicode_segmentation::UnicodeSegmentation;
 
-#[cfg(feature = "unicode")]
-fn get_iterator(s: &str) -> unicode_segmentation::UnicodeWords {
-    use unicode_segmentation::UnicodeSegmentation;
-    s.unicode_words()
-}
-#[cfg(not(feature = "unicode"))]
-fn get_iterator(s: &str) -> impl Iterator<Item = &str> {
-    s.split(|letter: char| !letter.is_ascii_alphanumeric())
-}
-
-fn transform<F, G>(
-    s: &str,
-    mut with_word: F,
-    mut boundary: G,
-    f: &mut fmt::Formatter,
-) -> fmt::Result
+fn transform<F, G>(s: &str, with_word: F, boundary: G) -> String
 where
-    F: FnMut(&str, &mut fmt::Formatter) -> fmt::Result,
-    G: FnMut(&mut fmt::Formatter) -> fmt::Result,
+    F: Fn(&str, &mut String),
+    G: Fn(&mut String),
 {
     /// Tracks the current 'mode' of the transformation algorithm as it scans
     /// the input string.
@@ -102,9 +82,10 @@ where
         Uppercase,
     }
 
+    let mut out = String::new();
     let mut first_word = true;
 
-    for word in get_iterator(s) {
+    for word in s.unicode_words() {
         let mut char_indices = word.char_indices().peekable();
         let mut init = 0;
         let mut mode = WordMode::Boundary;
@@ -133,9 +114,9 @@ where
                 // not uppercase and next is uppercase
                 if next == '_' || (next_mode == WordMode::Lowercase && next.is_uppercase()) {
                     if !first_word {
-                        boundary(f)?;
+                        boundary(&mut out);
                     }
-                    with_word(&word[init..next_i], f)?;
+                    with_word(&word[init..next_i], &mut out);
                     first_word = false;
                     init = next_i;
                     mode = WordMode::Boundary;
@@ -144,11 +125,11 @@ where
                 // is lowercase, word boundary before
                 } else if mode == WordMode::Uppercase && c.is_uppercase() && next.is_lowercase() {
                     if !first_word {
-                        boundary(f)?;
+                        boundary(&mut out);
                     } else {
                         first_word = false;
                     }
-                    with_word(&word[init..i], f)?;
+                    with_word(&word[init..i], &mut out);
                     init = i;
                     mode = WordMode::Boundary;
 
@@ -159,48 +140,42 @@ where
             } else {
                 // Collect trailing characters as a word
                 if !first_word {
-                    boundary(f)?;
+                    boundary(&mut out);
                 } else {
                     first_word = false;
                 }
-                with_word(&word[init..], f)?;
+                with_word(&word[init..], &mut out);
                 break;
             }
         }
     }
 
-    Ok(())
+    out
 }
 
-fn lowercase(s: &str, f: &mut fmt::Formatter) -> fmt::Result {
+fn lowercase(s: &str, out: &mut String) {
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == 'Σ' && chars.peek().is_none() {
-            write!(f, "ς")?;
+            out.push('ς');
         } else {
-            write!(f, "{}", c.to_lowercase())?;
+            out.extend(c.to_lowercase());
         }
     }
-
-    Ok(())
 }
 
-fn uppercase(s: &str, f: &mut fmt::Formatter) -> fmt::Result {
+fn uppercase(s: &str, out: &mut String) {
     for c in s.chars() {
-        write!(f, "{}", c.to_uppercase())?;
+        out.extend(c.to_uppercase())
     }
-
-    Ok(())
 }
 
-fn capitalize(s: &str, f: &mut fmt::Formatter) -> fmt::Result {
+fn capitalize(s: &str, out: &mut String) {
     let mut char_indices = s.char_indices();
     if let Some((_, c)) = char_indices.next() {
-        write!(f, "{}", c.to_uppercase())?;
+        out.extend(c.to_uppercase());
         if let Some((i, _)) = char_indices.next() {
-            lowercase(&s[i..], f)?;
+            lowercase(&s[i..], out);
         }
     }
-
-    Ok(())
 }

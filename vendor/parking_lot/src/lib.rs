@@ -11,6 +11,7 @@
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
+#![cfg_attr(feature = "nightly", feature(llvm_asm))]
 
 mod condvar;
 mod elision;

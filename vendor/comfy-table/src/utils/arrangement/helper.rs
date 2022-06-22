@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use super::DisplayInfos;
 use crate::utils::formatting::borders::{
     should_draw_left_border, should_draw_right_border, should_draw_vertical_lines,
@@ -14,7 +16,7 @@ pub fn absolute_width_with_padding(column: &Column, width: u16) -> u16 {
     let (left, right) = column.padding;
     let mut content_width = i32::from(width) - i32::from(left) - i32::from(right);
     if content_width <= 0 {
-        content_width = 1;
+        content_width = 1
     }
 
     content_width.try_into().unwrap_or(u16::MAX)
@@ -53,7 +55,7 @@ pub fn count_border_columns(table: &Table, visible_columns: usize) -> usize {
 
 /// Get the delimiter for a Cell.
 /// Priority is in decreasing order: Cell -> Column -> Table.
-pub fn delimiter(table: &Table, column: &Column, cell: &Cell) -> char {
+pub fn get_delimiter(table: &Table, column: &Column, cell: &Cell) -> char {
     // Determine, which delimiter should be used
     if let Some(delimiter) = cell.delimiter {
         delimiter

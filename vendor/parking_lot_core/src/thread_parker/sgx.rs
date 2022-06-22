@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use core::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use instant::Instant;
 use std::{
     io,
     os::fortanix_sgx::{

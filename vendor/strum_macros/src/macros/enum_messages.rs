@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, LitStr};
+use syn::{Data, DeriveInput};
 
 use crate::helpers::{non_enum_error, HasStrumVariantProperties, HasTypeProperties};
 
@@ -17,20 +17,19 @@ pub fn enum_message_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
 
     let mut arms = Vec::new();
     let mut detailed_arms = Vec::new();
-    let mut documentation_arms = Vec::new();
     let mut serializations = Vec::new();
 
     for variant in variants {
         let variant_properties = variant.get_variant_properties()?;
         let messages = variant_properties.message.as_ref();
         let detailed_messages = variant_properties.detailed_message.as_ref();
-        let documentation = &variant_properties.documentation;
         let ident = &variant.ident;
 
+        use syn::Fields::*;
         let params = match variant.fields {
-            Fields::Unit => quote! {},
-            Fields::Unnamed(..) => quote! { (..) },
-            Fields::Named(..) => quote! { {..} },
+            Unit => quote! {},
+            Unnamed(..) => quote! { (..) },
+            Named(..) => quote! { {..} },
         };
 
         // You can't disable getting the serializations.
@@ -66,33 +65,9 @@ pub fn enum_message_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
 
         if let Some(msg) = detailed_messages {
             let params = params.clone();
-            // Push the detailed message.
+            // Push the simple message.
             detailed_arms
                 .push(quote! { &#name::#ident #params => ::core::option::Option::Some(#msg) });
-        }
-
-        if !documentation.is_empty() {
-            let params = params.clone();
-            // Strip a single leading space from each documentation line.
-            let documentation: Vec<LitStr> = documentation.iter().map(|lit_str| {
-                let line = lit_str.value();
-                if line.starts_with(' ') {
-                    LitStr::new(&line.as_str()[1..], lit_str.span())
-                } else {
-                    lit_str.clone()
-                }
-            }).collect();
-            if documentation.len() == 1 {
-                let text = &documentation[0];
-                documentation_arms
-                    .push(quote! { &#name::#ident #params => ::core::option::Option::Some(#text) });
-            } else {
-                // Push the documentation.
-                documentation_arms
-                    .push(quote! {
-                        &#name::#ident #params => ::core::option::Option::Some(concat!(#(concat!(#documentation, "\n")),*))
-                    });
-            }
         }
     }
 
@@ -102,10 +77,6 @@ pub fn enum_message_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
 
     if detailed_arms.len() < variants.len() {
         detailed_arms.push(quote! { _ => ::core::option::Option::None });
-    }
-
-    if documentation_arms.len() < variants.len() {
-        documentation_arms.push(quote! { _ => ::core::option::Option::None });
     }
 
     Ok(quote! {
@@ -119,12 +90,6 @@ pub fn enum_message_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
             fn get_detailed_message(&self) -> ::core::option::Option<&'static str> {
                 match self {
                     #(#detailed_arms),*
-                }
-            }
-
-            fn get_documentation(&self) -> ::core::option::Option<&'static str> {
-                match self {
-                    #(#documentation_arms),*
                 }
             }
 

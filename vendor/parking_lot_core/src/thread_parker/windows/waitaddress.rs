@@ -9,24 +9,30 @@ use core::{
     mem,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use std::{ffi, time::Instant};
-use windows_sys::Win32::{
-    Foundation::{GetLastError, BOOL, ERROR_TIMEOUT},
-    System::{
-        LibraryLoader::{GetModuleHandleA, GetProcAddress},
-        WindowsProgramming::INFINITE,
+use instant::Instant;
+use winapi::{
+    shared::{
+        basetsd::SIZE_T,
+        minwindef::{BOOL, DWORD, FALSE, TRUE},
+        winerror::ERROR_TIMEOUT,
+    },
+    um::{
+        errhandlingapi::GetLastError,
+        libloaderapi::{GetModuleHandleA, GetProcAddress},
+        winbase::INFINITE,
+        winnt::{LPCSTR, PVOID},
     },
 };
 
 #[allow(non_snake_case)]
 pub struct WaitAddress {
     WaitOnAddress: extern "system" fn(
-        Address: *mut ffi::c_void,
-        CompareAddress: *mut ffi::c_void,
-        AddressSize: usize,
-        dwMilliseconds: u32,
+        Address: PVOID,
+        CompareAddress: PVOID,
+        AddressSize: SIZE_T,
+        dwMilliseconds: DWORD,
     ) -> BOOL,
-    WakeByAddressSingle: extern "system" fn(Address: *mut ffi::c_void),
+    WakeByAddressSingle: extern "system" fn(Address: PVOID),
 }
 
 impl WaitAddress {
@@ -36,15 +42,20 @@ impl WaitAddress {
             // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
             // located in kernel32.dll, but they are lying...
             let synch_dll =
-                GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr());
-            if synch_dll == 0 {
+                GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr() as LPCSTR);
+            if synch_dll.is_null() {
                 return None;
             }
 
-            let WaitOnAddress = GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr())?;
+            let WaitOnAddress = GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as LPCSTR);
+            if WaitOnAddress.is_null() {
+                return None;
+            }
             let WakeByAddressSingle =
-                GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr())?;
-
+                GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr() as LPCSTR);
+            if WakeByAddressSingle.is_null() {
+                return None;
+            }
             Some(WaitAddress {
                 WaitOnAddress: mem::transmute(WaitOnAddress),
                 WakeByAddressSingle: mem::transmute(WakeByAddressSingle),
@@ -66,7 +77,7 @@ impl WaitAddress {
     pub fn park(&'static self, key: &AtomicUsize) {
         while key.load(Ordering::Acquire) != 0 {
             let r = self.wait_on_address(key, INFINITE);
-            debug_assert!(r == true.into());
+            debug_assert!(r == TRUE);
         }
     }
 
@@ -83,14 +94,14 @@ impl WaitAddress {
                 .checked_mul(1000)
                 .and_then(|x| x.checked_add((diff.subsec_nanos() as u64 + 999999) / 1000000))
                 .map(|ms| {
-                    if ms > std::u32::MAX as u64 {
+                    if ms > <DWORD>::max_value() as u64 {
                         INFINITE
                     } else {
-                        ms as u32
+                        ms as DWORD
                     }
                 })
                 .unwrap_or(INFINITE);
-            if self.wait_on_address(key, timeout) == false.into() {
+            if self.wait_on_address(key, timeout) == FALSE {
                 debug_assert_eq!(unsafe { GetLastError() }, ERROR_TIMEOUT);
             }
         }
@@ -109,12 +120,12 @@ impl WaitAddress {
     }
 
     #[inline]
-    fn wait_on_address(&'static self, key: &AtomicUsize, timeout: u32) -> BOOL {
+    fn wait_on_address(&'static self, key: &AtomicUsize, timeout: DWORD) -> BOOL {
         let cmp = 1usize;
         (self.WaitOnAddress)(
-            key as *const _ as *mut ffi::c_void,
-            &cmp as *const _ as *mut ffi::c_void,
-            mem::size_of::<usize>(),
+            key as *const _ as PVOID,
+            &cmp as *const _ as PVOID,
+            mem::size_of::<usize>() as SIZE_T,
             timeout,
         )
     }
@@ -133,6 +144,6 @@ impl UnparkHandle {
     // released to avoid blocking the queue for too long.
     #[inline]
     pub fn unpark(self) {
-        (self.waitaddress.WakeByAddressSingle)(self.key as *mut ffi::c_void);
+        (self.waitaddress.WakeByAddressSingle)(self.key as PVOID);
     }
 }

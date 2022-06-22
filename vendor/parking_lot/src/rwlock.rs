@@ -55,7 +55,7 @@ use lock_api;
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `RwLock` due to platform limitations.
-/// - Can be statically constructed.
+/// - Can be statically constructed (requires the `const_fn` nightly feature).
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.
@@ -408,8 +408,6 @@ mod tests {
                 write_result.is_none(),
                 "try_write should fail while read_guard is in scope"
             );
-            assert!(lock.is_locked());
-            assert!(!lock.is_locked_exclusive());
 
             drop(read_guard);
         }
@@ -421,8 +419,6 @@ mod tests {
                 write_result.is_none(),
                 "try_write should fail while upgrade_guard is in scope"
             );
-            assert!(lock.is_locked());
-            assert!(!lock.is_locked_exclusive());
 
             drop(upgrade_guard);
         }
@@ -434,8 +430,6 @@ mod tests {
                 write_result.is_none(),
                 "try_write should fail while write_guard is in scope"
             );
-            assert!(lock.is_locked());
-            assert!(lock.is_locked_exclusive());
 
             drop(write_guard);
         }
@@ -620,23 +614,5 @@ mod tests {
         })
         .join()
         .unwrap();
-    }
-
-    #[test]
-    fn test_rw_write_is_locked() {
-        let lock = RwLock::new(0isize);
-        {
-            let _read_guard = lock.read();
-
-            assert!(lock.is_locked());
-            assert!(!lock.is_locked_exclusive());
-        }
-
-        {
-            let _write_guard = lock.write();
-
-            assert!(lock.is_locked());
-            assert!(lock.is_locked_exclusive());
-        }
     }
 }

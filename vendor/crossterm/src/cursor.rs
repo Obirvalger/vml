@@ -83,18 +83,12 @@ pub struct MoveToNextLine(pub u16);
 
 impl Command for MoveToNextLine {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        if self.0 != 0 {
-            write!(f, csi!("{}E"), self.0)?;
-        }
-        Ok(())
+        write!(f, csi!("{}E"), self.0)
     }
 
     #[cfg(windows)]
     fn execute_winapi(&self) -> Result<()> {
-        if self.0 != 0 {
-            sys::move_to_next_line(self.0)?;
-        }
-        Ok(())
+        sys::move_to_next_line(self.0)
     }
 }
 
@@ -109,18 +103,12 @@ pub struct MoveToPreviousLine(pub u16);
 
 impl Command for MoveToPreviousLine {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        if self.0 != 0 {
-            write!(f, csi!("{}F"), self.0)?;
-        }
-        Ok(())
+        write!(f, csi!("{}F"), self.0)
     }
 
     #[cfg(windows)]
     fn execute_winapi(&self) -> Result<()> {
-        if self.0 != 0 {
-            sys::move_to_previous_line(self.0)?;
-        }
-        Ok(())
+        sys::move_to_previous_line(self.0)
     }
 }
 
@@ -134,10 +122,7 @@ pub struct MoveToColumn(pub u16);
 
 impl Command for MoveToColumn {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        if self.0 != 0 {
-            write!(f, csi!("{}G"), self.0)?;
-        }
-        Ok(())
+        write!(f, csi!("{}G"), self.0)
     }
 
     #[cfg(windows)]
@@ -156,10 +141,7 @@ pub struct MoveToRow(pub u16);
 
 impl Command for MoveToRow {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        if self.0 != 0 {
-            write!(f, csi!("{}d"), self.0)?
-        }
-        Ok(())
+        write!(f, csi!("{}d"), self.0)
     }
 
     #[cfg(windows)]

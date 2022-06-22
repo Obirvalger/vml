@@ -1,13 +1,10 @@
-use heck::{
-    ToKebabCase, ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase,
-};
+use heck::{CamelCase, KebabCase, MixedCase, ShoutySnakeCase, SnakeCase, TitleCase};
 use std::str::FromStr;
 use syn::{
     parse::{Parse, ParseStream},
     Ident, LitStr,
 };
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CaseStyle {
     CamelCase,
@@ -55,7 +52,7 @@ impl Parse for CaseStyle {
 impl FromStr for CaseStyle {
     type Err = ();
 
-    fn from_str(text: &str) -> Result<Self, ()> {
+    fn from_str(text: &str) -> Result<CaseStyle, ()> {
         Ok(match text {
             "camel_case" | "PascalCase" => CaseStyle::PascalCase,
             "camelCase" => CaseStyle::CamelCase,
@@ -83,9 +80,9 @@ impl CaseStyleHelpers for Ident {
         let ident_string = self.to_string();
         if let Some(case_style) = case_style {
             match case_style {
-                CaseStyle::PascalCase => ident_string.to_upper_camel_case(),
+                CaseStyle::PascalCase => ident_string.to_camel_case(),
                 CaseStyle::KebabCase => ident_string.to_kebab_case(),
-                CaseStyle::MixedCase => ident_string.to_lower_camel_case(),
+                CaseStyle::MixedCase => ident_string.to_mixed_case(),
                 CaseStyle::ShoutySnakeCase => ident_string.to_shouty_snake_case(),
                 CaseStyle::SnakeCase => ident_string.to_snake_case(),
                 CaseStyle::TitleCase => ident_string.to_title_case(),
@@ -93,7 +90,7 @@ impl CaseStyleHelpers for Ident {
                 CaseStyle::LowerCase => ident_string.to_lowercase(),
                 CaseStyle::ScreamingKebabCase => ident_string.to_kebab_case().to_uppercase(),
                 CaseStyle::CamelCase => {
-                    let camel_case = ident_string.to_upper_camel_case();
+                    let camel_case = ident_string.to_camel_case();
                     let mut pascal = String::with_capacity(camel_case.len());
                     let mut it = camel_case.chars();
                     if let Some(ch) = it.next() {

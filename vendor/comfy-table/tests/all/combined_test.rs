@@ -6,7 +6,7 @@ fn get_preset_table() -> Table {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(80)
+        .set_table_width(80)
         .set_header(vec![
             Cell::new("Header1").add_attribute(Attribute::Bold),
             Cell::new("Header2").fg(Color::Green),
@@ -36,7 +36,7 @@ fn get_preset_table() -> Table {
 fn combined_features() {
     let mut table = get_preset_table();
     table.force_no_tty().enforce_styling();
-    println!("{table}");
+    println!("{}", table.to_string());
     let expected = "
 ┌─────────────────────┬───────────────────────────────┬────────────────────────┐
 │\u{1b}[1m Header1             \u{1b}[0m┆\u{1b}[38;5;10m Header2                       \u{1b}[39m┆ Header3                │
@@ -51,6 +51,6 @@ fn combined_features() {
 │                     ┆ Here comes a reallylongwordth ┆                        │
 │                     ┆ atshoulddynamicallywrap       ┆                        │
 └─────────────────────┴───────────────────────────────┴────────────────────────┘";
-    println!("{expected}");
+    println!("{}", expected);
     assert_eq!("\n".to_string() + &table.to_string(), expected);
 }
