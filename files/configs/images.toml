@@ -21,6 +21,7 @@ change = ["update-all", "delete"]
 [alt-gui]
 url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p10/cloud/{{arch}}/alt-p10-workstation-cloud-{{arch}}.qcow2"
 description = "ALT Linux p10 gui"
+properties = ["gui"]
 change = ["update-all", "delete"]
 
 [arch]

@@ -23,6 +23,7 @@ use crate::Error;
 pub struct Image<'a> {
     pub description: Option<String>,
     pub name: String,
+    pub properties: BTreeSet<String>,
     url: String,
     get_url_prog: Option<PathBuf>,
     config: &'a ConfigImages,
@@ -54,6 +55,7 @@ impl<'a> Image<'a> {
             get_url_prog: image.get_url_prog,
             description: image.description,
             config,
+            properties: image.properties,
             update_after_days: image.update_after_days,
         }
     }
@@ -205,6 +207,8 @@ struct DeserializeImage {
     pub get_url_prog: Option<PathBuf>,
     #[serde(default)]
     change: Vec<String>,
+    #[serde(default)]
+    properties: BTreeSet<String>,
     update_after_days: Option<u64>,
     arch_mapping: Option<BTreeMap<String, String>>,
 }
@@ -269,6 +273,13 @@ fn update_images(
                 } else {
                     new.change.to_owned()
                 };
+                let properties = if change_set.contains("keep-properties")
+                    || !update_all && !change_set.contains("update-properties")
+                {
+                    old.properties.to_owned()
+                } else {
+                    new.properties.to_owned()
+                };
                 let update_after_days = if change_set.contains("keep-update-after-days")
                     || !update_all && !change_set.contains("update-update-after-days")
                 {
@@ -290,6 +301,7 @@ fn update_images(
                         get_url_prog,
                         description,
                         change,
+                        properties,
                         update_after_days,
                         arch_mapping,
                     },

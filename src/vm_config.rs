@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,8 +26,9 @@ pub struct VMConfig {
     pub minimum_disk_size: Option<Byte>,
     pub nic_model: Option<String>,
     pub nproc: Option<StringOrUint>,
-    pub qemu_binary: Option<String>,
+    pub properties: Option<BTreeSet<String>>,
     pub qemu_arch_options: Option<Vec<String>>,
+    pub qemu_binary: Option<String>,
     pub tags: Option<HashSet<String>>,
     // inset table values at the end
     pub gui: Option<ConfigGui>,
@@ -78,6 +79,7 @@ impl VMConfig {
             ref mut net,
             ref mut nic_model,
             ref mut nproc,
+            ref mut properties,
             ref mut qemu_binary,
             ref mut qemu_arch_options,
             ref mut ssh,
@@ -127,6 +129,9 @@ impl VMConfig {
         }
         if nproc.is_none() {
             *nproc = other.nproc.to_owned();
+        }
+        if properties.is_none() {
+            *properties = other.properties.to_owned();
         }
         if qemu_binary.is_none() {
             *qemu_binary = other.qemu_binary.to_owned();

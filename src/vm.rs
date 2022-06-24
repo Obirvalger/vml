@@ -88,8 +88,14 @@ pub fn create<S: AsRef<str>>(
 
     fs::create_dir_all(&vm_dir)?;
     fs::copy(&image_path, &vm_disk)?;
-    let vm_config_string = toml::to_string(&vm_config).expect("Could not serialize vm config");
     if !vml_path.is_file() {
+        let mut vm_config = vm_config.to_owned();
+        if let Some(image) = available_images.get(image_name) {
+            if !image.properties.is_empty() {
+                vm_config.properties = Some(image.properties.to_owned())
+            }
+        }
+        let vm_config_string = toml::to_string(&vm_config).expect("Could not serialize vm config");
         fs::write(&vml_path, &vm_config_string)?
     }
 
