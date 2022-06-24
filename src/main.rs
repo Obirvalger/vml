@@ -617,7 +617,12 @@ fn main() -> Result<()> {
                     .load_preset(UTF8_FULL)
                     .set_content_arrangement(ContentArrangement::Dynamic)
                     .set_table_width(80)
-                    .set_header(vec![Cell::new("Name"), Cell::new("State"), Cell::new("Address")]);
+                    .set_header(vec![
+                        Cell::new("Name"),
+                        Cell::new("State"),
+                        Cell::new("Image"),
+                        Cell::new("Address"),
+                    ]);
 
                 for vm in vmc.create()? {
                     let info = vm.info();
@@ -629,6 +634,7 @@ fn main() -> Result<()> {
                     table.add_row(vec![
                         Cell::new(&info["name"]),
                         state,
+                        Cell::new(&info["image"]),
                         Cell::new(info.get("network_address").unwrap_or(&"".to_string())),
                     ]);
                 }
