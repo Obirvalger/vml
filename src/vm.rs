@@ -198,14 +198,16 @@ impl VM {
         if !disk.is_file() {
             bail!("disk `{}` for vm `{}` not found", &disk.display(), &name);
         }
+        let mut default_gui = config.default.gui.to_owned();
         let mut default_display = config.default.display.to_owned();
-        if let Some(properties) = vm_config.properties {
-            if properties.contains("gui") {
-                default_display = Some("gtk".to_string())
-            }
+        let properties = vm_config.properties.unwrap_or_default();
+        if properties.contains("gui") {
+            default_display = Some("gtk".to_string())
+        } else {
+            default_gui = None;
         }
         let display = vm_config.display.or(default_display);
-        let gui = vm_config.gui.or_else(|| config.default.gui.to_owned());
+        let gui = vm_config.gui.or(default_gui);
         let memory = vm_config.memory.unwrap_or_else(|| config.default.memory.to_string());
         let minimum_disk_size =
             vm_config.minimum_disk_size.or_else(|| config.default.minimum_disk_size.to_owned());
