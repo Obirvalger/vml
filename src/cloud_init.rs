@@ -31,6 +31,12 @@ ssh_authorized_keys:
 users:
 {%- for user in users %}
   - name: {{ user }}
+{%- if gui -%}
+{%- if user == gui.user %}
+    lock_passwd: false
+    passwd: {{ gui.passwd }}
+{% endif -%}
+{% endif -%}
 {%- if ssh_authorized_keys %}
     ssh_authorized_keys:
 {%- for key in ssh_authorized_keys %}

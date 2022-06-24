@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use byte_unit::Byte;
 use serde::Deserialize;
 
+use crate::gui::ConfigGui;
 use crate::net::ConfigNet;
 use crate::ssh::ConfigSsh;
 use crate::string_like::StringOrUint;
@@ -23,6 +24,7 @@ pub struct VMsDefault {
     #[serde(default = "default_nic_model")]
     pub nic_model: String,
     pub nproc: StringOrUint,
+    pub gui: Option<ConfigGui>,
     #[serde(default)]
     pub ssh: ConfigSsh,
     #[serde(default = "default_qemu_binary")]

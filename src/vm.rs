@@ -18,6 +18,7 @@ use crate::cache::Cache;
 use crate::cloud_init;
 use crate::config::Config;
 use crate::config::CreateExistsAction;
+use crate::gui::ConfigGui;
 use crate::images;
 use crate::images::Images;
 use crate::net::{ConfigNet, Net};
@@ -118,6 +119,7 @@ pub struct VM {
     directory: PathBuf,
     disk: PathBuf,
     display: Option<String>,
+    gui: Option<ConfigGui>,
     memory: String,
     monitor: PathBuf,
     minimum_disk_size: Option<u64>,
@@ -188,6 +190,7 @@ impl VM {
             bail!("disk `{}` for vm `{}` not found", &disk.display(), &name);
         }
         let display = vm_config.display.or_else(|| config.default.display.to_owned());
+        let gui = vm_config.gui.or_else(|| config.default.gui.to_owned());
         let memory = vm_config.memory.unwrap_or_else(|| config.default.memory.to_string());
         let minimum_disk_size =
             vm_config.minimum_disk_size.or_else(|| config.default.minimum_disk_size.to_owned());
@@ -230,6 +233,7 @@ impl VM {
             directory,
             disk,
             display,
+            gui,
             memory,
             monitor,
             minimum_disk_size,
@@ -353,15 +357,25 @@ impl VM {
 
                 image.to_owned()
             } else {
+                let mut users = vec![];
+
+                if let Some(gui) = &self.gui {
+                    users.push(gui.user.to_string());
+                    context.insert("gui", gui);
+                }
+
                 if let Some(ssh) = &self.ssh {
                     if ssh.has_key() {
                         let keys = ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
                         context.insert("ssh_authorized_keys", &keys.authorized_keys());
 
-                        let users = if let Some(user) = ssh.user() { vec![user] } else { vec![] };
-                        context.insert("users", &users);
+                        if let Some(user) = ssh.user() {
+                            users.push(user)
+                        }
                     }
                 }
+
+                context.insert("users", &users);
 
                 cloud_init::generate_data(&context, &self.vml_directory.join("cloud-init"))?
             };

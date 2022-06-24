@@ -35,6 +35,11 @@ memory = "2G"
 
 display = "none"
 
+# Create user with password login for login to desktop environment
+# gui.user = ""
+# Password hash. This can be generated using mkpasswd for example
+# gui.passwd = ""
+
 nproc = 2
 
 # ssh.authorized-keys = []

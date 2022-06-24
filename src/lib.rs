@@ -4,6 +4,7 @@ mod cloud_init;
 pub mod config;
 mod errors;
 pub mod files;
+mod gui;
 pub mod images;
 pub mod net;
 pub mod openssh_config;

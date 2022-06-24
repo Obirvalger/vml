@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use byte_unit::Byte;
 use serde::{Deserialize, Serialize};
 
+use crate::gui::ConfigGui;
 use crate::net::ConfigNet;
 use crate::ssh::ConfigSsh;
 use crate::string_like::StringOrUint;
@@ -28,6 +29,8 @@ pub struct VMConfig {
     pub qemu_binary: Option<String>,
     pub qemu_arch_options: Option<Vec<String>>,
     pub tags: Option<HashSet<String>>,
+    // inset table values at the end
+    pub gui: Option<ConfigGui>,
     pub ssh: Option<ConfigSsh>,
     pub net: Option<ConfigNet>,
 }
@@ -68,6 +71,7 @@ impl VMConfig {
             ref mut data,
             ref mut disk,
             ref mut display,
+            ref mut gui,
             ref mut name,
             ref mut memory,
             ref mut minimum_disk_size,
@@ -97,6 +101,9 @@ impl VMConfig {
         }
         if display.is_none() {
             *display = other.display.to_owned();
+        }
+        if gui.is_none() {
+            *gui = other.gui.to_owned();
         }
         if name.is_none() {
             *name = other.name.to_owned();
