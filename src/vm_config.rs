@@ -22,6 +22,7 @@ pub struct VMConfig {
     pub disk: Option<PathBuf>,
     pub display: Option<String>,
     pub name: Option<String>,
+    pub image_name: Option<String>,
     pub memory: Option<String>,
     pub minimum_disk_size: Option<Byte>,
     pub nic_model: Option<String>,
@@ -74,6 +75,7 @@ impl VMConfig {
             ref mut display,
             ref mut gui,
             ref mut name,
+            ref mut image_name,
             ref mut memory,
             ref mut minimum_disk_size,
             ref mut net,
@@ -109,6 +111,9 @@ impl VMConfig {
         }
         if name.is_none() {
             *name = other.name.to_owned();
+        }
+        if image_name.is_none() {
+            *image_name = other.image_name.to_owned();
         }
         if memory.is_none() {
             *memory = other.memory.to_owned();

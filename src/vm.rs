@@ -94,6 +94,8 @@ pub fn create<S: AsRef<str>>(
             if !image.properties.is_empty() {
                 vm_config.properties = Some(image.properties.to_owned())
             }
+
+            vm_config.image_name = Some(image.name.to_owned());
         }
         let vm_config_string = toml::to_string(&vm_config).expect("Could not serialize vm config");
         fs::write(&vml_path, &vm_config_string)?
