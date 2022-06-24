@@ -131,6 +131,7 @@ pub struct VM {
     memory: String,
     monitor: PathBuf,
     minimum_disk_size: Option<u64>,
+    image_name: Option<String>,
     pub name: String,
     name_path: PathBuf,
     names: Vec<String>,
@@ -251,6 +252,7 @@ impl VM {
             memory,
             monitor,
             minimum_disk_size,
+            image_name: vm_config.image_name.to_owned(),
             name,
             name_path,
             names,
@@ -748,6 +750,12 @@ impl VM {
 
         if let Some(pid) = &self.pid {
             info.insert("pid", pid.to_string());
+        }
+
+        if let Some(image_name) = &self.image_name {
+            info.insert("image", image_name.to_string());
+        } else {
+            info.insert("image", "".to_string());
         }
 
         if let Some(net) = &self.net {
