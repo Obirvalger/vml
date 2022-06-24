@@ -621,6 +621,7 @@ fn main() -> Result<()> {
                         Cell::new("Name"),
                         Cell::new("State"),
                         Cell::new("Image"),
+                        Cell::new("Memory"),
                         Cell::new("Address"),
                     ]);
 
@@ -635,6 +636,7 @@ fn main() -> Result<()> {
                         Cell::new(&info["name"]),
                         state,
                         Cell::new(&info["image"]),
+                        Cell::new(&info["memory"]),
                         Cell::new(info.get("network_address").unwrap_or(&"".to_string())),
                     ]);
                 }
