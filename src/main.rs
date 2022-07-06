@@ -593,6 +593,8 @@ fn main() -> Result<()> {
 
             if !show_matches.is_present("all") {
                 vmc.with_pid(WithPid::Filter);
+            } else {
+                vmc.with_pid(WithPid::Option);
             }
 
             let format_debug = show_matches.is_present("format-debug");
