@@ -2,16 +2,17 @@ use std::{
     cell::UnsafeCell,
     hint,
     panic::{RefUnwindSafe, UnwindSafe},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicU8, Ordering},
 };
 
-use parking_lot::Mutex;
-
 pub(crate) struct OnceCell<T> {
-    mutex: Mutex<()>,
-    is_initialized: AtomicBool,
+    state: AtomicU8,
     value: UnsafeCell<Option<T>>,
 }
+
+const INCOMPLETE: u8 = 0x0;
+const RUNNING: u8 = 0x1;
+const COMPLETE: u8 = 0x2;
 
 // Why do we need `T: Send`?
 // Thread A creates a `OnceCell` and shares it with
@@ -26,17 +27,17 @@ impl<T: UnwindSafe> UnwindSafe for OnceCell<T> {}
 
 impl<T> OnceCell<T> {
     pub(crate) const fn new() -> OnceCell<T> {
-        OnceCell {
-            mutex: parking_lot::const_mutex(()),
-            is_initialized: AtomicBool::new(false),
-            value: UnsafeCell::new(None),
-        }
+        OnceCell { state: AtomicU8::new(INCOMPLETE), value: UnsafeCell::new(None) }
+    }
+
+    pub(crate) const fn with_value(value: T) -> OnceCell<T> {
+        OnceCell { state: AtomicU8::new(COMPLETE), value: UnsafeCell::new(Some(value)) }
     }
 
     /// Safety: synchronizes with store to value via Release/Acquire.
     #[inline]
     pub(crate) fn is_initialized(&self) -> bool {
-        self.is_initialized.load(Ordering::Acquire)
+        self.state.load(Ordering::Acquire) == COMPLETE
     }
 
     /// Safety: synchronizes with store to value via `is_initialized` or mutex
@@ -46,8 +47,10 @@ impl<T> OnceCell<T> {
     where
         F: FnOnce() -> Result<T, E>,
     {
-        let _guard = self.mutex.lock();
-        if !self.is_initialized() {
+        let mut f = Some(f);
+        let mut res: Result<(), E> = Ok(());
+        let slot: *mut Option<T> = self.value.get();
+        initialize_inner(&self.state, &mut || {
             // We are calling user-supplied function and need to be careful.
             // - if it returns Err, we unlock mutex and return without touching anything
             // - if it panics, we unlock mutex and propagate panic without touching anything
@@ -56,15 +59,37 @@ impl<T> OnceCell<T> {
             //   but that is more complicated
             // - finally, if it returns Ok, we store the value and store the flag with
             //   `Release`, which synchronizes with `Acquire`s.
-            let value = f()?;
-            // Safe b/c we have a unique access and no panic may happen
-            // until the cell is marked as initialized.
-            let slot: &mut Option<T> = unsafe { &mut *self.value.get() };
-            debug_assert!(slot.is_none());
-            *slot = Some(value);
-            self.is_initialized.store(true, Ordering::Release);
+            let f = unsafe { crate::take_unchecked(&mut f) };
+            match f() {
+                Ok(value) => unsafe {
+                    // Safe b/c we have a unique access and no panic may happen
+                    // until the cell is marked as initialized.
+                    debug_assert!((*slot).is_none());
+                    *slot = Some(value);
+                    true
+                },
+                Err(err) => {
+                    res = Err(err);
+                    false
+                }
+            }
+        });
+        res
+    }
+
+    #[cold]
+    pub(crate) fn wait(&self) {
+        let key = &self.state as *const _ as usize;
+        unsafe {
+            parking_lot_core::park(
+                key,
+                || self.state.load(Ordering::Acquire) != COMPLETE,
+                || (),
+                |_, _| (),
+                parking_lot_core::DEFAULT_PARK_TOKEN,
+                None,
+            );
         }
-        Ok(())
     }
 
     /// Get the reference to the underlying value, without checking if the cell
@@ -102,9 +127,56 @@ impl<T> OnceCell<T> {
     }
 }
 
+struct Guard<'a> {
+    state: &'a AtomicU8,
+    new_state: u8,
+}
+
+impl<'a> Drop for Guard<'a> {
+    fn drop(&mut self) {
+        self.state.store(self.new_state, Ordering::Release);
+        unsafe {
+            let key = self.state as *const AtomicU8 as usize;
+            parking_lot_core::unpark_all(key, parking_lot_core::DEFAULT_UNPARK_TOKEN);
+        }
+    }
+}
+
+// Note: this is intentionally monomorphic
+#[inline(never)]
+fn initialize_inner(state: &AtomicU8, init: &mut dyn FnMut() -> bool) {
+    loop {
+        let exchange =
+            state.compare_exchange_weak(INCOMPLETE, RUNNING, Ordering::Acquire, Ordering::Acquire);
+        match exchange {
+            Ok(_) => {
+                let mut guard = Guard { state, new_state: INCOMPLETE };
+                if init() {
+                    guard.new_state = COMPLETE;
+                }
+                return;
+            }
+            Err(COMPLETE) => return,
+            Err(RUNNING) => unsafe {
+                let key = state as *const AtomicU8 as usize;
+                parking_lot_core::park(
+                    key,
+                    || state.load(Ordering::Relaxed) == RUNNING,
+                    || (),
+                    |_, _| (),
+                    parking_lot_core::DEFAULT_PARK_TOKEN,
+                    None,
+                );
+            },
+            Err(INCOMPLETE) => (),
+            Err(_) => debug_assert!(false),
+        }
+    }
+}
+
 #[test]
 fn test_size() {
     use std::mem::size_of;
 
-    assert_eq!(size_of::<OnceCell<bool>>(), 2 * size_of::<bool>() + size_of::<u8>());
+    assert_eq!(size_of::<OnceCell<bool>>(), 1 * size_of::<bool>() + size_of::<u8>());
 }

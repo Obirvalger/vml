@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased
+
+-
+
+## 1.13.0
+
+- Add `Lazy::get`, similar to `OnceCell::get`.
+
+## 1.12.1
+
+- Remove incorrect `debug_assert`.
+
+## 1.12.0
+
+- Add `OnceCell::wait`, a blocking variant of `get`.
+
+## 1.11.0
+
+- Add `OnceCell::with_value` to create initialized `OnceCell` in `const` context.
+- Improve `Clone` implementation for `OnceCell`.
+- Rewrite `parking_lot` version on top of `parking_lot_core`, for even smaller cells!
+
+## 1.10.0
+
+- upgrade `parking_lot` to `0.12.0` (note that this bumps MSRV with `parking_lot` feature enabled to `1.49.0`).
+
+## 1.9.0
+
+- Added an `atomic-polyfill` optional dependency to compile `race` on platforms without atomics
+
+## 1.8.0
+
+- Add `try_insert` API -- a version of `set` that returns a reference.
+
+## 1.7.2
+
+- Improve code size when using parking_lot feature.
+
+## 1.7.1
+
+- Fix `race::OnceBox<T>` to also impl `Default` even if `T` doesn't impl `Default`.
+
+## 1.7.0
+
+- Hide the `race` module behind (default) `race` feature.
+  Turns out that adding `race` by default was a breaking change on some platforms without atomics.
+  In this release, we make the module opt-out.
+  Technically, this is a breaking change for those who use `race` with `no_default_features`.
+  Given that the `race` module itself only several days old, the breakage is deemed acceptable.
+
+## 1.6.0
+
+- Add `Lazy::into_value`
+- Stabilize `once_cell::race` module for "first one wins" no_std-compatible initialization flavor.
+- Migrate from deprecated `compare_and_swap` to `compare_exchange`.
+
 ## 1.5.2
 
 - `OnceBox` API uses `Box<T>`.

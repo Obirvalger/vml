@@ -2,7 +2,7 @@ use std::io;
 
 use anyhow::{bail, Result};
 use byte_unit::Byte;
-use clap::{Arg, ArgEnum, ArgGroup, Command, ValueHint};
+use clap::{crate_version, Arg, ArgEnum, ArgGroup, Command, ValueHint};
 use clap_complete::{generate, Generator, Shell};
 
 fn print_completions<G: Generator>(gen: G, app: &mut Command) {
@@ -23,7 +23,7 @@ pub fn completion(shell: &str) -> Result<()> {
 pub fn build_cli() -> clap::Command<'static> {
     Command::new("vml")
         .about("virtual machines manage utility")
-        .version("0.1.7")
+        .version(crate_version!())
         .arg_required_else_help(true)
         .infer_subcommands(true)
         .arg(Arg::new("all-vms").long("all-vms").help("Specify all vms"))

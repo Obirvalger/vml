@@ -1,15 +1,31 @@
-//! "First one wins" flavor of `OnceCell`.
+//! Thread-safe, non-blocking, "first one wins" flavor of `OnceCell`.
 //!
 //! If two threads race to initialize a type from the `race` module, they
 //! don't block, execute initialization function together, but only one of
 //! them stores the result.
 //!
 //! This module does not require `std` feature.
+//!
+//! # Atomic orderings
+//!
+//! All types in this module use `Acquire` and `Release`
+//! [atomic orderings](Ordering) for all their operations. While this is not
+//! strictly necessary for types other than `OnceBox`, it is useful for users as
+//! it allows them to be certain that after `get` or `get_or_init` returns on
+//! one thread, any side-effects caused by the setter thread prior to them
+//! calling `set` or `get_or_init` will be made visible to that thread; without
+//! it, it's possible for it to appear as if they haven't happened yet from the
+//! getter thread's perspective. This is an acceptable tradeoff to make since
+//! `Acquire` and `Release` have very little performance overhead on most
+//! architectures versus `Relaxed`.
 
-use core::{
-    num::NonZeroUsize,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+#[cfg(feature = "atomic-polyfill")]
+use atomic_polyfill as atomic;
+#[cfg(not(feature = "atomic-polyfill"))]
+use core::sync::atomic;
+
+use atomic::{AtomicUsize, Ordering};
+use core::num::NonZeroUsize;
 
 /// A thread-safe cell which can be written to only once.
 #[derive(Default, Debug)]
@@ -19,11 +35,13 @@ pub struct OnceNonZeroUsize {
 
 impl OnceNonZeroUsize {
     /// Creates a new empty cell.
+    #[inline]
     pub const fn new() -> OnceNonZeroUsize {
         OnceNonZeroUsize { inner: AtomicUsize::new(0) }
     }
 
     /// Gets the underlying value.
+    #[inline]
     pub fn get(&self) -> Option<NonZeroUsize> {
         let val = self.inner.load(Ordering::Acquire);
         NonZeroUsize::new(val)
@@ -33,12 +51,13 @@ impl OnceNonZeroUsize {
     ///
     /// Returns `Ok(())` if the cell was empty and `Err(())` if it was
     /// full.
+    #[inline]
     pub fn set(&self, value: NonZeroUsize) -> Result<(), ()> {
-        let val = self.inner.compare_and_swap(0, value.get(), Ordering::AcqRel);
-        if val == 0 {
-            Ok(())
-        } else {
-            Err(())
+        let exchange =
+            self.inner.compare_exchange(0, value.get(), Ordering::AcqRel, Ordering::Acquire);
+        match exchange {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
         }
     }
 
@@ -75,9 +94,10 @@ impl OnceNonZeroUsize {
             Some(it) => it,
             None => {
                 let mut val = f()?.get();
-                let old_val = self.inner.compare_and_swap(0, val, Ordering::AcqRel);
-                if old_val != 0 {
-                    val = old_val;
+                let exchange =
+                    self.inner.compare_exchange(0, val, Ordering::AcqRel, Ordering::Acquire);
+                if let Err(old) = exchange {
+                    val = old;
                 }
                 unsafe { NonZeroUsize::new_unchecked(val) }
             }
@@ -94,11 +114,13 @@ pub struct OnceBool {
 
 impl OnceBool {
     /// Creates a new empty cell.
+    #[inline]
     pub const fn new() -> OnceBool {
         OnceBool { inner: OnceNonZeroUsize::new() }
     }
 
     /// Gets the underlying value.
+    #[inline]
     pub fn get(&self) -> Option<bool> {
         self.inner.get().map(OnceBool::from_usize)
     }
@@ -107,6 +129,7 @@ impl OnceBool {
     ///
     /// Returns `Ok(())` if the cell was empty and `Err(())` if it was
     /// full.
+    #[inline]
     pub fn set(&self, value: bool) -> Result<(), ()> {
         self.inner.set(OnceBool::to_usize(value))
     }
@@ -138,9 +161,11 @@ impl OnceBool {
         self.inner.get_or_try_init(|| f().map(OnceBool::to_usize)).map(OnceBool::from_usize)
     }
 
+    #[inline]
     fn from_usize(value: NonZeroUsize) -> bool {
         value.get() == 1
     }
+    #[inline]
     fn to_usize(value: bool) -> NonZeroUsize {
         unsafe { NonZeroUsize::new_unchecked(if value { 1 } else { 2 }) }
     }
@@ -148,20 +173,30 @@ impl OnceBool {
 
 #[cfg(feature = "alloc")]
 pub use self::once_box::OnceBox;
+
 #[cfg(feature = "alloc")]
 mod once_box {
+    use super::atomic::{AtomicPtr, Ordering};
+    use core::{marker::PhantomData, ptr};
+
     use alloc::boxed::Box;
-    use core::{
-        marker::PhantomData,
-        ptr,
-        sync::atomic::{AtomicPtr, Ordering},
-    };
 
     /// A thread-safe cell which can be written to only once.
-    #[derive(Default, Debug)]
     pub struct OnceBox<T> {
         inner: AtomicPtr<T>,
         ghost: PhantomData<Option<Box<T>>>,
+    }
+
+    impl<T> core::fmt::Debug for OnceBox<T> {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "OnceBox({:?})", self.inner.load(Ordering::Relaxed))
+        }
+    }
+
+    impl<T> Default for OnceBox<T> {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl<T> Drop for OnceBox<T> {
@@ -194,8 +229,13 @@ mod once_box {
         /// full.
         pub fn set(&self, value: Box<T>) -> Result<(), Box<T>> {
             let ptr = Box::into_raw(value);
-            let old_ptr = self.inner.compare_and_swap(ptr::null_mut(), ptr, Ordering::AcqRel);
-            if !old_ptr.is_null() {
+            let exchange = self.inner.compare_exchange(
+                ptr::null_mut(),
+                ptr,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+            if let Err(_) = exchange {
                 let value = unsafe { Box::from_raw(ptr) };
                 return Err(value);
             }
@@ -235,15 +275,22 @@ mod once_box {
             if ptr.is_null() {
                 let val = f()?;
                 ptr = Box::into_raw(val);
-                let old_ptr = self.inner.compare_and_swap(ptr::null_mut(), ptr, Ordering::AcqRel);
-                if !old_ptr.is_null() {
+                let exchange = self.inner.compare_exchange(
+                    ptr::null_mut(),
+                    ptr,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                );
+                if let Err(old) = exchange {
                     drop(unsafe { Box::from_raw(ptr) });
-                    ptr = old_ptr;
+                    ptr = old;
                 }
             };
             Ok(unsafe { &*ptr })
         }
     }
+
+    unsafe impl<T: Sync + Send> Sync for OnceBox<T> {}
 
     /// ```compile_fail
     /// struct S(*mut ());
@@ -252,5 +299,5 @@ mod once_box {
     /// fn share<T: Sync>(_: &T) {}
     /// share(&once_cell::race::OnceBox::<S>::new());
     /// ```
-    unsafe impl<T: Sync + Send> Sync for OnceBox<T> {}
+    fn _dummy() {}
 }
