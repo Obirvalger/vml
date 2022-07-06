@@ -2,7 +2,7 @@ use std::io;
 
 use anyhow::{bail, Result};
 use byte_unit::Byte;
-use clap::{AppSettings, Arg, ArgEnum, ArgGroup, Command, ValueHint};
+use clap::{Arg, ArgEnum, ArgGroup, Command, ValueHint};
 use clap_complete::{generate, Generator, Shell};
 
 fn print_completions<G: Generator>(gen: G, app: &mut Command) {
@@ -24,10 +24,6 @@ pub fn build_cli() -> clap::Command<'static> {
     Command::new("vml")
         .about("virtual machines manage utility")
         .version("0.1.7")
-        .setting(AppSettings::NoAutoVersion)
-        .subcommand_required(true)
-        .arg_required_else_help(true)
-        .subcommand_required(true)
         .arg_required_else_help(true)
         .infer_subcommands(true)
         .arg(Arg::new("all-vms").long("all-vms").help("Specify all vms"))
