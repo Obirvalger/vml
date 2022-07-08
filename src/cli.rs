@@ -164,6 +164,7 @@ pub fn build_cli() -> clap::Command<'static> {
                         .takes_value(true)
                         .validator(|s| Byte::from_str(s).map(|b| b.to_string())),
                 )
+                .arg(Arg::new("ssh-user").long("ssh-user").takes_value(true))
                 .arg(Arg::new("net-tap").long("net-tap").takes_value(true))
                 .arg(
                     Arg::new("net-address")
@@ -293,6 +294,7 @@ pub fn build_cli() -> clap::Command<'static> {
                         .takes_value(true)
                         .validator(|s| Byte::from_str(s).map(|b| b.to_string())),
                 )
+                .arg(Arg::new("ssh-user").long("ssh-user").takes_value(true))
                 .arg(Arg::new("net-tap").long("net-tap").takes_value(true))
                 .arg(
                     Arg::new("net-address")

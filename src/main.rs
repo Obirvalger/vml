@@ -21,6 +21,7 @@ use vml::net::ConfigNet;
 use vml::openssh_config;
 use vml::template;
 use vml::vm_config::VMConfig;
+use vml::ConfigSsh;
 use vml::Error;
 use vml::StringOrUint;
 use vml::{VMsCreator, WithPid};
@@ -110,6 +111,11 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         vm_config.display = Some("gtk".to_string())
     } else if create_matches.is_present("display-none") {
         vm_config.display = Some("none".to_string())
+    }
+
+    if let Some(user) = create_matches.value_of("ssh-user") {
+        let config_ssh = ConfigSsh { user: Some(user.to_string()), ..Default::default() };
+        vm_config.ssh = Some(config_ssh);
     }
 
     let available_images = vml::images::available(&config.images).unwrap_or_default();
