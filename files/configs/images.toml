@@ -129,6 +129,11 @@ change = ["update-all", "delete"]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
+[rocky]
+url = "https://dl.rockylinux.org/pub/rocky/8/images/Rocky-8-GenericCloud.latest.{{arch}}.qcow2"
+description = "Rocky Linux"
+change = ["update-all", "delete"]
+
 [centos]
 url = "https://cloud.centos.org/centos/8-stream/{{arch}}/images/CentOS-Stream-GenericCloud-8-20210603.0.{{arch}}.qcow2"
 description = "CentOS stream"
