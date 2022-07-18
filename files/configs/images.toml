@@ -129,6 +129,21 @@ change = ["update-all", "delete"]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
+[alma]
+url = "https://repo.almalinux.org/almalinux/9/cloud/{{arch}}/images/AlmaLinux-9-GenericCloud-latest.{{arch}}.qcow2"
+description = "AlmaLinux latest (9)"
+change = ["update-all", "delete"]
+
+[alma-9]
+url = "https://repo.almalinux.org/almalinux/9/cloud/{{arch}}/images/AlmaLinux-9-GenericCloud-latest.{{arch}}.qcow2"
+description = "AlmaLinux"
+change = ["update-all", "delete"]
+
+[alma-8]
+url = "https://repo.almalinux.org/almalinux/8/cloud/{{arch}}/images/AlmaLinux-8-GenericCloud-latest.{{arch}}.qcow2"
+description = "AlmaLinux 8"
+change = ["update-all", "delete"]
+
 [rocky]
 url = "https://dl.rockylinux.org/pub/rocky/8/images/Rocky-8-GenericCloud.latest.{{arch}}.qcow2"
 description = "Rocky Linux"
