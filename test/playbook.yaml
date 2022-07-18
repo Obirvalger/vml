@@ -1,0 +1,36 @@
+- name: Build and test vml
+  hosts: "{{ parent }}"
+  tasks:
+  - name: Install alt packages
+    apt_rpm:
+      name: rust-cargo,gcc,cloud-utils,rsync,socat,qemu-system-x86,ansible,iptables,curl
+      update_cache: yes
+    when: ansible_facts['os_family'] == 'Altlinux'
+  - name: Install deb packages
+    apt:
+      name: cargo,cloud-utils,rsync,socat,qemu-system-x86,ansible,iptables,curl
+      update_cache: yes
+    when: ansible_facts['os_family'] == 'Debian'
+  - name: Install arch packages
+    pacman:
+      name: cargo,cloud-utils,rsync,socat,qemu-system-x86,ansible,curl
+      update_cache: yes
+    when: ansible_facts['os_family'] == 'Archlinux'
+  - name: Install rh packages
+    dnf:
+      name: cargo,cloud-utils,rsync,socat,qemu-system-x86,genisoimage,ansible,iptables,curl
+      update_cache: yes
+    when: ansible_facts['os_family'] == 'RedHat'
+
+  - name: Add the user '{{ user }}' to 'vmusers' group
+    user:
+      name: "{{ user }}"
+      groups: vmusers
+      append: yes
+    when: ansible_facts['os_family'] == 'Altlinux'
+  - name: Add the user '{{ user }}' to 'kvm' group
+    user:
+      name: "{{ user }}"
+      groups: kvm
+      append: yes
+    when: ansible_facts['os_family'] != 'Altlinux'
