@@ -57,24 +57,6 @@ change = ["update-all", "delete"]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
-[ubuntu-impish]
-url = "https://cloud-images.ubuntu.com/impish/current/impish-server-cloudimg-{{arch}}.img"
-description = "Ubuntu 21.10 Impish Indri"
-change = ["update-all", "delete"]
-
-[ubuntu-impish.arch-mapping]
-x86_64 = "amd64"
-aarch64 = "arm64"
-
-[ubuntu-hirsute]
-url = "https://cloud-images.ubuntu.com/hirsute/current/hirsute-server-cloudimg-{{arch}}.img"
-description = "Ubuntu 21.04 Hirsute Hippo"
-change = ["update-all", "delete"]
-
-[ubuntu-hirsute.arch-mapping]
-x86_64 = "amd64"
-aarch64 = "arm64"
-
 [ubuntu-focal]
 url = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 20.04 Focal Fossa"
@@ -182,11 +164,6 @@ change = ["update-all", "delete"]
 [centos-7]
 url = "https://cloud.centos.org/centos/7/images/CentOS-7-{{arch}}-GenericCloud.qcow2"
 description = "CentOS 7"
-change = ["update-all", "delete"]
-
-[centos-6]
-url = "https://cloud.centos.org/centos/6/images/CentOS-6-{{arch}}-GenericCloud.qcow2"
-description = "CentOS 6"
 change = ["update-all", "delete"]
 
 [fedora]
