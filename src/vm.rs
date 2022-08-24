@@ -91,7 +91,7 @@ pub fn create<S: AsRef<str>>(
     if !vml_path.is_file() {
         let mut vm_config = vm_config.to_owned();
         if let Some(image) = available_images.get(image_name) {
-            if !image.properties.is_empty() {
+            if vm_config.properties.is_none() && !image.properties.is_empty() {
                 vm_config.properties = Some(image.properties.to_owned())
             }
 

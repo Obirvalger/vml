@@ -90,6 +90,11 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         vm_config.cloud_init = Some(true)
     }
 
+    if create_matches.is_present("properties") {
+        vm_config.properties =
+            Some(create_matches.values_of("properties").unwrap().map(|s| s.to_string()).collect());
+    }
+
     if create_matches.is_present("net-user") {
         vm_config.net = Some(ConfigNet::User);
     } else if create_matches.is_present("net-tap") {
