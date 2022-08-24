@@ -34,7 +34,7 @@ users:
 {%- if gui -%}
 {%- if user == gui.user %}
     lock_passwd: false
-    passwd: {{ gui.passwd }}
+    hashed_passwd: {{ gui.passwd }}
 {% endif -%}
 {% endif -%}
 {%- if ssh_authorized_keys %}
