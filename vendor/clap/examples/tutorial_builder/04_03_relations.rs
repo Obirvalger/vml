@@ -1,12 +1,10 @@
-// Note: this requires the `cargo` feature
-
 use std::path::PathBuf;
 
 use clap::{arg, command, value_parser, ArgAction, ArgGroup};
 
 fn main() {
     // Create application like normal
-    let matches = command!()
+    let matches = command!() // requires `cargo` feature
         // Add the version arguments
         .arg(arg!(--"set-ver" <VER> "set version manually").required(false))
         .arg(arg!(--major         "auto inc major").action(ArgAction::SetTrue))
@@ -52,9 +50,9 @@ fn main() {
     } else {
         // Increment the one requested (in a real program, we'd reset the lower numbers)
         let (maj, min, pat) = (
-            *matches.get_one::<bool>("major").expect("defaulted by clap"),
-            *matches.get_one::<bool>("minor").expect("defaulted by clap"),
-            *matches.get_one::<bool>("patch").expect("defaulted by clap"),
+            matches.get_flag("major"),
+            matches.get_flag("minor"),
+            matches.get_flag("patch"),
         );
         match (maj, min, pat) {
             (true, _, _) => major += 1,

@@ -298,10 +298,10 @@ impl<'help> App<'help> {
     /// assert!(res.is_ok());
     /// ```
     #[must_use]
-    pub fn mut_subcommand<T, F>(mut self, subcmd_id: T, f: F) -> Self
+    pub fn mut_subcommand<'a, T, F>(mut self, subcmd_id: T, f: F) -> Self
     where
         F: FnOnce(App<'help>) -> App<'help>,
-        T: Into<&'help str>,
+        T: Into<&'a str>,
     {
         let subcmd_id: &str = subcmd_id.into();
         let id = Id::from(subcmd_id);
@@ -744,7 +744,7 @@ impl<'help> App<'help> {
     /// [`io::stdout()`]: std::io::stdout()
     pub fn print_help(&mut self) -> io::Result<()> {
         self._build_self();
-        let color = self.get_color();
+        let color = self.color_help();
 
         let mut c = Colorizer::new(Stream::Stdout, color);
         let usage = Usage::new(self);
@@ -769,7 +769,7 @@ impl<'help> App<'help> {
     /// [`--help` (long)]: Arg::long_help()
     pub fn print_long_help(&mut self) -> io::Result<()> {
         self._build_self();
-        let color = self.get_color();
+        let color = self.color_help();
 
         let mut c = Colorizer::new(Stream::Stdout, color);
         let usage = Usage::new(self);
@@ -959,9 +959,21 @@ impl<'help> App<'help> {
     }
 
     /// Deprecated, replaced with [`ArgAction::Set`][super::ArgAction::Set]
+    ///
+    /// The new actions (`ArgAction::Set`, `ArgAction::SetTrue`) do this by default.
+    ///
+    /// See `ArgAction::StoreValue` and `ArgAction::IncOccurrence` for how to migrate
     #[cfg_attr(
         feature = "deprecated",
-        deprecated(since = "3.2.0", note = "Replaced with `Arg::action(ArgAction::Set)`")
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `Arg::action(ArgAction::...)`
+
+The new actions (`ArgAction::Set`, `ArgAction::SetTrue`) do this by default.
+
+See `ArgAction::StoreValue` and `ArgAction::IncOccurrence` for how to migrate
+"
+        )
     )]
     pub fn args_override_self(self, yes: bool) -> Self {
         if yes {
@@ -1648,6 +1660,14 @@ impl<'help> App<'help> {
     /// strings. After this setting is set, this will be *the only* usage string
     /// displayed to the user!
     ///
+    /// **NOTE:** Multiple usage lines may be present in the usage argument, but
+    /// some rules need to be followed to ensure the usage lines are formatted
+    /// correctly by the default help formatter:
+    ///
+    /// - Do not indent the first usage line.
+    /// - Indent all subsequent usage lines with four spaces.
+    /// - The last line must not end with a newline.
+    ///
     /// # Examples
     ///
     /// ```no_run
@@ -1656,6 +1676,20 @@ impl<'help> App<'help> {
     ///     .override_usage("myapp [-clDas] <some_file>")
     /// # ;
     /// ```
+    ///
+    /// Or for multiple usage lines:
+    ///
+    /// ```no_run
+    /// # use clap::{Command, Arg};
+    /// Command::new("myprog")
+    ///     .override_usage(
+    ///         "myapp -X [-a] [-b] <file>\n    \
+    ///          myapp -Y [-c] <file1> <file2>\n    \
+    ///          myapp -Z [-d|-e]"
+    ///     )
+    /// # ;
+    /// ```
+    ///
     /// [`ArgMatches::usage`]: ArgMatches::usage()
     #[must_use]
     pub fn override_usage<S: Into<&'help str>>(mut self, usage: S) -> Self {
@@ -3556,15 +3590,21 @@ impl<'help> App<'help> {
         if arg.is_global_set() {
             self.get_global_arg_conflicts_with(arg)
         } else {
-            arg.blacklist
-                .iter()
-                .map(|id| {
-                    self.args.args().find(|arg| arg.id == *id).expect(
-                        "Command::get_arg_conflicts_with: \
-                    The passed arg conflicts with an arg unknown to the cmd",
-                    )
-                })
-                .collect()
+            let mut result = Vec::new();
+            for id in arg.blacklist.iter() {
+                if let Some(arg) = self.find(id) {
+                    result.push(arg);
+                } else if let Some(group) = self.find_group(id) {
+                    result.extend(
+                        self.unroll_args_in_group(&group.id)
+                            .iter()
+                            .map(|id| self.find(id).expect(INTERNAL_ERROR_MSG)),
+                    );
+                } else {
+                    panic!("Command::get_arg_conflicts_with: The passed arg conflicts with an arg unknown to the cmd");
+                }
+            }
+            result
         }
     }
 
@@ -4308,7 +4348,8 @@ impl<'help> App<'help> {
         use std::fmt::Write;
 
         let mut mid_string = String::from(" ");
-        if !self.is_subcommand_negates_reqs_set() {
+        if !self.is_subcommand_negates_reqs_set() && !self.is_args_conflicts_with_subcommands_set()
+        {
             let reqs = Usage::new(self).get_required_usage_from(&[], None, true); // maybe Some(m)
 
             for s in &reqs {
@@ -4391,7 +4432,9 @@ impl<'help> App<'help> {
 
         if !self.is_set(AppSettings::BinNameBuilt) {
             let mut mid_string = String::from(" ");
-            if !self.is_subcommand_negates_reqs_set() {
+            if !self.is_subcommand_negates_reqs_set()
+                && !self.is_args_conflicts_with_subcommands_set()
+            {
                 let reqs = Usage::new(self).get_required_usage_from(&[], None, true); // maybe Some(m)
 
                 for s in &reqs {

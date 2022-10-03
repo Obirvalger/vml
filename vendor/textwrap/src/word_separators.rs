@@ -134,6 +134,23 @@ impl std::fmt::Debug for WordSeparator {
 }
 
 impl WordSeparator {
+    /// Create a new word separator.
+    ///
+    /// The best available algorithm is used by default, i.e.,
+    /// [`WordSeparator::UnicodeBreakProperties`] if available,
+    /// otherwise [`WordSeparator::AsciiSpace`].
+    pub const fn new() -> Self {
+        #[cfg(feature = "unicode-linebreak")]
+        {
+            WordSeparator::UnicodeBreakProperties
+        }
+
+        #[cfg(not(feature = "unicode-linebreak"))]
+        {
+            WordSeparator::AsciiSpace
+        }
+    }
+
     // This function should really return impl Iterator<Item = Word>, but
     // this isn't possible until Rust supports higher-kinded types:
     // https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md
@@ -154,13 +171,7 @@ fn find_words_ascii_space<'a>(line: &'a str) -> Box<dyn Iterator<Item = Word<'a>
     let mut char_indices = line.char_indices();
 
     Box::new(std::iter::from_fn(move || {
-        // for (idx, ch) in char_indices does not work, gives this
-        // error:
-        //
-        // > cannot move out of `char_indices`, a captured variable in
-        // > an `FnMut` closure
-        #[allow(clippy::while_let_on_iterator)]
-        while let Some((idx, ch)) = char_indices.next() {
+        for (idx, ch) in char_indices.by_ref() {
             if in_whitespace && ch != ' ' {
                 let word = Word::from(&line[start..idx]);
                 start = idx;
@@ -252,8 +263,7 @@ fn find_words_unicode_break_properties<'a>(
 
     let mut start = 0;
     Box::new(std::iter::from_fn(move || {
-        #[allow(clippy::while_let_on_iterator)]
-        while let Some((idx, _)) = opportunities.next() {
+        for (idx, _) in opportunities.by_ref() {
             if let Some((orig_idx, _)) = idx_map.find(|&(_, stripped_idx)| stripped_idx == idx) {
                 let word = Word::from(&line[start..orig_idx]);
                 start = orig_idx;
@@ -283,8 +293,8 @@ mod tests {
         };
     }
 
-    fn to_words<'a>(words: Vec<&'a str>) -> Vec<Word<'a>> {
-        words.into_iter().map(|w: &str| Word::from(&w)).collect()
+    fn to_words(words: Vec<&str>) -> Vec<Word<'_>> {
+        words.into_iter().map(Word::from).collect()
     }
 
     macro_rules! test_find_words {
@@ -417,12 +427,21 @@ mod tests {
     #[test]
     fn find_words_color_inside_word() {
         let text = "foo\u{1b}[0m\u{1b}[32mbar\u{1b}[0mbaz";
-        assert_iter_eq!(AsciiSpace.find_words(&text), vec![Word::from(text)]);
+        assert_iter_eq!(AsciiSpace.find_words(text), vec![Word::from(text)]);
 
         #[cfg(feature = "unicode-linebreak")]
         assert_iter_eq!(
-            UnicodeBreakProperties.find_words(&text),
+            UnicodeBreakProperties.find_words(text),
             vec![Word::from(text)]
         );
+    }
+
+    #[test]
+    fn word_separator_new() {
+        #[cfg(feature = "unicode-linebreak")]
+        assert!(matches!(WordSeparator::new(), UnicodeBreakProperties));
+
+        #[cfg(not(feature = "unicode-linebreak"))]
+        assert!(matches!(WordSeparator::new(), AsciiSpace));
     }
 }

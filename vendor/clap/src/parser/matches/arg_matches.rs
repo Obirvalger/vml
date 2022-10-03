@@ -119,6 +119,69 @@ impl ArgMatches {
         MatchesError::unwrap(&internal_id, self.try_get_one(id))
     }
 
+    /// Gets the value of a specific [`ArgAction::Count`][crate::ArgAction::Count] flag
+    ///
+    /// # Panic
+    ///
+    /// If the argument's action is not [`ArgAction::Count`][crate::ArgAction::Count]
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use clap::Command;
+    /// # use clap::Arg;
+    /// let cmd = Command::new("mycmd")
+    ///     .arg(
+    ///         Arg::new("flag")
+    ///             .long("flag")
+    ///             .action(clap::ArgAction::Count)
+    ///     );
+    ///
+    /// let matches = cmd.clone().try_get_matches_from(["mycmd", "--flag", "--flag"]).unwrap();
+    /// assert_eq!(
+    ///     matches.get_count("flag"),
+    ///     2
+    /// );
+    /// ```
+    #[track_caller]
+    pub fn get_count(&self, id: &str) -> u8 {
+        *self
+            .get_one::<u8>(id)
+            .expect("ArgAction::Count is defaulted")
+    }
+
+    /// Gets the value of a specific [`ArgAction::SetTrue`][crate::ArgAction::SetTrue] or [`ArgAction::SetFalse`][crate::ArgAction::SetFalse] flag
+    ///
+    /// # Panic
+    ///
+    /// If the argument's action is not [`ArgAction::SetTrue`][crate::ArgAction::SetTrue] or [`ArgAction::SetFalse`][crate::ArgAction::SetFalse]
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use clap::Command;
+    /// # use clap::Arg;
+    /// let cmd = Command::new("mycmd")
+    ///     .arg(
+    ///         Arg::new("flag")
+    ///             .long("flag")
+    ///             .action(clap::ArgAction::SetTrue)
+    ///     );
+    ///
+    /// let matches = cmd.clone().try_get_matches_from(["mycmd", "--flag", "--flag"]).unwrap();
+    /// assert!(matches.contains_id("flag"));
+    /// assert_eq!(
+    ///     matches.get_flag("flag"),
+    ///     true
+    /// );
+    /// ```
+    #[track_caller]
+    pub fn get_flag(&self, id: &str) -> bool {
+        *self
+            .get_one::<bool>(id)
+            .expect("ArgAction::SetTrue / ArgAction::SetFalse is defaulted")
+    }
+
     /// Iterate over values of a specific option or positional argument.
     ///
     /// i.e. an argument that takes multiple values at runtime.
@@ -342,9 +405,17 @@ impl ArgMatches {
     }
 
     /// Deprecated, replaced with [`ArgMatches::get_one()`]
+    ///
+    /// Replace `m.value_of(...)` with `m.get_one::<String>(...).map(|s| s.as_str())`
     #[cfg_attr(
         feature = "deprecated",
-        deprecated(since = "3.2.0", note = "Replaced with `ArgMatches::get_one()`")
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `ArgMatches::get_one()`
+
+Replace `m.value_of(...)` with `m.get_one::<String>(...).map(|s| s.as_str())`
+"
+        )
     )]
     #[cfg_attr(debug_assertions, track_caller)]
     pub fn value_of<T: Key>(&self, id: T) -> Option<&str> {
@@ -355,9 +426,17 @@ impl ArgMatches {
     }
 
     /// Deprecated, replaced with [`ArgMatches::get_one()`]
+    ///
+    /// Replace `m.value_of(...)` with `m.get_one::<String>(...).map(|s| s.as_str())`
     #[cfg_attr(
         feature = "deprecated",
-        deprecated(since = "3.2.0", note = "Replaced with `ArgMatches::get_one()`")
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `ArgMatches::get_one()`
+
+Replace `m.value_of(...)` with `m.get_one::<String>(...).map(|s| s.as_str())`
+"
+        )
     )]
     #[cfg_attr(debug_assertions, track_caller)]
     pub fn value_of_lossy<T: Key>(&self, id: T) -> Option<Cow<'_, str>> {
@@ -368,9 +447,17 @@ impl ArgMatches {
     }
 
     /// Deprecated, replaced with [`ArgMatches::get_one()`]
+    ///
+    /// Replace `m.value_of(...)` with `m.get_one::<OsString>(...).map(|s| s.as_os_str())`
     #[cfg_attr(
         feature = "deprecated",
-        deprecated(since = "3.2.0", note = "Replaced with `ArgMatches::get_one()`")
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `ArgMatches::get_one()`
+
+Replace `m.value_of(...)` with `m.get_one::<OsString>(...).map(|s| s.as_os_str())`
+"
+        )
     )]
     #[cfg_attr(debug_assertions, track_caller)]
     pub fn value_of_os<T: Key>(&self, id: T) -> Option<&OsStr> {
@@ -383,7 +470,11 @@ impl ArgMatches {
     /// Deprecated, replaced with [`ArgMatches::get_many()`]
     #[cfg_attr(
         feature = "deprecated",
-        deprecated(since = "3.2.0", note = "Replaced with `ArgMatches::get_many()`")
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `ArgMatches::get_many()`
+"
+        )
     )]
     #[cfg_attr(debug_assertions, track_caller)]
     pub fn values_of<T: Key>(&self, id: T) -> Option<Values> {
@@ -557,11 +648,30 @@ impl ArgMatches {
 
     /// Deprecated, replaced with [`ArgAction::SetTrue`][crate::ArgAction] or
     /// [`ArgMatches::contains_id`].
+    ///
+    /// With `ArgAction::SetTrue` becoming the new flag default in clap v4, flags will always be present.
+    /// To make the migration easier, we've renamed this function so people can identify when they actually
+    /// care about an arg being present or if they need to update to the new way to check a flag's
+    /// presence.
+    ///
+    /// For flags, call `arg.action(ArgAction::SetTrue)` and lookup the value with `matches.get_flag(...)`
+    ///
+    /// For presence, replace `matches.is_present(...)` with `matches.contains_id(...)`
     #[cfg_attr(
         feature = "deprecated",
         deprecated(
             since = "3.2.0",
-            note = "Replaced with either `ArgAction::SetTrue` or `ArgMatches::contains_id(...)`"
+            note = "Replaced with either `ArgAction::SetTrue` or `ArgMatches::contains_id(...)` to avoid confusion over new semantics
+
+With `ArgAction::SetTrue` becoming the new flag default in clap v4, flags will always be present.
+To make the migration easier, we've renamed this function so people can identify when they actually
+care about an arg being present or if they need to update to the new way to check a flag's
+presence.
+
+For flags, call `arg.action(ArgAction::SetTrue)` and lookup the value with `matches.get_flag(...)`
+
+For presence, replace `matches.is_present(...)` with `matches.contains_id(...)`
+"
         )
     )]
     #[cfg_attr(debug_assertions, track_caller)]
@@ -606,11 +716,28 @@ impl ArgMatches {
 
     /// Deprecated, replaced with  [`ArgAction::Count`][crate::ArgAction],
     /// [`ArgMatches::get_many`]`.len()`, or [`ArgMatches::value_source`].
+    ///
+    /// `occurrences_of`s meaning was overloaded and we are replacing it with more direct approaches.
+    ///
+    /// For counting flags, call `arg.action(ArgAction::Count)` and lookup the value with `matches.get_count(...)`
+    ///
+    /// To check if a user explicitly passed in a value, check the source with `matches.value_source(...)`
+    ///
+    /// To see how many values there are, call `matches.get_many::<T>(...).map(|v| v.len())`
     #[cfg_attr(
         feature = "deprecated",
         deprecated(
             since = "3.2.0",
-            note = "Replaced with either `ArgAction::Count`, `ArgMatches::get_many(...).len()`, or `ArgMatches::value_source`"
+            note = "Replaced with either `ArgAction::Count`, `ArgMatches::get_many(...).len()`, or `ArgMatches::value_source`
+
+`occurrences_of`s meaning was overloaded and we are replacing it with more direct approaches.
+
+For counting flags, call `arg.action(ArgAction::Count)` and lookup the value with `matches.get_count(...)`
+
+To check if a user explicitly passed in a value, check the source with `matches.value_source(...)`
+
+To see how many values there are, call `matches.get_many::<T>(...).map(|v| v.len())`
+"
         )
     )]
     #[cfg_attr(debug_assertions, track_caller)]
@@ -851,7 +978,27 @@ impl ArgMatches {
     #[doc(hidden)]
     #[cfg_attr(
         feature = "deprecated",
-        deprecated(since = "3.2.0", note = "Replaced with `ArgMatches::try_get_one()`")
+        deprecated(
+            since = "3.2.0",
+            note = "Replaced with `ArgMatches::try_get_one()`
+
+When helping to catch mistyped argument IDs, we overlooked the use cases for more dynamic lookups
+of arguments, so we added `is_valid_arg` as a short-term hack.  Since then, we've generalized
+`value_of` as `try_get_one` to give callers all the relevant information they need.
+
+So replace
+```
+if matches.is_valid_arg(...) {
+    matches.value_of(...)
+}
+```
+with
+```
+if let Ok(value) = matches.try_get_one::<T>(...) {
+}
+```
+"
+        )
     )]
     pub fn is_valid_arg(&self, _id: impl Key) -> bool {
         #[cfg(debug_assertions)]

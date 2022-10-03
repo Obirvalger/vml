@@ -1,6 +1,6 @@
-use clap::{arg, Args as _, Command, FromArgMatches as _, Parser};
+use clap::{arg, Args, Command, FromArgMatches as _};
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 struct DerivedArgs {
     #[clap(short, long, action)]
     derived: bool,
@@ -12,13 +12,10 @@ fn main() {
     let cli = DerivedArgs::augment_args(cli);
 
     let matches = cli.get_matches();
-    println!(
-        "Value of built: {:?}",
-        *matches.get_one::<bool>("built").unwrap()
-    );
+    println!("Value of built: {:?}", matches.get_flag("built"));
     println!(
         "Value of derived via ArgMatches: {:?}",
-        *matches.get_one::<bool>("derived").unwrap()
+        matches.get_flag("derived")
     );
 
     // Since DerivedArgs implements FromArgMatches, we can extract it from the unstructured ArgMatches.

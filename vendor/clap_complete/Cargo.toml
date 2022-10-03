@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.56.1"
 name = "clap_complete"
-version = "3.2.2"
+version = "3.2.5"
 include = [
     "build.rs",
     "src/**/*",
@@ -24,6 +24,7 @@ include = [
     "examples/**/*",
 ]
 description = "Generate shell completion scripts for your clap::Command"
+readme = "README.md"
 keywords = [
     "clap",
     "cli",
