@@ -1,6 +1,7 @@
 [package]
 name = "vml"
 version = "0.1.7"
+rust-version = "1.56"
 authors = ["Mikhail Gordeev <obirvalger@altlinux.org>"]
 edition = "2021"
 
