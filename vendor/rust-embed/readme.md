@@ -8,7 +8,7 @@ You can use this to embed your css, js and images into a single executable which
 
 ```toml
 [dependencies]
-rust-embed="6.4.0"
+rust-embed="6.4.1"
 ```
 
 ## Documentation
@@ -101,6 +101,8 @@ This will pull the `foo` directory relative to your `Cargo.toml` file.
 ### `compression`
 
 Compress each file when embedding into the binary. Compression is done via [`include-flate`].
+> Note this feature should only be used with clean builds as it doesn't work properly for incremental builds yet. Please look at this issue for more details [#182](https://github.com/pyrossh/rust-embed/issues/182)
+
 
 ### `include-exclude`
 Filter files to be embedded with multiple `#[include = "*.txt"]` and `#[exclude = "*.jpg"]` attributes. 
@@ -137,6 +139,11 @@ fn main() {
 }
 ```
 
+## Integrations
+
+1. [Poem](https://github.com/poem-web/poem) for poem framework under feature flag "embed"
+2. [warp_embed](https://docs.rs/warp-embed/latest/warp_embed/) for warp framework
+
 ## Examples
 
 To run the example in dev mode where it reads from the fs,
@@ -147,19 +154,19 @@ To run the example in release mode where it reads from binary,
 
 `cargo run --example basic --release`
 
-Note: To run the `actix-web` example:
+Note: To run the [actix-web](https://github.com/actix/actix-web) example:
 
 `cargo run --example actix --features actix`
 
-Note: To run the `rocket` example:
+Note: To run the [rocket](https://github.com/SergioBenitez/Rocket) example:
 
 `cargo run --example rocket --features rocket`
 
-Note: To run the `warp` example:
+Note: To run the [warp](https://github.com/seanmonstar/warp) example:
 
 `cargo run --example warp --features warp-ex`
 
-Note: To run the `axum` example:
+Note: To run the [axum](https://github.com/tokio-rs/axum) example:
 
 `cargo run --example axum --features axum-ex`
 

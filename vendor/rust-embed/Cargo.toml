@@ -12,13 +12,22 @@
 [package]
 edition = "2018"
 name = "rust-embed"
-version = "6.4.0"
+version = "6.4.1"
 authors = ["pyros2097 <pyros2097@gmail.com>"]
 description = "Rust Custom Derive Macro which loads files into the rust binary at compile time during release and loads the file from the fs during dev"
 documentation = "https://docs.rs/rust-embed"
 readme = "readme.md"
-keywords = ["http", "rocket", "static", "web", "server"]
-categories = ["web-programming", "filesystem"]
+keywords = [
+    "http",
+    "rocket",
+    "static",
+    "web",
+    "server",
+]
+categories = [
+    "web-programming",
+    "filesystem",
+]
 license = "MIT"
 repository = "https://github.com/pyros2097/rust-embed"
 
@@ -43,6 +52,11 @@ path = "examples/axum.rs"
 required-features = ["axum-ex"]
 
 [[example]]
+name = "axum-spa"
+path = "examples/axum-spa/main.rs"
+required-features = ["axum-ex"]
+
+[[example]]
 name = "poem"
 path = "examples/poem.rs"
 required-features = ["poem-ex"]
@@ -56,13 +70,13 @@ required-features = ["interpolate-folder-path"]
 name = "include_exclude"
 path = "tests/include_exclude.rs"
 required-features = ["include-exclude"]
+
 [dependencies.actix-web]
-version = "3"
+version = "4"
 optional = true
-default-features = false
 
 [dependencies.axum]
-version = "0.4"
+version = "0.5"
 features = ["http1"]
 optional = true
 default-features = false
@@ -81,21 +95,21 @@ version = "2"
 optional = true
 
 [dependencies.poem]
-version = "1.3.18"
+version = "1.3.30"
 features = ["server"]
 optional = true
 default-features = false
 
 [dependencies.rocket]
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 optional = true
 default-features = false
 
 [dependencies.rust-embed-impl]
-version = "6.2.0"
+version = "6.3.0"
 
 [dependencies.rust-embed-utils]
-version = "7.2.0"
+version = "7.3.0"
 
 [dependencies.salvo]
 version = "0.16"
@@ -104,7 +118,10 @@ default-features = false
 
 [dependencies.tokio]
 version = "1.0"
-features = ["macros", "rt-multi-thread"]
+features = [
+    "macros",
+    "rt-multi-thread",
+]
 optional = true
 
 [dependencies.walkdir]
@@ -114,19 +131,51 @@ version = "2.3.1"
 version = "0.3"
 optional = true
 default-features = false
+
 [dev-dependencies.sha2]
-version = "0.9"
+version = "0.10"
 
 [features]
-actix = ["actix-web", "mime_guess"]
-axum-ex = ["axum", "tokio", "mime_guess"]
-compression = ["rust-embed-impl/compression", "include-flate"]
-debug-embed = ["rust-embed-impl/debug-embed", "rust-embed-utils/debug-embed"]
-include-exclude = ["rust-embed-impl/include-exclude", "rust-embed-utils/include-exclude"]
+actix = [
+    "actix-web",
+    "mime_guess",
+]
+axum-ex = [
+    "axum",
+    "tokio",
+    "mime_guess",
+]
+compression = [
+    "rust-embed-impl/compression",
+    "include-flate",
+]
+debug-embed = [
+    "rust-embed-impl/debug-embed",
+    "rust-embed-utils/debug-embed",
+]
+include-exclude = [
+    "rust-embed-impl/include-exclude",
+    "rust-embed-utils/include-exclude",
+]
 interpolate-folder-path = ["rust-embed-impl/interpolate-folder-path"]
-poem-ex = ["poem", "tokio", "mime_guess", "hex"]
-salvo-ex = ["salvo", "tokio", "mime_guess", "hex"]
-warp-ex = ["warp", "tokio", "mime_guess"]
+poem-ex = [
+    "poem",
+    "tokio",
+    "mime_guess",
+    "hex",
+]
+salvo-ex = [
+    "salvo",
+    "tokio",
+    "mime_guess",
+    "hex",
+]
+warp-ex = [
+    "warp",
+    "tokio",
+    "mime_guess",
+]
+
 [badges.appveyor]
 repository = "pyros2097/rust-embed"
 
