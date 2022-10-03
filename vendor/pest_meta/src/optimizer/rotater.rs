@@ -7,7 +7,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use ast::*;
+use crate::ast::*;
 
 pub fn rotate(rule: Rule) -> Rule {
     fn rotate_internal(expr: Expr) -> Expr {
@@ -35,11 +35,10 @@ pub fn rotate(rule: Rule) -> Rule {
         }
     }
 
-    match rule {
-        Rule { name, ty, expr } => Rule {
-            name,
-            ty,
-            expr: expr.map_top_down(rotate_internal),
-        },
+    let Rule { name, ty, expr } = rule;
+    Rule {
+        name,
+        ty,
+        expr: expr.map_top_down(rotate_internal),
     }
 }

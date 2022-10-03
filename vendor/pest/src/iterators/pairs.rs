@@ -7,11 +7,14 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ptr;
-use std::rc::Rc;
-use std::str;
+use alloc::format;
+use alloc::rc::Rc;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+use core::hash::{Hash, Hasher};
+use core::ptr;
+use core::str;
 
 #[cfg(feature = "pretty-print")]
 use serde::ser::SerializeStruct;
@@ -20,7 +23,7 @@ use super::flat_pairs::{self, FlatPairs};
 use super::pair::{self, Pair};
 use super::queueable_token::QueueableToken;
 use super::tokens::{self, Tokens};
-use RuleType;
+use crate::RuleType;
 
 /// An iterator over [`Pair`]s. It is created by [`pest::state`] and [`Pair::into_inner`].
 ///
@@ -302,6 +305,10 @@ impl<'i, R: RuleType> ::serde::Serialize for Pairs<'i, R> {
 mod tests {
     use super::super::super::macros::tests::*;
     use super::super::super::Parser;
+    use alloc::borrow::ToOwned;
+    use alloc::format;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     #[cfg(feature = "pretty-print")]

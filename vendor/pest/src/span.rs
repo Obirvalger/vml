@@ -7,18 +7,19 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ptr;
-use std::str;
+use core::fmt;
+use core::hash::{Hash, Hasher};
+use core::ops::{Bound, RangeBounds};
+use core::ptr;
+use core::str;
 
-use position;
+use crate::position;
 
 /// A span over a `&str`. It is created from either [two `Position`s] or from a [`Pair`].
 ///
 /// [two `Position`s]: struct.Position.html#method.span
 /// [`Pair`]: ../iterators/struct.Pair.html#method.span
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Span<'i> {
     input: &'i str,
     /// # Safety
@@ -53,13 +54,43 @@ impl<'i> Span<'i> {
     /// assert_eq!(None, Span::new(input, 100, 0));
     /// assert!(Span::new(input, 0, input.len()).is_some());
     /// ```
-    #[allow(clippy::new_ret_no_self)]
     pub fn new(input: &str, start: usize, end: usize) -> Option<Span> {
         if input.get(start..end).is_some() {
             Some(Span { input, start, end })
         } else {
             None
         }
+    }
+
+    /// Attempts to create a new span based on a sub-range.
+    ///
+    /// ```
+    /// use pest::Span;
+    /// let input = "Hello World!";
+    /// let world = Span::new(input, 6, input.len()).unwrap();
+    /// let orl = world.get(1..=3);
+    /// assert!(orl.is_some());
+    /// assert_eq!(orl.unwrap().as_str(), "orl");
+    /// ```
+    ///
+    /// # Examples
+    pub fn get(&self, range: impl RangeBounds<usize>) -> Option<Span<'i>> {
+        let start = match range.start_bound() {
+            Bound::Included(offset) => *offset,
+            Bound::Excluded(offset) => *offset + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(offset) => *offset + 1,
+            Bound::Excluded(offset) => *offset,
+            Bound::Unbounded => self.as_str().len(),
+        };
+
+        self.as_str().get(start..end).map(|_| Span {
+            input: self.input,
+            start: self.start + start,
+            end: self.start + end,
+        })
     }
 
     /// Returns the `Span`'s start byte position as a `usize`.
@@ -181,7 +212,7 @@ impl<'i> Span<'i> {
         &self.input[self.start..self.end]
     }
 
-    /// Iterates over all lines (partially) covered by this span.
+    /// Iterates over all lines (partially) covered by this span. Yielding a `&str` for each line.
     ///
     /// # Examples
     ///
@@ -201,6 +232,30 @@ impl<'i> Span<'i> {
     #[inline]
     pub fn lines(&self) -> Lines {
         Lines {
+            inner: self.lines_span(),
+        }
+    }
+
+    /// Iterates over all lines (partially) covered by this span. Yielding a `Span` for each line.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pest;
+    /// # use pest::Span;
+    /// # #[allow(non_camel_case_types)]
+    /// # #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    /// enum Rule {}
+    ///
+    /// let input = "a\nb\nc";
+    /// let mut state: Box<pest::ParserState<Rule>> = pest::ParserState::new(input).skip(2).unwrap();
+    /// let start_pos = state.position().clone();
+    /// state = state.match_string("b\nc").unwrap();
+    /// let span = start_pos.span(&state.position().clone());
+    /// assert_eq!(span.lines_span().collect::<Vec<_>>(), vec![Span::new(input, 2, 4).unwrap(), Span::new(input, 4, 5).unwrap()]);
+    /// ```
+    pub fn lines_span(&self) -> LinesSpan {
+        LinesSpan {
             span: self,
             pos: self.start,
         }
@@ -233,19 +288,19 @@ impl<'i> Hash for Span<'i> {
     }
 }
 
-/// Line iterator for Spans, created by [`Span::lines()`].
+/// Line iterator for Spans, created by [`Span::lines_span()`].
 ///
-/// Iterates all lines that are at least partially covered by the span.
+/// Iterates all lines that are at least _partially_ covered by the span. Yielding a `Span` for each.
 ///
-/// [`Span::lines()`]: struct.Span.html#method.lines
-pub struct Lines<'i> {
+/// [`Span::lines_span()`]: struct.Span.html#method.lines_span
+pub struct LinesSpan<'i> {
     span: &'i Span<'i>,
     pos: usize,
 }
 
-impl<'i> Iterator for Lines<'i> {
-    type Item = &'i str;
-    fn next(&mut self) -> Option<&'i str> {
+impl<'i> Iterator for LinesSpan<'i> {
+    type Item = Span<'i>;
+    fn next(&mut self) -> Option<Self::Item> {
         if self.pos > self.span.end {
             return None;
         }
@@ -253,21 +308,91 @@ impl<'i> Iterator for Lines<'i> {
         if pos.at_end() {
             return None;
         }
-        let line = pos.line_of();
+
+        let line_start = pos.find_line_start();
         self.pos = pos.find_line_end();
-        Some(line)
+
+        Span::new(self.span.input, line_start, self.pos)
+    }
+}
+
+/// Line iterator for Spans, created by [`Span::lines()`].
+///
+/// Iterates all lines that are at least _partially_ covered by the span. Yielding a `&str` for each.
+///
+/// [`Span::lines()`]: struct.Span.html#method.lines
+pub struct Lines<'i> {
+    inner: LinesSpan<'i>,
+}
+
+impl<'i> Iterator for Lines<'i> {
+    type Item = &'i str;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|span| span.as_str())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::borrow::ToOwned;
+    use alloc::vec::Vec;
+
+    #[test]
+    fn get() {
+        let input = "abc123abc";
+        let span = Span::new(input, 3, input.len()).unwrap();
+        assert_eq!(span.as_str(), "123abc");
+        assert_eq!(span.input, input);
+
+        let span1 = span.get(..=2);
+        assert!(span1.is_some());
+        assert_eq!(span1.unwrap().input, input);
+        assert_eq!(span1.unwrap().as_str(), "123");
+
+        let span2 = span.get(..);
+        assert!(span2.is_some());
+        assert_eq!(span2.unwrap().input, input);
+        assert_eq!(span2.unwrap().as_str(), "123abc");
+
+        let span3 = span.get(3..);
+        assert!(span3.is_some());
+        assert_eq!(span3.unwrap().input, input);
+        assert_eq!(span3.unwrap().as_str(), "abc");
+
+        let span4 = span.get(0..0);
+        assert!(span4.is_some());
+        assert_eq!(span4.unwrap().input, input);
+        assert_eq!(span4.unwrap().as_str(), "");
+    }
+
+    #[test]
+    fn get_fails() {
+        let input = "abc";
+        let span = Span::new(input, 0, input.len()).unwrap();
+
+        let span1 = span.get(0..100);
+        assert!(span1.is_none());
+
+        let span2 = span.get(100..200);
+        assert!(span2.is_none());
+    }
+
+    #[test]
+    fn span_comp() {
+        let input = "abc\ndef\nghi";
+        let span = Span::new(input, 1, 7).unwrap();
+        let span2 = Span::new(input, 50, 51);
+        assert!(span2.is_none());
+        let span3 = Span::new(input, 0, 8).unwrap();
+        assert!(span != span3);
+    }
 
     #[test]
     fn split() {
         let input = "a";
         let start = position::Position::from_start(input);
-        let mut end = start.clone();
+        let mut end = start;
 
         assert!(end.skip(1));
 
@@ -281,10 +406,12 @@ mod tests {
         let input = "abc\ndef\nghi";
         let span = Span::new(input, 1, 7).unwrap();
         let lines: Vec<_> = span.lines().collect();
-        println!("{:?}", lines);
+        let lines_span: Vec<_> = span.lines_span().map(|span| span.as_str()).collect();
+
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0], "abc\n".to_owned());
         assert_eq!(lines[1], "def\n".to_owned());
+        assert_eq!(lines, lines_span) // Verify parity with lines_span()
     }
 
     #[test]
@@ -292,10 +419,32 @@ mod tests {
         let input = "abc\ndef\nghi";
         let span = Span::new(input, 5, 11).unwrap();
         assert!(span.end_pos().at_end());
+        assert_eq!(span.end(), 11);
         let lines: Vec<_> = span.lines().collect();
-        println!("{:?}", lines);
+        let lines_span: Vec<_> = span.lines_span().map(|span| span.as_str()).collect();
+
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0], "def\n".to_owned());
         assert_eq!(lines[1], "ghi".to_owned());
+        assert_eq!(lines, lines_span) // Verify parity with lines_span()
+    }
+
+    #[test]
+    fn lines_span() {
+        let input = "abc\ndef\nghi";
+        let span = Span::new(input, 1, 7).unwrap();
+        let lines_span: Vec<_> = span.lines_span().collect();
+        let lines: Vec<_> = span.lines().collect();
+
+        assert_eq!(lines_span.len(), 2);
+        assert_eq!(lines_span[0], Span::new(input, 0, 4).unwrap());
+        assert_eq!(lines_span[1], Span::new(input, 4, 8).unwrap());
+        assert_eq!(
+            lines_span
+                .iter()
+                .map(|span| span.as_str())
+                .collect::<Vec<_>>(),
+            lines
+        );
     }
 }

@@ -8,19 +8,15 @@
 // modified, or distributed except according to those terms.
 use std::collections::HashMap;
 
-use optimizer::*;
+use crate::optimizer::*;
 
 pub fn restore_on_err(
     rule: OptimizedRule,
     rules: &HashMap<String, OptimizedExpr>,
 ) -> OptimizedRule {
-    match rule {
-        OptimizedRule { name, ty, expr } => {
-            let expr = expr.map_bottom_up(|expr| wrap_branching_exprs(expr, rules));
-
-            OptimizedRule { name, ty, expr }
-        }
-    }
+    let OptimizedRule { name, ty, expr } = rule;
+    let expr = expr.map_bottom_up(|expr| wrap_branching_exprs(expr, rules));
+    OptimizedRule { name, ty, expr }
 }
 
 fn wrap_branching_exprs(
@@ -96,7 +92,7 @@ fn child_modifies_state(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use optimizer::OptimizedExpr::*;
+    use crate::optimizer::OptimizedExpr::*;
 
     #[test]
     fn restore_no_stack_children() {

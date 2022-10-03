@@ -22,7 +22,7 @@ rust-embed = "6.4.1"
 serde = { version = "1.0.145", features = ["derive"] }
 shellexpand = "2.1.2"
 tempfile = "3.3.0"
-tera = "1.16.0"
+tera = "1.17.1"
 thiserror = "1.0.31"
 toml = "0.5.9"
 urlencoding = "2.1.0"

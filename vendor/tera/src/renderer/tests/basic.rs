@@ -124,6 +124,10 @@ fn render_variable_block_ident() {
         ("{{ 1.9 + a | round - 1 }}", "3"),
         ("{{ 1.9 + a | round - 1.8 + a | round }}", "0"),
         ("{{ 1.9 + a | round - 1.8 + a | round - 1 }}", "-1"),
+        ("{{ 4 + 40 / (2 + 8) / 4 }}", "5"),
+        ("{{ ( ( 2 ) + ( 2 ) ) }}", "4"),
+        ("{{ ( ( 4 / 1 ) + ( 2 / 1 ) ) }}", "6"),
+        ("{{ ( ( 4 + 2 ) / ( 2 + 1 ) ) }}", "2"),
         // https://github.com/Keats/tera/issues/435
         (
             "{{ with_newline | replace(from='\n', to='<br>') | safe }}",
@@ -151,6 +155,7 @@ fn render_variable_block_logic_expr() {
     hashmap.insert("b", 10);
     hashmap.insert("john", 100);
     context.insert("object", &hashmap);
+    context.insert("urls", &vec!["https://test"]);
 
     let inputs = vec![
         ("{{ (1.9 + a) | round > 10 }}", "false"),
@@ -177,6 +182,8 @@ fn render_variable_block_logic_expr() {
         ("{{ name not in 'hello' }}", "true"),
         ("{{ name in ['bob', 2, 'john'] }}", "true"),
         ("{{ a in ['bob', 2, 'john'] }}", "true"),
+        ("{{ \"https://test\" in [\"https://test\"] }}", "true"),
+        ("{{ \"https://test\" in urls }}", "true"),
         ("{{ 'n' in name }}", "true"),
         ("{{ '<' in malicious }}", "true"),
         ("{{ 'a' in object }}", "true"),

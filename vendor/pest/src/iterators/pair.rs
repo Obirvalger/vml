@@ -7,11 +7,15 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ptr;
-use std::rc::Rc;
-use std::str;
+use alloc::format;
+use alloc::rc::Rc;
+#[cfg(feature = "pretty-print")]
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+use core::hash::{Hash, Hasher};
+use core::ptr;
+use core::str;
 
 #[cfg(feature = "pretty-print")]
 use serde::ser::SerializeStruct;
@@ -19,8 +23,8 @@ use serde::ser::SerializeStruct;
 use super::pairs::{self, Pairs};
 use super::queueable_token::QueueableToken;
 use super::tokens::{self, Tokens};
-use span::{self, Span};
-use RuleType;
+use crate::span::{self, Span};
+use crate::RuleType;
 
 /// A matching pair of [`Token`]s and everything between them.
 ///
@@ -343,8 +347,8 @@ impl<'i, R: RuleType> ::serde::Serialize for Pair<'i, R> {
 
 #[cfg(test)]
 mod tests {
-    use macros::tests::*;
-    use parser::Parser;
+    use crate::macros::tests::*;
+    use crate::parser::Parser;
 
     #[test]
     #[cfg(feature = "pretty-print")]

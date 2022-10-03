@@ -12,13 +12,17 @@ use std::iter::Peekable;
 
 use pest::error::{Error, ErrorVariant};
 use pest::iterators::{Pair, Pairs};
-use pest::prec_climber::{Assoc, Operator, PrecClimber};
+use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::{Parser, Span};
 
-use ast::{Expr, Rule as AstRule, RuleType};
-use validator;
+use crate::ast::{Expr, Rule as AstRule, RuleType};
+use crate::validator;
 
-include!("grammar.rs");
+mod grammar {
+    include!("grammar.rs");
+}
+
+pub use self::grammar::*;
 
 pub fn parse(rule: Rule, data: &str) -> Result<Pairs<Rule>, Error<Rule>> {
     PestParser::parse(rule, data)
@@ -125,13 +129,9 @@ pub enum ParserExpr<'i> {
 }
 
 fn convert_rule(rule: ParserRule) -> AstRule {
-    match rule {
-        ParserRule { name, ty, node, .. } => {
-            let expr = convert_node(node);
-
-            AstRule { name, ty, expr }
-        }
-    }
+    let ParserRule { name, ty, node, .. } = rule;
+    let expr = convert_node(node);
+    AstRule { name, ty, expr }
 }
 
 fn convert_node(node: ParserNode) -> Expr {
@@ -174,13 +174,10 @@ pub fn consume_rules(pairs: Pairs<Rule>) -> Result<Vec<AstRule>, Vec<Error<Rule>
     }
 }
 
-fn consume_rules_with_spans<'i>(
-    pairs: Pairs<'i, Rule>,
-) -> Result<Vec<ParserRule<'i>>, Vec<Error<Rule>>> {
-    let climber = PrecClimber::new(vec![
-        Operator::new(Rule::choice_operator, Assoc::Left),
-        Operator::new(Rule::sequence_operator, Assoc::Left),
-    ]);
+fn consume_rules_with_spans(pairs: Pairs<Rule>) -> Result<Vec<ParserRule>, Vec<Error<Rule>>> {
+    let pratt = PrattParser::new()
+        .op(Op::infix(Rule::choice_operator, Assoc::Left))
+        .op(Op::infix(Rule::sequence_operator, Assoc::Left));
 
     pairs
         .filter(|pair| pair.as_rule() == Rule::grammar_rule)
@@ -206,7 +203,13 @@ fn consume_rules_with_spans<'i>(
 
             pairs.next().unwrap(); // opening_brace
 
-            let node = consume_expr(pairs.next().unwrap().into_inner().peekable(), &climber)?;
+            // skip initial infix operators
+            let mut inner_nodes = pairs.next().unwrap().into_inner().peekable();
+            if inner_nodes.peek().unwrap().as_rule() == Rule::choice_operator {
+                inner_nodes.next().unwrap();
+            }
+
+            let node = consume_expr(inner_nodes, &pratt)?;
 
             Ok(ParserRule {
                 name,
@@ -220,17 +223,17 @@ fn consume_rules_with_spans<'i>(
 
 fn consume_expr<'i>(
     pairs: Peekable<Pairs<'i, Rule>>,
-    climber: &PrecClimber<Rule>,
+    pratt: &PrattParser<Rule>,
 ) -> Result<ParserNode<'i>, Vec<Error<Rule>>> {
     fn unaries<'i>(
         mut pairs: Peekable<Pairs<'i, Rule>>,
-        climber: &PrecClimber<Rule>,
+        pratt: &PrattParser<Rule>,
     ) -> Result<ParserNode<'i>, Vec<Error<Rule>>> {
         let pair = pairs.next().unwrap();
 
         let node = match pair.as_rule() {
             Rule::opening_paren => {
-                let node = unaries(pairs, climber)?;
+                let node = unaries(pairs, pratt)?;
                 let end = node.span.end_pos();
 
                 ParserNode {
@@ -239,7 +242,7 @@ fn consume_expr<'i>(
                 }
             }
             Rule::positive_predicate_operator => {
-                let node = unaries(pairs, climber)?;
+                let node = unaries(pairs, pratt)?;
                 let end = node.span.end_pos();
 
                 ParserNode {
@@ -248,7 +251,7 @@ fn consume_expr<'i>(
                 }
             }
             Rule::negative_predicate_operator => {
-                let node = unaries(pairs, climber)?;
+                let node = unaries(pairs, pratt)?;
                 let end = node.span.end_pos();
 
                 ParserNode {
@@ -258,14 +261,14 @@ fn consume_expr<'i>(
             }
             other_rule => {
                 let node = match other_rule {
-                    Rule::expression => consume_expr(pair.into_inner().peekable(), climber)?,
+                    Rule::expression => consume_expr(pair.into_inner().peekable(), pratt)?,
                     Rule::_push => {
                         let start = pair.clone().as_span().start_pos();
                         let mut pairs = pair.into_inner();
                         pairs.next().unwrap(); // opening_paren
                         let pair = pairs.next().unwrap();
 
-                        let node = consume_expr(pair.into_inner().peekable(), climber)?;
+                        let node = consume_expr(pair.into_inner().peekable(), pratt)?;
                         let end = node.span.end_pos();
 
                         ParserNode {
@@ -525,7 +528,7 @@ fn consume_expr<'i>(
         Ok(node)
     }
 
-    let term = |pair: Pair<'i, Rule>| unaries(pair.into_inner().peekable(), climber);
+    let term = |pair: Pair<'i, Rule>| unaries(pair.into_inner().peekable(), pratt);
     let infix = |lhs: Result<ParserNode<'i>, Vec<Error<Rule>>>,
                  op: Pair<'i, Rule>,
                  rhs: Result<ParserNode<'i>, Vec<Error<Rule>>>| match op.as_rule() {
@@ -556,7 +559,7 @@ fn consume_expr<'i>(
         _ => unreachable!(),
     };
 
-    climber.climb(pairs, term, infix)
+    pratt.map_primary(term).map_infix(infix).parse(pairs)
 }
 
 fn unescape(string: &str) -> Option<String> {
@@ -617,6 +620,8 @@ fn unescape(string: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::convert::TryInto;
+
     use super::super::unwrap_or_report;
     use super::*;
 
@@ -1073,7 +1078,7 @@ mod tests {
             parser: PestParser,
             input: "a = {}",
             rule: Rule::grammar_rules,
-            positives: vec![Rule::term],
+            positives: vec![Rule::expression],
             negatives: vec![],
             pos: 5
         };
@@ -1088,6 +1093,18 @@ mod tests {
             positives: vec![Rule::term],
             negatives: vec![],
             pos: 10
+        };
+    }
+
+    #[test]
+    fn incorrect_prefix() {
+        fails_with! {
+            parser: PestParser,
+            input: "a = { ~ b}",
+            rule: Rule::grammar_rules,
+            positives: vec![Rule::expression],
+            negatives: vec![],
+            pos: 6
         };
     }
 
@@ -1228,7 +1245,7 @@ mod tests {
 
         let pairs = PestParser::parse(Rule::grammar_rules, input).unwrap();
         let ast = consume_rules_with_spans(pairs).unwrap();
-        let ast: Vec<_> = ast.into_iter().map(|rule| convert_rule(rule)).collect();
+        let ast: Vec<_> = ast.into_iter().map(convert_rule).collect();
 
         assert_eq!(
             ast,
@@ -1266,7 +1283,7 @@ mod tests {
 
         let pairs = PestParser::parse(Rule::grammar_rules, input).unwrap();
         let ast = consume_rules_with_spans(pairs).unwrap();
-        let ast: Vec<_> = ast.into_iter().map(|rule| convert_rule(rule)).collect();
+        let ast: Vec<_> = ast.into_iter().map(convert_rule).collect();
 
         assert_eq!(
             ast,
@@ -1484,5 +1501,46 @@ mod tests {
         let string = r"\u{1111111}";
 
         assert_eq!(unescape(string), None);
+    }
+
+    #[test]
+    fn handles_deep_nesting() {
+        let sample1 = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/resources/test/fuzzsample1.grammar"
+        ));
+        let sample2 = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/resources/test/fuzzsample2.grammar"
+        ));
+        let sample3 = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/resources/test/fuzzsample3.grammar"
+        ));
+        let sample4 = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/resources/test/fuzzsample4.grammar"
+        ));
+        let sample5 = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/resources/test/fuzzsample5.grammar"
+        ));
+        const ERROR: &str = "call limit reached";
+        pest::set_call_limit(Some(5_000usize.try_into().unwrap()));
+        let s1 = crate::parser::parse(crate::parser::Rule::grammar_rules, sample1);
+        assert!(s1.is_err());
+        assert_eq!(s1.unwrap_err().variant.message(), ERROR);
+        let s2 = crate::parser::parse(crate::parser::Rule::grammar_rules, sample2);
+        assert!(s2.is_err());
+        assert_eq!(s2.unwrap_err().variant.message(), ERROR);
+        let s3 = crate::parser::parse(crate::parser::Rule::grammar_rules, sample3);
+        assert!(s3.is_err());
+        assert_eq!(s3.unwrap_err().variant.message(), ERROR);
+        let s4 = crate::parser::parse(crate::parser::Rule::grammar_rules, sample4);
+        assert!(s4.is_err());
+        assert_eq!(s4.unwrap_err().variant.message(), ERROR);
+        let s5 = crate::parser::parse(crate::parser::Rule::grammar_rules, sample5);
+        assert!(s5.is_err());
+        assert_eq!(s5.unwrap_err().variant.message(), ERROR);
     }
 }

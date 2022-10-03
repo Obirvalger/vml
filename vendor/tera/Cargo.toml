@@ -12,19 +12,34 @@
 [package]
 edition = "2018"
 name = "tera"
-version = "1.16.0"
+version = "1.17.1"
 authors = ["Vincent Prouillet <hello@prouilletvincent.com>"]
-include = ["/src/**/*", "/LICENSE", "/README.md", "/CHANGELOG.md"]
+include = [
+    "/src/**/*",
+    "/LICENSE",
+    "/README.md",
+    "/CHANGELOG.md",
+]
 description = "Template engine based on Jinja2/Django templates"
 homepage = "https://tera.netlify.com/"
 readme = "README.md"
-keywords = ["template", "html", "django", "markup", "jinja2"]
+keywords = [
+    "template",
+    "html",
+    "django",
+    "markup",
+    "jinja2",
+]
 categories = ["template-engine"]
 license = "MIT"
 repository = "https://github.com/Keats/tera"
+
 [dependencies.chrono]
-version = "0.4.1"
-features = ["std", "clock"]
+version = "0.4.20"
+features = [
+    "std",
+    "clock",
+]
 optional = true
 default-features = false
 
@@ -47,10 +62,10 @@ version = "2.1"
 optional = true
 
 [dependencies.pest]
-version = "2.0.2"
+version = "2.3.0"
 
 [dependencies.pest_derive]
-version = "2.0.2"
+version = "2.3.0"
 
 [dependencies.rand]
 version = "0.8"
@@ -71,6 +86,7 @@ optional = true
 
 [dependencies.unic-segment]
 version = "0.9"
+
 [dev-dependencies.pretty_assertions]
 version = "1"
 
@@ -81,9 +97,21 @@ version = "1.0"
 version = "3"
 
 [features]
-builtins = ["urlencode", "slug", "humansize", "chrono", "chrono-tz", "rand"]
+builtins = [
+    "urlencode",
+    "slug",
+    "humansize",
+    "chrono",
+    "chrono-tz",
+    "rand",
+]
+date-locale = [
+    "builtins",
+    "chrono/unstable-locales",
+]
 default = ["builtins"]
 preserve_order = ["serde_json/preserve_order"]
 urlencode = ["percent-encoding"]
+
 [badges.maintenance]
 status = "actively-developed"

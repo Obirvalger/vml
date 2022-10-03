@@ -6,6 +6,9 @@
 // license <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
+use alloc::{format, vec::Vec};
 
 #[macro_use]
 extern crate pest;
@@ -13,7 +16,7 @@ extern crate pest;
 extern crate pest_derive;
 
 #[derive(Parser)]
-#[grammar = "../tests/grammar.pest"]
+#[grammar = "tests/grammar.pest"]
 struct GrammarParser;
 
 #[test]
@@ -240,6 +243,20 @@ fn choice_range() {
         tokens: [
             choice(0, 1, [
                 range(0, 1)
+            ])
+        ]
+    };
+}
+
+#[test]
+fn choice_prefix() {
+    parses_to! {
+        parser: GrammarParser,
+        input: "abc",
+        rule: Rule::choice_prefix,
+        tokens: [
+            choice_prefix(0, 3, [
+                string(0, 3)
             ])
         ]
     };
@@ -778,6 +795,20 @@ fn repeat_mutate_stack() {
         rule: Rule::repeat_mutate_stack,
         tokens: [
             repeat_mutate_stack(0, 9)
+        ]
+    };
+}
+
+#[test]
+fn stack_resume_after_fail() {
+    parses_to! {
+        parser: GrammarParser,
+        input: "a,b,c,cba",
+        rule: Rule::stack_resume_after_fail,
+        tokens: [
+            stack_resume_after_fail(0, 9, [
+                repeat_mutate_stack_pop_all(0, 9)
+            ])
         ]
     };
 }

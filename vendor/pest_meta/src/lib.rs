@@ -7,9 +7,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-#![allow(clippy::range_plus_one)]
-
-extern crate maplit;
+extern crate once_cell;
 #[cfg(test)]
 #[macro_use]
 extern crate pest;
@@ -30,18 +28,19 @@ where
 {
     result.unwrap_or_else(|e| {
         panic!(
-            "grammar error\n\n".to_owned()
-                + &e.into_iter()
-                    .map(|error| format!("{}", error))
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
+            "grammar error\n\n{}",
+            &e.into_iter()
+                .map(|error| format!("{}", error))
+                .collect::<Vec<_>>()
+                .join("\n\n")
         )
     })
 }
 
 #[doc(hidden)]
 pub static UNICODE_PROPERTY_NAMES: &[&str] = &[
-    /* BINARY */ "ALPHABETIC",
+    /* BINARY */
+    "ALPHABETIC",
     "BIDI_CONTROL",
     "CASE_IGNORABLE",
     "CASED",
@@ -93,7 +92,8 @@ pub static UNICODE_PROPERTY_NAMES: &[&str] = &[
     "WHITE_SPACE",
     "XID_CONTINUE",
     "XID_START",
-    /* CATEGORY */ "CASED_LETTER",
+    /* CATEGORY */
+    "CASED_LETTER",
     "CLOSE_PUNCTUATION",
     "CONNECTOR_PUNCTUATION",
     "CONTROL",

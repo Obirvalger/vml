@@ -141,11 +141,11 @@ pub fn throw(args: &HashMap<String, Value>) -> Result<Value> {
 #[cfg(feature = "builtins")]
 pub fn get_random(args: &HashMap<String, Value>) -> Result<Value> {
     let start = match args.get("start") {
-        Some(val) => match from_value::<i32>(val.clone()) {
+        Some(val) => match from_value::<isize>(val.clone()) {
             Ok(v) => v,
             Err(_) => {
                 return Err(Error::msg(format!(
-                    "Function `get_random` received start={} but `start` can only be a boolean",
+                    "Function `get_random` received start={} but `start` can only be a number",
                     val
                 )));
             }
@@ -154,11 +154,11 @@ pub fn get_random(args: &HashMap<String, Value>) -> Result<Value> {
     };
 
     let end = match args.get("end") {
-        Some(val) => match from_value::<i32>(val.clone()) {
+        Some(val) => match from_value::<isize>(val.clone()) {
             Ok(v) => v,
             Err(_) => {
                 return Err(Error::msg(format!(
-                    "Function `get_random` received end={} but `end` can only be a boolean",
+                    "Function `get_random` received end={} but `end` can only be a number",
                     val
                 )));
             }
