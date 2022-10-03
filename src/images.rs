@@ -168,11 +168,11 @@ impl Images<'_> {
         self.0.iter().map(|(name, _)| name.to_string()).collect()
     }
 
-    pub fn get<'a>(&'a self, name: impl AsRef<str>) -> Option<&'a Image> {
+    pub fn get(&self, name: impl AsRef<str>) -> Option<&Image> {
         self.0.get(name.as_ref())
     }
 
-    pub fn get_result<'a>(&'a self, name: impl AsRef<str>) -> Result<&'a Image> {
+    pub fn get_result(&self, name: impl AsRef<str>) -> Result<&Image> {
         self.0
             .get(name.as_ref())
             .ok_or_else(|| Error::UnknownImage(name.as_ref().to_string()).into())
