@@ -11,18 +11,34 @@
 
 [package]
 edition = "2018"
+rust-version = "1.48"
 name = "procfs"
-version = "0.12.0"
+version = "0.14.1"
 authors = ["Andrew Chin <achin@eminence32.net>"]
 description = "Interface to the linux procfs pseudo-filesystem"
 documentation = "https://docs.rs/procfs/"
 readme = "README.md"
-keywords = ["procfs", "proc", "linux", "process"]
-categories = ["os::unix-apis", "filesystem"]
+keywords = [
+    "procfs",
+    "proc",
+    "linux",
+    "process",
+]
+categories = [
+    "os::unix-apis",
+    "filesystem",
+]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/eminence/procfs"
+resolver = "1"
+
 [package.metadata.docs.rs]
 all-features = true
+
+[[bench]]
+name = "cpuinfo"
+harness = false
+
 [dependencies.backtrace]
 version = "0.3"
 optional = true
@@ -31,27 +47,43 @@ optional = true
 version = "1.2"
 
 [dependencies.byteorder]
-version = "1"
+version = "1.2.3"
 features = ["i128"]
 
 [dependencies.chrono]
-version = "0.4"
+version = "0.4.1"
 optional = true
 
 [dependencies.flate2]
-version = "1"
+version = "1.0.3"
 optional = true
 
 [dependencies.hex]
 version = "0.4"
 
 [dependencies.lazy_static]
-version = "1"
+version = "1.0.2"
 
-[dependencies.libc]
-version = "0.2"
+[dependencies.rustix]
+version = "0.35.6"
+features = [
+    "fs",
+    "process",
+    "param",
+    "thread",
+]
+
+[dev-dependencies.criterion]
+version = "0.3"
+
+[dev-dependencies.failure]
+version = "0.1"
+
 [dev-dependencies.procinfo]
 version = "0.4.2"
 
 [features]
-default = ["chrono", "flate2"]
+default = [
+    "chrono",
+    "flate2",
+]

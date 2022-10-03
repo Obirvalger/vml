@@ -954,6 +954,8 @@ pub const NT_LWPSTATUS: ::c_int = 16;
 pub const NT_LWPSINFO: ::c_int = 17;
 pub const NT_PRFPXREG: ::c_int = 20;
 
+pub const ELFOSABI_ARM_AEABI: u8 = 64;
+
 // linux/keyctl.h
 pub const KEYCTL_DH_COMPUTE: u32 = 23;
 pub const KEYCTL_PKEY_QUERY: u32 = 24;
@@ -1024,6 +1026,8 @@ pub const STATX_ATTR_APPEND: ::c_int = 0x0020;
 pub const STATX_ATTR_NODUMP: ::c_int = 0x0040;
 pub const STATX_ATTR_ENCRYPTED: ::c_int = 0x0800;
 pub const STATX_ATTR_AUTOMOUNT: ::c_int = 0x1000;
+
+pub const SOMAXCONN: ::c_int = 4096;
 
 //sys/timex.h
 pub const ADJ_OFFSET: ::c_uint = 0x0001;
@@ -1289,6 +1293,7 @@ extern "C" {
         attr: *mut ::pthread_rwlockattr_t,
         val: ::c_int,
     ) -> ::c_int;
+    pub fn pthread_sigqueue(thread: ::pthread_t, sig: ::c_int, value: ::sigval) -> ::c_int;
     pub fn mallinfo() -> ::mallinfo;
     pub fn mallinfo2() -> ::mallinfo2;
     pub fn malloc_info(options: ::c_int, stream: *mut ::FILE) -> ::c_int;
@@ -1322,6 +1327,11 @@ extern "C" {
         flags: ::c_int,
     ) -> ::c_int;
     pub fn malloc_trim(__pad: ::size_t) -> ::c_int;
+}
+
+extern "C" {
+    pub fn gnu_get_libc_release() -> *const ::c_char;
+    pub fn gnu_get_libc_version() -> *const ::c_char;
 }
 
 cfg_if! {

@@ -152,12 +152,13 @@ impl<'a> VMsCreator<'a> {
             for proc in
                 process::all_processes().context("failed to read informatin from procfs")?
             {
+                let proc = proc.context("failed to read informatin from procfs")?;
                 if let Ok(path) = proc.exe() {
                     if let Some(file_name) = path.file_name() {
                         if file_name.to_string_lossy().starts_with("qemu-system") {
                             if let Ok(fds) = proc.fd() {
                                 for fd in fds {
-                                    if let FDTarget::Path(f) = fd.target {
+                                    if let FDTarget::Path(f) = fd?.target {
                                         if let Some(vm) = vms.get_mut(&f) {
                                             vm.set_pid(proc.pid);
                                             with_pid_vms.insert(vm.name.to_string());

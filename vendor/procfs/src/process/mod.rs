@@ -18,20 +18,23 @@
 //!
 //! ```rust
 //! let me = procfs::process::Process::myself().unwrap();
+//! let me_stat = me.stat().unwrap();
 //! let tps = procfs::ticks_per_second().unwrap();
 //!
-//! println!("{: >5} {: <8} {: >8} {}", "PID", "TTY", "TIME", "CMD");
+//! println!("{: >10} {: <8} {: >8} {}", "PID", "TTY", "TIME", "CMD");
 //!
-//! let tty = format!("pty/{}", me.stat.tty_nr().1);
+//! let tty = format!("pty/{}", me_stat.tty_nr().1);
 //! for prc in procfs::process::all_processes().unwrap() {
-//!     if prc.stat.tty_nr == me.stat.tty_nr {
-//!         // total_time is in seconds
-//!         let total_time =
-//!             (prc.stat.utime + prc.stat.stime) as f32 / (tps as f32);
-//!         println!(
-//!             "{: >5} {: <8} {: >8} {}",
-//!             prc.stat.pid, tty, total_time, prc.stat.comm
-//!         );
+//!     if let Ok(stat) = prc.unwrap().stat() {
+//!         if stat.tty_nr == me_stat.tty_nr {
+//!             // total_time is in seconds
+//!             let total_time =
+//!                 (stat.utime + stat.stime) as f32 / (tps as f32);
+//!             println!(
+//!                 "{: >10} {: <8} {: >8} {}",
+//!                 stat.pid, tty, total_time, stat.comm
+//!             );
+//!         }
 //!     }
 //! }
 //! ```
@@ -45,25 +48,28 @@
 //! ```rust
 //! # use procfs::process::Process;
 //! let me = Process::myself().unwrap();
+//! let me_stat = me.stat().unwrap();
 //! let page_size = procfs::page_size().unwrap() as u64;
 //!
 //! println!("== Data from /proc/self/stat:");
-//! println!("Total virtual memory used: {} bytes", me.stat.vsize);
-//! println!("Total resident set: {} pages ({} bytes)", me.stat.rss, me.stat.rss as u64 * page_size);
+//! println!("Total virtual memory used: {} bytes", me_stat.vsize);
+//! println!("Total resident set: {} pages ({} bytes)", me_stat.rss, me_stat.rss as u64 * page_size);
 //! ```
 
 use super::*;
 use crate::from_iter;
+use crate::net::{read_tcp_table, read_udp_table, TcpNetEntry, UdpNetEntry};
 
+use rustix::fd::{AsFd, BorrowedFd, RawFd};
+use rustix::fs::{AtFlags, Mode, OFlags, RawMode};
+use rustix::io::OwnedFd;
 use std::ffi::OsStr;
 use std::ffi::OsString;
-use std::fs;
 use std::fs::read_link;
 use std::io::{self, Read};
-#[cfg(target_os = "android")]
-use std::os::android::fs::MetadataExt;
-#[cfg(all(unix, not(target_os = "android")))]
-use std::os::linux::fs::MetadataExt;
+use std::mem;
+use std::os::unix::ffi::OsStringExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -88,17 +94,8 @@ pub use schedstat::*;
 mod task;
 pub use task::*;
 
-// provide a type-compatible st_uid for windows
-#[cfg(windows)]
-trait FakeMedatadataExt {
-    fn st_uid(&self) -> u32;
-}
-#[cfg(windows)]
-impl FakeMedatadataExt for std::fs::Metadata {
-    fn st_uid(&self) -> u32 {
-        panic!()
-    }
-}
+mod pagemap;
+pub use pagemap::*;
 
 bitflags! {
     /// Kernel flags for a process
@@ -188,10 +185,15 @@ bitflags! {
 
 bitflags! {
     /// The mode (read/write permissions) for an open file descriptor
-    pub struct FDPermissions: libc::mode_t {
-        const READ = libc::S_IRUSR;
-        const WRITE = libc::S_IWUSR;
-        const EXECUTE = libc::S_IXUSR;
+    ///
+    /// This is represented as `u16` since the values of these bits are
+    /// [documented] to be within the `u16` range.
+    ///
+    /// [documented]: https://man7.org/linux/man-pages/man2/chmod.2.html#DESCRIPTION
+    pub struct FDPermissions: u16 {
+        const READ = Mode::RUSR.bits() as u16;
+        const WRITE = Mode::WUSR.bits() as u16;
+        const EXECUTE = Mode::XUSR.bits() as u16;
     }
 }
 
@@ -596,7 +598,7 @@ impl Io {
             cancelled_write_bytes: expect!(map.remove("cancelled_write_bytes")),
         };
 
-        assert!(!(cfg!(test) && !map.is_empty()), "io map is not empty: {:#?}", map);
+        assert!(!cfg!(test) || map.is_empty(), "io map is not empty: {:#?}", map);
 
         Ok(io)
     }
@@ -675,31 +677,64 @@ impl FromStr for FDTarget {
 #[derive(Clone)]
 pub struct FDInfo {
     /// The file descriptor
-    pub fd: u32,
+    pub fd: i32,
     /// The permission bits for this FD
     ///
     /// **Note**: this field is only the owner read/write/execute bits.  All the other bits
     /// (include filetype bits) are masked out.  See also the `mode()` method.
-    pub mode: libc::mode_t,
+    pub mode: u16,
     pub target: FDTarget,
 }
 
 impl FDInfo {
     /// Gets a file descriptor from a raw fd
-    pub fn from_raw_fd(pid: pid_t, raw_fd: i32) -> ProcResult<Self> {
+    pub fn from_raw_fd(pid: i32, raw_fd: i32) -> ProcResult<Self> {
         Self::from_raw_fd_with_root("/proc", pid, raw_fd)
     }
 
     /// Gets a file descriptor from a raw fd based on a specified `/proc` path
-    pub fn from_raw_fd_with_root(root: impl AsRef<Path>, pid: pid_t, raw_fd: i32) -> ProcResult<Self> {
+    pub fn from_raw_fd_with_root(root: impl AsRef<Path>, pid: i32, raw_fd: i32) -> ProcResult<Self> {
         let path = root.as_ref().join(pid.to_string()).join("fd").join(raw_fd.to_string());
         let link = wrap_io_error!(path, read_link(&path))?;
         let md = wrap_io_error!(path, path.symlink_metadata())?;
         let link_os: &OsStr = link.as_ref();
         Ok(Self {
-            fd: raw_fd as u32,
-            mode: (md.st_mode() as libc::mode_t) & libc::S_IRWXU,
+            fd: raw_fd,
+            mode: ((md.mode() as RawMode) & Mode::RWXU.bits()) as u16,
             target: expect!(FDTarget::from_str(expect!(link_os.to_str()))),
+        })
+    }
+
+    /// Gets a file descriptor from a directory fd and a path relative to it.
+    ///
+    /// `base` is the path to the directory fd, and is used for error messages.
+    fn from_process_at<P: AsRef<Path>, Q: AsRef<Path>>(
+        base: P,
+        dirfd: BorrowedFd,
+        path: Q,
+        fd: i32,
+    ) -> ProcResult<Self> {
+        let p = path.as_ref();
+        let root = base.as_ref().join(p);
+        let file = wrap_io_error!(
+            root,
+            rustix::fs::openat(
+                dirfd,
+                p,
+                OFlags::NOFOLLOW | OFlags::PATH | OFlags::CLOEXEC,
+                Mode::empty()
+            )
+        )?;
+        let link = rustix::fs::readlinkat(&file, "", Vec::new()).map_err(io::Error::from)?;
+        let md =
+            rustix::fs::statat(&file, "", AtFlags::SYMLINK_NOFOLLOW | AtFlags::EMPTY_PATH).map_err(io::Error::from)?;
+
+        let link_os = link.to_string_lossy();
+        let target = FDTarget::from_str(link_os.as_ref())?;
+        Ok(FDInfo {
+            fd,
+            mode: (md.st_mode & Mode::RWXU.bits()) as u16,
+            target,
         })
     }
 
@@ -714,50 +749,75 @@ impl std::fmt::Debug for FDInfo {
         write!(
             f,
             "FDInfo {{ fd: {:?}, mode: 0{:o}, target: {:?} }}",
-            self.fd, self.mode, self.target
+            &self.fd, self.mode, self.target
         )
     }
 }
 
 /// Represents a process in `/proc/<pid>`.
 ///
-/// The `stat` structure is pre-populated because it's useful info, but other data is loaded on
-/// demand (and so might fail, if the process no longer exist).
-#[derive(Debug, Clone)]
+/// **Note** The `Process` struct holds an open file descriptor to its `/proc/<pid>` directory.
+/// This makes it possible to construct a `Process` object and then later call the various methods
+/// on it without a risk of inadvertently getting information from the wrong process (due to PID
+/// reuse).
+///
+/// However the downside is that holding a lot of `Process` objects might cause the process to run
+/// out of file descriptors.
+///
+/// For use cases that don't involve holding a lot of `Process` objects, no special handler is
+/// needed.  But if you do hold a lot of these objects (for example if you're writing a `ps`
+/// or `top` -like program), you'll likely want to gather all of the necessary info from `Process`
+/// object into a new struct and then drop the `Process` object
+///
+#[derive(Debug)]
 pub struct Process {
-    /// The process ID
-    ///
-    /// (same as the `Stat.pid` field).
+    fd: OwnedFd,
     pub pid: i32,
-    /// Process status, based on the `/proc/<pid>/stat` file.
-    pub stat: Stat,
-    /// The user id of the owner of this process
-    pub owner: u32,
     pub(crate) root: PathBuf,
 }
 
+/// Methods for constructing a new `Process` object.
 impl Process {
     /// Returns a `Process` based on a specified PID.
     ///
     /// This can fail if the process doesn't exist, or if you don't have permission to access it.
-    pub fn new(pid: pid_t) -> ProcResult<Process> {
-        let root = PathBuf::from("/proc").join(format!("{}", pid));
+    pub fn new(pid: i32) -> ProcResult<Process> {
+        let root = PathBuf::from("/proc").join(pid.to_string());
         Self::new_with_root(root)
     }
 
     /// Returns a `Process` based on a specified `/proc/<pid>` path.
     pub fn new_with_root(root: PathBuf) -> ProcResult<Process> {
-        let path = root.join("stat");
-        let stat = Stat::from_reader(FileWrapper::open(&path)?)?;
-
-        let md = std::fs::metadata(&root)?;
-
-        Ok(Process {
-            pid: stat.pid,
+        let file = wrap_io_error!(
             root,
-            stat,
-            owner: md.st_uid(),
-        })
+            rustix::fs::openat(
+                &rustix::fs::cwd(),
+                &root,
+                OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+                Mode::empty()
+            )
+        )?;
+
+        let pidres = root
+            .as_path()
+            .components()
+            .last()
+            .and_then(|c| match c {
+                std::path::Component::Normal(s) => Some(s),
+                _ => None,
+            })
+            .and_then(|s| s.to_string_lossy().parse::<i32>().ok())
+            .or_else(|| {
+                rustix::fs::readlinkat(&rustix::fs::cwd(), &root, Vec::new())
+                    .ok()
+                    .and_then(|s| s.to_string_lossy().parse::<i32>().ok())
+            });
+        let pid = match pidres {
+            Some(pid) => pid,
+            None => return Err(ProcError::NotFound(Some(root))),
+        };
+
+        Ok(Process { fd: file, pid, root })
     }
 
     /// Returns a `Process` for the currently running process.
@@ -767,13 +827,15 @@ impl Process {
         let root = PathBuf::from("/proc/self");
         Self::new_with_root(root)
     }
+}
 
+impl Process {
     /// Returns the complete command line for the process, unless the process is a zombie.
     ///
     ///
     pub fn cmdline(&self) -> ProcResult<Vec<String>> {
         let mut buf = String::new();
-        let mut f = FileWrapper::open(self.root.join("cmdline"))?;
+        let mut f = FileWrapper::open_at(&self.root, &self.fd, "cmdline")?;
         f.read_to_string(&mut buf)?;
         Ok(buf
             .split('\0')
@@ -781,26 +843,30 @@ impl Process {
             .collect())
     }
 
-    /// Returns the process ID for this process.
-    pub fn pid(&self) -> pid_t {
-        self.stat.pid
+    /// Returns the process ID for this process, if the process was created from an ID. Otherwise
+    /// use stat().pid.
+    pub fn pid(&self) -> i32 {
+        self.pid
     }
 
     /// Is this process still alive?
+    /// 
+    /// Processes in the Zombie or Dead state are not considered alive.
     pub fn is_alive(&self) -> bool {
-        match Process::new(self.pid()) {
-            Ok(prc) => {
-                // assume that the command line, uid and starttime don't change during a processes lifetime
-                // additionally, do not consider defunct processes as "alive"
-                // i.e. if they are different, a new process has the same PID as `self` and so `self` is not considered alive
-                prc.stat.comm == self.stat.comm
-                    && prc.owner == self.owner
-                    && prc.stat.starttime == self.stat.starttime
-                    && prc.stat.state().map(|s| s != ProcState::Zombie).unwrap_or(false)
-                    && self.stat.state().map(|s| s != ProcState::Zombie).unwrap_or(false)
-            }
-            _ => false,
+        if let Ok(stat) = self.stat() {
+            stat.state != 'Z' && stat.state != 'X'
+        } else {
+            false
         }
+    }
+
+    /// What user owns this process?
+    pub fn uid(&self) -> ProcResult<u32> {
+        Ok(self.metadata()?.st_uid)
+    }
+
+    fn metadata(&self) -> ProcResult<rustix::fs::Stat> {
+        Ok(rustix::fs::fstat(&self.fd).map_err(io::Error::from)?)
     }
 
     /// Retrieves current working directory of the process by dereferencing `/proc/<pid>/cwd` symbolic link.
@@ -816,7 +882,13 @@ impl Process {
     /// * permission to dereference or read this symbolic link is governed by a
     ///   `ptrace(2)` access mode `PTRACE_MODE_READ_FSCREDS` check
     pub fn cwd(&self) -> ProcResult<PathBuf> {
-        Ok(std::fs::read_link(self.root.join("cwd"))?)
+        Ok(PathBuf::from(OsString::from_vec(
+            wrap_io_error!(
+                self.root.join("cwd"),
+                rustix::fs::readlinkat(&self.fd, "cwd", Vec::new())
+            )?
+            .into_bytes(),
+        )))
     }
 
     /// Retrieves current root directory of the process by dereferencing `/proc/<pid>/root` symbolic link.
@@ -832,7 +904,13 @@ impl Process {
     /// * permission to dereference or read this symbolic link is governed by a
     ///   `ptrace(2)` access mode `PTRACE_MODE_READ_FSCREDS` check
     pub fn root(&self) -> ProcResult<PathBuf> {
-        Ok(std::fs::read_link(self.root.join("root"))?)
+        Ok(PathBuf::from(OsString::from_vec(
+            wrap_io_error!(
+                self.root.join("root"),
+                rustix::fs::readlinkat(&self.fd, "root", Vec::new())
+            )?
+            .into_bytes(),
+        )))
     }
 
     /// Gets the current environment for the process.  This is done by reading the
@@ -842,7 +920,7 @@ impl Process {
 
         let mut map = HashMap::new();
 
-        let mut file = FileWrapper::open(self.root.join("environ"))?;
+        let mut file = FileWrapper::open_at(&self.root, &self.fd, "environ")?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
 
@@ -871,30 +949,34 @@ impl Process {
     /// * permission to dereference or read this symbolic link is governed by a
     ///   `ptrace(2)` access mode `PTRACE_MODE_READ_FSCREDS` check
     pub fn exe(&self) -> ProcResult<PathBuf> {
-        Ok(std::fs::read_link(self.root.join("exe"))?)
+        Ok(PathBuf::from(OsString::from_vec(
+            wrap_io_error!(
+                self.root.join("exe"),
+                rustix::fs::readlinkat(&self.fd, "exe", Vec::new())
+            )?
+            .into_bytes(),
+        )))
     }
 
     /// Return the Io stats for this process, based on the `/proc/pid/io` file.
     ///
     /// (since kernel 2.6.20)
     pub fn io(&self) -> ProcResult<Io> {
-        let path = self.root.join("io");
-        let file = FileWrapper::open(&path)?;
+        let file = FileWrapper::open_at(&self.root, &self.fd, "io")?;
         Io::from_reader(file)
     }
 
     /// Return a list of the currently mapped memory regions and their access permissions, based on
     /// the `/proc/pid/maps` file.
     pub fn maps(&self) -> ProcResult<Vec<MemoryMap>> {
-        let path = self.root.join("maps");
-        let file = FileWrapper::open(&path)?;
+        let file = FileWrapper::open_at(&self.root, &self.fd, "maps")?;
 
         let reader = BufReader::new(file);
 
         let mut vec = Vec::new();
 
         for line in reader.lines() {
-            let line = line.map_err(|_| ProcError::Incomplete(Some(path.clone())))?;
+            let line = line.map_err(|_| ProcError::Incomplete(Some(self.root.join("maps"))))?;
             vec.push(MemoryMap::from_line(&line)?);
         }
 
@@ -906,8 +988,7 @@ impl Process {
     ///
     /// (since Linux 2.6.14 and requires CONFIG_PROG_PAGE_MONITOR)
     pub fn smaps(&self) -> ProcResult<Vec<(MemoryMap, MemoryMapData)>> {
-        let path = self.root.join("smaps");
-        let file = FileWrapper::open(&path)?;
+        let file = FileWrapper::open_at(&self.root, &self.fd, "smaps")?;
 
         let reader = BufReader::new(file);
 
@@ -916,7 +997,7 @@ impl Process {
         let mut current_mapping = MemoryMap::new();
         let mut current_data = Default::default();
         for line in reader.lines() {
-            let line = line.map_err(|_| ProcError::Incomplete(Some(path.clone())))?;
+            let line = line.map_err(|_| ProcError::Incomplete(Some(self.root.join("smaps"))))?;
 
             if let Ok(mapping) = MemoryMap::from_line(&line) {
                 vec.push((current_mapping, current_data));
@@ -968,35 +1049,52 @@ impl Process {
         Ok(vec)
     }
 
-    /// Gets the number of open file descriptors for a process
-    pub fn fd_count(&self) -> ProcResult<usize> {
-        let path = self.root.join("fd");
-
-        Ok(wrap_io_error!(path, path.read_dir())?.count())
+    /// Returns a struct that can be used to access information in the `/proc/pid/pagemap` file.
+    pub fn pagemap(&self) -> ProcResult<PageMap> {
+        let path = self.root.join("pagemap");
+        let file = FileWrapper::open(&path)?;
+        Ok(PageMap::from_file_wrapper(file))
     }
 
-    /// Gets a list of open file descriptors for a process
-    pub fn fd(&self) -> ProcResult<Vec<FDInfo>> {
-        let mut vec = Vec::new();
+    /// Gets the number of open file descriptors for a process
+    ///
+    /// Calling this function is more efficient than calling `fd().unwrap().count()`
+    pub fn fd_count(&self) -> ProcResult<usize> {
+        let fds = wrap_io_error!(
+            self.root.join("fd"),
+            rustix::fs::openat(
+                &self.fd,
+                "fd",
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+                Mode::empty()
+            )
+        )?;
+        let fds = wrap_io_error!(self.root.join("fd"), rustix::fs::Dir::read_from(fds))?;
+        Ok(fds.count())
+    }
 
-        let path = self.root.join("fd");
+    /// Gets a iterator of open file descriptors for a process
+    pub fn fd(&self) -> ProcResult<FDsIter> {
+        let dir_fd = wrap_io_error!(
+            self.root.join("fd"),
+            rustix::fs::openat(
+                &self.fd,
+                "fd",
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+                Mode::empty()
+            )
+        )?;
+        let dir = wrap_io_error!(self.root.join("fd"), rustix::fs::Dir::read_from(&dir_fd))?;
+        Ok(FDsIter {
+            inner: dir,
+            inner_fd: dir_fd,
+            root: self.root.clone(),
+        })
+    }
 
-        for dir in wrap_io_error!(path, path.read_dir())? {
-            let entry = dir?;
-            let file_name = entry.file_name();
-            let fd = from_str!(u32, expect!(file_name.to_str()), 10);
-            //  note: the link might have disappeared between the time we got the directory listing
-            //  and now.  So if the read_link or metadata fails, that's OK
-            if let (Ok(link), Ok(md)) = (read_link(entry.path()), entry.metadata()) {
-                let link_os: &OsStr = link.as_ref();
-                vec.push(FDInfo {
-                    fd,
-                    mode: (md.st_mode() as libc::mode_t) & libc::S_IRWXU,
-                    target: expect!(FDTarget::from_str(expect!(link_os.to_str()))),
-                });
-            }
-        }
-        Ok(vec)
+    pub fn fd_from_fd(&self, fd: i32) -> ProcResult<FDInfo> {
+        let path = PathBuf::from("fd").join(fd.to_string());
+        FDInfo::from_process_at(&self.root, self.fd.as_fd(), path, fd)
     }
 
     /// Lists which memory segments are written to the core dump in the event that a core dump is performed.
@@ -1008,14 +1106,13 @@ impl Process {
     /// This function will return `Err(ProcError::NotFound)` if the `coredump_filter` file can't be
     /// found.  If it returns `Ok(None)` then the process has no coredump_filter
     pub fn coredump_filter(&self) -> ProcResult<Option<CoredumpFlags>> {
-        let mut file = FileWrapper::open(self.root.join("coredump_filter"))?;
+        let mut file = FileWrapper::open_at(&self.root, &self.fd, "coredump_filter")?;
         let mut s = String::new();
         file.read_to_string(&mut s)?;
         if s.trim().is_empty() {
             return Ok(None);
         }
-        let flags = from_str!(u32, &s.trim(), 16, pid:self.stat.pid);
-
+        let flags = from_str!(u32, &s.trim(), 16, pid: self.pid);
         Ok(Some(expect!(CoredumpFlags::from_bits(flags))))
     }
 
@@ -1024,7 +1121,7 @@ impl Process {
     /// (since Linux 2.6.38 and requires CONFIG_SCHED_AUTOGROUP)
     pub fn autogroup(&self) -> ProcResult<String> {
         let mut s = String::new();
-        let mut file = FileWrapper::open(self.root.join("autogroup"))?;
+        let mut file = FileWrapper::open_at(&self.root, &self.fd, "autogroup")?;
         file.read_to_string(&mut s)?;
         Ok(s)
     }
@@ -1032,10 +1129,10 @@ impl Process {
     /// Get the process's auxiliary vector
     ///
     /// (since 2.6.0-test7)
-    pub fn auxv(&self) -> ProcResult<HashMap<u32, u32>> {
+    pub fn auxv(&self) -> ProcResult<HashMap<u64, u64>> {
         use byteorder::{NativeEndian, ReadBytesExt};
 
-        let mut file = FileWrapper::open(self.root.join("auxv"))?;
+        let mut file = FileWrapper::open_at(&self.root, &self.fd, "auxv")?;
         let mut map = HashMap::new();
 
         let mut buf = Vec::new();
@@ -1048,8 +1145,8 @@ impl Process {
         let mut file = std::io::Cursor::new(buf);
 
         loop {
-            let key = file.read_u32::<NativeEndian>()?;
-            let value = file.read_u32::<NativeEndian>()?;
+            let key = file.read_uint::<NativeEndian>(mem::size_of::<usize>())? as u64;
+            let value = file.read_uint::<NativeEndian>(mem::size_of::<usize>())? as u64;
             if key == 0 && value == 0 {
                 break;
             }
@@ -1064,33 +1161,28 @@ impl Process {
     /// (since Linux 2.6.0)
     pub fn wchan(&self) -> ProcResult<String> {
         let mut s = String::new();
-        let mut file = FileWrapper::open(self.root.join("wchan"))?;
+        let mut file = FileWrapper::open_at(&self.root, &self.fd, "wchan")?;
         file.read_to_string(&mut s)?;
         Ok(s)
     }
 
     /// Return the `Status` for this process, based on the `/proc/[pid]/status` file.
     pub fn status(&self) -> ProcResult<Status> {
-        let path = self.root.join("status");
-        let file = FileWrapper::open(&path)?;
+        let file = FileWrapper::open_at(&self.root, &self.fd, "status")?;
         Status::from_reader(file)
     }
 
     /// Returns the status info from `/proc/[pid]/stat`.
-    ///
-    /// Note that this data comes pre-loaded in the `stat` field.  This method is useful when you
-    /// get the latest status data (since some of it changes while the program is running)
     pub fn stat(&self) -> ProcResult<Stat> {
-        let path = self.root.join("stat");
-        let stat = Stat::from_reader(FileWrapper::open(&path)?)?;
+        let file = FileWrapper::open_at(&self.root, &self.fd, "stat")?;
+        let stat = Stat::from_reader(file)?;
         Ok(stat)
     }
 
     /// Gets the process' login uid. May not be available.
     pub fn loginuid(&self) -> ProcResult<u32> {
         let mut uid = String::new();
-        let path = self.root.join("loginuid");
-        let mut file = FileWrapper::open(&path)?;
+        let mut file = FileWrapper::open_at(&self.root, &self.fd, "loginuid")?;
         file.read_to_string(&mut uid)?;
         Status::parse_uid_gid(&uid, 0)
     }
@@ -1103,8 +1195,7 @@ impl Process {
     ///
     /// (Since linux 2.6.11)
     pub fn oom_score(&self) -> ProcResult<u32> {
-        let path = self.root.join("oom_score");
-        let mut file = FileWrapper::open(&path)?;
+        let mut file = FileWrapper::open_at(&self.root, &self.fd, "oom_score")?;
         let mut oom = String::new();
         file.read_to_string(&mut oom)?;
         Ok(from_str!(u32, oom.trim()))
@@ -1114,22 +1205,26 @@ impl Process {
     ///
     /// Much of this data is the same as the data from `stat()` and `status()`
     pub fn statm(&self) -> ProcResult<StatM> {
-        let path = self.root.join("statm");
-        let file = FileWrapper::open(&path)?;
+        let file = FileWrapper::open_at(&self.root, &self.fd, "statm")?;
         StatM::from_reader(file)
     }
 
     /// Return a task for the main thread of this process
     pub fn task_main_thread(&self) -> ProcResult<Task> {
-        Task::new(self.pid, self.pid)
+        self.task_from_tid(self.pid)
+    }
+
+    /// Return a task for the main thread of this process
+    pub fn task_from_tid(&self, tid: i32) -> ProcResult<Task> {
+        let path = PathBuf::from("task").join(tid.to_string());
+        Task::from_process_at(&self.root, self.fd.as_fd(), path, self.pid, tid)
     }
 
     /// Return the `Schedstat` for this process, based on the `/proc/<pid>/schedstat` file.
     ///
     /// (Requires CONFIG_SCHED_INFO)
     pub fn schedstat(&self) -> ProcResult<Schedstat> {
-        let path = self.root.join("schedstat");
-        let file = FileWrapper::open(&path)?;
+        let file = FileWrapper::open_at(&self.root, &self.fd, "schedstat")?;
         Schedstat::from_reader(file)
     }
 
@@ -1239,55 +1334,202 @@ impl Process {
     /// # }
     /// ```
     pub fn tasks(&self) -> ProcResult<TasksIter> {
+        let dir_fd = wrap_io_error!(
+            self.root.join("task"),
+            rustix::fs::openat(
+                &self.fd,
+                "task",
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+                Mode::empty()
+            )
+        )?;
+        let dir = wrap_io_error!(self.root.join("task"), rustix::fs::Dir::read_from(&dir_fd))?;
         Ok(TasksIter {
             pid: self.pid,
-            inner: fs::read_dir(self.root.join("task"))?,
+            inner: dir,
+            inner_fd: dir_fd,
+            root: self.root.clone(),
         })
+    }
+
+    /// Reads the tcp socket table from the process net namespace
+    pub fn tcp(&self) -> ProcResult<Vec<TcpNetEntry>> {
+        let file = FileWrapper::open_at(&self.root, &self.fd, "net/tcp")?;
+        read_tcp_table(BufReader::new(file))
+    }
+
+    /// Reads the tcp6 socket table from the process net namespace
+    pub fn tcp6(&self) -> ProcResult<Vec<TcpNetEntry>> {
+        let file = FileWrapper::open_at(&self.root, &self.fd, "net/tcp6")?;
+        read_tcp_table(BufReader::new(file))
+    }
+
+    /// Reads the udp socket table from the process net namespace
+    pub fn udp(&self) -> ProcResult<Vec<UdpNetEntry>> {
+        let file = FileWrapper::open_at(&self.root, &self.fd, "net/udp")?;
+        read_udp_table(BufReader::new(file))
+    }
+
+    /// Reads the udp6 socket table from the process net namespace
+    pub fn udp6(&self) -> ProcResult<Vec<UdpNetEntry>> {
+        let file = FileWrapper::open_at(&self.root, &self.fd, "net/udp6")?;
+        read_udp_table(BufReader::new(file))
+    }
+
+    /// Opens a file to the process's memory (`/proc/<pid>/mem`).
+    ///
+    /// Note: you cannot start reading from the start of the file.  You must first seek to
+    /// a mapped page.  See [Process::maps].
+    ///
+    /// Permission to access this file is governed by a ptrace access mode PTRACE_MODE_ATTACH_FSCREDS check
+    ///
+    /// # Example
+    ///
+    /// Find the offset of the "hello" string in the process's stack, and compare it to the
+    /// pointer of the variable containing "hello"
+    ///
+    /// ```rust
+    /// # use std::io::{Read, Seek, SeekFrom};
+    /// # use procfs::process::{MMapPath, Process};
+    /// let me = Process::myself().unwrap();
+    /// let mut mem = me.mem().unwrap();
+    /// let maps = me.maps().unwrap();
+    ///
+    /// let hello = "hello".to_string();
+    ///
+    /// for map in maps {
+    ///     if map.pathname == MMapPath::Heap {
+    ///         mem.seek(SeekFrom::Start(map.address.0)).unwrap();
+    ///         let mut buf = vec![0; (map.address.1 - map.address.0) as usize];
+    ///         mem.read_exact(&mut buf).unwrap();
+    ///         let idx = buf.windows(5).position(|p| p == b"hello").unwrap();
+    ///         assert_eq!(map.address.0 + idx as u64, hello.as_ptr() as u64);
+    ///     }
+    /// }
+    /// ```
+    pub fn mem(&self) -> ProcResult<File> {
+        let file = FileWrapper::open_at(&self.root, &self.fd, "mem")?;
+        Ok(file.inner())
+    }
+}
+
+/// The result of [`Process::fd`], iterates over all fds in a process
+#[derive(Debug)]
+pub struct FDsIter {
+    inner: rustix::fs::Dir,
+    inner_fd: rustix::io::OwnedFd,
+    root: PathBuf,
+}
+
+impl std::iter::Iterator for FDsIter {
+    type Item = ProcResult<FDInfo>;
+    fn next(&mut self) -> Option<ProcResult<FDInfo>> {
+        loop {
+            match self.inner.next() {
+                Some(Ok(entry)) => {
+                    let name = entry.file_name().to_string_lossy();
+                    if let Ok(fd) = RawFd::from_str(&name) {
+                        if let Ok(info) = FDInfo::from_process_at(&self.root, self.inner_fd.as_fd(), name.as_ref(), fd)
+                        {
+                            break Some(Ok(info));
+                        }
+                    }
+                }
+                Some(Err(e)) => break Some(Err(io::Error::from(e).into())),
+                None => break None,
+            }
+        }
     }
 }
 
 /// The result of [`Process::tasks`], iterates over all tasks in a process
 #[derive(Debug)]
 pub struct TasksIter {
-    pid: pid_t,
-    inner: fs::ReadDir,
+    pid: i32,
+    inner: rustix::fs::Dir,
+    inner_fd: rustix::io::OwnedFd,
+    root: PathBuf,
 }
 
 impl std::iter::Iterator for TasksIter {
     type Item = ProcResult<Task>;
     fn next(&mut self) -> Option<ProcResult<Task>> {
-        match self.inner.next() {
-            Some(Ok(tp)) => Some(Task::from_rel_path(self.pid, &tp.path())),
-            Some(Err(e)) => Some(Err(ProcError::Io(e, None))),
-            None => None,
+        loop {
+            match self.inner.next() {
+                Some(Ok(tp)) => {
+                    if let Ok(tid) = i32::from_str(&tp.file_name().to_string_lossy()) {
+                        if let Ok(task) =
+                            Task::from_process_at(&self.root, self.inner_fd.as_fd(), tid.to_string(), self.pid, tid)
+                        {
+                            break Some(Ok(task));
+                        }
+                    }
+                }
+                Some(Err(e)) => break Some(Err(io::Error::from(e).into())),
+                None => break None,
+            }
         }
     }
 }
 
-/// Return a list of all processes
+/// Return a iterator of all processes
 ///
-/// If a process can't be constructed for some reason, it won't be returned in the list.
-pub fn all_processes() -> ProcResult<Vec<Process>> {
+/// If a process can't be constructed for some reason, it won't be returned in the iterator.
+///
+/// See also some important docs on the [ProcessesIter] struct.
+pub fn all_processes() -> ProcResult<ProcessesIter> {
     all_processes_with_root("/proc")
 }
 
 /// Return a list of all processes based on a specified `/proc` path
 ///
 /// If a process can't be constructed for some reason, it won't be returned in the list.
-pub fn all_processes_with_root(root: impl AsRef<Path>) -> ProcResult<Vec<Process>> {
-    let mut v = Vec::new();
+///
+/// See also some important docs on the [ProcessesIter] struct.
+pub fn all_processes_with_root(root: impl AsRef<Path>) -> ProcResult<ProcessesIter> {
     let root = root.as_ref();
-    for entry in expect!(std::fs::read_dir(root), format!("No {} directory", root.display())).flatten() {
-        if i32::from_str(&entry.file_name().to_string_lossy()).is_ok() {
-            match Process::new_with_root(entry.path()) {
-                Ok(prc) => v.push(prc),
-                Err(ProcError::InternalError(e)) => return Err(ProcError::InternalError(e)),
-                _ => {}
+    let dir = wrap_io_error!(
+        root,
+        rustix::fs::openat(
+            &rustix::fs::cwd(),
+            root,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty()
+        )
+    )?;
+    let dir = wrap_io_error!(root, rustix::fs::Dir::read_from(dir))?;
+    Ok(ProcessesIter { inner: dir })
+}
+
+/// An iterator over all processes in the system.
+///
+/// **Note** This is a *lazy* iterator (like most iterators in rust).  You will likely want to consume
+/// this iterator as quickly as possible if you want a "snapshot" of the system (though it won't be a
+/// true snapshot).  Another important thing to keep in mind is that the [`Process`] struct holds an
+/// open file descriptor to its corresponding `/proc/<pid>` directory.  See the docs for [`Process`]
+/// for more information.
+#[derive(Debug)]
+pub struct ProcessesIter {
+    inner: rustix::fs::Dir,
+}
+
+impl std::iter::Iterator for ProcessesIter {
+    type Item = ProcResult<Process>;
+    fn next(&mut self) -> Option<ProcResult<Process>> {
+        loop {
+            match self.inner.next() {
+                Some(Ok(entry)) => {
+                    if let Ok(pid) = i32::from_str(&entry.file_name().to_string_lossy()) {
+                        if let Ok(proc) = Process::new(pid) {
+                            break Some(Ok(proc));
+                        }
+                    }
+                }
+                Some(Err(e)) => break Some(Err(io::Error::from(e).into())),
+                None => break None,
             }
         }
     }
-
-    Ok(v)
 }
 
 /// Provides information about memory usage, measured in pages.

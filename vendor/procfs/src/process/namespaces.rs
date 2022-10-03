@@ -1,7 +1,8 @@
+use rustix::fs::AtFlags;
 use std::{
-    ffi::{CString, OsString},
+    collections::HashMap,
+    ffi::OsString,
     fs::{self},
-    os::unix::prelude::OsStrExt,
     path::PathBuf,
 };
 
@@ -12,26 +13,31 @@ use super::Process;
 impl Process {
     /// Describes namespaces to which the process with the corresponding PID belongs.
     /// Doc reference: https://man7.org/linux/man-pages/man7/namespaces.7.html
-    pub fn namespaces(&self) -> ProcResult<Vec<Namespace>> {
+    /// The namespace type is the key for the HashMap, i.e 'net', 'user', etc.
+    pub fn namespaces(&self) -> ProcResult<HashMap<OsString, Namespace>> {
         let ns = self.root.join("ns");
-        let mut namespaces = Vec::new();
+        let mut namespaces = HashMap::new();
         for entry in fs::read_dir(ns)? {
             let entry = entry?;
             let path = entry.path();
             let ns_type = entry.file_name();
-            let cstr = CString::new(path.as_os_str().as_bytes()).unwrap();
+            let stat = rustix::fs::statat(&rustix::fs::cwd(), &path, AtFlags::empty())
+                .map_err(|_| build_internal_error!(format!("Unable to stat {:?}", path)))?;
 
-            let mut stat = unsafe { std::mem::zeroed() };
-            if unsafe { libc::stat64(cstr.as_ptr(), &mut stat) } != 0 {
-                return Err(build_internal_error!(format!("Unable to stat {:?}", path)));
+            if let Some(n) = namespaces.insert(
+                ns_type.clone(),
+                Namespace {
+                    ns_type,
+                    path,
+                    identifier: stat.st_ino,
+                    device_id: stat.st_dev,
+                },
+            ) {
+                return Err(build_internal_error!(format!(
+                    "NsType appears more than once {:?}",
+                    n.ns_type
+                )));
             }
-
-            namespaces.push(Namespace {
-                ns_type,
-                path,
-                identifier: stat.st_ino,
-                device_id: stat.st_dev,
-            })
         }
 
         Ok(namespaces)

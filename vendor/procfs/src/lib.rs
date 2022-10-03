@@ -1,14 +1,7 @@
-// Don't throw clippy warnings for manual string stripping.
-// The suggested fix with `strip_prefix` removes support for Rust 1.33 and 1.38
-#![allow(clippy::unknown_clippy_lints)]
-#![allow(clippy::manual_strip)]
+#![allow(unknown_lints)]
+// The suggested fix with `str::parse` removes support for Rust 1.48
 #![allow(clippy::from_str_radix_10)]
-// `#[non_exhaustive]` require Rust 1.40+ but procfs minimal Rust version is 1.34
-#![allow(clippy::manual_non_exhaustive)]
-// Don't throw rustc lint warnings for the deprecated name `intra_doc_link_resolution_failure`.
-// The suggested rename to `broken_intra_doc_links` removes support for Rust 1.33 and 1.38.
-#![allow(renamed_and_removed_lints)]
-#![deny(intra_doc_link_resolution_failure)]
+#![deny(broken_intra_doc_links)]
 //! This crate provides to an interface into the linux `procfs` filesystem, usually mounted at
 //! `/proc`.
 //!
@@ -55,19 +48,14 @@
 
 use bitflags::bitflags;
 use lazy_static::lazy_static;
-use libc::pid_t;
-use libc::sysconf;
-use libc::{_SC_CLK_TCK, _SC_PAGESIZE};
 
+use rustix::fd::{AsFd, FromFd};
 use std::fmt;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::mem;
-use std::os::raw::c_char;
+use std::fs::{File, OpenOptions};
+use std::io::{self, BufRead, BufReader, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
-use std::{ffi::CStr, fs::OpenOptions};
 
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, Local};
@@ -214,7 +202,7 @@ macro_rules! wrap_io_error {
                     kind,
                     crate::IoErrorWrapper {
                         path: $path.to_owned(),
-                        inner: e.into_inner(),
+                        inner: Some(Box::new(e)),
                     },
                 ))
             }
@@ -302,7 +290,7 @@ lazy_static! {
     /// The number of clock ticks per second.
     ///
     /// This is calculated from `sysconf(_SC_CLK_TCK)`.
-    static ref TICKS_PER_SECOND: ProcResult<i64> = {
+    static ref TICKS_PER_SECOND: ProcResult<u64> = {
         Ok(ticks_per_second()?)
     };
     /// The version of the currently running kernel.
@@ -315,7 +303,7 @@ lazy_static! {
     /// Memory page size, in bytes.
     ///
     /// This is calculated from `sysconf(_SC_PAGESIZE)`.
-    static ref PAGESIZE: ProcResult<i64> = {
+    static ref PAGESIZE: ProcResult<u64> = {
         Ok(page_size()?)
     };
 }
@@ -379,22 +367,33 @@ struct FileWrapper {
 impl FileWrapper {
     fn open<P: AsRef<Path>>(path: P) -> Result<FileWrapper, io::Error> {
         let p = path.as_ref();
-        match File::open(&p) {
-            Ok(f) => Ok(FileWrapper {
-                inner: f,
-                path: p.to_owned(),
-            }),
-            Err(e) => {
-                let kind = e.kind();
-                Err(io::Error::new(
-                    kind,
-                    IoErrorWrapper {
-                        path: p.to_owned(),
-                        inner: e.into_inner(),
-                    },
-                ))
-            }
-        }
+        let f = wrap_io_error!(p, File::open(&p))?;
+        Ok(FileWrapper {
+            inner: f,
+            path: p.to_owned(),
+        })
+    }
+    fn open_at<P, Q, Fd: AsFd>(root: P, dirfd: Fd, path: Q) -> Result<FileWrapper, io::Error>
+    where
+        P: AsRef<Path>,
+        Q: AsRef<Path>,
+    {
+        use rustix::fs::{Mode, OFlags};
+
+        let p = root.as_ref().join(path.as_ref());
+        let fd = wrap_io_error!(
+            p,
+            rustix::fs::openat(dirfd, path.as_ref(), OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty())
+        )?;
+        Ok(FileWrapper {
+            inner: File::from_fd(fd.into()),
+            path: p,
+        })
+    }
+
+    /// Returns the inner file
+    fn inner(self) -> File {
+        self.inner
     }
 }
 
@@ -410,6 +409,12 @@ impl Read for FileWrapper {
     }
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
         wrap_io_error!(self.path, self.inner.read_exact(buf))
+    }
+}
+
+impl Seek for FileWrapper {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        wrap_io_error!(self.path, self.inner.seek(pos))
     }
 }
 
@@ -563,10 +568,16 @@ pub struct LoadAverage {
 impl LoadAverage {
     /// Reads load average info from `/proc/loadavg`
     pub fn new() -> ProcResult<LoadAverage> {
-        let mut f = FileWrapper::open("/proc/loadavg")?;
-        let mut s = String::new();
-        f.read_to_string(&mut s)?;
-        let mut s = s.split_whitespace();
+        LoadAverage::from_reader(FileWrapper::open("/proc/loadavg")?)
+    }
+
+    /// Get LoadAverage from a custom Read instead of the default `/proc/loadavg`.
+    pub fn from_reader<R: io::Read>(r: R) -> ProcResult<LoadAverage> {
+        let mut reader = BufReader::new(r);
+        let mut line = String::new();
+
+        reader.read_to_string(&mut line)?;
+        let mut s = line.split_whitespace();
 
         let one = expect!(f32::from_str(expect!(s.next())));
         let five = expect!(f32::from_str(expect!(s.next())));
@@ -593,15 +604,9 @@ impl LoadAverage {
 ///
 /// This isn't part of the proc file system, but it's a useful thing to have, since several fields
 /// count in ticks.  This is calculated from `sysconf(_SC_CLK_TCK)`.
-pub fn ticks_per_second() -> std::io::Result<i64> {
+pub fn ticks_per_second() -> std::io::Result<u64> {
     if cfg!(unix) {
-        match unsafe { sysconf(_SC_CLK_TCK) } {
-            -1 => Err(std::io::Error::last_os_error()),
-            #[cfg(target_pointer_width = "64")]
-            x => Ok(x),
-            #[cfg(target_pointer_width = "32")]
-            x => Ok(x.into())
-        }
+        Ok(rustix::param::clock_ticks_per_second())
     } else {
         panic!("Not supported on non-unix platforms")
     }
@@ -652,14 +657,9 @@ thread_local! {
 /// Memory page size, in bytes.
 ///
 /// This is calculated from `sysconf(_SC_PAGESIZE)`.
-pub fn page_size() -> std::io::Result<i64> {
+pub fn page_size() -> std::io::Result<u64> {
     if cfg!(unix) {
-        match unsafe { sysconf(_SC_PAGESIZE) } {
-            -1 => Err(std::io::Error::last_os_error()),
-            #[cfg(target_pointer_width = "64")]
-            x => Ok(x),
-            #[cfg(target_pointer_width = "32")]
-            x => Ok(x.into())        }
+        Ok(rustix::param::page_size() as u64)
     } else {
         panic!("Not supported on non-unix platforms")
     }
@@ -695,24 +695,19 @@ pub fn kernel_config() -> ProcResult<HashMap<String, ConfigSetting>> {
             unreachable!("flate2 feature not enabled")
         }
     } else {
-        let mut kernel: libc::utsname = unsafe { mem::zeroed() };
+        let kernel = rustix::process::uname();
 
-        if unsafe { libc::uname(&mut kernel) != 0 } {
-            return Err(ProcError::Other("Failed to call uname()".to_string()));
-        }
+        let filename = format!("{}-{}", BOOT_CONFIG, kernel.release().to_string_lossy());
 
-        let filename = format!(
-            "{}-{}",
-            BOOT_CONFIG,
-            unsafe { CStr::from_ptr(kernel.release.as_ptr() as *const c_char) }.to_string_lossy()
-        );
-
-        if Path::new(&filename).exists() {
-            let file = FileWrapper::open(filename)?;
-            Box::new(BufReader::new(file))
-        } else {
-            let file = FileWrapper::open(BOOT_CONFIG)?;
-            Box::new(BufReader::new(file))
+        match FileWrapper::open(filename) {
+            Ok(file) => Box::new(BufReader::new(file)),
+            Err(e) => match e.kind() {
+                io::ErrorKind::NotFound => {
+                    let file = FileWrapper::open(BOOT_CONFIG)?;
+                    Box::new(BufReader::new(file))
+                }
+                _ => return Err(e.into()),
+            },
         }
     };
 
@@ -805,7 +800,7 @@ impl CpuTime {
 
         // Store this field in the struct so we don't have to attempt to unwrap ticks_per_second() when we convert
         // from ticks into other time units
-        let tps = crate::ticks_per_second()? as u64;
+        let tps = crate::ticks_per_second()?;
 
         s.next();
         let user = from_str!(u64, expect!(s.next()));
@@ -997,16 +992,16 @@ impl KernelStats {
                 total_cpu = Some(CpuTime::from_str(&line)?);
             } else if line.starts_with("cpu") {
                 cpus.push(CpuTime::from_str(&line)?);
-            } else if line.starts_with("ctxt ") {
-                ctxt = Some(from_str!(u64, &line[5..]));
-            } else if line.starts_with("btime ") {
-                btime = Some(from_str!(u64, &line[6..]));
-            } else if line.starts_with("processes ") {
-                processes = Some(from_str!(u64, &line[10..]));
-            } else if line.starts_with("procs_running ") {
-                procs_running = Some(from_str!(u32, &line[14..]));
-            } else if line.starts_with("procs_blocked ") {
-                procs_blocked = Some(from_str!(u32, &line[14..]));
+            } else if let Some(stripped) = line.strip_prefix("ctxt ") {
+                ctxt = Some(from_str!(u64, stripped));
+            } else if let Some(stripped) = line.strip_prefix("btime ") {
+                btime = Some(from_str!(u64, stripped));
+            } else if let Some(stripped) = line.strip_prefix("processes ") {
+                processes = Some(from_str!(u64, stripped));
+            } else if let Some(stripped) = line.strip_prefix("procs_running ") {
+                procs_running = Some(from_str!(u32, stripped));
+            } else if let Some(stripped) = line.strip_prefix("procs_blocked ") {
+                procs_blocked = Some(from_str!(u32, stripped));
             }
         }
 
@@ -1349,5 +1344,25 @@ mod tests {
         for argument in cmdline {
             println!("{}", argument);
         }
+    }
+
+    /// Test that our error type can be easily used with the `failure` crate
+    #[test]
+    fn test_failure() {
+        fn inner() -> Result<(), failure::Error> {
+            let _load = crate::LoadAverage::new()?;
+            Ok(())
+        }
+        let _ = inner();
+
+        fn inner2() -> Result<(), failure::Error> {
+            let proc = crate::process::Process::new(1)?;
+            let _io = proc.maps()?;
+            Ok(())
+        }
+
+        let _ = inner2();
+        // Unwrapping this failure should produce a message that looks like:
+        // thread 'tests::test_failure' panicked at 'called `Result::unwrap()` on an `Err` value: PermissionDenied(Some("/proc/1/maps"))', src/libcore/result.rs:997:5
     }
 }

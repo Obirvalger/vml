@@ -877,6 +877,11 @@ s! {
         pub c_ispeed: ::speed_t,
         pub c_ospeed: ::speed_t,
     }
+
+    pub struct in6_pktinfo {
+        pub ipi6_addr: ::in6_addr,
+        pub ipi6_ifindex: ::c_uint,
+    }
 }
 
 s_no_extra_traits! {
@@ -1788,6 +1793,9 @@ pub const IPV6_MULTICAST_LOOP: ::c_int = 19;
 pub const IPV6_ADD_MEMBERSHIP: ::c_int = 20;
 pub const IPV6_DROP_MEMBERSHIP: ::c_int = 21;
 pub const IPV6_V6ONLY: ::c_int = 26;
+pub const IPV6_RECVPKTINFO: ::c_int = 49;
+pub const IPV6_RECVTCLASS: ::c_int = 66;
+pub const IPV6_TCLASS: ::c_int = 67;
 
 pub const TCP_NODELAY: ::c_int = 1;
 pub const TCP_MAXSEG: ::c_int = 2;
@@ -2669,6 +2677,9 @@ pub const PT_GNU_EH_FRAME: u32 = 0x6474e550;
 pub const PT_GNU_STACK: u32 = 0x6474e551;
 pub const PT_GNU_RELRO: u32 = 0x6474e552;
 
+// Ethernet protocol IDs.
+pub const ETH_P_IP: ::c_int = 0x0800;
+
 pub const SFD_CLOEXEC: ::c_int = 0x080000;
 
 pub const NCCS: usize = 32;
@@ -3224,17 +3235,6 @@ f! {
         minor as ::c_uint
     }
 
-    pub fn makedev(major: ::c_uint, minor: ::c_uint) -> ::dev_t {
-        let major = major as ::dev_t;
-        let minor = minor as ::dev_t;
-        let mut dev = 0;
-        dev |= (major & 0x00000fff) << 8;
-        dev |= (major & 0xfffff000) << 32;
-        dev |= (minor & 0x000000ff) << 0;
-        dev |= (minor & 0xffffff00) << 12;
-        dev
-    }
-
     pub fn CMSG_DATA(cmsg: *const cmsghdr) -> *mut c_uchar {
         cmsg.offset(1) as *mut c_uchar
     }
@@ -3310,6 +3310,17 @@ safe_f! {
 
     pub {const} fn QCMD(cmd: ::c_int, type_: ::c_int) -> ::c_int {
         (cmd << 8) | (type_ & 0x00ff)
+    }
+
+    pub {const} fn makedev(major: ::c_uint, minor: ::c_uint) -> ::dev_t {
+        let major = major as ::dev_t;
+        let minor = minor as ::dev_t;
+        let mut dev = 0;
+        dev |= (major & 0x00000fff) << 8;
+        dev |= (major & 0xfffff000) << 32;
+        dev |= (minor & 0x000000ff) << 0;
+        dev |= (minor & 0xffffff00) << 12;
+        dev
     }
 }
 
@@ -4201,6 +4212,11 @@ extern "C" {
         child: ::Option<unsafe extern "C" fn()>,
     ) -> ::c_int;
     pub fn getgrgid(gid: ::gid_t) -> *mut ::group;
+
+    pub fn setgrent();
+    pub fn endgrent();
+    pub fn getgrent() -> *mut ::group;
+
     pub fn getgrouplist(
         user: *const ::c_char,
         group: ::gid_t,

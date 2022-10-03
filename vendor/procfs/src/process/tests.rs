@@ -3,7 +3,7 @@ use super::*;
 fn check_unwrap<T>(prc: &Process, val: ProcResult<T>) -> Option<T> {
     match val {
         Ok(t) => Some(t),
-        Err(ProcError::PermissionDenied(_)) if unsafe { libc::geteuid() } != 0 => {
+        Err(ProcError::PermissionDenied(_)) if !rustix::process::geteuid().is_root() => {
             // we are not root, and so a permission denied error is OK
             None
         }
@@ -21,7 +21,7 @@ fn check_unwrap<T>(prc: &Process, val: ProcResult<T>) -> Option<T> {
 fn check_unwrap_task<T>(prc: &Process, val: ProcResult<T>) -> Option<T> {
     match val {
         Ok(t) => Some(t),
-        Err(ProcError::PermissionDenied(_)) if unsafe { libc::geteuid() } != 0 => {
+        Err(ProcError::PermissionDenied(_)) if !rustix::process::geteuid().is_root() => {
             // we are not root, and so a permission denied error is OK
             None
         }
@@ -44,79 +44,79 @@ fn test_main_thread_task() {
 #[allow(clippy::cognitive_complexity)]
 #[test]
 fn test_self_proc() {
-    let myself = Process::myself().unwrap();
+    let myself = Process::myself().unwrap().stat().unwrap();
     println!("{:#?}", myself);
-    println!("state: {:?}", myself.stat.state());
-    println!("tty: {:?}", myself.stat.tty_nr());
-    println!("flags: {:?}", myself.stat.flags());
+    println!("state: {:?}", myself.state());
+    println!("tty: {:?}", myself.tty_nr());
+    println!("flags: {:?}", myself.flags());
 
     #[cfg(feature = "chrono")]
-    println!("starttime: {:#?}", myself.stat.starttime());
+    println!("starttime: {:#?}", myself.starttime());
 
     let kernel = KernelVersion::current().unwrap();
 
     if kernel >= KernelVersion::new(2, 1, 22) {
-        assert!(myself.stat.exit_signal.is_some());
+        assert!(myself.exit_signal.is_some());
     } else {
-        assert!(myself.stat.exit_signal.is_none());
+        assert!(myself.exit_signal.is_none());
     }
 
     if kernel >= KernelVersion::new(2, 2, 8) {
-        assert!(myself.stat.processor.is_some());
+        assert!(myself.processor.is_some());
     } else {
-        assert!(myself.stat.processor.is_none());
+        assert!(myself.processor.is_none());
     }
 
     if kernel >= KernelVersion::new(2, 5, 19) {
-        assert!(myself.stat.rt_priority.is_some());
+        assert!(myself.rt_priority.is_some());
     } else {
-        assert!(myself.stat.rt_priority.is_none());
+        assert!(myself.rt_priority.is_none());
     }
 
     if kernel >= KernelVersion::new(2, 5, 19) {
-        assert!(myself.stat.rt_priority.is_some());
-        assert!(myself.stat.policy.is_some());
+        assert!(myself.rt_priority.is_some());
+        assert!(myself.policy.is_some());
     } else {
-        assert!(myself.stat.rt_priority.is_none());
-        assert!(myself.stat.policy.is_none());
+        assert!(myself.rt_priority.is_none());
+        assert!(myself.policy.is_none());
     }
 
     if kernel >= KernelVersion::new(2, 6, 18) {
-        assert!(myself.stat.delayacct_blkio_ticks.is_some());
+        assert!(myself.delayacct_blkio_ticks.is_some());
     } else {
-        assert!(myself.stat.delayacct_blkio_ticks.is_none());
+        assert!(myself.delayacct_blkio_ticks.is_none());
     }
 
     if kernel >= KernelVersion::new(2, 6, 24) {
-        assert!(myself.stat.guest_time.is_some());
-        assert!(myself.stat.cguest_time.is_some());
+        assert!(myself.guest_time.is_some());
+        assert!(myself.cguest_time.is_some());
     } else {
-        assert!(myself.stat.guest_time.is_none());
-        assert!(myself.stat.cguest_time.is_none());
+        assert!(myself.guest_time.is_none());
+        assert!(myself.cguest_time.is_none());
     }
 
     if kernel >= KernelVersion::new(3, 3, 0) {
-        assert!(myself.stat.start_data.is_some());
-        assert!(myself.stat.end_data.is_some());
-        assert!(myself.stat.start_brk.is_some());
+        assert!(myself.start_data.is_some());
+        assert!(myself.end_data.is_some());
+        assert!(myself.start_brk.is_some());
     } else {
-        assert!(myself.stat.start_data.is_none());
-        assert!(myself.stat.end_data.is_none());
-        assert!(myself.stat.start_brk.is_none());
+        assert!(myself.start_data.is_none());
+        assert!(myself.end_data.is_none());
+        assert!(myself.start_brk.is_none());
     }
 
     if kernel >= KernelVersion::new(3, 5, 0) {
-        assert!(myself.stat.arg_start.is_some());
-        assert!(myself.stat.arg_end.is_some());
-        assert!(myself.stat.env_start.is_some());
-        assert!(myself.stat.env_end.is_some());
-        assert!(myself.stat.exit_code.is_some());
+        assert!(myself.arg_start.is_some());
+        assert!(myself.arg_end.is_some());
+        assert!(myself.env_start.is_some());
+        assert!(myself.env_end.is_some());
+        assert!(myself.exit_code.is_some());
     } else {
-        assert!(myself.stat.arg_start.is_none());
-        assert!(myself.stat.arg_end.is_none());
-        assert!(myself.stat.env_start.is_none());
-        assert!(myself.stat.env_end.is_none());
-        assert!(myself.stat.exit_code.is_none());
+        assert!(myself.arg_start.is_none());
+        assert!(myself.arg_end.is_none());
+        assert!(myself.env_start.is_none());
+        assert!(myself.env_end.is_none());
+        assert!(myself.exit_code.is_none());
     }
 }
 
@@ -134,20 +134,22 @@ fn test_all() {
             })
         })
         .unwrap_or(false);
-    for prc in all_processes().unwrap() {
+    for p in all_processes().unwrap() {
         // note: this test doesn't unwrap, since some of this data requires root to access
         // so permission denied errors are common.  The check_unwrap helper function handles
         // this.
 
-        println!("{} {}", prc.pid(), prc.stat.comm);
-        prc.stat.flags().unwrap();
-        prc.stat.state().unwrap();
+        let prc = p.unwrap();
+        let stat = prc.stat().unwrap();
+        println!("{} {}", prc.pid(), stat.comm);
+        stat.flags().unwrap();
+        stat.state().unwrap();
         #[cfg(feature = "chrono")]
-        prc.stat.starttime().unwrap();
+        stat.starttime().unwrap();
 
         // if this process is defunct/zombie, don't try to read any of the below data
         // (some might be successful, but not all)
-        if prc.stat.state().unwrap() == ProcState::Zombie {
+        if stat.state().unwrap() == ProcState::Zombie {
             continue;
         }
 
@@ -202,6 +204,25 @@ fn test_smaps() {
 fn test_proc_alive() {
     let myself = Process::myself().unwrap();
     assert!(myself.is_alive());
+
+    // zombies should not be considered alive
+    let mut command = std::process::Command::new("sleep");
+    command
+        .arg("0")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut child = command.spawn().unwrap();
+    let child_pid = child.id() as i32;
+
+    // sleep very briefly to allow the child to start and then exit
+    std::thread::sleep(std::time::Duration::from_millis(20));
+
+    let child_proc = Process::new(child_pid).unwrap();
+    assert!(!child_proc.is_alive(), "Child state is: {:?}", child_proc.stat());
+    assert!(child_proc.stat().unwrap().state().unwrap() == ProcState::Zombie);
+    child.wait().unwrap();
+    assert!(Process::new(child_pid).is_err());
+    assert!(!child_proc.is_alive(), "Child state is: {:?}", child_proc.stat());
 }
 
 #[test]
@@ -218,12 +239,12 @@ fn test_error_handling() {
     // getting the proc struct should be OK
     let init = Process::new(1).unwrap();
 
-    let i_have_access = unsafe { libc::geteuid() } == init.owner;
+    let i_have_access = rustix::process::geteuid().as_raw() == init.uid().unwrap();
 
     if !i_have_access {
         // but accessing data should result in an error (unless we are running as root!)
-        assert!(!init.cwd().is_ok());
-        assert!(!init.environ().is_ok());
+        assert!(init.cwd().is_err());
+        assert!(init.environ().is_err());
     }
 }
 
@@ -256,6 +277,32 @@ fn test_proc_maps() {
 }
 
 #[test]
+fn test_proc_pagemap() {
+    let myself = Process::myself().unwrap();
+    let maps = myself.maps().unwrap();
+
+    let stack_map = maps.iter().find(|m| matches!(m.pathname, MMapPath::Stack)).unwrap();
+    let page_size = crate::page_size().unwrap() as usize;
+    let start_page = stack_map.address.0 as usize / page_size;
+    let end_page = stack_map.address.1 as usize / page_size;
+
+    let mut pagemap = myself.pagemap().unwrap();
+    let page_infos = pagemap.get_range_info(start_page..end_page).unwrap();
+
+    let present_pages = page_infos.iter().filter(|info| {
+        if let PageInfo::MemoryPage(flags) = info {
+            flags.contains(MemoryPageFlags::PRESENT)
+        } else {
+            false
+        }
+    });
+
+    for present_page in present_pages {
+        println!("{:?}", present_page);
+    }
+}
+
+#[test]
 fn test_mmap_path() {
     assert_eq!(MMapPath::from("[stack]").unwrap(), MMapPath::Stack);
     assert_eq!(MMapPath::from("[foo]").unwrap(), MMapPath::Other("foo".to_owned()));
@@ -269,7 +316,8 @@ fn test_mmap_path() {
 #[test]
 fn test_proc_fds() {
     let myself = Process::myself().unwrap();
-    for fd in myself.fd().unwrap() {
+    for f in myself.fd().unwrap() {
+        let fd = f.unwrap();
         println!("{:?} {:?}", fd, fd.mode());
     }
 }
@@ -277,7 +325,7 @@ fn test_proc_fds() {
 #[test]
 fn test_proc_fd() {
     let myself = Process::myself().unwrap();
-    let raw_fd = myself.fd().unwrap().get(0).unwrap().fd as i32;
+    let raw_fd = myself.fd().unwrap().next().unwrap().unwrap().fd as i32;
     let fd = FDInfo::from_raw_fd(myself.pid, raw_fd).unwrap();
     println!("{:?} {:?}", fd, fd.mode());
 }
@@ -294,6 +342,64 @@ fn test_proc_auxv() {
     let myself = Process::myself().unwrap();
     let auxv = myself.auxv().unwrap();
     println!("{:?}", auxv);
+    for (k, v) in auxv {
+        // See bits/auxv.h
+        match k {
+            2 => println!("File descriptor of program: {}", v),
+            3 => println!("Address of the program headers of the executable: 0x{:x}", v),
+            4 => println!("Size of program header entry: {}", v),
+            5 => println!("Number of program headers: {}", v),
+            6 => {
+                println!("System page size: {}", v);
+                assert!(v > 0);
+            }
+            7 => {
+                println!("Base address: 0x{:x}", v);
+                assert!(v > 0);
+            }
+            8 => println!("Flags: 0x{:x}", v),
+            9 => {
+                println!("Entry address of the executable: 0x{:x}", v);
+                assert!(v > 0);
+            }
+            11 => {
+                println!("Real UID: {}", v);
+                assert_eq!(v as u32, rustix::process::getuid().as_raw());
+            }
+            12 => {
+                println!("Effective UID: {}", v);
+                assert!(v > 0);
+            }
+            13 => {
+                println!("Real GID: {}", v);
+                assert!(v > 0);
+            }
+            14 => {
+                println!("Effective GID: {}", v);
+                assert!(v > 0);
+            }
+            15 => {
+                println!("Platform string address: 0x{:x}", v);
+                let platform = unsafe { std::ffi::CStr::from_ptr(v as *const _) };
+                println!("Platform string: {:?}", platform);
+            }
+            16 => println!("HW Cap: 0x{:x}", v),
+            17 => {
+                println!("Clock ticks per second: {}", v);
+                assert_eq!(v, crate::ticks_per_second().unwrap());
+            }
+            19 => println!("Data cache block size: {}", v),
+            23 => println!("Run as setuid?: {}", v),
+            25 => println!("Address of 16 random bytes: 0x{:x}", v),
+            26 => println!("HW Cap2: 0x{:x}", v),
+            31 => {
+                println!("argv[0] address: 0x{:x}", v);
+                let argv0 = unsafe { std::ffi::CStr::from_ptr(v as *const _) };
+                println!("argv[0]: {:?}", argv0);
+            }
+            k => println!("Unknown key {}: {:x}", k, v),
+        }
+    }
 }
 
 #[test]
@@ -338,7 +444,7 @@ fn test_procinfo() {
 
     let procinfo_stat = procinfo::pid::stat_self().unwrap();
     let me = Process::myself().unwrap();
-    let me_stat = me.stat;
+    let me_stat = me.stat().unwrap();
 
     diff_mem(procinfo_stat.vsize as f32, me_stat.vsize as f32);
 

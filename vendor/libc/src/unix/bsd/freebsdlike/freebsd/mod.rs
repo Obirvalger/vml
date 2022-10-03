@@ -44,9 +44,7 @@ pub type fhandle_t = fhandle;
 pub type au_id_t = ::uid_t;
 pub type au_asid_t = ::pid_t;
 
-// It's an alias over "struct __kvm_t". However, its fields aren't supposed to be used directly,
-// making the type definition system dependent. Better not bind it exactly.
-pub type kvm_t = ::c_void;
+pub type cpusetid_t = ::c_int;
 
 #[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
@@ -994,6 +992,12 @@ s! {
         pub _flags: u32,
         pub _clockid: u32,
     }
+
+    pub struct shm_largepage_conf {
+        pub psind: ::c_int,
+        pub alloc_policy: ::c_int,
+        __pad: [::c_int; 10],
+    }
 }
 
 s_no_extra_traits! {
@@ -1894,6 +1898,9 @@ pub const LIO_READV: ::c_int = 6;
 pub const DEVSTAT_N_TRANS_FLAGS: ::c_int = 4;
 pub const DEVSTAT_NAME_LEN: ::c_int = 16;
 
+// sys/cpuset.h
+pub const CPU_SETSIZE: ::c_int = 256;
+
 pub const SIGEV_THREAD_ID: ::c_int = 4;
 
 pub const EXTATTR_NAMESPACE_EMPTY: ::c_int = 0;
@@ -2253,6 +2260,7 @@ pub const FIONWRITE: ::c_ulong = 0x40046677;
 pub const FIONSPACE: ::c_ulong = 0x40046676;
 pub const FIOSEEKDATA: ::c_ulong = 0xc0086661;
 pub const FIOSEEKHOLE: ::c_ulong = 0xc0086662;
+pub const FIOSSHMLPGCNF: ::c_ulong = 0x80306664;
 
 pub const JAIL_API_VERSION: u32 = 2;
 pub const JAIL_CREATE: ::c_int = 0x01;
@@ -2512,6 +2520,8 @@ pub const IFCAP_TOE4: ::c_int = 0x04000;
 pub const IFCAP_TOE6: ::c_int = 0x08000;
 /// interface hw can filter vlan tag
 pub const IFCAP_VLAN_HWFILTER: ::c_int = 0x10000;
+/// can do SIOCGIFCAPNV/SIOCSIFCAPNV
+pub const IFCAP_NV: ::c_int = 0x20000;
 /// can do IFCAP_TSO on VLANs
 pub const IFCAP_VLAN_HWTSO: ::c_int = 0x40000;
 /// the runtime link state is dynamic
@@ -2547,7 +2557,7 @@ pub const IFCAP_TSO: ::c_int = IFCAP_TSO4 | IFCAP_TSO6;
 pub const IFCAP_WOL: ::c_int = IFCAP_WOL_UCAST | IFCAP_WOL_MCAST | IFCAP_WOL_MAGIC;
 pub const IFCAP_TOE: ::c_int = IFCAP_TOE4 | IFCAP_TOE6;
 pub const IFCAP_TXTLS: ::c_int = IFCAP_TXTLS4 | IFCAP_TXTLS6;
-pub const IFCAP_CANTCHANGE: ::c_int = IFCAP_NETMAP;
+pub const IFCAP_CANTCHANGE: ::c_int = IFCAP_NETMAP | IFCAP_NV;
 
 pub const IFQ_MAXLEN: ::c_int = 50;
 pub const IFNET_SLOWHZ: ::c_int = 1;
@@ -3231,30 +3241,67 @@ pub const KKST_STATE_RUNNING: ::c_int = 2;
 pub const PRI_MIN: ::c_int = 0;
 pub const PRI_MAX: ::c_int = 255;
 pub const PRI_MIN_ITHD: ::c_int = PRI_MIN;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PRI_MAX_ITHD: ::c_int = PRI_MIN_REALTIME - 1;
 pub const PI_REALTIME: ::c_int = PRI_MIN_ITHD + 0;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_AV: ::c_int = PRI_MIN_ITHD + 4;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_NET: ::c_int = PRI_MIN_ITHD + 8;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_DISK: ::c_int = PRI_MIN_ITHD + 12;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_TTY: ::c_int = PRI_MIN_ITHD + 16;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_DULL: ::c_int = PRI_MIN_ITHD + 20;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_SOFT: ::c_int = PRI_MIN_ITHD + 24;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PRI_MIN_REALTIME: ::c_int = 48;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PRI_MAX_REALTIME: ::c_int = PRI_MIN_KERN - 1;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PRI_MIN_KERN: ::c_int = 80;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PRI_MAX_KERN: ::c_int = PRI_MIN_TIMESHARE - 1;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PSWP: ::c_int = PRI_MIN_KERN + 0;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PVM: ::c_int = PRI_MIN_KERN + 4;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PINOD: ::c_int = PRI_MIN_KERN + 8;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PRIBIO: ::c_int = PRI_MIN_KERN + 12;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PVFS: ::c_int = PRI_MIN_KERN + 16;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PZERO: ::c_int = PRI_MIN_KERN + 20;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PSOCK: ::c_int = PRI_MIN_KERN + 24;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PWAIT: ::c_int = PRI_MIN_KERN + 28;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PLOCK: ::c_int = PRI_MIN_KERN + 32;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PPAUSE: ::c_int = PRI_MIN_KERN + 36;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PRI_MIN_TIMESHARE: ::c_int = 120;
 pub const PRI_MAX_TIMESHARE: ::c_int = PRI_MIN_IDLE - 1;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PUSER: ::c_int = PRI_MIN_TIMESHARE;
 pub const PRI_MIN_IDLE: ::c_int = 224;
 pub const PRI_MAX_IDLE: ::c_int = PRI_MAX;
@@ -3352,24 +3399,32 @@ pub const TDF_CANSWAP: ::c_int = 0x00000040;
 pub const TDF_KTH_SUSP: ::c_int = 0x00000100;
 pub const TDF_ALLPROCSUSP: ::c_int = 0x00000200;
 pub const TDF_BOUNDARY: ::c_int = 0x00000400;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_ASTPENDING: ::c_int = 0x00000800;
 pub const TDF_SBDRY: ::c_int = 0x00002000;
 pub const TDF_UPIBLOCKED: ::c_int = 0x00004000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_NEEDSUSPCHK: ::c_int = 0x00008000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_NEEDRESCHED: ::c_int = 0x00010000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_NEEDSIGCHK: ::c_int = 0x00020000;
 pub const TDF_NOLOAD: ::c_int = 0x00040000;
 pub const TDF_SERESTART: ::c_int = 0x00080000;
 pub const TDF_THRWAKEUP: ::c_int = 0x00100000;
 pub const TDF_SEINTR: ::c_int = 0x00200000;
 pub const TDF_SWAPINREQ: ::c_int = 0x00400000;
+#[deprecated(since = "0.2.133", note = "Removed in FreeBSD 14")]
 pub const TDF_UNUSED23: ::c_int = 0x00800000;
 pub const TDF_SCHED0: ::c_int = 0x01000000;
 pub const TDF_SCHED1: ::c_int = 0x02000000;
 pub const TDF_SCHED2: ::c_int = 0x04000000;
 pub const TDF_SCHED3: ::c_int = 0x08000000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_ALRMPEND: ::c_int = 0x10000000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_PROFPEND: ::c_int = 0x20000000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_MACPEND: ::c_int = 0x40000000;
 
 pub const TDB_SUSPEND: ::c_int = 0x00000001;
@@ -3661,6 +3716,19 @@ pub const CPUCLOCK_WHICH_TID: ::c_int = 1;
 pub const MFD_CLOEXEC: ::c_uint = 0x00000001;
 pub const MFD_ALLOW_SEALING: ::c_uint = 0x00000002;
 pub const MFD_HUGETLB: ::c_uint = 0x00000004;
+pub const MFD_HUGE_MASK: ::c_uint = 0xFC000000;
+pub const MFD_HUGE_64KB: ::c_uint = 16 << 26;
+pub const MFD_HUGE_512KB: ::c_uint = 19 << 26;
+pub const MFD_HUGE_1MB: ::c_uint = 20 << 26;
+pub const MFD_HUGE_2MB: ::c_uint = 21 << 26;
+pub const MFD_HUGE_8MB: ::c_uint = 23 << 26;
+pub const MFD_HUGE_16MB: ::c_uint = 24 << 26;
+pub const MFD_HUGE_32MB: ::c_uint = 25 << 26;
+pub const MFD_HUGE_256MB: ::c_uint = 28 << 26;
+pub const MFD_HUGE_512MB: ::c_uint = 29 << 26;
+pub const MFD_HUGE_1GB: ::c_uint = 30 << 26;
+pub const MFD_HUGE_2GB: ::c_uint = 31 << 26;
+pub const MFD_HUGE_16GB: ::c_uint = 34 << 26;
 
 pub const SHM_LARGEPAGE_ALLOC_DEFAULT: ::c_int = 0;
 pub const SHM_LARGEPAGE_ALLOC_NOWAIT: ::c_int = 1;
@@ -3694,6 +3762,16 @@ pub const UMTX_OP_SHM: ::c_int = 25;
 pub const UMTX_OP_ROBUST_LISTS: ::c_int = 26;
 
 pub const UMTX_ABSTIME: u32 = 1;
+
+pub const CPU_LEVEL_ROOT: ::c_int = 1;
+pub const CPU_LEVEL_CPUSET: ::c_int = 2;
+pub const CPU_LEVEL_WHICH: ::c_int = 3;
+
+pub const CPU_WHICH_TID: ::c_int = 1;
+pub const CPU_WHICH_PID: ::c_int = 2;
+pub const CPU_WHICH_CPUSET: ::c_int = 3;
+pub const CPU_WHICH_IRQ: ::c_int = 4;
+pub const CPU_WHICH_JAIL: ::c_int = 5;
 
 const_fn! {
     {const} fn _ALIGN(p: usize) -> usize {
@@ -3772,21 +3850,21 @@ f! {
     }
 
     pub fn CPU_SET(cpu: usize, cpuset: &mut cpuset_t) -> () {
-        let bitset_bits = ::mem::size_of::<::c_long>();
+        let bitset_bits = 8 * ::mem::size_of::<::c_long>();
         let (idx, offset) = (cpu / bitset_bits, cpu % bitset_bits);
         cpuset.__bits[idx] |= 1 << offset;
         ()
     }
 
     pub fn CPU_CLR(cpu: usize, cpuset: &mut cpuset_t) -> () {
-        let bitset_bits = ::mem::size_of::<::c_long>();
+        let bitset_bits = 8 * ::mem::size_of::<::c_long>();
         let (idx, offset) = (cpu / bitset_bits, cpu % bitset_bits);
         cpuset.__bits[idx] &= !(1 << offset);
         ()
     }
 
     pub fn CPU_ISSET(cpu: usize, cpuset: &cpuset_t) -> bool {
-        let bitset_bits = ::mem::size_of::<::c_long>();
+        let bitset_bits = 8 * ::mem::size_of::<::c_long>();
         let (idx, offset) = (cpu / bitset_bits, cpu % bitset_bits);
         0 != cpuset.__bits[idx] & (1 << offset)
     }
@@ -3794,9 +3872,9 @@ f! {
     pub fn CPU_COUNT(cpuset: &cpuset_t) -> ::c_int {
         let mut s: u32 = 0;
         let cpuset_size = ::mem::size_of::<cpuset_t>();
-        let bitset_bits = ::mem::size_of::<::c_long>();
+        let bitset_size = ::mem::size_of::<::c_long>();
 
-        for i in cpuset.__bits[..(cpuset_size / bitset_bits)].iter() {
+        for i in cpuset.__bits[..(cpuset_size / bitset_size)].iter() {
             s += i.count_ones();
         };
         s as ::c_int
@@ -3839,6 +3917,8 @@ cfg_if! {
 }
 
 extern "C" {
+    #[cfg_attr(doc, doc(alias = "__errno_location"))]
+    #[cfg_attr(doc, doc(alias = "errno"))]
     pub fn __error() -> *mut ::c_int;
 
     pub fn aio_cancel(fd: ::c_int, aiocbp: *mut aiocb) -> ::c_int;
@@ -3974,6 +4054,7 @@ extern "C" {
         infop: *mut ::siginfo_t,
         options: ::c_int,
     ) -> ::c_int;
+    pub fn ptsname_r(fd: ::c_int, buf: *mut ::c_char, buflen: ::size_t) -> ::c_int;
 
     pub fn ftok(pathname: *const ::c_char, proj_id: ::c_int) -> ::key_t;
     pub fn shmget(key: ::key_t, size: ::size_t, shmflg: ::c_int) -> ::c_int;
@@ -4182,6 +4263,14 @@ extern "C" {
         setsize: ::size_t,
         mask: *const cpuset_t,
     ) -> ::c_int;
+    pub fn cpuset(setid: *mut ::cpusetid_t) -> ::c_int;
+    pub fn cpuset_getid(
+        level: cpulevel_t,
+        which: cpuwhich_t,
+        id: ::id_t,
+        setid: *mut ::cpusetid_t,
+    ) -> ::c_int;
+    pub fn cpuset_setid(which: cpuwhich_t, id: ::id_t, setid: ::cpusetid_t) -> ::c_int;
     pub fn cap_enter() -> ::c_int;
     pub fn cap_getmode(modep: *mut ::c_uint) -> ::c_int;
     pub fn __cap_rights_init(version: ::c_int, rights: *mut cap_rights_t, ...)
@@ -4272,69 +4361,37 @@ extern "C" {
 
 #[link(name = "kvm")]
 extern "C" {
-    pub fn kvm_open(
-        execfile: *const ::c_char,
-        corefile: *const ::c_char,
-        swapfile: *const ::c_char,
-        flags: ::c_int,
-        errstr: *const ::c_char,
-    ) -> *mut kvm_t;
-    pub fn kvm_close(kd: *mut kvm_t) -> ::c_int;
-    pub fn kvm_dpcpu_setcpu(kd: *mut kvm_t, cpu: ::c_uint) -> ::c_int;
-    pub fn kvm_getargv(kd: *mut kvm_t, p: *const kinfo_proc, nchr: ::c_int) -> *mut *mut ::c_char;
-    pub fn kvm_getcptime(kd: *mut kvm_t, cp_time: *mut ::c_long) -> ::c_int;
-    pub fn kvm_getenvv(kd: *mut kvm_t, p: *const kinfo_proc, nchr: ::c_int) -> *mut *mut ::c_char;
-    pub fn kvm_geterr(kd: *mut kvm_t) -> *mut ::c_char;
-    pub fn kvm_getloadavg(kd: *mut kvm_t, loadavg: *mut ::c_double, nelem: ::c_int) -> ::c_int;
-    pub fn kvm_getmaxcpu(kd: *mut kvm_t) -> ::c_int;
-    pub fn kvm_getncpus(kd: *mut kvm_t) -> ::c_int;
-    pub fn kvm_getpcpu(kd: *mut kvm_t, cpu: ::c_int) -> *mut ::c_void;
-    pub fn kvm_counter_u64_fetch(kd: *mut kvm_t, base: ::c_ulong) -> u64;
-    pub fn kvm_getprocs(
-        kd: *mut kvm_t,
-        op: ::c_int,
-        arg: ::c_int,
-        cnt: *mut ::c_int,
-    ) -> *mut kinfo_proc;
+    pub fn kvm_dpcpu_setcpu(kd: *mut ::kvm_t, cpu: ::c_uint) -> ::c_int;
+    pub fn kvm_getargv(kd: *mut ::kvm_t, p: *const kinfo_proc, nchr: ::c_int)
+        -> *mut *mut ::c_char;
+    pub fn kvm_getcptime(kd: *mut ::kvm_t, cp_time: *mut ::c_long) -> ::c_int;
+    pub fn kvm_getenvv(kd: *mut ::kvm_t, p: *const kinfo_proc, nchr: ::c_int)
+        -> *mut *mut ::c_char;
+    pub fn kvm_geterr(kd: *mut ::kvm_t) -> *mut ::c_char;
+    pub fn kvm_getmaxcpu(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn kvm_getncpus(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn kvm_getpcpu(kd: *mut ::kvm_t, cpu: ::c_int) -> *mut ::c_void;
+    pub fn kvm_counter_u64_fetch(kd: *mut ::kvm_t, base: ::c_ulong) -> u64;
     pub fn kvm_getswapinfo(
-        kd: *mut kvm_t,
+        kd: *mut ::kvm_t,
         info: *mut kvm_swap,
         maxswap: ::c_int,
         flags: ::c_int,
     ) -> ::c_int;
-    pub fn kvm_native(kd: *mut kvm_t) -> ::c_int;
-    pub fn kvm_nlist(kd: *mut kvm_t, nl: *mut nlist) -> ::c_int;
-    pub fn kvm_nlist2(kd: *mut kvm_t, nl: *mut kvm_nlist) -> ::c_int;
-    pub fn kvm_openfiles(
-        execfile: *const ::c_char,
-        corefile: *const ::c_char,
-        swapfile: *const ::c_char,
-        flags: ::c_int,
-        errbuf: *mut ::c_char,
-    ) -> *mut kvm_t;
-    pub fn kvm_read(
-        kd: *mut kvm_t,
-        addr: ::c_ulong,
-        buf: *mut ::c_void,
-        nbytes: ::size_t,
-    ) -> ::ssize_t;
+    pub fn kvm_native(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn kvm_nlist(kd: *mut ::kvm_t, nl: *mut nlist) -> ::c_int;
+    pub fn kvm_nlist2(kd: *mut ::kvm_t, nl: *mut kvm_nlist) -> ::c_int;
     pub fn kvm_read_zpcpu(
-        kd: *mut kvm_t,
+        kd: *mut ::kvm_t,
         base: ::c_ulong,
         buf: *mut ::c_void,
         size: ::size_t,
         cpu: ::c_int,
     ) -> ::ssize_t;
     pub fn kvm_read2(
-        kd: *mut kvm_t,
+        kd: *mut ::kvm_t,
         addr: kvaddr_t,
         buf: *mut ::c_void,
-        nbytes: ::size_t,
-    ) -> ::ssize_t;
-    pub fn kvm_write(
-        kd: *mut kvm_t,
-        addr: ::c_ulong,
-        buf: *const ::c_void,
         nbytes: ::size_t,
     ) -> ::ssize_t;
 }
@@ -4486,10 +4543,10 @@ extern "C" {
 
 #[link(name = "devstat")]
 extern "C" {
-    pub fn devstat_getnumdevs(kd: *mut kvm_t) -> ::c_int;
-    pub fn devstat_getgeneration(kd: *mut kvm_t) -> ::c_long;
-    pub fn devstat_getversion(kd: *mut kvm_t) -> ::c_int;
-    pub fn devstat_checkversion(kd: *mut kvm_t) -> ::c_int;
+    pub fn devstat_getnumdevs(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn devstat_getgeneration(kd: *mut ::kvm_t) -> ::c_long;
+    pub fn devstat_getversion(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn devstat_checkversion(kd: *mut ::kvm_t) -> ::c_int;
     pub fn devstat_selectdevs(
         dev_select: *mut *mut device_selection,
         num_selected: *mut ::c_int,
