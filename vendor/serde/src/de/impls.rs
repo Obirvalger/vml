@@ -793,7 +793,6 @@ where
         T::deserialize(deserializer).map(Some)
     }
 
-    #[doc(hidden)]
     fn __private_visit_untagged_option<D>(self, deserializer: D) -> Result<Self::Value, ()>
     where
         D: Deserializer<'de>,
@@ -2012,7 +2011,7 @@ impl<'de> Deserialize<'de> for Duration {
                             b"nanos" => Ok(Field::Nanos),
                             _ => {
                                 let value = ::__private::from_utf8_lossy(value);
-                                Err(Error::unknown_field(&value, FIELDS))
+                                Err(Error::unknown_field(&*value, FIELDS))
                             }
                         }
                     }
@@ -2269,14 +2268,14 @@ where
     where
         D: Deserializer<'de>,
     {
-        let (start, end) = deserializer.deserialize_struct(
+        let (start, end) = try!(deserializer.deserialize_struct(
             "Range",
             range::FIELDS,
             range::RangeVisitor {
                 expecting: "struct Range",
                 phantom: PhantomData,
             },
-        )?;
+        ));
         Ok(start..end)
     }
 }
@@ -2290,14 +2289,14 @@ where
     where
         D: Deserializer<'de>,
     {
-        let (start, end) = deserializer.deserialize_struct(
+        let (start, end) = try!(deserializer.deserialize_struct(
             "RangeInclusive",
             range::FIELDS,
             range::RangeVisitor {
                 expecting: "struct RangeInclusive",
                 phantom: PhantomData,
             },
-        )?;
+        ));
         Ok(RangeInclusive::new(start, end))
     }
 }
@@ -2352,7 +2351,7 @@ mod range {
                         b"end" => Ok(Field::End),
                         _ => {
                             let value = ::__private::from_utf8_lossy(value);
-                            Err(Error::unknown_field(&value, FIELDS))
+                            Err(Error::unknown_field(&*value, FIELDS))
                         }
                     }
                 }
