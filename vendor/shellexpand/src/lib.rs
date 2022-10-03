@@ -16,7 +16,7 @@
 //! of the respective type.
 //!
 //! This crate provides both customizable functions, which require their context to be provided
-//! explicitly, and wrapper functions which use `dirs::home_dir()` and `std::env::var()`
+//! explicitly, and wrapper functions which use [`dirs::home_dir()`] and [`std::env::var()`]
 //! for obtaining home directory and environment variables, respectively.
 //!
 //! Also there is a "full" function which performs both tilde and environment
@@ -24,7 +24,7 @@
 //! if the string starts with a variable whose value starts with a `~`, then this tilde
 //! won't be expanded.
 //!
-//! All functions return `Cow<str>` because it is possible for their input not to contain anything
+//! All functions return [`Cow<str>`] because it is possible for their input not to contain anything
 //! which triggers the expansion. In that case performing allocations can be avoided.
 //!
 //! Please note that by default unknown variables in environment expansion are left as they are
@@ -41,9 +41,9 @@
 //!
 //! Environment expansion context allows for a very fine tweaking of how results should be handled,
 //! so it is up to the user to pass a context function which does the necessary thing. For example,
-//! `env()` and `full()` functions from this library pass all errors returned by `std::env::var()`
+//! [`env()`] and [`full()`] functions from this library pass all errors returned by [`std::env::var()`]
 //! through, therefore they will also return an error if some unknown environment
-//! variable is used, because `std::env::var()` returns an error in this case:
+//! variable is used, because [`std::env::var()`] returns an error in this case:
 //!
 //! ```
 //! use std::env;
@@ -88,8 +88,6 @@
 //! The above example also demonstrates the flexibility of context function signatures: the context
 //! function may return anything which can be `AsRef`ed into a string slice.
 
-extern crate dirs_next as dirs;
-
 use std::borrow::Cow;
 use std::env::VarError;
 use std::error::Error;
@@ -99,12 +97,12 @@ use std::path::Path;
 /// Performs both tilde and environment expansion using the provided contexts.
 ///
 /// `home_dir` and `context` are contexts for tilde expansion and environment expansion,
-/// respectively. See `env_with_context()` and `tilde_with_context()` for more details on
+/// respectively. See [`env_with_context()`] and [`tilde_with_context()`] for more details on
 /// them.
 ///
 /// Unfortunately, expanding both `~` and `$VAR`s at the same time is not that simple. First,
 /// this function has to track ownership of the data. Since all functions in this crate
-/// return `Cow<str>`, this function takes some precautions in order not to allocate more than
+/// return [`Cow<str>`], this function takes some precautions in order not to allocate more than
 /// necessary. In particular, if the input string contains neither tilde nor `$`-vars, this
 /// function will perform no allocations.
 ///
@@ -178,27 +176,25 @@ where
         Cow::Owned(s) => {
             // if the original string does not start with a tilde but the processed one does,
             // then the tilde is contained in one of variables and should not be expanded
-            if !input.as_ref().starts_with("~") && s.starts_with("~") {
+            if !input.as_ref().starts_with('~') && s.starts_with('~') {
                 // return as is
                 s.into()
+            } else if let Cow::Owned(s) = tilde_with_context(&s, home_dir) {
+                s.into()
             } else {
-                if let Cow::Owned(s) = tilde_with_context(&s, home_dir) {
-                    s.into()
-                } else {
-                    s.into()
-                }
+                s.into()
             }
         }
     })
 }
 
-/// Same as `full_with_context()`, but forbids the variable lookup function to return errors.
+/// Same as [`full_with_context()`], but forbids the variable lookup function to return errors.
 ///
 /// This function also performs full shell-like expansion, but it uses
-/// `env_with_context_no_errors()` for environment expansion whose context lookup function returns
-/// just `Option<CO>` instead of `Result<Option<CO>, E>`. Therefore, the function itself also
-/// returns just `Cow<str>` instead of `Result<Cow<str>, LookupError<E>>`. Otherwise it is
-/// identical to `full_with_context()`.
+/// [`env_with_context_no_errors()`] for environment expansion whose context lookup function returns
+/// just [`Option<CO>`] instead of [`Result<Option<CO>, E>`]. Therefore, the function itself also
+/// returns just [`Cow<str>`] instead of [`Result<Cow<str>, LookupError<E>>`]. Otherwise it is
+/// identical to [`full_with_context()`].
 ///
 /// # Examples
 ///
@@ -258,21 +254,20 @@ where
 
 /// Performs both tilde and environment expansions in the default system context.
 ///
-/// This function delegates to `full_with_context()`, using the default system sources for both
-/// home directory and environment, namely `dirs::home_dir()` and `std::env::var()`.
+/// This function delegates to [`full_with_context()`], using the default system sources for both
+/// home directory and environment, namely [`dirs::home_dir()`] and [`std::env::var()`].
 ///
 /// Note that variable lookup of unknown variables will fail with an error instead of, for example,
 /// replacing the unknown variable with an empty string. The author thinks that this behavior is
-/// more useful than the other ones. If you need to change it, use `full_with_context()` or
-/// `full_with_context_no_errors()` with an appropriate context function instead.
+/// more useful than the other ones. If you need to change it, use [`full_with_context()`] or
+/// [`full_with_context_no_errors()`] with an appropriate context function instead.
 ///
-/// This function behaves exactly like `full_with_context()` in regard to tilde-containing
+/// This function behaves exactly like [`full_with_context()`] in regard to tilde-containing
 /// variables in the beginning of the input string.
 ///
 /// # Examples
 ///
 /// ```
-/// extern crate dirs_next as dirs;
 /// use std::env;
 ///
 /// env::set_var("A", "a value");
@@ -307,8 +302,8 @@ where
 
 /// Represents a variable lookup error.
 ///
-/// This error is returned by `env_with_context()` function (and, therefore, also by `env()`,
-/// `full_with_context()` and `full()`) when the provided context function returns an error. The
+/// This error is returned by [`env_with_context()`] function (and, therefore, also by [`env()`],
+/// [`full_with_context()`] and [`full()`]) when the provided context function returns an error. The
 /// original error is provided in the `cause` field, while `name` contains the name of a variable
 /// whose expansion caused the error.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -359,7 +354,7 @@ fn is_valid_var_name_char(c: char) -> bool {
 /// replacing all shell-like variable sequences with the corresponding values obtained via the
 /// `context` function. The latter may return an error; in this case the error will be returned
 /// immediately, along with the name of the offending variable. Also the context function may
-/// return `Ok(None)`, indicating that the given variable is not available; in this case the
+/// return [`Ok(None)`], indicating that the given variable is not available; in this case the
 /// variable sequence is left as it is in the output string.
 ///
 /// The syntax of variables resembles the one of bash-like shells: all of `$VAR`, `${VAR}`,
@@ -367,23 +362,23 @@ fn is_valid_var_name_char(c: char) -> bool {
 /// separate the reference from the surrounding alphanumeric text: `before${VAR}after`. Note,
 /// however, that for simplicity names like `$123` or `$1AB` are also valid, as opposed to shells
 /// where `$<number>` has special meaning of positional arguments. Also note that "alphanumericity"
-/// of variable names is checked with `char::is_alphanumeric()`, therefore lots of characters which
+/// of variable names is checked with [`std::primitive::char::is_alphanumeric()`], therefore lots of characters which
 /// are considered alphanumeric by the Unicode standard are also valid names for variables. When
 /// unsure, use braces to separate variables from the surrounding text.
 ///
 /// This function has four generic type parameters: `SI` represents the input string, `CO` is the
 /// output of context lookups, `C` is the context closure and `E` is the type of errors returned by
 /// the context function. `SI` and `CO` must be types, a references to which can be converted to
-/// a string slice. For example, it is fine for the context function to return `&str`s, `String`s or
-/// `Cow<str>`s, which gives the user a lot of flexibility.
+/// a string slice. For example, it is fine for the context function to return [`&str`]'s, [`String`]'s or
+/// [`Cow<str>`]'s, which gives the user a lot of flexibility.
 ///
-/// If the context function returns an error, it will be wrapped into `LookupError` and returned
-/// immediately. `LookupError`, besides the original error, also contains a string with the name of
-/// the variable whose expansion caused the error. `LookupError` implements `Error`, `Clone` and
-/// `Eq` traits for further convenience and interoperability.
+/// If the context function returns an error, it will be wrapped into [`LookupError`] and returned
+/// immediately. [`LookupError`], besides the original error, also contains a string with the name of
+/// the variable whose expansion caused the error. [`LookupError`] implements [`Error`], [`Clone`] and
+/// [`Eq`] traits for further convenience and interoperability.
 ///
-/// If you need to expand system environment variables, you can use `env()` or `full()` functions.
-/// If your context does not have errors, you may use `env_with_context_no_errors()` instead of
+/// If you need to expand system environment variables, you can use [`env()`] or [`full()`] functions.
+/// If your context does not have errors, you may use [`env_with_context_no_errors()`] instead of
 /// this function because it provides a simpler API.
 ///
 /// # Examples
@@ -526,7 +521,7 @@ where
                     }
                 }
             } else {
-                result.push_str("$");
+                result.push('$');
                 input_str = if next_char == Some('$') {
                     &input_str[2..] // skip the next dollar for escaping
                 } else {
@@ -541,17 +536,17 @@ where
     }
 }
 
-/// Same as `env_with_context()`, but forbids the variable lookup function to return errors.
+/// Same as [`env_with_context()`], but forbids the variable lookup function to return errors.
 ///
 /// This function also performs environment expansion, but it requires context function of type
 /// `FnMut(&str) -> Option<CO>` instead of `FnMut(&str) -> Result<Option<CO>, E>`. This simplifies
 /// the API when you know in advance that the context lookups may not fail.
 ///
-/// Because of the above, instead of `Result<Cow<str>, LookupError<E>>` this function returns just
-/// `Cow<str>`.
+/// Because of the above, instead of [`Result<Cow<str>, LookupError<E>>`] this function returns just
+/// [`Cow<str>`].
 ///
-/// Note that if the context function returns `None`, the behavior remains the same as that of
-/// `env_with_context()`: the variable reference will remain in the output string unexpanded.
+/// Note that if the context function returns [`None`], the behavior remains the same as that of
+/// [`env_with_context()`]: the variable reference will remain in the output string unexpanded.
 ///
 /// # Examples
 ///
@@ -591,13 +586,13 @@ where
 
 /// Performs the environment expansion using the default system context.
 ///
-/// This function delegates to `env_with_context()`, using the default system source for
-/// environment variables, namely the `std::env::var()` function.
+/// This function delegates to [`env_with_context()`], using the default system source for
+/// environment variables, namely the [`std::env::var()`] function.
 ///
 /// Note that variable lookup of unknown variables will fail with an error instead of, for example,
 /// replacing the offending variables with an empty string. The author thinks that such behavior is
-/// more useful than the other ones. If you need something else, use `env_with_context()` or
-/// `env_with_context_no_errors()` with an appropriate context function.
+/// more useful than the other ones. If you need something else, use [`env_with_context()`] or
+/// [`env_with_context_no_errors()`] with an appropriate context function.
 ///
 /// # Examples
 ///
@@ -643,12 +638,12 @@ where
 ///
 /// This function has three generic type parameters: `SI` represents the input string, `P` is the
 /// output of a context lookup, and `HD` is the context closure. `SI` must be a type, a reference
-/// to which can be converted to a string slice via `AsRef<str>`, and `P` must be a type, a
-/// reference to which can be converted to a `Path` via `AsRef<Path>`. For example, `P` may be
-/// `Path`, `PathBuf` or `Cow<Path>`, which gives a lot of flexibility.
+/// to which can be converted to a string slice via [`AsRef<str>`], and `P` must be a type, a
+/// reference to which can be converted to a `Path` via [`AsRef<Path>`]. For example, `P` may be
+/// [`Path`], [`std::path::PathBuf`] or [`Cow<Path>`], which gives a lot of flexibility.
 ///
-/// If you need to expand the tilde into the actual user home directory, you can use `tilde()` or
-/// `full()` functions.
+/// If you need to expand the tilde into the actual user home directory, you can use [`tilde()`] or
+/// [`full()`] functions.
 ///
 /// # Examples
 ///
@@ -669,9 +664,11 @@ where
     HD: FnOnce() -> Option<P>,
 {
     let input_str = input.as_ref();
-    if input_str.starts_with("~") {
-        let input_after_tilde = &input_str[1..];
-        if input_after_tilde.is_empty() || input_after_tilde.starts_with("/") {
+    if let Some(input_after_tilde) = input_str.strip_prefix('~') {
+        if input_after_tilde.is_empty()
+            || input_after_tilde.starts_with('/')
+            || (cfg!(windows) && input_after_tilde.starts_with('\\'))
+        {
             if let Some(hd) = home_dir() {
                 let result = format!("{}{}", hd.as_ref().display(), input_after_tilde);
                 result.into()
@@ -691,14 +688,12 @@ where
 
 /// Performs the tilde expansion using the default system context.
 ///
-/// This function delegates to `tilde_with_context()`, using the default system source of home
-/// directory path, namely `dirs::home_dir()` function.
+/// This function delegates to [`tilde_with_context()`], using the default system source of home
+/// directory path, namely [`dirs::home_dir()`] function.
 ///
 /// # Examples
 ///
 /// ```
-/// extern crate dirs_next as dirs;
-///
 /// let hds = dirs::home_dir()
 ///     .map(|p| p.display().to_string())
 ///     .unwrap_or_else(|| "~".to_owned());
@@ -929,7 +924,7 @@ mod env_test {
 mod full_tests {
     use std::path::{Path, PathBuf};
 
-    use super::full_with_context;
+    use super::{full_with_context, tilde_with_context};
 
     #[test]
     fn test_quirks() {
@@ -966,5 +961,30 @@ mod full_tests {
             "~whatever"
         );
         assert_eq!(full_with_context("$TILDE", hd, env).unwrap(), "~");
+    }
+
+    #[test]
+    fn test_tilde_expansion() {
+        fn home_dir() -> Option<PathBuf> {
+            Some(Path::new("/home/user").into())
+        }
+
+        assert_eq!(
+            tilde_with_context("~/some/dir", home_dir),
+            "/home/user/some/dir"
+        );
+    }
+
+    #[cfg(target_family = "windows")]
+    #[test]
+    fn test_tilde_expansion_windows() {
+        fn home_dir() -> Option<PathBuf> {
+            Some(Path::new("C:\\users\\public").into())
+        }
+
+        assert_eq!(
+            tilde_with_context("~\\some\\dir", home_dir),
+            "C:\\users\\public\\some\\dir"
+        );
     }
 }

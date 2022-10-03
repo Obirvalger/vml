@@ -3,22 +3,32 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g., crates.io) dependencies
+# to registry (e.g., crates.io) dependencies.
 #
-# If you believe there's an error in this file please file an
-# issue against the rust-lang/cargo repository. If you're
-# editing this file be aware that the upstream Cargo.toml
-# will likely look very different (and much more reasonable)
+# If you are reading this file be aware that the original Cargo.toml
+# will likely look very different (and much more reasonable).
+# See Cargo.toml.orig for the original contents.
 
 [package]
 name = "shellexpand"
-version = "2.1.0"
-authors = ["Vladimir Matveev <vmatveev@citrine.cc>"]
+version = "2.1.2"
+authors = [
+    "Vladimir Matveev <vmatveev@citrine.cc>",
+    "Ian Jackson <iwj@torproject.org>",
+]
 description = "Shell-like expansions in strings"
 documentation = "http://docs.rs/shellexpand/"
-readme = "Readme.md"
-keywords = ["strings", "shell", "variables"]
+readme = "README.md"
+keywords = [
+    "strings",
+    "shell",
+    "variables",
+]
 license = "MIT/Apache-2.0"
-repository = "https://github.com/netvl/shellexpand"
-[dependencies.dirs-next]
-version = "2.0"
+repository = "https://gitlab.com/ijackson/rust-shellexpand"
+
+[lib]
+name = "shellexpand"
+
+[dependencies.dirs]
+version = "4.0"

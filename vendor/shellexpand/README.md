@@ -1,11 +1,11 @@
 shellexpand, a library for shell-like expansion in strings
 ==========================================================
 
-[![Build Status][actions]](https://github.com/netvl/xml-rs/actions?query=workflow%3ACI)
+[![Build Status][actions]](https://gitlab.com/ijackson/rust-shellexpand/-/pipelines)
 [![crates.io][crates]](https://crates.io/crates/shellexpand)
 [![docs][docs]](https://docs.rs/shellexpand)
 
-  [actions]: https://img.shields.io/github/workflow/status/netvl/shellexpand/CI/master?style=flat-square
+  [actions]: https://img.shields.io/gitlab/pipeline-status/ijackson/rust-shellexpand?branch=main&style=flat-square
   [crates]: https://img.shields.io/crates/v/shellexpand.svg?style=flat-square
   [docs]: https://img.shields.io/badge/docs-latest%20release-6495ed.svg?style=flat-square
 
@@ -20,9 +20,23 @@ functions which perform expansions using the system-wide context (represented by
 module and [dirs](https://crates.io/crates/dirs) crate).
 
 ---
-**Note: because I no longer have capacity to support it, I'm now looking for a new maintainer for this library.
-Until I'm able to find one, it is unlikely to receive new updates in any reasonably timely manner.**
----
+
+### Alternatives to this crate:
+
+ * [`expanduser`](https://docs.rs/expanduser/latest/expanduser/):
+   Tilde substitution only.
+   Supports `~user` which this crate currently does not
+   (although we hope to).
+ * [`envsubst`](https://docs.rs/envsubst/latest/envsubst/):
+   Does not do offer tildeexpansion.
+   Only supports certain concrete types
+   (eg `HashMap` for variable map).
+ * [`expand_str`](https://crates.io/crates/expand_str):
+   Uses `%..%` syntax.
+   Does not offer tilde expansion.
+   Variable lookups can only be infallible.
+ * [`tilde_expand`](https://crates.io/crates/tilde-expand):
+   Only does tilde expansion, on bytes (`[u8]`).
 
 ## Usage
 
@@ -38,6 +52,22 @@ and examples.
 
 
 ## Changelog
+
+### Version 2.1.2
+
+Minor changes:
+
+* "Un-forked": now released as `shellexpand` on crates.io.
+* List alternatives to this crate.
+* Switch back to dirs from dirs-next.
+* Improve linking in docs and fix broken links and badges.
+* Apply some proposals from `cargo fix`.
+
+### Version 2.1.1
+
+* Fix tilde expanding on Windows with Windows style (backslash) paths.
+  Addresses <https://github.com/netvl/shellexpand/pull/13>.
+* Forked as `shellexpand-fork` on crates.io.
 
 ### Version 2.1.0
 
