@@ -10,7 +10,7 @@ pub struct Cache {
 
 impl Cache {
     pub fn new(dir: &Path) -> Result<Cache> {
-        fs::create_dir_all(&dir)?;
+        fs::create_dir_all(dir)?;
         Ok(Cache { dir: dir.to_owned() })
     }
 

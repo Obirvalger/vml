@@ -12,7 +12,7 @@ use crate::Error;
 
 pub fn generate_data(context: &Context, work_dir: &Path) -> Result<PathBuf> {
     let data = work_dir.join("data.img");
-    fs::create_dir_all(&work_dir)?;
+    fs::create_dir_all(work_dir)?;
 
     let meta_data_template: &str = "instance-id: {{ n }}\nlocal-hostname: {{ hostname }}\n";
     let meta_data = template::render(context, meta_data_template, "cloud-init meta-data")?;
@@ -53,7 +53,7 @@ hostname: {{ hostname }}
     fs::write(&user_data_yaml, &user_data)?;
 
     let mut cloud_localds = Command::new("cloud-localds");
-    cloud_localds.args(&[&data, &user_data_yaml, &meta_data_yaml]);
+    cloud_localds.args([&data, &user_data_yaml, &meta_data_yaml]);
 
     if let Some(address) = context.get("address").and_then(|a| a.as_str()) {
         if !net::is_cidr(address) {

@@ -15,7 +15,7 @@ fn encode<S: AsRef<str>>(data: S) -> String {
 }
 
 pub fn add(configs_dir: &Path, vm: &VM) -> Result<()> {
-    fs::create_dir_all(&configs_dir)?;
+    fs::create_dir_all(configs_dir)?;
     let name = &vm.name;
     let config_path = configs_dir.join(encode(name));
 

@@ -137,7 +137,7 @@ impl<'a> VMsCreator<'a> {
                     let disk = vm.get_disk().to_owned();
                     if let Some(vm_config) = &self.vm_config {
                         let vm_config =
-                            template::render(&vm.context(), &vm_config, "vms_creator:create")?;
+                            template::render(&vm.context(), vm_config, "vms_creator:create")?;
                         let vm_config = VMConfig::from_config_str(&vm_config)?;
                         vm = VM::from_config_vm_config(self.config, &name, &vm_config)?
                     }

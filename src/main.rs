@@ -317,7 +317,7 @@ fn main() -> Result<()> {
         if matches.subcommand_matches("ssh").is_some() {
             ssh.arg("-t");
         }
-        ssh.arg(&host).args(&args);
+        ssh.arg(host).args(&args);
 
         #[cfg(debug_assertions)]
         eprintln!("{:?}", &ssh);
@@ -335,7 +335,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(vm_config) = matches.value_of("vm-config") {
-        vmc.vm_config(&fs::read_to_string(&vm_config)?);
+        vmc.vm_config(&fs::read_to_string(vm_config)?);
     }
     if matches.is_present("minimal-vm-config") {
         vmc.minimal_vm_config();

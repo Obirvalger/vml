@@ -42,7 +42,7 @@ pub fn render_file<T: AsRef<Path>, R: AsRef<Path>>(
 ) -> Result<()> {
     let template = fs::read_to_string(template_file)?;
     let rendered = render(context, &template, place)?;
-    fs::write(rendered_file, &rendered.as_bytes())?;
+    fs::write(rendered_file, rendered.as_bytes())?;
 
     Ok(())
 }

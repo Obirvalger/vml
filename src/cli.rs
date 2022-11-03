@@ -733,7 +733,7 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("path").required(true)),
         )
         .subcommand(Command::new("completion").arg(
-            Arg::new("SHELL").help("generate completions").required(true).possible_values(&[
+            Arg::new("SHELL").help("generate completions").required(true).possible_values([
                 "bash",
                 "elvish",
                 "fish",

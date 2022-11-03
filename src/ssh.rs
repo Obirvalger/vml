@@ -191,9 +191,9 @@ fn generate_key(work_dir: &Path) -> Result<String> {
             fs::remove_file(&pub_key)?;
         }
 
-        fs::create_dir_all(&work_dir)?;
+        fs::create_dir_all(work_dir)?;
         let mut ssh_keygen = Command::new("ssh-keygen");
-        ssh_keygen.args(&["-q", "-N", "", "-t", "ed25519", "-f"]).arg(&pvt_key);
+        ssh_keygen.args(["-q", "-N", "", "-t", "ed25519", "-f"]).arg(&pvt_key);
         ssh_keygen.spawn().context("failed to run executable ssh_keygen")?.wait()?;
     }
 

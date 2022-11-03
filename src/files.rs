@@ -55,7 +55,7 @@ fn install_config(filename: &str) -> Result<()> {
             fs::copy(etc_config, config)?;
         } else {
             let content = AssetConfigs::get(filename).unwrap();
-            fs::write(&config, content.data)?;
+            fs::write(config, content.data)?;
         }
     }
 

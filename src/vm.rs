@@ -312,18 +312,18 @@ impl VM {
         let mut qemu = Command::new(&self.qemu_binary);
         let mut context = self.context();
 
-        qemu.args(&["-m", &self.memory])
+        qemu.args(["-m", &self.memory])
             .arg("--enable-kvm")
             .args(&self.qemu_arch_options)
-            .args(&["-cpu", &self.cpu_model])
-            .args(&["-smp", &self.nproc])
-            .args(&["-drive", &format!("file={},if=virtio", self.disk.to_string_lossy())])
-            .args(&["-monitor", &format!("unix:{},server,nowait", self.monitor.to_string_lossy())])
+            .args(["-cpu", &self.cpu_model])
+            .args(["-smp", &self.nproc])
+            .args(["-drive", &format!("file={},if=virtio", self.disk.to_string_lossy())])
+            .args(["-monitor", &format!("unix:{},server,nowait", self.monitor.to_string_lossy())])
             .arg("-daemonize")
             .current_dir(&self.directory);
 
         if let Some(display) = &self.display {
-            qemu.args(&["-display", display]);
+            qemu.args(["-display", display]);
         }
 
         for drive in drives {
@@ -343,7 +343,7 @@ impl VM {
                     } else {
                         "".to_string()
                     };
-                    qemu.args(&["-nic", &format!("user{}", hostfwd)]);
+                    qemu.args(["-nic", &format!("user{}", hostfwd)]);
                 }
                 Net::Tap { address, nameservers, tap, .. } => {
                     context.insert("address", &address);
@@ -353,7 +353,7 @@ impl VM {
                     context.insert("nameservers", &nameservers);
                     let mac = get_random_mac();
                     context.insert("mac", &mac);
-                    qemu.args(&[
+                    qemu.args([
                         "-nic",
                         &format!(
                             "tap,ifname={},script=no,mac={},model={}",
@@ -398,7 +398,7 @@ impl VM {
                 cloud_init::generate_data(&context, &self.vml_directory.join("cloud-init"))?
             };
 
-            qemu.args(&[
+            qemu.args([
                 "-drive",
                 &format!(
                     "file={},if=virtio,format=raw,force-share=on,read-only=on",
@@ -515,7 +515,7 @@ impl VM {
         ssh_cmd.args(self_ssh.options());
 
         if let Some(port) = self.get_ssh_port()? {
-            ssh_cmd.args(&["-p", &port]);
+            ssh_cmd.args(["-p", &port]);
         }
 
         for option in ssh_options {
@@ -527,7 +527,7 @@ impl VM {
         ssh_cmd.arg(self_ssh.user_host(user));
 
         if let Some(pvt_key) = self.get_ssh_private_key()? {
-            ssh_cmd.args(&["-o", "IdentitiesOnly=yes"]);
+            ssh_cmd.args(["-o", "IdentitiesOnly=yes"]);
             ssh_cmd.arg("-i").arg(pvt_key);
         }
 
@@ -584,14 +584,14 @@ impl VM {
 
         let port = self_ssh.port().to_string();
         let port = if port == "random" { self.cache.load("port")? } else { port };
-        ssh_cmd.extend(&["-p", &port]);
+        ssh_cmd.extend(["-p", &port]);
 
         if self_ssh.has_key() {
             let keys = self_ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
             if let Some(pvt_key) = keys.private() {
                 ssh_key = pvt_key;
-                ssh_cmd.extend(&["-o", "IdentitiesOnly=yes"]);
-                ssh_cmd.extend(&["-i", &ssh_key]);
+                ssh_cmd.extend(["-o", "IdentitiesOnly=yes"]);
+                ssh_cmd.extend(["-i", &ssh_key]);
             }
         }
 
@@ -818,7 +818,7 @@ impl Hash for VM {
 
 fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u64> {
     let mut qemu_img = Command::new("qemu-img");
-    qemu_img.args(&["info", "--output=json"]).arg(image.as_ref());
+    qemu_img.args(["info", "--output=json"]).arg(image.as_ref());
     let out = qemu_img.output()?;
 
     let out = String::from_utf8(out.stdout)
