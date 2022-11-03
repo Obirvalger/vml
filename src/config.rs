@@ -277,9 +277,13 @@ impl Config {
         config.images.directory = expand_tilde(&config.images.directory);
         config.vms_dir = expand_tilde(&config.vms_dir);
         if !config.vms_dir.is_dir() {
-            fs::create_dir_all(&config.vms_dir)?;
+            fs::create_dir_all(&config.vms_dir).with_context(|| {
+                format!("failed to create vms dir `{}`", &config.vms_dir.display())
+            })?;
         } else {
-            config.vms_dir = fs::canonicalize(&config.vms_dir)?;
+            config.vms_dir = fs::canonicalize(&config.vms_dir).with_context(|| {
+                format!("failed to canonicalize vms dir name `{}`", &config.vms_dir.display())
+            })?;
         }
         config.openssh_config.main_config = expand_tilde(&config.openssh_config.main_config);
         config.openssh_config.vm_configs_dir = expand_tilde(&config.openssh_config.vm_configs_dir);
