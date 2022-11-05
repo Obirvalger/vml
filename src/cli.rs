@@ -199,6 +199,9 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("nic-model").long("nic-model").takes_value(true))
                 .arg(Arg::new("cloud-init").long("cloud-init"))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
+                .arg(
+                    Arg::new("display-console").long("display-console").help("use qemu nographic"),
+                )
                 .arg(Arg::new("display-gtk").long("display-gtk"))
                 .arg(Arg::new("display-none").long("display-none"))
                 .arg(Arg::new("exists-fail").long("exists-fail"))
@@ -206,7 +209,11 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("exists-replace").long("exists-replace"))
                 .group(ArgGroup::new("net").args(&["net-tap", "net-none", "net-user"]))
                 .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"]))
-                .group(ArgGroup::new("display").args(&["display-gtk", "display-none"]))
+                .group(ArgGroup::new("display").args(&[
+                    "display-gtk",
+                    "display-none",
+                    "display-console",
+                ]))
                 .group(ArgGroup::new("exists").args(&[
                     "exists-fail",
                     "exists-ignore",
@@ -336,13 +343,18 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("net-none").long("net-none"))
                 .arg(Arg::new("net-user").long("net-user"))
                 .arg(Arg::new("nic-model").long("nic-model").takes_value(true))
+                .arg(Arg::new("display-console").long("display-console"))
                 .arg(Arg::new("display-gtk").long("display-gtk"))
                 .arg(Arg::new("display-none").long("display-none"))
                 .arg(Arg::new("exists-fail").long("exists-fail"))
                 .arg(Arg::new("exists-ignore").long("exists-ignore"))
                 .arg(Arg::new("exists-replace").long("exists-replace"))
                 .group(ArgGroup::new("net").args(&["net-tap", "net-none", "net-user"]))
-                .group(ArgGroup::new("display").args(&["display-gtk", "display-none"]))
+                .group(ArgGroup::new("display").args(&[
+                    "display-gtk",
+                    "display-none",
+                    "display-console",
+                ]))
                 .group(ArgGroup::new("exists").args(&[
                     "exists-fail",
                     "exists-ignore",

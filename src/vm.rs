@@ -319,11 +319,17 @@ impl VM {
             .args(["-smp", &self.nproc])
             .args(["-drive", &format!("file={},if=virtio", self.disk.to_string_lossy())])
             .args(["-monitor", &format!("unix:{},server,nowait", self.monitor.to_string_lossy())])
-            .arg("-daemonize")
             .current_dir(&self.directory);
 
         if let Some(display) = &self.display {
-            qemu.args(["-display", display]);
+            if display == "console" {
+                qemu.args(["-nographic"]);
+            } else {
+                qemu.args(["-display", display]);
+                qemu.arg("-daemonize");
+            }
+        } else {
+            qemu.arg("-daemonize");
         }
 
         for drive in drives {

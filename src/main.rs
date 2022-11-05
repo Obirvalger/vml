@@ -112,7 +112,9 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
 
     vm_config.nic_model = create_matches.value_of("nic-model").map(|n| n.to_string());
 
-    if create_matches.is_present("display-gtk") {
+    if create_matches.is_present("display-console") {
+        vm_config.display = Some("console".to_string())
+    } else if create_matches.is_present("display-gtk") {
         vm_config.display = Some("gtk".to_string())
     } else if create_matches.is_present("display-none") {
         vm_config.display = Some("none".to_string())
