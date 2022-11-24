@@ -35,6 +35,7 @@ users:
 {%- if user == gui.user %}
     lock_passwd: false
     hashed_passwd: {{ gui.passwd }}
+    sudo: [\"ALL=(ALL) NOPASSWD:ALL\"]
 {% endif -%}
 {% endif -%}
 {%- if ssh_authorized_keys %}
