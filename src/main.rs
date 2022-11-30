@@ -527,7 +527,7 @@ fn main() -> Result<()> {
             let destination = if rsync_to_matches.is_present("list") {
                 None
             } else {
-                Some(rsync_to_matches.value_of("destination").unwrap_or("~"))
+                Some(rsync_to_matches.value_of("destination").unwrap_or_default())
             };
 
             if vmc.is_all() {
