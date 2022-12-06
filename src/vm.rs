@@ -323,7 +323,7 @@ impl VM {
 
         if let Some(display) = &self.display {
             if display == "console" {
-                qemu.args(["-nographic"]);
+                qemu.args(["-nographic", "-serial", "mon:stdio"]);
             } else {
                 qemu.args(["-display", display]);
                 qemu.arg("-daemonize");
