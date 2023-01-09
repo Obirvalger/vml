@@ -226,89 +226,109 @@ fn update_images(
     let mut config_image = config_images.next();
     let mut images: BTreeMap<String, DeserializeImage> = BTreeMap::new();
 
-    while let (Some(ei), Some(ci)) = (&embedded_image, &config_image) {
-        let old_name = &ci.0;
-        let new_name = &ei.0;
-        let old = &ci.1;
-        let new = &ei.1;
-        let change_set: HashSet<&str> = old.change.iter().map(AsRef::as_ref).collect();
-        match new_name.cmp(old_name) {
-            Ordering::Greater => {
+    loop {
+        match (&embedded_image, &config_image) {
+            (Some(ei), Some(ci)) => {
+                let old_name = &ci.0;
+                let new_name = &ei.0;
+                let old = &ci.1;
+                let new = &ei.1;
+                let change_set: HashSet<&str> = old.change.iter().map(AsRef::as_ref).collect();
+                match new_name.cmp(old_name) {
+                    Ordering::Greater => {
+                        if !change_set.contains("delete") {
+                            images.insert(old_name.to_owned(), old.to_owned());
+                        };
+                        config_image = config_images.next();
+                    }
+                    Ordering::Less => {
+                        images.insert(new_name.to_owned(), new.to_owned());
+                        embedded_image = embedded_images.next();
+                    }
+                    Ordering::Equal => {
+                        let update_all = change_set.contains("update-all");
+                        let url = if change_set.contains("keep-url")
+                            || !update_all && !change_set.contains("update-url")
+                        {
+                            old.url.to_owned()
+                        } else {
+                            new.url.to_owned()
+                        };
+                        let get_url_prog = if change_set.contains("keep-get-url-prog")
+                            || !update_all && !change_set.contains("update-get-url-prog")
+                        {
+                            old.get_url_prog.to_owned()
+                        } else {
+                            new.get_url_prog.to_owned()
+                        };
+                        let description = if change_set.contains("keep-description")
+                            || !update_all && !change_set.contains("update-description")
+                        {
+                            old.description.to_owned()
+                        } else {
+                            new.description.to_owned()
+                        };
+                        let change = if change_set.contains("keep-change")
+                            || !update_all && !change_set.contains("update-change")
+                        {
+                            old.change.to_owned()
+                        } else {
+                            new.change.to_owned()
+                        };
+                        let properties = if change_set.contains("keep-properties")
+                            || !update_all && !change_set.contains("update-properties")
+                        {
+                            old.properties.to_owned()
+                        } else {
+                            new.properties.to_owned()
+                        };
+                        let update_after_days = if change_set.contains("keep-update-after-days")
+                            || !update_all && !change_set.contains("update-update-after-days")
+                        {
+                            old.update_after_days.to_owned()
+                        } else {
+                            new.update_after_days.to_owned()
+                        };
+                        let arch_mapping = if change_set.contains("keep-arch-mapping")
+                            || !update_all && !change_set.contains("update-arch-mapping")
+                        {
+                            old.arch_mapping.to_owned()
+                        } else {
+                            new.arch_mapping.to_owned()
+                        };
+                        images.insert(
+                            old_name.to_owned(),
+                            DeserializeImage {
+                                url,
+                                get_url_prog,
+                                description,
+                                change,
+                                properties,
+                                update_after_days,
+                                arch_mapping,
+                            },
+                        );
+                        embedded_image = embedded_images.next();
+                        config_image = config_images.next();
+                    }
+                }
+            }
+            (Some(ei), None) => {
+                let new_name = &ei.0;
+                let new = &ei.1;
+                images.insert(new_name.to_owned(), new.to_owned());
+                embedded_image = embedded_images.next();
+            }
+            (None, Some(ci)) => {
+                let old_name = &ci.0;
+                let old = &ci.1;
+                let change_set: HashSet<&str> = old.change.iter().map(AsRef::as_ref).collect();
                 if !change_set.contains("delete") {
                     images.insert(old_name.to_owned(), old.to_owned());
                 };
                 config_image = config_images.next();
             }
-            Ordering::Less => {
-                images.insert(new_name.to_owned(), new.to_owned());
-                embedded_image = embedded_images.next();
-            }
-            Ordering::Equal => {
-                let update_all = change_set.contains("update-all");
-                let url = if change_set.contains("keep-url")
-                    || !update_all && !change_set.contains("update-url")
-                {
-                    old.url.to_owned()
-                } else {
-                    new.url.to_owned()
-                };
-                let get_url_prog = if change_set.contains("keep-get-url-prog")
-                    || !update_all && !change_set.contains("update-get-url-prog")
-                {
-                    old.get_url_prog.to_owned()
-                } else {
-                    new.get_url_prog.to_owned()
-                };
-                let description = if change_set.contains("keep-description")
-                    || !update_all && !change_set.contains("update-description")
-                {
-                    old.description.to_owned()
-                } else {
-                    new.description.to_owned()
-                };
-                let change = if change_set.contains("keep-change")
-                    || !update_all && !change_set.contains("update-change")
-                {
-                    old.change.to_owned()
-                } else {
-                    new.change.to_owned()
-                };
-                let properties = if change_set.contains("keep-properties")
-                    || !update_all && !change_set.contains("update-properties")
-                {
-                    old.properties.to_owned()
-                } else {
-                    new.properties.to_owned()
-                };
-                let update_after_days = if change_set.contains("keep-update-after-days")
-                    || !update_all && !change_set.contains("update-update-after-days")
-                {
-                    old.update_after_days.to_owned()
-                } else {
-                    new.update_after_days.to_owned()
-                };
-                let arch_mapping = if change_set.contains("keep-arch-mapping")
-                    || !update_all && !change_set.contains("update-arch-mapping")
-                {
-                    old.arch_mapping.to_owned()
-                } else {
-                    new.arch_mapping.to_owned()
-                };
-                images.insert(
-                    old_name.to_owned(),
-                    DeserializeImage {
-                        url,
-                        get_url_prog,
-                        description,
-                        change,
-                        properties,
-                        update_after_days,
-                        arch_mapping,
-                    },
-                );
-                embedded_image = embedded_images.next();
-                config_image = config_images.next();
-            }
+            (&None, &None) => break,
         }
     }
 
