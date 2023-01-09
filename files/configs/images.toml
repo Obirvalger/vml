@@ -31,8 +31,8 @@ get-url-prog = "vml-get-arch"
 change = ["update-all", "delete"]
 
 [ubuntu]
-url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-{{arch}}.img"
-description = "latest Ubuntu release (22.04)"
+url = "https://cloud-images.ubuntu.com/kinetic/current/kinetic-server-cloudimg-{{arch}}.img"
+description = "latest Ubuntu release (22.10)"
 change = ["update-all", "delete"]
 
 [ubuntu.arch-mapping]
