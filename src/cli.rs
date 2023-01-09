@@ -268,6 +268,11 @@ pub fn build_cli() -> clap::Command<'static> {
                 )
                 .group(ArgGroup::new("ssh-group").args(&["ssh", "no-ssh"]))
                 .group(ArgGroup::new("wait-ssh-group").args(&["wait-ssh", "no-wait-ssh"]))
+                .group(ArgGroup::new("running-group").args(&[
+                    "running-fail",
+                    "running-ignore",
+                    "running-restart",
+                ]))
                 .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"])),
         )
         .subcommand(
@@ -361,6 +366,11 @@ pub fn build_cli() -> clap::Command<'static> {
                     "exists-fail",
                     "exists-ignore",
                     "exists-replace",
+                ]))
+                .group(ArgGroup::new("running-group").args(&[
+                    "running-fail",
+                    "running-ignore",
+                    "running-restart",
                 ]))
                 .group(ArgGroup::new("ssh-group").args(&["ssh", "no-ssh"]))
                 .group(ArgGroup::new("wait-ssh-group").args(&["wait-ssh", "no-wait-ssh"]))
