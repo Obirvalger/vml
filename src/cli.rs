@@ -511,6 +511,8 @@ pub fn build_cli() -> clap::Command<'static> {
                         .short('v')
                         .help("pass --verbose to rsync command"),
                 )
+                .arg(Arg::new("check").long("check").help("fail on rsync error"))
+                .arg(Arg::new("no-check").long("no-check").help("do not fail on rsync error"))
                 .arg(Arg::new("P").short('P').help("pass -P to rsync command"))
                 .arg(
                     Arg::new("parents")
@@ -555,6 +557,7 @@ pub fn build_cli() -> clap::Command<'static> {
                         .value_hint(ValueHint::AnyPath)
                         .takes_value(true),
                 )
+                .group(ArgGroup::new("check-group").args(&["check", "no-check"]))
                 .group(ArgGroup::new("source").args(&["sources", "template"]).required(true))
                 .group(ArgGroup::new("action").args(&["destination", "list"])),
         )
@@ -597,6 +600,8 @@ pub fn build_cli() -> clap::Command<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
+                .arg(Arg::new("check").long("check").help("fail on rsync error"))
+                .arg(Arg::new("no-check").long("no-check").help("do not fail on rsync error"))
                 .arg(
                     Arg::new("user")
                         .long("user")
@@ -628,6 +633,7 @@ pub fn build_cli() -> clap::Command<'static> {
                         .multiple_values(true)
                         .required(true),
                 )
+                .group(ArgGroup::new("check-group").args(&["check", "no-check"]))
                 .group(ArgGroup::new("action").args(&["destination", "list"])),
         )
         .subcommand(

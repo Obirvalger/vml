@@ -115,6 +115,23 @@ impl Default for RemoveCommand {
         }
     }
 }
+fn default_rsync_check() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct RsyncCommand {
+    #[serde(default = "default_rsync_check")]
+    pub check: bool,
+}
+
+impl Default for RsyncCommand {
+    fn default() -> RsyncCommand {
+        RsyncCommand { check: default_rsync_check() }
+    }
+}
 
 fn default_wait_ssh_timeout() -> u64 {
     1
@@ -200,6 +217,8 @@ pub struct Commands {
     pub list: ListCommand,
     #[serde(default)]
     pub remove: RemoveCommand,
+    #[serde(default)]
+    pub rsync: RsyncCommand,
     pub start: StrartCommand,
 }
 

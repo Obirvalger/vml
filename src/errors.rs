@@ -24,6 +24,10 @@ pub enum Error {
     RemoveRuuningVM(String),
     #[error("try to store image to existing file `{0}`")]
     RewriteExistsPath(String),
+    #[error("could not rsync files `{0}` from vm `{1}`")]
+    RsyncFrom(String, String),
+    #[error("could not rsync files `{0}` to vm `{1}`")]
+    RsyncTo(String, String),
     #[error("start runnig vm `{0}`")]
     StartRunningVM(String),
     #[error("can't ssh to vm `{0}`")]

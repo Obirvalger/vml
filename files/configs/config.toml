@@ -21,6 +21,8 @@ remove.interactive = true
 
 remove.verbose = true
 
+rsync.check = true
+
 start.wait-ssh = { on = true, attempts = 60, repeat = 12, sleep = 10, timeout = 1 }
 
 # Ssh to vms after start

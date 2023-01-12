@@ -521,6 +521,9 @@ fn main() -> Result<()> {
                 rsync_options.push("-P");
             }
 
+            let check = config.commands.rsync.check && !rsync_to_matches.is_present("no-check")
+                || rsync_to_matches.is_present("check");
+
             let sources = rsync_to_matches.values_of("sources");
             let template = rsync_to_matches.value_of("template");
 
@@ -539,11 +542,11 @@ fn main() -> Result<()> {
             if let Some(sources) = sources {
                 let sources: Vec<&str> = sources.collect();
                 for vm in vmc.create()? {
-                    vm.rsync_to(&user, &rsync_options, &sources, &destination)?;
+                    vm.rsync_to(&user, &rsync_options, &sources, &destination, check)?;
                 }
             } else if let Some(template) = template {
                 for vm in vmc.create()? {
-                    vm.rsync_to_template(&user, &rsync_options, template, &destination)?;
+                    vm.rsync_to_template(&user, &rsync_options, template, &destination, check)?;
                 }
             }
         }
@@ -572,6 +575,9 @@ fn main() -> Result<()> {
                 rsync_options.push("-P");
             }
 
+            let check = config.commands.rsync.check && !rsync_from_matches.is_present("no-check")
+                || rsync_from_matches.is_present("check");
+
             let sources: Vec<&str> = rsync_from_matches.values_of("sources").unwrap().collect();
 
             let cwd = env::current_dir().unwrap();
@@ -589,7 +595,7 @@ fn main() -> Result<()> {
             }
             vmc.error_on_empty();
             for vm in vmc.create()? {
-                vm.rsync_from(&user, &rsync_options, &sources, &destination)?;
+                vm.rsync_from(&user, &rsync_options, &sources, &destination, check)?;
             }
         }
 

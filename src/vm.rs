@@ -576,7 +576,8 @@ impl VM {
         rsync_options: &[O],
         sources: &[S],
         destination: &Option<D>,
-    ) -> Result<()> {
+        check: bool,
+    ) -> Result<Option<i32>> {
         let mut ssh_cmd = vec!["ssh"];
         let ssh_key: String;
 
@@ -606,6 +607,7 @@ impl VM {
         let mut rsync = Command::new("rsync");
         rsync.arg("-e").arg(ssh_cmd.join(" "));
         rsync.args(rsync_options);
+        let sources_str = sources.join(", ");
 
         if to {
             rsync.args(sources);
@@ -624,9 +626,16 @@ impl VM {
 
         #[cfg(debug_assertions)]
         eprintln!("{:#?}", &rsync);
-        rsync.spawn().context("failed to run executable rsync")?.wait()?;
+        let rc = rsync.spawn().context("failed to run executable rsync")?.wait()?.code();
+        if check && rc != Some(0) {
+            if to {
+                bail!(Error::RsyncTo(sources_str, self.name.to_string()));
+            } else {
+                bail!(Error::RsyncFrom(sources_str, self.name.to_string()));
+            }
+        }
 
-        Ok(())
+        Ok(rc)
     }
 
     pub fn rsync_to<U: AsRef<str>, O: AsRef<OsStr>, S: AsRef<str>, D: AsRef<str>>(
@@ -635,8 +644,9 @@ impl VM {
         rsync_options: &[O],
         sources: &[S],
         destination: &Option<D>,
-    ) -> Result<()> {
-        self.rsync_to_from(true, user, rsync_options, sources, destination)
+        check: bool,
+    ) -> Result<Option<i32>> {
+        self.rsync_to_from(true, user, rsync_options, sources, destination, check)
     }
 
     pub fn rsync_to_template<U: AsRef<str>, O: AsRef<OsStr>, T: AsRef<str>, D: AsRef<str>>(
@@ -645,7 +655,8 @@ impl VM {
         rsync_options: &[O],
         template_str: T,
         destination: &Option<D>,
-    ) -> Result<()> {
+        check: bool,
+    ) -> Result<Option<i32>> {
         let tmp_dir = tempfile::tempdir().expect("can't create tmp file");
         let tmp_name = tmp_dir.path().join(template_str.as_ref()).to_string_lossy().to_string();
         let sources = [tmp_name.as_str()];
@@ -655,7 +666,7 @@ impl VM {
             &tmp_name,
             "rsync_to_template",
         )?;
-        self.rsync_to_from(true, user, rsync_options, &sources, destination)
+        self.rsync_to_from(true, user, rsync_options, &sources, destination, check)
     }
 
     pub fn rsync_from<U: AsRef<str>, O: AsRef<OsStr>, S: AsRef<str>, D: AsRef<str>>(
@@ -664,8 +675,9 @@ impl VM {
         rsync_options: &[O],
         sources: &[S],
         destination: &Option<D>,
-    ) -> Result<()> {
-        self.rsync_to_from(false, user, rsync_options, sources, destination)
+        check: bool,
+    ) -> Result<Option<i32>> {
+        self.rsync_to_from(false, user, rsync_options, sources, destination, check)
     }
 
     pub fn monitor(&self) -> Result<()> {
