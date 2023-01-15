@@ -1,8 +1,9 @@
 use std::io;
+use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use byte_unit::Byte;
-use clap::{crate_version, Arg, ArgEnum, ArgGroup, Command, ValueHint};
+use clap::{crate_version, value_parser, Arg, ArgEnum, ArgGroup, Command, ValueHint};
 use clap_complete::{generate, Generator, Shell};
 
 fn print_completions<G: Generator>(gen: G, app: &mut Command) {
@@ -379,6 +380,40 @@ pub fn build_cli() -> clap::Command<'static> {
                     ArgGroup::new("name_group")
                         .args(&["names", "name-same-image", "NAME"])
                         .required(true),
+                ),
+        )
+        .subcommand(
+            Command::new("clean")
+                .about("clean virtual machines")
+                .arg(
+                    Arg::new("program")
+                        .long("program")
+                        .value_parser(value_parser!(PathBuf))
+                        .takes_value(true)
+                        .help("cleanup program"),
+                )
+                .arg(Arg::new("NAME").takes_value(true))
+                .arg(
+                    Arg::new("names")
+                        .long("names")
+                        .short('n')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
+                .arg(Arg::new("all").long("all").short('a'))
+                .arg(
+                    Arg::new("parents")
+                        .long("parents")
+                        .short('p')
+                        .takes_value(true)
+                        .multiple_values(true),
+                )
+                .arg(
+                    Arg::new("tags")
+                        .long("tags")
+                        .short('t')
+                        .takes_value(true)
+                        .multiple_values(true),
                 ),
         )
         .subcommand(

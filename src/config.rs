@@ -65,6 +65,24 @@ fn default_qemu_binary() -> String {
     format!("qemu-system-{}", ARCH)
 }
 
+fn default_clean_program() -> PathBuf {
+    PathBuf::from("~/.config/vml/scripts/cleanup.sh")
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct CleanCommand {
+    #[serde(default = "default_clean_program")]
+    pub program: PathBuf,
+}
+
+impl Default for CleanCommand {
+    fn default() -> CleanCommand {
+        CleanCommand { program: default_clean_program() }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CreateExistsAction {
@@ -213,6 +231,8 @@ pub struct StrartCommand {
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Commands {
+    #[serde(default)]
+    pub clean: CleanCommand,
     pub create: CreateCommand,
     pub list: ListCommand,
     #[serde(default)]
@@ -293,6 +313,7 @@ impl Config {
 
         let mut config: Config = toml::from_str(config_str)
             .with_context(|| format!("failed to parse config `{}`", &config_path.display()))?;
+        config.commands.clean.program = expand_tilde(&config.commands.clean.program);
         config.images.directory = expand_tilde(&config.images.directory);
         config.vms_dir = expand_tilde(&config.vms_dir);
         if !config.vms_dir.is_dir() {

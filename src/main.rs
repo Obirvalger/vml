@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::env;
 use std::fs;
 use std::io;
+use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
@@ -421,6 +422,24 @@ fn main() -> Result<()> {
                     }
                 }
                 _ => println!("Unexpected images command"),
+            }
+        }
+
+        Some(("clean", clean_matches)) => {
+            set_specifications(&mut vmc, clean_matches);
+            if clean_matches.is_present("all") {
+                vmc.all()
+            }
+
+            let program = clean_matches
+                .get_one::<PathBuf>("program")
+                .unwrap_or(&config.commands.clean.program);
+
+            vmc.with_pid(WithPid::Option);
+            vmc.error_on_empty();
+
+            for vm in vmc.create()? {
+                vm.clean(program)?;
             }
         }
 

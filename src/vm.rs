@@ -744,6 +744,52 @@ impl VM {
         }
     }
 
+    pub fn run_program_with_context<
+        P: AsRef<Path>,
+        H: AsRef<Path>,
+        G: AsRef<str>,
+        U: AsRef<str>,
+    >(
+        &self,
+        program: P,
+        user: &Option<U>,
+        copy_host_dir: &Option<H>,
+        guest_working_dir: &Option<G>,
+    ) -> Result<Option<i32>> {
+        let prog = program.as_ref();
+        let prog_name = prog
+            .file_name()
+            .ok_or_else(|| Error::BadProgramFilename(prog.display().to_string()))?;
+        let prog_name = prog_name.to_string_lossy();
+
+        let mut sources = vec![prog.to_string_lossy()];
+        if let Some(dir) = copy_host_dir {
+            let dir = dir.as_ref();
+            sources.push(dir.to_string_lossy())
+        }
+        self.rsync_to(user, &["--archive"], &sources, guest_working_dir, true)?;
+
+        let ssh_options: [String; 0] = [];
+        let ssh_flags: [String; 0] = [];
+        let guest_program_path = if let Some(dir) = guest_working_dir {
+            let dir = dir.as_ref();
+            format!("{}/{}", dir, &prog_name)
+        } else {
+            format!("./{}", &prog_name)
+        };
+        self.ssh(user, &ssh_options, &ssh_flags, &Some(vec![guest_program_path]))
+    }
+
+    pub fn clean<P: AsRef<Path>>(&self, cleanup_program: P) -> Result<()> {
+        let user: Option<&str> = Some("root");
+
+        let copy_host_dir: Option<PathBuf> = None;
+        let guest_working_dir = Some(".");
+        self.run_program_with_context(cleanup_program, &user, &copy_host_dir, &guest_working_dir)?;
+
+        Ok(())
+    }
+
     pub fn store_disk<P: AsRef<Path>>(&self, to: P, force: bool) -> Result<()> {
         let to = to.as_ref();
 

@@ -20,6 +20,10 @@ struct AssetConfigs;
 struct AssetGetUrlProgs;
 
 #[derive(RustEmbed)]
+#[folder = "files/scripts"]
+struct AssetScripts;
+
+#[derive(RustEmbed)]
 #[folder = "files"]
 struct AssetAllFiles;
 
@@ -29,19 +33,30 @@ pub fn get_config<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
         .ok_or_else(|| Error::GetWrongEmbeddedFile(path.as_ref().to_string()).into())
 }
 
-fn install_get_url_progs() -> Result<()> {
-    let directory = config_dir().join("get-url-progs");
+fn install_executables_in_config_dir<E: RustEmbed, S: AsRef<str>>(
+    _assert: &E,
+    files: S,
+) -> Result<()> {
+    let directory = config_dir().join(files.as_ref());
     fs::create_dir_all(&directory)?;
 
-    for filename in AssetGetUrlProgs::iter() {
+    for filename in E::iter() {
         let filename = filename.as_ref();
         let filepath = directory.join(filename);
-        let content = AssetGetUrlProgs::get(filename).unwrap();
+        let content = E::get(filename).unwrap();
         fs::write(&filepath, content.data)?;
         run_cmd!(chmod +x $filepath)?
     }
 
     Ok(())
+}
+
+fn install_get_url_progs() -> Result<()> {
+    install_executables_in_config_dir(&AssetGetUrlProgs, "get-url-progs")
+}
+
+fn install_scripts() -> Result<()> {
+    install_executables_in_config_dir(&AssetScripts, "scripts")
 }
 
 fn install_config(filename: &str) -> Result<()> {
@@ -93,6 +108,7 @@ pub fn install_all(config: &Config) -> Result<()> {
     install_openssh_config(config)?;
 
     install_get_url_progs()?;
+    install_scripts()?;
 
     Ok(())
 }

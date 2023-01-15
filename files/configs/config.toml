@@ -8,6 +8,8 @@ config-hierarchy = true
 
 
 [commands]
+clean.program = "~/.config/vml/scripts/cleanup.sh"
+
 create.pull = true
 
 # Do this when create vm that already exists: fail, ignore, replace

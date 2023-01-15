@@ -6,6 +6,8 @@ use thiserror::Error as ThisError;
 pub enum Error {
     #[error("bad cidr `{0}`")]
     BadCidr(String),
+    #[error("bad program filename `{0}` in run_program_with_context")]
+    BadProgramFilename(String),
     #[error("create existing vm `{0}`")]
     CreateExistingVM(String),
     #[error("cloud init image `{0}` does not exist")]
