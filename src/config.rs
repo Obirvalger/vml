@@ -133,6 +133,7 @@ impl Default for RemoveCommand {
         }
     }
 }
+
 fn default_rsync_check() -> bool {
     true
 }
