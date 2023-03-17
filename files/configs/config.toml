@@ -17,7 +17,7 @@ create.exists = "fail"
 
 list.all = false
 
-list.fold = true
+list.fold = false
 
 remove.interactive = true
 
