@@ -87,7 +87,7 @@ pub fn create<S: AsRef<str>>(
     let vml_path = vm_dir.join("vml.toml");
 
     fs::create_dir_all(&vm_dir)?;
-    fs::copy(&image_path, &vm_disk)?;
+    fs::copy(image_path, vm_disk)?;
     if !vml_path.is_file() {
         let mut vm_config = vm_config.to_owned();
         if let Some(image) = available_images.get(image_name) {
@@ -98,7 +98,7 @@ pub fn create<S: AsRef<str>>(
             vm_config.image_name = Some(image.name.to_owned());
         }
         let vm_config_string = toml::to_string(&vm_config).expect("Could not serialize vm config");
-        fs::write(&vml_path, &vm_config_string)?
+        fs::write(&vml_path, vm_config_string)?
     }
 
     Ok(())

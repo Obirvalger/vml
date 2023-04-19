@@ -17,7 +17,7 @@ pub fn generate_data(context: &Context, work_dir: &Path) -> Result<PathBuf> {
     let meta_data_template: &str = "instance-id: {{ n }}\nlocal-hostname: {{ hostname }}\n";
     let meta_data = template::render(context, meta_data_template, "cloud-init meta-data")?;
     let meta_data_yaml = work_dir.join("meta-data.yaml");
-    fs::write(&meta_data_yaml, &meta_data)?;
+    fs::write(&meta_data_yaml, meta_data)?;
 
     let user_data_template: &str = "#cloud-config
 disable_root: False
@@ -51,7 +51,7 @@ hostname: {{ hostname }}
 ";
     let user_data = template::render(context, user_data_template, "cloud-init user-data")?;
     let user_data_yaml = work_dir.join("user-data.yaml");
-    fs::write(&user_data_yaml, &user_data)?;
+    fs::write(&user_data_yaml, user_data)?;
 
     let mut cloud_localds = Command::new("cloud-localds");
     cloud_localds.args([&data, &user_data_yaml, &meta_data_yaml]);
@@ -81,7 +81,7 @@ ethernets:
 "#;
         let network = template::render(context, network_template, "cloud-init network")?;
         let network_yaml = work_dir.join("network.yaml");
-        fs::write(&network_yaml, &network)?;
+        fs::write(&network_yaml, network)?;
         cloud_localds.arg("-N").arg(&network_yaml);
     }
 

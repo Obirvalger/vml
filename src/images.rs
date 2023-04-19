@@ -165,7 +165,7 @@ impl Images<'_> {
     }
 
     pub fn names(&self) -> BTreeSet<String> {
-        self.0.iter().map(|(name, _)| name.to_string()).collect()
+        self.0.keys().map(|name| name.to_string()).collect()
     }
 
     pub fn get(&self, name: impl AsRef<str>) -> Option<&Image> {
@@ -419,6 +419,6 @@ pub fn available(config: &ConfigImages) -> Result<Images> {
 
 pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {
     let image_path = images_dir.join(image_name);
-    fs::remove_file(&image_path)?;
+    fs::remove_file(image_path)?;
     Ok(())
 }
