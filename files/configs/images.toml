@@ -59,7 +59,7 @@ aarch64 = "arm64"
 
 [ubuntu-kinetic]
 url = "https://cloud-images.ubuntu.com/kinetic/current/kinetic-server-cloudimg-{{arch}}.img"
-description = "Ubuntu 22.10 Kinetic Kudu Daily Build"
+description = "Ubuntu 22.10 Kinetic Kudu"
 change = ["update-all", "delete"]
 
 [ubuntu-kinetic.arch-mapping]
