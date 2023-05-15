@@ -85,6 +85,7 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         .value_of("minimum-disk-size")
         .map(|s| Byte::from_str(s).expect("Should be checked by cli"));
 
+    vm_config.cloud_init_image = create_matches.get_one::<PathBuf>("cloud-init-image").cloned();
     if create_matches.is_present("no-cloud-init") {
         vm_config.cloud_init = Some(false)
     } else if create_matches.is_present("cloud-init") {
@@ -121,8 +122,17 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
         vm_config.display = Some("none".to_string())
     }
 
+    let mut config_ssh = ConfigSsh::default();
+    let mut edited_config_ssh = false;
     if let Some(user) = create_matches.value_of("ssh-user") {
-        let config_ssh = ConfigSsh { user: Some(user.to_string()), ..Default::default() };
+        config_ssh.user = Some(user.to_string());
+        edited_config_ssh = true;
+    }
+    if let Some(key) = create_matches.value_of("ssh-key") {
+        config_ssh.key = Some(key.to_string());
+        edited_config_ssh = true;
+    }
+    if edited_config_ssh {
         vm_config.ssh = Some(config_ssh);
     }
 

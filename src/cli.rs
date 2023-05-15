@@ -166,6 +166,7 @@ pub fn build_cli() -> clap::Command<'static> {
                         .validator(|s| Byte::from_str(s).map(|b| b.to_string())),
                 )
                 .arg(Arg::new("ssh-user").long("ssh-user").takes_value(true))
+                .arg(Arg::new("ssh-key").long("ssh-key").takes_value(true))
                 .arg(
                     Arg::new("properties")
                         .long("properties")
@@ -198,6 +199,12 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("net-none").long("net-none"))
                 .arg(Arg::new("net-user").long("net-user"))
                 .arg(Arg::new("nic-model").long("nic-model").takes_value(true))
+                .arg(
+                    Arg::new("cloud-init-image")
+                        .long("cloud-init-image")
+                        .takes_value(true)
+                        .value_parser(value_parser!(PathBuf)),
+                )
                 .arg(Arg::new("cloud-init").long("cloud-init"))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
                 .arg(
@@ -297,6 +304,12 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("no-ssh").long("no-ssh"))
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
+                .arg(
+                    Arg::new("cloud-init-image")
+                        .long("cloud-init-image")
+                        .takes_value(true)
+                        .value_parser(value_parser!(PathBuf)),
+                )
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
                 .arg(
@@ -316,6 +329,7 @@ pub fn build_cli() -> clap::Command<'static> {
                         .validator(|s| Byte::from_str(s).map(|b| b.to_string())),
                 )
                 .arg(Arg::new("ssh-user").long("ssh-user").takes_value(true))
+                .arg(Arg::new("ssh-key").long("ssh-key").takes_value(true))
                 .arg(
                     Arg::new("properties")
                         .long("properties")
