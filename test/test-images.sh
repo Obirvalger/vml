@@ -16,7 +16,7 @@ export PATH="$VML_BIN_DIR:$PATH"
 cd "$VML_SRC"
 
 VM="TEST_VML/TEST_IMAGES"
-vml run --nproc "$(nproc)" -m 3G -n "$VM" --ssh-user "$USER" \
+vml run --no-ssh --nproc "$(nproc)" -m 3G -n "$VM" --ssh-user "$USER" \
     --exists-replace --running-restart
 echo run vm "$VM" >> "$LOG"
 

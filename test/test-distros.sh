@@ -19,7 +19,7 @@ cd "$VML_SRC"
 
 for IMAGE in $IMAGES; do
     VM="$PARENT/$IMAGE"
-    vml run --nproc "$(nproc)" -m 5G -i "$IMAGE" -n "$VM" --ssh-user "$USER" \
+    vml run --no-ssh --nproc "$(nproc)" -m 5G -i "$IMAGE" -n "$VM" --ssh-user "$USER" \
         --exists-replace --running-restart
     echo run vm "$VM" >> "$LOG"
 
