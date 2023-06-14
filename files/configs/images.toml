@@ -48,6 +48,15 @@ change = ["update-all", "delete"]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
+[ubuntu-mantic]
+url = "https://cloud-images.ubuntu.com/mantic/current/mantic-server-cloudimg-{{arch}}.img"
+description = "Ubuntu 23.10 Mantic Minotaur Daily Build"
+change = ["update-all", "delete"]
+
+[ubuntu-mantic.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-lunar]
 url = "https://cloud-images.ubuntu.com/lunar/current/lunar-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 23.04 Lunar Lobster"
