@@ -27,7 +27,7 @@ Debian, Fedora, openSUSE and Ubuntu could be created with just one command.
 %setup
 
 %build
-RUSTFLAGS="${RUSTFLAGS} -g"
+export RUSTFLAGS="${RUSTFLAGS} -g"
 %ifarch ppc64le
 cargo build --no-default-features --features=native-tls --release %{?_smp_mflags} --offline
 %else
