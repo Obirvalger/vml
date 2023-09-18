@@ -509,6 +509,8 @@ fn main() -> Result<()> {
                 }
             }
 
+            let rm = ssh_matches.is_present("rm");
+
             let cmd: Option<Vec<&str>> = ssh_matches.values_of("cmd").map(|v| v.collect());
 
             if vmc.is_all() {
@@ -517,11 +519,18 @@ fn main() -> Result<()> {
                 vmc.with_pid(WithPid::Error);
             }
             vmc.error_on_empty();
-            for vm in vmc.create()? {
-                if vm.ssh(&user, &ssh_options, &ssh_flags, &cmd)? != Some(0)
-                    && ssh_matches.is_present("check")
-                {
-                    bail!(Error::SshFailed(vm.name));
+            for mut vm in vmc.create()? {
+                let res = vm.ssh(&user, &ssh_options, &ssh_flags, &cmd)?;
+                let name = vm.name.to_string();
+                if rm {
+                    vm.stop(true)?;
+                    openssh_config::rm(&config.openssh_config.vm_configs_dir, &name)?;
+                    vm.remove()?;
+                    #[cfg(debug_assertions)]
+                    eprintln!("Removed {}", &name);
+                }
+                if res != Some(0) && ssh_matches.is_present("check") {
+                    bail!(Error::SshFailed(name));
                 }
             }
         }

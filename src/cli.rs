@@ -476,6 +476,7 @@ pub fn build_cli() -> clap::Command<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
+                .arg(Arg::new("rm").long("rm").help("remove vm after ssh"))
                 .arg(Arg::new("A").short('A').help("pass -A to ssh command"))
                 .arg(Arg::new("N").short('N').help("pass -N to ssh command"))
                 .arg(Arg::new("Y").short('Y').help("pass -Y to ssh command"))
