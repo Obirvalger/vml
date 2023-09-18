@@ -784,6 +784,7 @@ fn main() -> Result<()> {
                     if verbose {
                         println!("Removed {}", vm_name)
                     }
+                    openssh_config::rm(&config.openssh_config.vm_configs_dir, &vm_name)?;
                 }
             }
         }
