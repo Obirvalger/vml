@@ -496,6 +496,13 @@ pub fn build_cli() -> clap::Command<'static> {
                         .help("same as -R ssh option"),
                 )
                 .arg(
+                    Arg::new("W")
+                        .short('W')
+                        .takes_value(true)
+                        .value_name("host_port")
+                        .help("same as -W ssh option"),
+                )
+                .arg(
                     Arg::new("check")
                         .long("check")
                         .help("fail on first command with non zero return code"),
