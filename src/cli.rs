@@ -27,6 +27,7 @@ pub fn build_cli() -> clap::Command<'static> {
         .version(crate_version!())
         .arg_required_else_help(true)
         .infer_subcommands(true)
+        .infer_long_args(true)
         .arg(Arg::new("all-vms").long("all-vms").help("Specify all vms"))
         .arg(
             Arg::new("host")
