@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
@@ -25,7 +26,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn label(this: &GpuRenderPassEncoder) -> Option<String>;
+    pub fn label(this: &GpuRenderPassEncoder) -> String;
     #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (structural , method , setter , js_class = "GPURenderPassEncoder" , js_name = label)]
     #[doc = "Setter for the `label` field of this object."]
@@ -36,7 +37,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_label(this: &GpuRenderPassEncoder, value: Option<&str>);
+    pub fn set_label(this: &GpuRenderPassEncoder, value: &str);
     #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = beginOcclusionQuery)]
     #[doc = "The `beginOcclusionQuery()` method."]
@@ -49,21 +50,16 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn begin_occlusion_query(this: &GpuRenderPassEncoder, query_index: u32);
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuQuerySet")]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = beginPipelineStatisticsQuery)]
-    #[doc = "The `beginPipelineStatisticsQuery()` method."]
+    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = end)]
+    #[doc = "The `end()` method."]
     #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/beginPipelineStatisticsQuery)"]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/end)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuQuerySet`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn begin_pipeline_statistics_query(
-        this: &GpuRenderPassEncoder,
-        query_set: &GpuQuerySet,
-        query_index: u32,
-    );
+    pub fn end(this: &GpuRenderPassEncoder);
     #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = endOcclusionQuery)]
     #[doc = "The `endOcclusionQuery()` method."]
@@ -76,28 +72,6 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn end_occlusion_query(this: &GpuRenderPassEncoder);
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = endPass)]
-    #[doc = "The `endPass()` method."]
-    #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/endPass)"]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuRenderPassEncoder`*"]
-    #[doc = ""]
-    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn end_pass(this: &GpuRenderPassEncoder);
-    #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = endPipelineStatisticsQuery)]
-    #[doc = "The `endPipelineStatisticsQuery()` method."]
-    #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/endPipelineStatisticsQuery)"]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuRenderPassEncoder`*"]
-    #[doc = ""]
-    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn end_pipeline_statistics_query(this: &GpuRenderPassEncoder);
-    #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = executeBundles)]
     #[doc = "The `executeBundles()` method."]
     #[doc = ""]
@@ -109,31 +83,34 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn execute_bundles(this: &GpuRenderPassEncoder, bundles: &::wasm_bindgen::JsValue);
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBlendColor)]
-    #[doc = "The `setBlendColor()` method."]
+    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBlendConstant)]
+    #[doc = "The `setBlendConstant()` method."]
     #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBlendColor)"]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBlendConstant)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_blend_color_with_f64_sequence(
+    pub fn set_blend_constant_with_f64_sequence(
         this: &GpuRenderPassEncoder,
         color: &::wasm_bindgen::JsValue,
     );
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "GpuColorDict")]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBlendColor)]
-    #[doc = "The `setBlendColor()` method."]
+    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBlendConstant)]
+    #[doc = "The `setBlendConstant()` method."]
     #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBlendColor)"]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBlendConstant)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `GpuColorDict`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_blend_color_with_gpu_color_dict(this: &GpuRenderPassEncoder, color: &GpuColorDict);
+    pub fn set_blend_constant_with_gpu_color_dict(
+        this: &GpuRenderPassEncoder,
+        color: &GpuColorDict,
+    );
     #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setScissorRect)]
     #[doc = "The `setScissorRect()` method."]
@@ -176,17 +153,76 @@ extern "C" {
         max_depth: f32,
     );
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuQuerySet")]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = writeTimestamp)]
-    #[doc = "The `writeTimestamp()` method."]
+    #[cfg(feature = "GpuBindGroup")]
+    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBindGroup)]
+    #[doc = "The `setBindGroup()` method."]
     #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/writeTimestamp)"]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBindGroup)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuQuerySet`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBindGroup`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn write_timestamp(this: &GpuRenderPassEncoder, query_set: &GpuQuerySet, query_index: u32);
+    pub fn set_bind_group(
+        this: &GpuRenderPassEncoder,
+        index: u32,
+        bind_group: Option<&GpuBindGroup>,
+    );
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuBindGroup")]
+    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBindGroup)]
+    #[doc = "The `setBindGroup()` method."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBindGroup)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBindGroup`, `GpuRenderPassEncoder`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn set_bind_group_with_u32_sequence(
+        this: &GpuRenderPassEncoder,
+        index: u32,
+        bind_group: Option<&GpuBindGroup>,
+        dynamic_offsets: &::wasm_bindgen::JsValue,
+    );
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuBindGroup")]
+    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBindGroup)]
+    #[doc = "The `setBindGroup()` method."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBindGroup)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBindGroup`, `GpuRenderPassEncoder`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn set_bind_group_with_u32_array_and_u32_and_dynamic_offsets_data_length(
+        this: &GpuRenderPassEncoder,
+        index: u32,
+        bind_group: Option<&GpuBindGroup>,
+        dynamic_offsets_data: &[u32],
+        dynamic_offsets_data_start: u32,
+        dynamic_offsets_data_length: u32,
+    );
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuBindGroup")]
+    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBindGroup)]
+    #[doc = "The `setBindGroup()` method."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBindGroup)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBindGroup`, `GpuRenderPassEncoder`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn set_bind_group_with_u32_array_and_f64_and_dynamic_offsets_data_length(
+        this: &GpuRenderPassEncoder,
+        index: u32,
+        bind_group: Option<&GpuBindGroup>,
+        dynamic_offsets_data: &[u32],
+        dynamic_offsets_data_start: f64,
+        dynamic_offsets_data_length: u32,
+    );
     #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = insertDebugMarker)]
     #[doc = "The `insertDebugMarker()` method."]
@@ -220,73 +256,6 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn push_debug_group(this: &GpuRenderPassEncoder, group_label: &str);
-    #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBindGroup")]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBindGroup)]
-    #[doc = "The `setBindGroup()` method."]
-    #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBindGroup)"]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBindGroup`, `GpuRenderPassEncoder`*"]
-    #[doc = ""]
-    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_bind_group(this: &GpuRenderPassEncoder, index: u32, bind_group: &GpuBindGroup);
-    #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBindGroup")]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBindGroup)]
-    #[doc = "The `setBindGroup()` method."]
-    #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBindGroup)"]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBindGroup`, `GpuRenderPassEncoder`*"]
-    #[doc = ""]
-    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_bind_group_with_u32_sequence(
-        this: &GpuRenderPassEncoder,
-        index: u32,
-        bind_group: &GpuBindGroup,
-        dynamic_offsets: &::wasm_bindgen::JsValue,
-    );
-    #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBindGroup")]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBindGroup)]
-    #[doc = "The `setBindGroup()` method."]
-    #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBindGroup)"]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBindGroup`, `GpuRenderPassEncoder`*"]
-    #[doc = ""]
-    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_bind_group_with_u32_array_and_u32_and_dynamic_offsets_data_length(
-        this: &GpuRenderPassEncoder,
-        index: u32,
-        bind_group: &GpuBindGroup,
-        dynamic_offsets_data: &[u32],
-        dynamic_offsets_data_start: u32,
-        dynamic_offsets_data_length: u32,
-    );
-    #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBindGroup")]
-    # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setBindGroup)]
-    #[doc = "The `setBindGroup()` method."]
-    #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setBindGroup)"]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBindGroup`, `GpuRenderPassEncoder`*"]
-    #[doc = ""]
-    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_bind_group_with_u32_array_and_f64_and_dynamic_offsets_data_length(
-        this: &GpuRenderPassEncoder,
-        index: u32,
-        bind_group: &GpuBindGroup,
-        dynamic_offsets_data: &[u32],
-        dynamic_offsets_data_start: f64,
-        dynamic_offsets_data_length: u32,
-    );
     #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = draw)]
     #[doc = "The `draw()` method."]
@@ -488,106 +457,124 @@ extern "C" {
         indirect_offset: f64,
     );
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBuffer")]
+    #[cfg(all(feature = "GpuBuffer", feature = "GpuIndexFormat",))]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setIndexBuffer)]
     #[doc = "The `setIndexBuffer()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setIndexBuffer)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuIndexFormat`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_index_buffer(this: &GpuRenderPassEncoder, buffer: &GpuBuffer);
+    pub fn set_index_buffer(
+        this: &GpuRenderPassEncoder,
+        buffer: &GpuBuffer,
+        index_format: GpuIndexFormat,
+    );
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBuffer")]
+    #[cfg(all(feature = "GpuBuffer", feature = "GpuIndexFormat",))]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setIndexBuffer)]
     #[doc = "The `setIndexBuffer()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setIndexBuffer)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuIndexFormat`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_index_buffer_with_u32(this: &GpuRenderPassEncoder, buffer: &GpuBuffer, offset: u32);
+    pub fn set_index_buffer_with_u32(
+        this: &GpuRenderPassEncoder,
+        buffer: &GpuBuffer,
+        index_format: GpuIndexFormat,
+        offset: u32,
+    );
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBuffer")]
+    #[cfg(all(feature = "GpuBuffer", feature = "GpuIndexFormat",))]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setIndexBuffer)]
     #[doc = "The `setIndexBuffer()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setIndexBuffer)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuIndexFormat`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_index_buffer_with_f64(this: &GpuRenderPassEncoder, buffer: &GpuBuffer, offset: f64);
+    pub fn set_index_buffer_with_f64(
+        this: &GpuRenderPassEncoder,
+        buffer: &GpuBuffer,
+        index_format: GpuIndexFormat,
+        offset: f64,
+    );
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBuffer")]
+    #[cfg(all(feature = "GpuBuffer", feature = "GpuIndexFormat",))]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setIndexBuffer)]
     #[doc = "The `setIndexBuffer()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setIndexBuffer)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuIndexFormat`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn set_index_buffer_with_u32_and_u32(
         this: &GpuRenderPassEncoder,
         buffer: &GpuBuffer,
+        index_format: GpuIndexFormat,
         offset: u32,
         size: u32,
     );
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBuffer")]
+    #[cfg(all(feature = "GpuBuffer", feature = "GpuIndexFormat",))]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setIndexBuffer)]
     #[doc = "The `setIndexBuffer()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setIndexBuffer)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuIndexFormat`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn set_index_buffer_with_f64_and_u32(
         this: &GpuRenderPassEncoder,
         buffer: &GpuBuffer,
+        index_format: GpuIndexFormat,
         offset: f64,
         size: u32,
     );
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBuffer")]
+    #[cfg(all(feature = "GpuBuffer", feature = "GpuIndexFormat",))]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setIndexBuffer)]
     #[doc = "The `setIndexBuffer()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setIndexBuffer)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuIndexFormat`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn set_index_buffer_with_u32_and_f64(
         this: &GpuRenderPassEncoder,
         buffer: &GpuBuffer,
+        index_format: GpuIndexFormat,
         offset: u32,
         size: f64,
     );
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuBuffer")]
+    #[cfg(all(feature = "GpuBuffer", feature = "GpuIndexFormat",))]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setIndexBuffer)]
     #[doc = "The `setIndexBuffer()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPURenderPassEncoder/setIndexBuffer)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuRenderPassEncoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuBuffer`, `GpuIndexFormat`, `GpuRenderPassEncoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn set_index_buffer_with_f64_and_f64(
         this: &GpuRenderPassEncoder,
         buffer: &GpuBuffer,
+        index_format: GpuIndexFormat,
         offset: f64,
         size: f64,
     );
@@ -614,7 +601,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_vertex_buffer(this: &GpuRenderPassEncoder, slot: u32, buffer: &GpuBuffer);
+    pub fn set_vertex_buffer(this: &GpuRenderPassEncoder, slot: u32, buffer: Option<&GpuBuffer>);
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "GpuBuffer")]
     # [wasm_bindgen (method , structural , js_class = "GPURenderPassEncoder" , js_name = setVertexBuffer)]
@@ -629,7 +616,7 @@ extern "C" {
     pub fn set_vertex_buffer_with_u32(
         this: &GpuRenderPassEncoder,
         slot: u32,
-        buffer: &GpuBuffer,
+        buffer: Option<&GpuBuffer>,
         offset: u32,
     );
     #[cfg(web_sys_unstable_apis)]
@@ -646,7 +633,7 @@ extern "C" {
     pub fn set_vertex_buffer_with_f64(
         this: &GpuRenderPassEncoder,
         slot: u32,
-        buffer: &GpuBuffer,
+        buffer: Option<&GpuBuffer>,
         offset: f64,
     );
     #[cfg(web_sys_unstable_apis)]
@@ -663,7 +650,7 @@ extern "C" {
     pub fn set_vertex_buffer_with_u32_and_u32(
         this: &GpuRenderPassEncoder,
         slot: u32,
-        buffer: &GpuBuffer,
+        buffer: Option<&GpuBuffer>,
         offset: u32,
         size: u32,
     );
@@ -681,7 +668,7 @@ extern "C" {
     pub fn set_vertex_buffer_with_f64_and_u32(
         this: &GpuRenderPassEncoder,
         slot: u32,
-        buffer: &GpuBuffer,
+        buffer: Option<&GpuBuffer>,
         offset: f64,
         size: u32,
     );
@@ -699,7 +686,7 @@ extern "C" {
     pub fn set_vertex_buffer_with_u32_and_f64(
         this: &GpuRenderPassEncoder,
         slot: u32,
-        buffer: &GpuBuffer,
+        buffer: Option<&GpuBuffer>,
         offset: u32,
         size: f64,
     );
@@ -717,7 +704,7 @@ extern "C" {
     pub fn set_vertex_buffer_with_f64_and_f64(
         this: &GpuRenderPassEncoder,
         slot: u32,
-        buffer: &GpuBuffer,
+        buffer: Option<&GpuBuffer>,
         offset: f64,
         size: f64,
     );

@@ -1,7 +1,7 @@
 //! Random-related operations.
 
-#[cfg(any(linux_raw, all(libc, target_os = "linux")))]
+#[cfg(linux_kernel)]
 mod getrandom;
 
-#[cfg(any(linux_raw, all(libc, target_os = "linux")))]
+#[cfg(linux_kernel)]
 pub use getrandom::{getrandom, GetRandomFlags};

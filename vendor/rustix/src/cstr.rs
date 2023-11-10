@@ -9,13 +9,13 @@
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```
 /// # #[cfg(feature = "fs")]
 /// # fn main() -> rustix::io::Result<()> {
 /// use rustix::cstr;
-/// use rustix::fs::{cwd, statat, AtFlags};
+/// use rustix::fs::{statat, AtFlags, CWD};
 ///
-/// let metadata = statat(cwd(), cstr!("test.txt"), AtFlags::empty())?;
+/// let metadata = statat(CWD, cstr!("Cargo.toml"), AtFlags::empty())?;
 /// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "fs"))]
@@ -40,12 +40,13 @@ macro_rules! cstr {
 
         #[allow(unsafe_code, unused_unsafe)]
         {
-            // Now that we know the string doesn't have embedded NULs, we can call
-            // `from_bytes_with_nul_unchecked`, which as of this writing is defined
-            // as `#[inline]` and completely optimizes away.
+            // Now that we know the string doesn't have embedded NULs, we can
+            // call `from_bytes_with_nul_unchecked`, which as of this writing
+            // is defined as `#[inline]` and completely optimizes away.
             //
-            // Safety: We have manually checked that the string does not contain
-            // embedded NULs above, and we append or own NUL terminator here.
+            // SAFETY: We have manually checked that the string does not
+            // contain embedded NULs above, and we append or own NUL terminator
+            // here.
             unsafe {
                 $crate::ffi::CStr::from_bytes_with_nul_unchecked(concat!($str, "\0").as_bytes())
             }

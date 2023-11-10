@@ -8,7 +8,7 @@ use std::str;
 use regex;
 use regex::bytes::Regex;
 
-use {new_regex, Candidate, Error, ErrorKind};
+use crate::{new_regex, Candidate, Error, ErrorKind};
 
 /// Describes a matching strategy for a particular pattern.
 ///
@@ -98,7 +98,7 @@ impl hash::Hash for Glob {
 }
 
 impl fmt::Display for Glob {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.glob.fmt(f)
     }
 }
@@ -127,7 +127,7 @@ impl GlobMatcher {
     }
 
     /// Tests whether the given path matches this pattern or not.
-    pub fn is_match_candidate(&self, path: &Candidate) -> bool {
+    pub fn is_match_candidate(&self, path: &Candidate<'_>) -> bool {
         self.re.is_match(&path.path)
     }
 
@@ -143,8 +143,6 @@ impl GlobMatcher {
 struct GlobStrategic {
     /// The match strategy to use.
     strategy: MatchStrategy,
-    /// The underlying pattern.
-    pat: Glob,
     /// The pattern, as a compiled regex.
     re: Regex,
 }
@@ -157,7 +155,7 @@ impl GlobStrategic {
     }
 
     /// Tests whether the given path matches this pattern or not.
-    fn is_match_candidate(&self, candidate: &Candidate) -> bool {
+    fn is_match_candidate(&self, candidate: &Candidate<'_>) -> bool {
         let byte_path = &*candidate.path;
 
         match self.strategy {
@@ -210,6 +208,9 @@ struct GlobOptions {
     /// Whether or not to use `\` to escape special characters.
     /// e.g., when enabled, `\*` will match a literal `*`.
     backslash_escape: bool,
+    /// Whether or not an empty case in an alternate will be removed.
+    /// e.g., when enabled, `{,a}` will match "" and "a".
+    empty_alternates: bool,
 }
 
 impl GlobOptions {
@@ -218,6 +219,7 @@ impl GlobOptions {
             case_insensitive: false,
             literal_separator: false,
             backslash_escape: !is_separator('\\'),
+            empty_alternates: false,
         }
     }
 }
@@ -273,7 +275,7 @@ impl Glob {
         let strategy = MatchStrategy::new(self);
         let re =
             new_regex(&self.re).expect("regex compilation shouldn't fail");
-        GlobStrategic { strategy: strategy, pat: self.clone(), re: re }
+        GlobStrategic { strategy: strategy, re: re }
     }
 
     /// Returns the original glob pattern used to build this pattern.
@@ -403,7 +405,7 @@ impl Glob {
         if self.opts.case_insensitive {
             return None;
         }
-        let end = match self.tokens.last() {
+        let (end, need_sep) = match self.tokens.last() {
             Some(&Token::ZeroOrMore) => {
                 if self.opts.literal_separator {
                     // If a trailing `*` can't match a `/`, then we can't
@@ -414,9 +416,10 @@ impl Glob {
                     // literal prefix.
                     return None;
                 }
-                self.tokens.len() - 1
+                (self.tokens.len() - 1, false)
             }
-            _ => self.tokens.len(),
+            Some(&Token::RecursiveSuffix) => (self.tokens.len() - 1, true),
+            _ => (self.tokens.len(), false),
         };
         let mut lit = String::new();
         for t in &self.tokens[0..end] {
@@ -424,6 +427,9 @@ impl Glob {
                 Token::Literal(c) => lit.push(c),
                 _ => return None,
             }
+        }
+        if need_sep {
+            lit.push('/');
         }
         if lit.is_empty() {
             None
@@ -612,6 +618,8 @@ impl<'a> GlobBuilder<'a> {
     }
 
     /// Toggle whether a literal `/` is required to match a path separator.
+    ///
+    /// By default this is false: `*` and `?` will match `/`.
     pub fn literal_separator(&mut self, yes: bool) -> &mut GlobBuilder<'a> {
         self.opts.literal_separator = yes;
         self
@@ -627,6 +635,16 @@ impl<'a> GlobBuilder<'a> {
     /// is a path separator.
     pub fn backslash_escape(&mut self, yes: bool) -> &mut GlobBuilder<'a> {
         self.opts.backslash_escape = yes;
+        self
+    }
+
+    /// Toggle whether an empty pattern in a list of alternates is accepted.
+    ///
+    /// For example, if this is set then the glob `foo{,.txt}` will match both `foo` and `foo.txt`.
+    ///
+    /// By default this is false.
+    pub fn empty_alternates(&mut self, yes: bool) -> &mut GlobBuilder<'a> {
+        self.opts.empty_alternates = yes;
         self
     }
 }
@@ -683,7 +701,7 @@ impl Tokens {
                     re.push_str("(?:/?|.*/)");
                 }
                 Token::RecursiveSuffix => {
-                    re.push_str("(?:/?|/.*)");
+                    re.push_str("/.*");
                 }
                 Token::RecursiveZeroOrMore => {
                     re.push_str("(?:/|/.*/)");
@@ -710,7 +728,7 @@ impl Tokens {
                     for pat in patterns {
                         let mut altre = String::new();
                         self.tokens_to_regex(options, &pat, &mut altre);
-                        if !altre.is_empty() {
+                        if !altre.is_empty() || options.empty_alternates {
                             parts.push(altre);
                         }
                     }
@@ -718,7 +736,7 @@ impl Tokens {
                     // It is possible to have an empty set in which case the
                     // resulting alternation '()' would be an error.
                     if !parts.is_empty() {
-                        re.push('(');
+                        re.push_str("(?:");
                         re.push_str(&parts.join("|"));
                         re.push(')');
                     }
@@ -1009,13 +1027,14 @@ fn ends_with(needle: &[u8], haystack: &[u8]) -> bool {
 mod tests {
     use super::Token::*;
     use super::{Glob, GlobBuilder, Token};
-    use {ErrorKind, GlobSetBuilder};
+    use crate::{ErrorKind, GlobSetBuilder};
 
     #[derive(Clone, Copy, Debug, Default)]
     struct Options {
         casei: Option<bool>,
         litsep: Option<bool>,
         bsesc: Option<bool>,
+        ealtre: Option<bool>,
     }
 
     macro_rules! syntax {
@@ -1055,6 +1074,9 @@ mod tests {
                 if let Some(bsesc) = $options.bsesc {
                     builder.backslash_escape(bsesc);
                 }
+                if let Some(ealtre) = $options.ealtre {
+                    builder.empty_alternates(ealtre);
+                }
                 let pat = builder.build().unwrap();
                 assert_eq!(format!("(?-u){}", $re), pat.regex());
             }
@@ -1077,6 +1099,9 @@ mod tests {
                 }
                 if let Some(bsesc) = $options.bsesc {
                     builder.backslash_escape(bsesc);
+                }
+                if let Some(ealtre) = $options.ealtre {
+                    builder.empty_alternates(ealtre);
                 }
                 let pat = builder.build().unwrap();
                 let matcher = pat.compile_matcher();
@@ -1105,6 +1130,9 @@ mod tests {
                 }
                 if let Some(bsesc) = $options.bsesc {
                     builder.backslash_escape(bsesc);
+                }
+                if let Some(ealtre) = $options.ealtre {
+                    builder.empty_alternates(ealtre);
                 }
                 let pat = builder.build().unwrap();
                 let matcher = pat.compile_matcher();
@@ -1191,13 +1219,23 @@ mod tests {
     syntaxerr!(err_range2, "[z--]", ErrorKind::InvalidRange('z', '-'));
 
     const CASEI: Options =
-        Options { casei: Some(true), litsep: None, bsesc: None };
+        Options { casei: Some(true), litsep: None, bsesc: None, ealtre: None };
     const SLASHLIT: Options =
-        Options { casei: None, litsep: Some(true), bsesc: None };
-    const NOBSESC: Options =
-        Options { casei: None, litsep: None, bsesc: Some(false) };
+        Options { casei: None, litsep: Some(true), bsesc: None, ealtre: None };
+    const NOBSESC: Options = Options {
+        casei: None,
+        litsep: None,
+        bsesc: Some(false),
+        ealtre: None,
+    };
     const BSESC: Options =
-        Options { casei: None, litsep: None, bsesc: Some(true) };
+        Options { casei: None, litsep: None, bsesc: Some(true), ealtre: None };
+    const EALTRE: Options = Options {
+        casei: None,
+        litsep: None,
+        bsesc: Some(true),
+        ealtre: Some(true),
+    };
 
     toregex!(re_casei, "a", "(?i)^a$", &CASEI);
 
@@ -1222,9 +1260,9 @@ mod tests {
     toregex!(re16, "**/**/*", r"^(?:/?|.*/).*$");
     toregex!(re17, "**/**/**", r"^.*$");
     toregex!(re18, "**/**/**/*", r"^(?:/?|.*/).*$");
-    toregex!(re19, "a/**", r"^a(?:/?|/.*)$");
-    toregex!(re20, "a/**/**", r"^a(?:/?|/.*)$");
-    toregex!(re21, "a/**/**/**", r"^a(?:/?|/.*)$");
+    toregex!(re19, "a/**", r"^a/.*$");
+    toregex!(re20, "a/**/**", r"^a/.*$");
+    toregex!(re21, "a/**/**/**", r"^a/.*$");
     toregex!(re22, "a/**/b", r"^a(?:/|/.*/)b$");
     toregex!(re23, "a/**/**/b", r"^a(?:/|/.*/)b$");
     toregex!(re24, "a/**/**/**/b", r"^a(?:/|/.*/)b$");
@@ -1238,6 +1276,7 @@ mod tests {
     toregex!(re32, "/a**", r"^/a.*.*$");
     toregex!(re33, "/**a", r"^/.*.*a$");
     toregex!(re34, "/a**b", r"^/a.*.*b$");
+    toregex!(re35, "{a,b}", r"^(?:b|a)$");
 
     matches!(match1, "a", "a");
     matches!(match2, "a*b", "a_b");
@@ -1270,11 +1309,12 @@ mod tests {
     matches!(matchrec18, "/**/test", "/test");
     matches!(matchrec19, "**/.*", ".abc");
     matches!(matchrec20, "**/.*", "abc/.abc");
-    matches!(matchrec21, ".*/**", ".abc");
+    matches!(matchrec21, "**/foo/bar", "foo/bar");
     matches!(matchrec22, ".*/**", ".abc/abc");
-    matches!(matchrec23, "foo/**", "foo");
-    matches!(matchrec24, "**/foo/bar", "foo/bar");
-    matches!(matchrec25, "some/*/needle.txt", "some/one/needle.txt");
+    matches!(matchrec23, "test/**", "test/");
+    matches!(matchrec24, "test/**", "test/one");
+    matches!(matchrec25, "test/**", "test/one/two");
+    matches!(matchrec26, "some/*/needle.txt", "some/one/needle.txt");
 
     matches!(matchrange1, "a[0-9]b", "a0b");
     matches!(matchrange2, "a[0-9]b", "a9b");
@@ -1321,6 +1361,9 @@ mod tests {
     matches!(matchalt11, "{*.foo,*.bar,*.wat}", "test.foo");
     matches!(matchalt12, "{*.foo,*.bar,*.wat}", "test.bar");
     matches!(matchalt13, "{*.foo,*.bar,*.wat}", "test.wat");
+    matches!(matchalt14, "foo{,.txt}", "foo.txt");
+    nmatches!(matchalt15, "foo{,.txt}", "foo");
+    matches!(matchalt16, "foo{,.txt}", "foo", EALTRE);
 
     matches!(matchslash1, "abc/def", "abc/def", SLASHLIT);
     #[cfg(unix)]
@@ -1400,6 +1443,8 @@ mod tests {
         "some/one/two/three/needle.txt",
         SLASHLIT
     );
+    nmatches!(matchrec33, ".*/**", ".abc");
+    nmatches!(matchrec34, "foo/**", "foo");
 
     macro_rules! extract {
         ($which:ident, $name:ident, $pat:expr, $expect:expr) => {
@@ -1417,6 +1462,9 @@ mod tests {
                 }
                 if let Some(bsesc) = $options.bsesc {
                     builder.backslash_escape(bsesc);
+                }
+                if let Some(ealtre) = $options.ealtre {
+                    builder.empty_alternates(ealtre);
                 }
                 let pat = builder.build().unwrap();
                 assert_eq!($expect, pat.$which());
@@ -1504,7 +1552,7 @@ mod tests {
     prefix!(extract_prefix1, "/foo", Some(s("/foo")));
     prefix!(extract_prefix2, "/foo/*", Some(s("/foo/")));
     prefix!(extract_prefix3, "**/foo", None);
-    prefix!(extract_prefix4, "foo/**", None);
+    prefix!(extract_prefix4, "foo/**", Some(s("foo/")));
 
     suffix!(extract_suffix1, "**/foo/bar", Some((s("/foo/bar"), true)));
     suffix!(extract_suffix2, "*/foo/bar", Some((s("/foo/bar"), false)));

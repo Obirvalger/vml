@@ -1,9 +1,8 @@
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::slice;
 
-use crate::ffi::{self, Backend, Deflate, DeflateBackend, Inflate, InflateBackend};
+use crate::ffi::{self, Backend, Deflate, DeflateBackend, ErrorMessage, Inflate, InflateBackend};
 use crate::Compression;
 
 /// Raw in-memory compression stream for blocks of data.
@@ -40,9 +39,10 @@ pub struct Decompress {
     inner: Inflate,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 /// Values which indicate the form of flushing to be used when compressing
 /// in-memory data.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum FlushCompress {
     /// A typical parameter for passing to compression/decompression functions,
     /// this indicates that the underlying stream to decide how much data to
@@ -64,7 +64,7 @@ pub enum FlushCompress {
     /// All of the input data so far will be available to the decompressor (as
     /// with `Flush::Sync`. This completes the current deflate block and follows
     /// it with an empty fixed codes block that is 10 bites long, and it assures
-    /// that enough bytes are output in order for the decompessor to finish the
+    /// that enough bytes are output in order for the decompressor to finish the
     /// block before the empty fixed code block.
     Partial = ffi::MZ_PARTIAL_FLUSH as isize,
 
@@ -80,14 +80,12 @@ pub enum FlushCompress {
     /// The return value may indicate that the stream is not yet done and more
     /// data has yet to be processed.
     Finish = ffi::MZ_FINISH as isize,
-
-    #[doc(hidden)]
-    _Nonexhaustive,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 /// Values which indicate the form of flushing to be used when
 /// decompressing in-memory data.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum FlushDecompress {
     /// A typical parameter for passing to compression/decompression functions,
     /// this indicates that the underlying stream to decide how much data to
@@ -108,15 +106,13 @@ pub enum FlushDecompress {
     /// The return value may indicate that the stream is not yet done and more
     /// data has yet to be processed.
     Finish = ffi::MZ_FINISH as isize,
-
-    #[doc(hidden)]
-    _Nonexhaustive,
 }
 
 /// The inner state for an error when decompressing
-#[derive(Debug, Default)]
-pub(crate) struct DecompressErrorInner {
-    pub(crate) needs_dictionary: Option<u32>,
+#[derive(Debug)]
+pub(crate) enum DecompressErrorInner {
+    General { msg: ErrorMessage },
+    NeedsDictionary(u32),
 }
 
 /// Error returned when a decompression object finds that the input stream of
@@ -130,26 +126,36 @@ impl DecompressError {
     /// The resulting integer is the Adler-32 checksum of the dictionary
     /// required.
     pub fn needs_dictionary(&self) -> Option<u32> {
-        self.0.needs_dictionary
+        match self.0 {
+            DecompressErrorInner::NeedsDictionary(adler) => Some(adler),
+            _ => None,
+        }
     }
 }
 
 #[inline]
-pub(crate) fn decompress_failed() -> Result<Status, DecompressError> {
-    Err(DecompressError(Default::default()))
+pub(crate) fn decompress_failed<T>(msg: ErrorMessage) -> Result<T, DecompressError> {
+    Err(DecompressError(DecompressErrorInner::General { msg }))
 }
 
 #[inline]
-pub(crate) fn decompress_need_dict(adler: u32) -> Result<Status, DecompressError> {
-    Err(DecompressError(DecompressErrorInner {
-        needs_dictionary: Some(adler),
-    }))
+pub(crate) fn decompress_need_dict<T>(adler: u32) -> Result<T, DecompressError> {
+    Err(DecompressError(DecompressErrorInner::NeedsDictionary(
+        adler,
+    )))
 }
 
 /// Error returned when a compression object is used incorrectly or otherwise
 /// generates an error.
 #[derive(Debug)]
-pub struct CompressError(pub(crate) ());
+pub struct CompressError {
+    pub(crate) msg: ErrorMessage,
+}
+
+#[inline]
+pub(crate) fn compress_failed<T>(msg: ErrorMessage) -> Result<T, CompressError> {
+    Err(CompressError { msg })
+}
 
 /// Possible status results of compressing some data or successfully
 /// decompressing a block of data.
@@ -204,19 +210,41 @@ impl Compress {
     ///
     /// If `window_bits` does not fall into the range 9 ..= 15,
     /// `new_with_window_bits` will panic.
-    ///
-    /// # Note
-    ///
-    /// This constructor is only available when the `zlib` feature is used.
-    /// Other backends currently do not support custom window bits.
     #[cfg(feature = "any_zlib")]
     pub fn new_with_window_bits(
         level: Compression,
         zlib_header: bool,
         window_bits: u8,
     ) -> Compress {
+        assert!(
+            window_bits > 8 && window_bits < 16,
+            "window_bits must be within 9 ..= 15"
+        );
         Compress {
             inner: Deflate::make(level, zlib_header, window_bits),
+        }
+    }
+
+    /// Creates a new object ready for compressing data that it's given.
+    ///
+    /// The `level` argument here indicates what level of compression is going
+    /// to be performed.
+    ///
+    /// The Compress object produced by this constructor outputs gzip headers
+    /// for the compressed data.
+    ///
+    /// # Panics
+    ///
+    /// If `window_bits` does not fall into the range 9 ..= 15,
+    /// `new_with_window_bits` will panic.
+    #[cfg(feature = "any_zlib")]
+    pub fn new_gzip(level: Compression, window_bits: u8) -> Compress {
+        assert!(
+            window_bits > 8 && window_bits < 16,
+            "window_bits must be within 9 ..= 15"
+        );
+        Compress {
+            inner: Deflate::make(level, true, window_bits + 16),
         }
     }
 
@@ -238,13 +266,14 @@ impl Compress {
     #[cfg(feature = "any_zlib")]
     pub fn set_dictionary(&mut self, dictionary: &[u8]) -> Result<u32, CompressError> {
         let stream = &mut *self.inner.inner.stream_wrapper;
+        stream.msg = std::ptr::null_mut();
         let rc = unsafe {
-            assert!(dictionary.len() < ffi::uInt::max_value() as usize);
+            assert!(dictionary.len() < ffi::uInt::MAX as usize);
             ffi::deflateSetDictionary(stream, dictionary.as_ptr(), dictionary.len() as ffi::uInt)
         };
 
         match rc {
-            ffi::MZ_STREAM_ERROR => Err(CompressError(())),
+            ffi::MZ_STREAM_ERROR => compress_failed(self.inner.inner.msg()),
             ffi::MZ_OK => Ok(stream.adler as u32),
             c => panic!("unknown return code: {}", c),
         }
@@ -269,14 +298,15 @@ impl Compress {
     /// ensures that the function will succeed on the first call.
     #[cfg(feature = "any_zlib")]
     pub fn set_level(&mut self, level: Compression) -> Result<(), CompressError> {
-        use libc::c_int;
+        use std::os::raw::c_int;
         let stream = &mut *self.inner.inner.stream_wrapper;
+        stream.msg = std::ptr::null_mut();
 
         let rc = unsafe { ffi::deflateParams(stream, level.0 as c_int, ffi::MZ_DEFAULT_STRATEGY) };
 
         match rc {
             ffi::MZ_OK => Ok(()),
-            ffi::MZ_BUF_ERROR => Err(CompressError(())),
+            ffi::MZ_BUF_ERROR => compress_failed(self.inner.inner.msg()),
             c => panic!("unknown return code: {}", c),
         }
     }
@@ -311,19 +341,12 @@ impl Compress {
         output: &mut Vec<u8>,
         flush: FlushCompress,
     ) -> Result<Status, CompressError> {
-        let cap = output.capacity();
-        let len = output.len();
-
-        unsafe {
+        write_to_spare_capacity_of_vec(output, |out| {
             let before = self.total_out();
-            let ret = {
-                let ptr = output.as_mut_ptr().offset(len as isize);
-                let out = slice::from_raw_parts_mut(ptr, cap - len);
-                self.compress(input, out, flush)
-            };
-            output.set_len((self.total_out() - before) as usize + len);
-            return ret;
-        }
+            let ret = self.compress(input, out, flush);
+            let bytes_written = self.total_out() - before;
+            (bytes_written as usize, ret)
+        })
     }
 }
 
@@ -348,15 +371,34 @@ impl Decompress {
     ///
     /// If `window_bits` does not fall into the range 9 ..= 15,
     /// `new_with_window_bits` will panic.
-    ///
-    /// # Note
-    ///
-    /// This constructor is only available when the `zlib` feature is used.
-    /// Other backends currently do not support custom window bits.
     #[cfg(feature = "any_zlib")]
     pub fn new_with_window_bits(zlib_header: bool, window_bits: u8) -> Decompress {
+        assert!(
+            window_bits > 8 && window_bits < 16,
+            "window_bits must be within 9 ..= 15"
+        );
         Decompress {
             inner: Inflate::make(zlib_header, window_bits),
+        }
+    }
+
+    /// Creates a new object ready for decompressing data that it's given.
+    ///
+    /// The Decompress object produced by this constructor expects gzip headers
+    /// for the compressed data.
+    ///
+    /// # Panics
+    ///
+    /// If `window_bits` does not fall into the range 9 ..= 15,
+    /// `new_with_window_bits` will panic.
+    #[cfg(feature = "any_zlib")]
+    pub fn new_gzip(window_bits: u8) -> Decompress {
+        assert!(
+            window_bits > 8 && window_bits < 16,
+            "window_bits must be within 9 ..= 15"
+        );
+        Decompress {
+            inner: Inflate::make(true, window_bits + 16),
         }
     }
 
@@ -423,35 +465,27 @@ impl Decompress {
         output: &mut Vec<u8>,
         flush: FlushDecompress,
     ) -> Result<Status, DecompressError> {
-        let cap = output.capacity();
-        let len = output.len();
-
-        unsafe {
+        write_to_spare_capacity_of_vec(output, |out| {
             let before = self.total_out();
-            let ret = {
-                let ptr = output.as_mut_ptr().offset(len as isize);
-                let out = slice::from_raw_parts_mut(ptr, cap - len);
-                self.decompress(input, out, flush)
-            };
-            output.set_len((self.total_out() - before) as usize + len);
-            return ret;
-        }
+            let ret = self.decompress(input, out, flush);
+            let bytes_written = self.total_out() - before;
+            (bytes_written as usize, ret)
+        })
     }
 
     /// Specifies the decompression dictionary to use.
     #[cfg(feature = "any_zlib")]
     pub fn set_dictionary(&mut self, dictionary: &[u8]) -> Result<u32, DecompressError> {
         let stream = &mut *self.inner.inner.stream_wrapper;
+        stream.msg = std::ptr::null_mut();
         let rc = unsafe {
-            assert!(dictionary.len() < ffi::uInt::max_value() as usize);
+            assert!(dictionary.len() < ffi::uInt::MAX as usize);
             ffi::inflateSetDictionary(stream, dictionary.as_ptr(), dictionary.len() as ffi::uInt)
         };
 
         match rc {
-            ffi::MZ_STREAM_ERROR => Err(DecompressError(Default::default())),
-            ffi::MZ_DATA_ERROR => Err(DecompressError(DecompressErrorInner {
-                needs_dictionary: Some(stream.adler as u32),
-            })),
+            ffi::MZ_STREAM_ERROR => decompress_failed(self.inner.inner.msg()),
+            ffi::MZ_DATA_ERROR => decompress_need_dict(stream.adler as u32),
             ffi::MZ_OK => Ok(stream.adler as u32),
             c => panic!("unknown return code: {}", c),
         }
@@ -472,6 +506,16 @@ impl Decompress {
 
 impl Error for DecompressError {}
 
+impl DecompressError {
+    /// Retrieve the implementation's message about why the operation failed, if one exists.
+    pub fn message(&self) -> Option<&str> {
+        match &self.0 {
+            DecompressErrorInner::General { msg } => msg.get(),
+            _ => None,
+        }
+    }
+}
+
 impl From<DecompressError> for io::Error {
     fn from(data: DecompressError) -> io::Error {
         io::Error::new(io::ErrorKind::Other, data)
@@ -480,11 +524,25 @@ impl From<DecompressError> for io::Error {
 
 impl fmt::Display for DecompressError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "deflate decompression error")
+        let msg = match &self.0 {
+            DecompressErrorInner::General { msg } => msg.get(),
+            DecompressErrorInner::NeedsDictionary { .. } => Some("requires a dictionary"),
+        };
+        match msg {
+            Some(msg) => write!(f, "deflate decompression error: {}", msg),
+            None => write!(f, "deflate decompression error"),
+        }
     }
 }
 
 impl Error for CompressError {}
+
+impl CompressError {
+    /// Retrieve the implementation's message about why the operation failed, if one exists.
+    pub fn message(&self) -> Option<&str> {
+        self.msg.get()
+    }
+}
 
 impl From<CompressError> for io::Error {
     fn from(data: CompressError) -> io::Error {
@@ -494,8 +552,34 @@ impl From<CompressError> for io::Error {
 
 impl fmt::Display for CompressError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "deflate decompression error")
+        match self.msg.get() {
+            Some(msg) => write!(f, "deflate compression error: {}", msg),
+            None => write!(f, "deflate compression error"),
+        }
     }
+}
+
+/// Allows `writer` to write data into the spare capacity of the `output` vector.
+/// This will not reallocate the vector provided or attempt to grow it, so space
+/// for the `output` must be reserved by the caller before calling this
+/// function.
+///
+/// `writer` needs to return the number of bytes written (and can also return
+/// another arbitrary return value).
+fn write_to_spare_capacity_of_vec<T>(
+    output: &mut Vec<u8>,
+    writer: impl FnOnce(&mut [u8]) -> (usize, T),
+) -> T {
+    let cap = output.capacity();
+    let len = output.len();
+
+    output.resize(output.capacity(), 0);
+    let (bytes_written, ret) = writer(&mut output[len..]);
+
+    let new_len = core::cmp::min(len + bytes_written, cap); // Sanitizes `bytes_written`.
+    output.resize(new_len, 0 /* unused */);
+
+    ret
 }
 
 #[cfg(test)]
@@ -644,5 +728,45 @@ mod tests {
         assert!(decompress_result.is_ok());
 
         assert_eq!(&decoded[..decoder.total_out() as usize], string);
+    }
+
+    #[cfg(feature = "any_zlib")]
+    #[test]
+    fn test_gzip_flate() {
+        let string = "hello, hello!".as_bytes();
+
+        let mut encoded = Vec::with_capacity(1024);
+
+        let mut encoder = Compress::new_gzip(Compression::default(), 9);
+
+        encoder
+            .compress_vec(string, &mut encoded, FlushCompress::Finish)
+            .unwrap();
+
+        assert_eq!(encoder.total_in(), string.len() as u64);
+        assert_eq!(encoder.total_out(), encoded.len() as u64);
+
+        let mut decoder = Decompress::new_gzip(9);
+
+        let mut decoded = [0; 1024];
+        decoder
+            .decompress(&encoded, &mut decoded, FlushDecompress::Finish)
+            .unwrap();
+
+        assert_eq!(&decoded[..decoder.total_out() as usize], string);
+    }
+
+    #[cfg(feature = "any_zlib")]
+    #[test]
+    fn test_error_message() {
+        let mut decoder = Decompress::new(false);
+        let mut decoded = [0; 128];
+        let garbage = b"xbvxzi";
+
+        let err = decoder
+            .decompress(&*garbage, &mut decoded, FlushDecompress::Finish)
+            .unwrap_err();
+
+        assert_eq!(err.message(), Some("invalid stored block lengths"));
     }
 }

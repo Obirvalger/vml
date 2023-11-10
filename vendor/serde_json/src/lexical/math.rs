@@ -9,7 +9,8 @@
 use super::large_powers;
 use super::num::*;
 use super::small_powers::*;
-use crate::lib::{cmp, iter, mem, Vec};
+use alloc::vec::Vec;
+use core::{cmp, iter, mem};
 
 // ALIASES
 // -------
@@ -335,7 +336,7 @@ mod small {
     pub fn imul(x: &mut Vec<Limb>, y: Limb) {
         // Multiply iteratively over all elements, adding the carry each time.
         let mut carry: Limb = 0;
-        for xi in x.iter_mut() {
+        for xi in &mut *x {
             carry = scalar::imul(xi, y, carry);
         }
 
@@ -481,7 +482,7 @@ mod small {
         let rshift = bits - n;
         let lshift = n;
         let mut prev: Limb = 0;
-        for xi in x.iter_mut() {
+        for xi in &mut *x {
             let tmp = *xi;
             *xi <<= lshift;
             *xi |= prev >> rshift;
@@ -593,7 +594,7 @@ mod large {
 
         // Iteratively add elements from y to x.
         let mut carry = false;
-        for (xi, yi) in (&mut x[xstart..]).iter_mut().zip(y.iter()) {
+        for (xi, yi) in x[xstart..].iter_mut().zip(y.iter()) {
             // Only one op of the two can overflow, since we added at max
             // Limb::max_value() + Limb::max_value(). Add the previous carry,
             // and store the current carry for the next.
@@ -613,7 +614,7 @@ mod large {
     /// AddAssign bigint to bigint.
     #[inline]
     pub fn iadd(x: &mut Vec<Limb>, y: &[Limb]) {
-        iadd_impl(x, y, 0)
+        iadd_impl(x, y, 0);
     }
 
     /// Add bigint to bigint.
@@ -859,13 +860,13 @@ pub(crate) trait Math: Clone + Sized + Default {
     /// Multiply by a power of 2.
     #[inline]
     fn imul_pow2(&mut self, n: u32) {
-        self.ishl(n as usize)
+        self.ishl(n as usize);
     }
 
     /// Multiply by a power of 5.
     #[inline]
     fn imul_pow5(&mut self, n: u32) {
-        small::imul_pow5(self.data_mut(), n)
+        small::imul_pow5(self.data_mut(), n);
     }
 
     /// MulAssign by a power of 10.

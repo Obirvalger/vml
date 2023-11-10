@@ -2,12 +2,25 @@
 //! This module encapsulates the `unsafe` access to `hashbrown::raw::RawTable`,
 //! mostly in dealing with its bucket "pointers".
 
-use super::{equivalent, Entry, HashValue, IndexMapCore, VacantEntry};
+use super::{equivalent, Bucket, Entry, HashValue, IndexMapCore, VacantEntry};
 use core::fmt;
 use core::mem::replace;
 use hashbrown::raw::RawTable;
 
 type RawBucket = hashbrown::raw::Bucket<usize>;
+
+/// Inserts many entries into a raw table without reallocating.
+///
+/// ***Panics*** if there is not sufficient capacity already.
+pub(super) fn insert_bulk_no_grow<K, V>(indices: &mut RawTable<usize>, entries: &[Bucket<K, V>]) {
+    assert!(indices.capacity() - indices.len() >= entries.len());
+    for entry in entries {
+        // SAFETY: we asserted that sufficient capacity exists for all entries.
+        unsafe {
+            indices.insert_no_grow(entry.hash.get(), indices.len());
+        }
+    }
+}
 
 pub(super) struct DebugIndices<'a>(pub &'a RawTable<usize>);
 impl fmt::Debug for DebugIndices<'_> {
@@ -104,14 +117,24 @@ unsafe impl<K: Sync, V: Sync> Sync for OccupiedEntry<'_, K, V> {}
 
 // The parent module also adds methods that don't threaten the unsafe encapsulation.
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
+    /// Gets a reference to the entry's key in the map.
+    ///
+    /// Note that this is not the key that was used to find the entry. There may be an observable
+    /// difference if the key type has any distinguishing features outside of `Hash` and `Eq`, like
+    /// extra fields or the memory address of an allocation.
     pub fn key(&self) -> &K {
-        &self.key
+        &self.map.entries[self.index()].key
     }
 
+    /// Gets a reference to the entry's value in the map.
     pub fn get(&self) -> &V {
         &self.map.entries[self.index()].value
     }
 
+    /// Gets a mutable reference to the entry's value in the map.
+    ///
+    /// If you need a reference which may outlive the destruction of the
+    /// `Entry` value, see `into_mut`.
     pub fn get_mut(&mut self) -> &mut V {
         let index = self.index();
         &mut self.map.entries[index].value
@@ -131,6 +154,8 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
         unsafe { self.raw_bucket.read() }
     }
 
+    /// Converts into a mutable reference to the entry's value in the map,
+    /// with a lifetime bound to the map itself.
     pub fn into_mut(self) -> &'a mut V {
         let index = self.index();
         &mut self.map.entries[index].value
@@ -140,7 +165,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     ///
     /// Like `Vec::swap_remove`, the pair is removed by swapping it with the
     /// last element of the map and popping it off. **This perturbs
-    /// the postion of what used to be the last element!**
+    /// the position of what used to be the last element!**
     ///
     /// Computes in **O(1)** time (average).
     pub fn swap_remove_entry(self) -> (K, V) {

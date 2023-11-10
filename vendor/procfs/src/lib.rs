@@ -49,7 +49,7 @@
 use bitflags::bitflags;
 use lazy_static::lazy_static;
 
-use rustix::fd::{AsFd, FromFd};
+use rustix::fd::AsFd;
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Seek, Write};
@@ -59,6 +59,8 @@ use std::{collections::HashMap, time::Duration};
 
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, Local};
+#[cfg(feature = "serde1")]
+use serde::{Deserialize, Serialize};
 
 const PROC_CONFIG_GZ: &str = "/proc/config.gz";
 const BOOT_CONFIG: &str = "/boot/config";
@@ -367,7 +369,7 @@ struct FileWrapper {
 impl FileWrapper {
     fn open<P: AsRef<Path>>(path: P) -> Result<FileWrapper, io::Error> {
         let p = path.as_ref();
-        let f = wrap_io_error!(p, File::open(&p))?;
+        let f = wrap_io_error!(p, File::open(p))?;
         Ok(FileWrapper {
             inner: f,
             path: p.to_owned(),
@@ -386,7 +388,7 @@ impl FileWrapper {
             rustix::fs::openat(dirfd, path.as_ref(), OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty())
         )?;
         Ok(FileWrapper {
-            inner: File::from_fd(fd.into()),
+            inner: File::from(fd),
             path: p,
         })
     }
@@ -460,11 +462,13 @@ pub enum ProcError {
 ///
 /// If you compile with the optional `backtrace` feature (disabled by default),
 /// you can gain access to a stack trace of where the error happened.
+#[cfg_attr(feature = "serde1", derive(Serialize))]
 pub struct InternalError {
     pub msg: String,
     pub file: &'static str,
     pub line: u32,
     #[cfg(feature = "backtrace")]
+    #[cfg_attr(feature = "serde1", serde(skip))]
     pub backtrace: backtrace::Backtrace,
 }
 
@@ -550,6 +554,7 @@ impl std::error::Error for ProcError {}
 /// Load averages are calculated as the number of jobs in the run queue (state R) or waiting for
 /// disk I/O (state D) averaged over 1, 5, and 15 minutes.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct LoadAverage {
     /// The one-minute load average
     pub one: f32,
@@ -666,7 +671,7 @@ pub fn page_size() -> std::io::Result<u64> {
 }
 
 /// Possible values for a kernel config option
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigSetting {
     Yes,
     Module,
@@ -742,6 +747,7 @@ pub fn kernel_config() -> ProcResult<HashMap<String, ConfigSetting>> {
 /// To convert this value to seconds, you can divide by the tps.  There are also convenience methods
 /// that you can use too.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct CpuTime {
     /// Ticks spent in user mode
     pub user: u64,
@@ -943,6 +949,7 @@ impl CpuTime {
 
 /// Kernel/system statistics, from `/proc/stat`
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct KernelStats {
     /// The amount of time the system spent in various states
     pub total: CpuTime,
@@ -1047,6 +1054,7 @@ pub fn vmstat() -> ProcResult<HashMap<String, i64>> {
 /// For an example, see the [lsmod.rs](https://github.com/eminence/procfs/tree/master/examples)
 /// example in the source repo.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct KernelModule {
     /// The name of the module
     pub name: String,
@@ -1170,6 +1178,19 @@ mod tests {
     fn test_loadavg() {
         let load = LoadAverage::new().unwrap();
         println!("{:?}", load);
+    }
+
+    #[test]
+    fn test_loadavg_from_reader() -> ProcResult<()> {
+        let load_average = LoadAverage::from_reader("2.63 1.00 1.42 3/4280 2496732".as_bytes())?;
+
+        assert_eq!(load_average.one, 2.63);
+        assert_eq!(load_average.five, 1.00);
+        assert_eq!(load_average.fifteen, 1.42);
+        assert_eq!(load_average.max, 4280);
+        assert_eq!(load_average.cur, 3);
+        assert_eq!(load_average.latest_pid, 2496732);
+        Ok(())
     }
 
     #[test]

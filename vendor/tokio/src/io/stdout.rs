@@ -73,16 +73,37 @@ cfg_io_std! {
 }
 
 #[cfg(unix)]
-impl std::os::unix::io::AsRawFd for Stdout {
-    fn as_raw_fd(&self) -> std::os::unix::io::RawFd {
-        std::io::stdout().as_raw_fd()
+mod sys {
+    use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd};
+
+    use super::Stdout;
+
+    impl AsRawFd for Stdout {
+        fn as_raw_fd(&self) -> RawFd {
+            std::io::stdout().as_raw_fd()
+        }
+    }
+
+    impl AsFd for Stdout {
+        fn as_fd(&self) -> BorrowedFd<'_> {
+            unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
+        }
     }
 }
 
-#[cfg(windows)]
-impl std::os::windows::io::AsRawHandle for Stdout {
-    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
-        std::io::stdout().as_raw_handle()
+cfg_windows! {
+    use crate::os::windows::io::{AsHandle, BorrowedHandle, AsRawHandle, RawHandle};
+
+    impl AsRawHandle for Stdout {
+        fn as_raw_handle(&self) -> RawHandle {
+            std::io::stdout().as_raw_handle()
+        }
+    }
+
+    impl AsHandle for Stdout {
+        fn as_handle(&self) -> BorrowedHandle<'_> {
+            unsafe { BorrowedHandle::borrow_raw(self.as_raw_handle()) }
+        }
     }
 }
 

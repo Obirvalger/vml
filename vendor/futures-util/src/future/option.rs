@@ -1,7 +1,7 @@
 //! Definition of the `Option` (optional step) combinator
 
 use core::pin::Pin;
-use futures_core::future::{Future, FusedFuture};
+use futures_core::future::{FusedFuture, Future};
 use futures_core::task::{Context, Poll};
 use pin_project_lite::pin_project;
 
@@ -31,13 +31,16 @@ pin_project! {
     }
 }
 
+impl<F> Default for OptionFuture<F> {
+    fn default() -> Self {
+        Self { inner: None }
+    }
+}
+
 impl<F: Future> Future for OptionFuture<F> {
     type Output = Option<F::Output>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project().inner.as_pin_mut() {
             Some(x) => x.poll(cx).map(Some),
             None => Poll::Ready(None),

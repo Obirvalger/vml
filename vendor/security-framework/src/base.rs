@@ -1,6 +1,5 @@
 //! Support types for other modules.
 
-#[cfg(target_os = "macos")]
 use core_foundation::string::CFString;
 use core_foundation_sys::base::OSStatus;
 use std::error;
@@ -31,17 +30,18 @@ impl Error {
     /// Creates a new `Error` from a status code.
     /// The code must not be zero
     #[inline]
+    #[must_use]
     pub fn from_code(code: OSStatus) -> Self {
-        Self(NonZeroI32::new(code as i32).unwrap_or(NonZeroI32::new(1).unwrap()))
+        Self(NonZeroI32::new(code).unwrap_or_else(|| NonZeroI32::new(1).unwrap()))
     }
 
     /// Returns a string describing the current error, if available.
     #[inline(always)]
+    #[must_use]
     pub fn message(self) -> Option<String> {
         self.inner_message()
     }
 
-    #[cfg(target_os = "macos")]
     #[cold]
     fn inner_message(self) -> Option<String> {
         use core_foundation::base::TCFType;
@@ -58,14 +58,9 @@ impl Error {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
-    #[inline(always)]
-    fn inner_message(&self) -> Option<String> {
-        None
-    }
-
     /// Returns the code of the current error.
     #[inline(always)]
+    #[must_use]
     pub fn code(self) -> OSStatus {
         self.0.get() as _
     }
@@ -73,6 +68,7 @@ impl Error {
 
 impl From<OSStatus> for Error {
     #[inline(always)]
+    #[must_use]
     fn from(code: OSStatus) -> Self {
         Self::from_code(code)
     }
@@ -89,5 +85,4 @@ impl fmt::Display for Error {
     }
 }
 
-impl error::Error for Error {
-}
+impl error::Error for Error {}

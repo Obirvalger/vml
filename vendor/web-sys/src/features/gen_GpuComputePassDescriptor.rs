@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
@@ -43,5 +44,33 @@ impl GpuComputePassDescriptor {
         );
         let _ = r;
         self
+    }
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuComputePassTimestampWrites")]
+    #[doc = "Change the `timestampWrites` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuComputePassDescriptor`, `GpuComputePassTimestampWrites`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn timestamp_writes(&mut self, val: &GpuComputePassTimestampWrites) -> &mut Self {
+        use wasm_bindgen::JsValue;
+        let r = ::js_sys::Reflect::set(
+            self.as_ref(),
+            &JsValue::from("timestampWrites"),
+            &JsValue::from(val),
+        );
+        debug_assert!(
+            r.is_ok(),
+            "setting properties should never fail on our dictionary objects"
+        );
+        let _ = r;
+        self
+    }
+}
+#[cfg(web_sys_unstable_apis)]
+impl Default for GpuComputePassDescriptor {
+    fn default() -> Self {
+        Self::new()
     }
 }

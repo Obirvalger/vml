@@ -1,4 +1,6 @@
-use bstr::BStr;
+use alloc::vec::Vec;
+
+use crate::bstr::BStr;
 
 /// A wrapper for `Vec<u8>` that provides convenient string oriented trait
 /// impls.
@@ -38,13 +40,40 @@ use bstr::BStr;
 /// region of memory containing the bytes, a length and a capacity.
 #[derive(Clone, Hash)]
 pub struct BString {
-    pub(crate) bytes: Vec<u8>,
+    bytes: Vec<u8>,
 }
 
 impl BString {
+    /// Constructs a new `BString` from the given [`Vec`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bstr::BString;
+    ///
+    /// let mut b = BString::new(Vec::with_capacity(10));
+    /// ```
+    ///
+    /// This function is `const`:
+    ///
+    /// ```
+    /// use bstr::BString;
+    ///
+    /// const B: BString = BString::new(vec![]);
+    /// ```
+    #[inline]
+    pub const fn new(bytes: Vec<u8>) -> BString {
+        BString { bytes }
+    }
+
     #[inline]
     pub(crate) fn as_bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    #[inline]
+    pub(crate) fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.bytes
     }
 
     #[inline]
@@ -55,5 +84,20 @@ impl BString {
     #[inline]
     pub(crate) fn as_mut_bstr(&mut self) -> &mut BStr {
         BStr::new_mut(&mut self.bytes)
+    }
+
+    #[inline]
+    pub(crate) fn as_vec(&self) -> &Vec<u8> {
+        &self.bytes
+    }
+
+    #[inline]
+    pub(crate) fn as_vec_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.bytes
+    }
+
+    #[inline]
+    pub(crate) fn into_vec(self) -> Vec<u8> {
+        self.bytes
     }
 }

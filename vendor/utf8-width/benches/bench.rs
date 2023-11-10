@@ -1,11 +1,6 @@
-extern crate utf8_width;
-
-#[macro_use]
-extern crate bencher;
-
 use std::fs;
 
-use bencher::Bencher;
+use bencher::{benchmark_group, benchmark_main, Bencher};
 
 #[cfg(unix)]
 const TEXT_PATH: &str = "benches/data/wikipedia-rust.txt";
@@ -138,5 +133,11 @@ fn retrieve_get_width_by_chars(bencher: &mut Bencher) {
     bencher.bytes = length as u64;
 }
 
-benchmark_group!(get_width, retrieve_get_width, retrieve_get_width_assume_valid, retrieve_get_width_by_looking_table, retrieve_get_width_by_chars);
+benchmark_group!(
+    get_width,
+    retrieve_get_width,
+    retrieve_get_width_assume_valid,
+    retrieve_get_width_by_looking_table,
+    retrieve_get_width_by_chars
+);
 benchmark_main!(get_width);

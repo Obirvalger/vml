@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
 #[wasm_bindgen]
@@ -11,4 +12,5 @@ use wasm_bindgen::prelude::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuLoadOp {
     Load = "load",
+    Clear = "clear",
 }

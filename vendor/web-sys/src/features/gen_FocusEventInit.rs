@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -115,5 +116,10 @@ impl FocusEventInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for FocusEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

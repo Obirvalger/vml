@@ -3,11 +3,11 @@ extern crate serde;
 use self::serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use core::fmt;
 
-use timezones::Tz;
+use crate::timezones::Tz;
 
 impl Serialize for Tz {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.name())
+        serializer.serialize_str(self.name())
     }
 }
 
@@ -33,10 +33,8 @@ impl<'de> Deserialize<'de> for Tz {
 
 #[cfg(test)]
 mod tests {
-    extern crate serde_test;
-
-    use self::serde_test::{assert_de_tokens_error, assert_tokens, Token};
-    use timezones::Tz::{self, Etc__UTC, Europe__London, UTC};
+    use crate::timezones::Tz::{self, Etc__UTC, Europe__London, UTC};
+    use serde_test::{assert_de_tokens_error, assert_tokens, Token};
 
     #[test]
     fn serde_ok_both_ways() {

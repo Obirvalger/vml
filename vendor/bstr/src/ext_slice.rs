@@ -1,26 +1,30 @@
-#[cfg(feature = "std")]
-use std::borrow::Cow;
-#[cfg(feature = "std")]
-use std::ffi::OsStr;
-#[cfg(feature = "std")]
-use std::path::Path;
+use core::{iter, slice, str};
 
-use core::{cmp, iter, ops, ptr, slice, str};
-use memchr::{memchr, memrchr};
+#[cfg(all(feature = "alloc", feature = "unicode"))]
+use alloc::vec;
+#[cfg(feature = "alloc")]
+use alloc::{borrow::Cow, string::String, vec::Vec};
 
-use ascii;
-use bstr::BStr;
-use byteset;
 #[cfg(feature = "std")]
-use ext_vec::ByteVec;
-use search::{PrefilterState, TwoWay};
+use std::{ffi::OsStr, path::Path};
+
+use memchr::{memchr, memmem, memrchr};
+
+use crate::escape_bytes::EscapeBytes;
+#[cfg(feature = "alloc")]
+use crate::ext_vec::ByteVec;
 #[cfg(feature = "unicode")]
-use unicode::{
+use crate::unicode::{
     whitespace_len_fwd, whitespace_len_rev, GraphemeIndices, Graphemes,
     SentenceIndices, Sentences, WordIndices, Words, WordsWithBreakIndices,
     WordsWithBreaks,
 };
-use utf8::{self, CharIndices, Chars, Utf8Chunks, Utf8Error};
+use crate::{
+    ascii,
+    bstr::BStr,
+    byteset,
+    utf8::{self, CharIndices, Chars, Utf8Chunks, Utf8Error},
+};
 
 /// A short-hand constructor for building a `&[u8]`.
 ///
@@ -84,13 +88,30 @@ impl ByteSlice for [u8] {
     }
 }
 
+impl<const N: usize> ByteSlice for [u8; N] {
+    #[inline]
+    fn as_bytes(&self) -> &[u8] {
+        self
+    }
+
+    #[inline]
+    fn as_bytes_mut(&mut self) -> &mut [u8] {
+        self
+    }
+}
+
 /// Ensure that callers cannot implement `ByteSlice` by making an
 /// umplementable trait its super trait.
-pub trait Sealed {}
-impl Sealed for [u8] {}
+mod private {
+    pub trait Sealed {}
+}
+impl private::Sealed for [u8] {}
+impl<const N: usize> private::Sealed for [u8; N] {}
 
 /// A trait that extends `&[u8]` with string oriented methods.
-pub trait ByteSlice: Sealed {
+///
+/// This trait is sealed and cannot be implemented outside of `bstr`.
+pub trait ByteSlice: private::Sealed {
     /// A method for accessing the raw bytes of this type. This is always a
     /// no-op and callers shouldn't care about it. This only exists for making
     /// the extension trait work.
@@ -150,11 +171,12 @@ pub trait ByteSlice: Sealed {
 
     /// Create an immutable byte string from an OS string slice.
     ///
-    /// On Unix, this always succeeds and is zero cost. On non-Unix systems,
-    /// this returns `None` if the given OS string is not valid UTF-8. (For
-    /// example, on Windows, file paths are allowed to be a sequence of
-    /// arbitrary 16-bit integers. Not all such sequences can be transcoded to
-    /// valid UTF-8.)
+    /// When the underlying bytes of OS strings are accessible, then this
+    /// always succeeds and is zero cost. Otherwise, this returns `None` if the
+    /// given OS string is not valid UTF-8. (For example, when the underlying
+    /// bytes are inaccessible on Windows, file paths are allowed to be a
+    /// sequence of arbitrary 16-bit integers. Not all such sequences can be
+    /// transcoded to valid UTF-8.)
     ///
     /// # Examples
     ///
@@ -191,10 +213,12 @@ pub trait ByteSlice: Sealed {
 
     /// Create an immutable byte string from a file path.
     ///
-    /// On Unix, this always succeeds and is zero cost. On non-Unix systems,
-    /// this returns `None` if the given path is not valid UTF-8. (For example,
-    /// on Windows, file paths are allowed to be a sequence of arbitrary 16-bit
-    /// integers. Not all such sequences can be transcoded to valid UTF-8.)
+    /// When the underlying bytes of paths are accessible, then this always
+    /// succeeds and is zero cost. Otherwise, this returns `None` if the given
+    /// path is not valid UTF-8. (For example, when the underlying bytes are
+    /// inaccessible on Windows, file paths are allowed to be a sequence of
+    /// arbitrary 16-bit integers. Not all such sequences can be transcoded to
+    /// valid UTF-8.)
     ///
     /// # Examples
     ///
@@ -231,6 +255,7 @@ pub trait ByteSlice: Sealed {
     /// Basic usage:
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")] {
     /// use bstr::{B, ByteSlice, ByteVec};
     ///
     /// # fn example() -> Result<(), bstr::Utf8Error> {
@@ -242,6 +267,7 @@ pub trait ByteSlice: Sealed {
     /// let err = bstring.to_str().unwrap_err();
     /// assert_eq!(8, err.valid_up_to());
     /// # Ok(()) }; example().unwrap()
+    /// # }
     /// ```
     #[inline]
     fn to_str(&self) -> Result<&str, Utf8Error> {
@@ -302,7 +328,7 @@ pub trait ByteSlice: Sealed {
     /// [W3C's Encoding standard](https://www.w3.org/TR/encoding/).
     /// For a more precise description of the maximal subpart strategy, see
     /// the Unicode Standard, Chapter 3, Section 9. See also
-    /// [Public Review Issue #121](http://www.unicode.org/review/pr-121.html).
+    /// [Public Review Issue #121](https://www.unicode.org/review/pr-121.html).
     ///
     /// N.B. Rust's standard library also appears to use the same strategy,
     /// but it does not appear to be an API guarantee.
@@ -342,9 +368,9 @@ pub trait ByteSlice: Sealed {
     /// let bs = B(b"\x61\xF1\x80\x80\xE1\x80\xC2\x62");
     /// assert_eq!("a\u{FFFD}\u{FFFD}\u{FFFD}b", bs.to_str_lossy());
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
-    fn to_str_lossy(&self) -> Cow<str> {
+    fn to_str_lossy(&self) -> Cow<'_, str> {
         match utf8::validate(self.as_bytes()) {
             Ok(()) => {
                 // SAFETY: This is safe because of the guarantees provided by
@@ -399,7 +425,7 @@ pub trait ByteSlice: Sealed {
     /// bstring.to_str_lossy_into(&mut dest);
     /// assert_eq!("☃βツ\u{FFFD}", dest);
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
     fn to_str_lossy_into(&self, dest: &mut String) {
         let mut bytes = self.as_bytes();
@@ -429,12 +455,15 @@ pub trait ByteSlice: Sealed {
 
     /// Create an OS string slice from this byte string.
     ///
-    /// On Unix, this always succeeds and is zero cost. On non-Unix systems,
-    /// this returns a UTF-8 decoding error if this byte string is not valid
-    /// UTF-8. (For example, on Windows, file paths are allowed to be a
-    /// sequence of arbitrary 16-bit integers. There is no obvious mapping from
-    /// an arbitrary sequence of 8-bit integers to an arbitrary sequence of
-    /// 16-bit integers.)
+    /// When OS strings can be constructed from arbitrary byte sequences, this
+    /// always succeeds and is zero cost. Otherwise, this returns a UTF-8
+    /// decoding error if this byte string is not valid UTF-8. (For example,
+    /// assuming the representation of `OsStr` is opaque on Windows, file paths
+    /// are allowed to be a sequence of arbitrary 16-bit integers. There is
+    /// no obvious mapping from an arbitrary sequence of 8-bit integers to an
+    /// arbitrary sequence of 16-bit integers. If the representation of `OsStr`
+    /// is even opened up, then this will convert any sequence of bytes to an
+    /// `OsStr` without cost.)
     ///
     /// # Examples
     ///
@@ -468,13 +497,13 @@ pub trait ByteSlice: Sealed {
 
     /// Lossily create an OS string slice from this byte string.
     ///
-    /// On Unix, this always succeeds and is zero cost. On non-Unix systems,
-    /// this will perform a UTF-8 check and lossily convert this byte string
-    /// into valid UTF-8 using the Unicode replacement codepoint.
+    /// When OS strings can be constructed from arbitrary byte sequences, this
+    /// is zero cost and always returns a slice. Otherwise, this will perform a
+    /// UTF-8 check and lossily convert this byte string into valid UTF-8 using
+    /// the Unicode replacement codepoint.
     ///
-    /// Note that this can prevent the correct roundtripping of file paths on
-    /// non-Unix systems such as Windows, where file paths are an arbitrary
-    /// sequence of 16-bit integers.
+    /// Note that this can prevent the correct roundtripping of file paths when
+    /// the representation of `OsStr` is opaque.
     ///
     /// # Examples
     ///
@@ -488,10 +517,10 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "std")]
     #[inline]
-    fn to_os_str_lossy(&self) -> Cow<OsStr> {
+    fn to_os_str_lossy(&self) -> Cow<'_, OsStr> {
         #[cfg(unix)]
         #[inline]
-        fn imp(bytes: &[u8]) -> Cow<OsStr> {
+        fn imp(bytes: &[u8]) -> Cow<'_, OsStr> {
             use std::os::unix::ffi::OsStrExt;
 
             Cow::Borrowed(OsStr::from_bytes(bytes))
@@ -513,12 +542,15 @@ pub trait ByteSlice: Sealed {
 
     /// Create a path slice from this byte string.
     ///
-    /// On Unix, this always succeeds and is zero cost. On non-Unix systems,
-    /// this returns a UTF-8 decoding error if this byte string is not valid
-    /// UTF-8. (For example, on Windows, file paths are allowed to be a
-    /// sequence of arbitrary 16-bit integers. There is no obvious mapping from
-    /// an arbitrary sequence of 8-bit integers to an arbitrary sequence of
-    /// 16-bit integers.)
+    /// When paths can be constructed from arbitrary byte sequences, this
+    /// always succeeds and is zero cost. Otherwise, this returns a UTF-8
+    /// decoding error if this byte string is not valid UTF-8. (For example,
+    /// assuming the representation of `Path` is opaque on Windows, file paths
+    /// are allowed to be a sequence of arbitrary 16-bit integers. There is
+    /// no obvious mapping from an arbitrary sequence of 8-bit integers to an
+    /// arbitrary sequence of 16-bit integers. If the representation of `Path`
+    /// is even opened up, then this will convert any sequence of bytes to an
+    /// `Path` without cost.)
     ///
     /// # Examples
     ///
@@ -538,13 +570,13 @@ pub trait ByteSlice: Sealed {
 
     /// Lossily create a path slice from this byte string.
     ///
-    /// On Unix, this always succeeds and is zero cost. On non-Unix systems,
-    /// this will perform a UTF-8 check and lossily convert this byte string
-    /// into valid UTF-8 using the Unicode replacement codepoint.
+    /// When paths can be constructed from arbitrary byte sequences, this is
+    /// zero cost and always returns a slice. Otherwise, this will perform a
+    /// UTF-8 check and lossily convert this byte string into valid UTF-8 using
+    /// the Unicode replacement codepoint.
     ///
-    /// Note that this can prevent the correct roundtripping of file paths on
-    /// non-Unix systems such as Windows, where file paths are an arbitrary
-    /// sequence of 16-bit integers.
+    /// Note that this can prevent the correct roundtripping of file paths when
+    /// the representation of `Path` is opaque.
     ///
     /// # Examples
     ///
@@ -559,7 +591,7 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "std")]
     #[inline]
-    fn to_path_lossy(&self) -> Cow<Path> {
+    fn to_path_lossy(&self) -> Cow<'_, Path> {
         use std::path::PathBuf;
 
         match self.to_os_str_lossy() {
@@ -585,15 +617,10 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(b"foo".repeatn(4), B("foofoofoofoo"));
     /// assert_eq!(b"foo".repeatn(0), B(""));
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
     fn repeatn(&self, n: usize) -> Vec<u8> {
-        let bs = self.as_bytes();
-        let mut dst = vec![0; bs.len() * n];
-        for i in 0..n {
-            dst[i * bs.len()..(i + 1) * bs.len()].copy_from_slice(bs);
-        }
-        dst
+        self.as_bytes().repeat(n)
     }
 
     /// Returns true if and only if this byte string contains the given needle.
@@ -760,10 +787,10 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(matches, vec![0]);
     /// ```
     #[inline]
-    fn find_iter<'a, B: ?Sized + AsRef<[u8]>>(
-        &'a self,
-        needle: &'a B,
-    ) -> Find<'a> {
+    fn find_iter<'h, 'n, B: ?Sized + AsRef<[u8]>>(
+        &'h self,
+        needle: &'n B,
+    ) -> Find<'h, 'n> {
         Find::new(self.as_bytes(), needle.as_ref())
     }
 
@@ -805,10 +832,10 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(matches, vec![0]);
     /// ```
     #[inline]
-    fn rfind_iter<'a, B: ?Sized + AsRef<[u8]>>(
-        &'a self,
-        needle: &'a B,
-    ) -> FindReverse<'a> {
+    fn rfind_iter<'h, 'n, B: ?Sized + AsRef<[u8]>>(
+        &'h self,
+        needle: &'n B,
+    ) -> FindReverse<'h, 'n> {
         FindReverse::new(self.as_bytes(), needle.as_ref())
     }
 
@@ -927,14 +954,17 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(b"foo bar baz".find_byteset(b"zr"), Some(6));
     /// assert_eq!(b"foo baz bar".find_byteset(b"bzr"), Some(4));
     /// assert_eq!(None, b"foo baz bar".find_byteset(b"\t\n"));
+    /// // The empty byteset never matches.
+    /// assert_eq!(None, b"abc".find_byteset(b""));
+    /// assert_eq!(None, b"".find_byteset(b""));
     /// ```
     #[inline]
     fn find_byteset<B: AsRef<[u8]>>(&self, byteset: B) -> Option<usize> {
         byteset::find(self.as_bytes(), byteset.as_ref())
     }
 
-    /// Returns the index of the first occurrence of a byte that is not a member
-    /// of the provided set.
+    /// Returns the index of the first occurrence of a byte that is not a
+    /// member of the provided set.
     ///
     /// The `byteset` may be any type that can be cheaply converted into a
     /// `&[u8]`. This includes, but is not limited to, `&str` and `&[u8]`, but
@@ -964,6 +994,10 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(b"foo bar baz".find_not_byteset(b"fo "), Some(4));
     /// assert_eq!(b"\t\tbaz bar".find_not_byteset(b" \t\r\n"), Some(2));
     /// assert_eq!(b"foo\nbaz\tbar".find_not_byteset(b"\t\n"), Some(0));
+    /// // The negation of the empty byteset matches everything.
+    /// assert_eq!(Some(0), b"abc".find_not_byteset(b""));
+    /// // But an empty string never contains anything.
+    /// assert_eq!(None, b"".find_not_byteset(b""));
     /// ```
     #[inline]
     fn find_not_byteset<B: AsRef<[u8]>>(&self, byteset: B) -> Option<usize> {
@@ -1044,8 +1078,9 @@ pub trait ByteSlice: Sealed {
         byteset::rfind_not(self.as_bytes(), byteset.as_ref())
     }
 
-    /// Returns an iterator over the fields in a byte string, separated by
-    /// contiguous whitespace.
+    /// Returns an iterator over the fields in a byte string, separated
+    /// by contiguous whitespace (according to the Unicode property
+    /// `White_Space`).
     ///
     /// # Example
     ///
@@ -1066,8 +1101,9 @@ pub trait ByteSlice: Sealed {
     ///
     /// assert_eq!(0, B("  \n\t\u{2003}\n  \t").fields().count());
     /// ```
+    #[cfg(feature = "unicode")]
     #[inline]
-    fn fields(&self) -> Fields {
+    fn fields(&self) -> Fields<'_> {
         Fields::new(self.as_bytes())
     }
 
@@ -1099,7 +1135,7 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(0, b"1911354563".fields_with(|c| c.is_numeric()).count());
     /// ```
     #[inline]
-    fn fields_with<F: FnMut(char) -> bool>(&self, f: F) -> FieldsWith<F> {
+    fn fields_with<F: FnMut(char) -> bool>(&self, f: F) -> FieldsWith<'_, F> {
         FieldsWith::new(self.as_bytes(), f)
     }
 
@@ -1192,10 +1228,10 @@ pub trait ByteSlice: Sealed {
     /// It does *not* give you `["a", "b", "c"]`. For that behavior, use
     /// [`fields`](#method.fields) instead.
     #[inline]
-    fn split_str<'a, B: ?Sized + AsRef<[u8]>>(
-        &'a self,
-        splitter: &'a B,
-    ) -> Split<'a> {
+    fn split_str<'h, 's, B: ?Sized + AsRef<[u8]>>(
+        &'h self,
+        splitter: &'s B,
+    ) -> Split<'h, 's> {
         Split::new(self.as_bytes(), splitter.as_ref())
     }
 
@@ -1286,11 +1322,99 @@ pub trait ByteSlice: Sealed {
     ///
     /// It does *not* give you `["a", "b", "c"]`.
     #[inline]
-    fn rsplit_str<'a, B: ?Sized + AsRef<[u8]>>(
-        &'a self,
-        splitter: &'a B,
-    ) -> SplitReverse<'a> {
+    fn rsplit_str<'h, 's, B: ?Sized + AsRef<[u8]>>(
+        &'h self,
+        splitter: &'s B,
+    ) -> SplitReverse<'h, 's> {
         SplitReverse::new(self.as_bytes(), splitter.as_ref())
+    }
+
+    /// Split this byte string at the first occurrence of `splitter`.
+    ///
+    /// If the `splitter` is found in the byte string, returns a tuple
+    /// containing the parts of the string before and after the first occurrence
+    /// of `splitter` respectively. Otherwise, if there are no occurrences of
+    /// `splitter` in the byte string, returns `None`.
+    ///
+    /// The splitter may be any type that can be cheaply converted into a
+    /// `&[u8]`. This includes, but is not limited to, `&str` and `&[u8]`.
+    ///
+    /// If you need to split on the *last* instance of a delimiter instead, see
+    /// the [`ByteSlice::rsplit_once_str`](#method.rsplit_once_str) method .
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use bstr::{B, ByteSlice};
+    ///
+    /// assert_eq!(
+    ///     B("foo,bar").split_once_str(","),
+    ///     Some((B("foo"), B("bar"))),
+    /// );
+    /// assert_eq!(
+    ///     B("foo,bar,baz").split_once_str(","),
+    ///     Some((B("foo"), B("bar,baz"))),
+    /// );
+    /// assert_eq!(B("foo").split_once_str(","), None);
+    /// assert_eq!(B("foo,").split_once_str(b","), Some((B("foo"), B(""))));
+    /// assert_eq!(B(",foo").split_once_str(b","), Some((B(""), B("foo"))));
+    /// ```
+    #[inline]
+    fn split_once_str<'a, B: ?Sized + AsRef<[u8]>>(
+        &'a self,
+        splitter: &B,
+    ) -> Option<(&'a [u8], &'a [u8])> {
+        let bytes = self.as_bytes();
+        let splitter = splitter.as_ref();
+        let start = Finder::new(splitter).find(bytes)?;
+        let end = start + splitter.len();
+        Some((&bytes[..start], &bytes[end..]))
+    }
+
+    /// Split this byte string at the last occurrence of `splitter`.
+    ///
+    /// If the `splitter` is found in the byte string, returns a tuple
+    /// containing the parts of the string before and after the last occurrence
+    /// of `splitter`, respectively. Otherwise, if there are no occurrences of
+    /// `splitter` in the byte string, returns `None`.
+    ///
+    /// The splitter may be any type that can be cheaply converted into a
+    /// `&[u8]`. This includes, but is not limited to, `&str` and `&[u8]`.
+    ///
+    /// If you need to split on the *first* instance of a delimiter instead, see
+    /// the [`ByteSlice::split_once_str`](#method.split_once_str) method.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use bstr::{B, ByteSlice};
+    ///
+    /// assert_eq!(
+    ///     B("foo,bar").rsplit_once_str(","),
+    ///     Some((B("foo"), B("bar"))),
+    /// );
+    /// assert_eq!(
+    ///     B("foo,bar,baz").rsplit_once_str(","),
+    ///     Some((B("foo,bar"), B("baz"))),
+    /// );
+    /// assert_eq!(B("foo").rsplit_once_str(","), None);
+    /// assert_eq!(B("foo,").rsplit_once_str(b","), Some((B("foo"), B(""))));
+    /// assert_eq!(B(",foo").rsplit_once_str(b","), Some((B(""), B("foo"))));
+    /// ```
+    #[inline]
+    fn rsplit_once_str<'a, B: ?Sized + AsRef<[u8]>>(
+        &'a self,
+        splitter: &B,
+    ) -> Option<(&'a [u8], &'a [u8])> {
+        let bytes = self.as_bytes();
+        let splitter = splitter.as_ref();
+        let start = FinderReverse::new(splitter).rfind(bytes)?;
+        let end = start + splitter.len();
+        Some((&bytes[..start], &bytes[end..]))
     }
 
     /// Returns an iterator of at most `limit` substrings of this byte string,
@@ -1329,11 +1453,11 @@ pub trait ByteSlice: Sealed {
     /// assert!(x.is_empty());
     /// ```
     #[inline]
-    fn splitn_str<'a, B: ?Sized + AsRef<[u8]>>(
-        &'a self,
+    fn splitn_str<'h, 's, B: ?Sized + AsRef<[u8]>>(
+        &'h self,
         limit: usize,
-        splitter: &'a B,
-    ) -> SplitN<'a> {
+        splitter: &'s B,
+    ) -> SplitN<'h, 's> {
         SplitN::new(self.as_bytes(), splitter.as_ref(), limit)
     }
 
@@ -1375,11 +1499,11 @@ pub trait ByteSlice: Sealed {
     /// assert!(x.is_empty());
     /// ```
     #[inline]
-    fn rsplitn_str<'a, B: ?Sized + AsRef<[u8]>>(
-        &'a self,
+    fn rsplitn_str<'h, 's, B: ?Sized + AsRef<[u8]>>(
+        &'h self,
         limit: usize,
-        splitter: &'a B,
-    ) -> SplitNReverse<'a> {
+        splitter: &'s B,
+    ) -> SplitNReverse<'h, 's> {
         SplitNReverse::new(self.as_bytes(), splitter.as_ref(), limit)
     }
 
@@ -1417,7 +1541,7 @@ pub trait ByteSlice: Sealed {
     /// let s = b"foo".replace("", "Z");
     /// assert_eq!(s, "ZfZoZoZ".as_bytes());
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
     fn replace<N: AsRef<[u8]>, R: AsRef<[u8]>>(
         &self,
@@ -1463,7 +1587,7 @@ pub trait ByteSlice: Sealed {
     /// let s = b"foo".replacen("", "Z", 2);
     /// assert_eq!(s, "ZfZoo".as_bytes());
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
     fn replacen<N: AsRef<[u8]>, R: AsRef<[u8]>>(
         &self,
@@ -1521,7 +1645,7 @@ pub trait ByteSlice: Sealed {
     /// s.replace_into("", "Z", &mut dest);
     /// assert_eq!(dest, "ZfZoZoZ".as_bytes());
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
     fn replace_into<N: AsRef<[u8]>, R: AsRef<[u8]>>(
         &self,
@@ -1585,7 +1709,7 @@ pub trait ByteSlice: Sealed {
     /// s.replacen_into("", "Z", 2, &mut dest);
     /// assert_eq!(dest, "ZfZoo".as_bytes());
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
     fn replacen_into<N: AsRef<[u8]>, R: AsRef<[u8]>>(
         &self,
@@ -1619,7 +1743,7 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(bytes, bs);
     /// ```
     #[inline]
-    fn bytes(&self) -> Bytes {
+    fn bytes(&self) -> Bytes<'_> {
         Bytes { it: self.as_bytes().iter() }
     }
 
@@ -1649,7 +1773,7 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(vec!['a', '\u{FFFD}', '𝞃', '\u{FFFD}', '☃'], chars);
     /// ```
     #[inline]
-    fn chars(&self) -> Chars {
+    fn chars(&self) -> Chars<'_> {
         Chars::new(self.as_bytes())
     }
 
@@ -1704,7 +1828,7 @@ pub trait ByteSlice: Sealed {
     /// ]);
     /// ```
     #[inline]
-    fn char_indices(&self) -> CharIndices {
+    fn char_indices(&self) -> CharIndices<'_> {
         CharIndices::new(self.as_bytes())
     }
 
@@ -1741,7 +1865,7 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(invalid_chunks, vec![b"\xFD", b"\xFE", b"\xFF"]);
     /// ```
     #[inline]
-    fn utf8_chunks(&self) -> Utf8Chunks {
+    fn utf8_chunks(&self) -> Utf8Chunks<'_> {
         Utf8Chunks { bytes: self.as_bytes() }
     }
 
@@ -1773,7 +1897,7 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "unicode")]
     #[inline]
-    fn graphemes(&self) -> Graphemes {
+    fn graphemes(&self) -> Graphemes<'_> {
         Graphemes::new(self.as_bytes())
     }
 
@@ -1796,11 +1920,12 @@ pub trait ByteSlice: Sealed {
     /// assert_eq!(vec![(0, 5, "à̖"), (5, 13, "🇺🇸")], graphemes);
     /// ```
     ///
-    /// This example shows what happens when invalid UTF-8 is enountered. Note
+    /// This example shows what happens when invalid UTF-8 is encountered. Note
     /// that the offsets are valid indices into the original string, and do
     /// not necessarily correspond to the length of the `&str` returned!
     ///
     /// ```
+    /// # #[cfg(all(feature = "alloc"))] {
     /// use bstr::{ByteSlice, ByteVec};
     ///
     /// let mut bytes = vec![];
@@ -1814,10 +1939,11 @@ pub trait ByteSlice: Sealed {
     ///     graphemes,
     ///     vec![(0, 5, "à̖"), (5, 6, "\u{FFFD}"), (6, 14, "🇺🇸")]
     /// );
+    /// # }
     /// ```
     #[cfg(feature = "unicode")]
     #[inline]
-    fn grapheme_indices(&self) -> GraphemeIndices {
+    fn grapheme_indices(&self) -> GraphemeIndices<'_> {
         GraphemeIndices::new(self.as_bytes())
     }
 
@@ -1853,7 +1979,7 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "unicode")]
     #[inline]
-    fn words(&self) -> Words {
+    fn words(&self) -> Words<'_> {
         Words::new(self.as_bytes())
     }
 
@@ -1891,7 +2017,7 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "unicode")]
     #[inline]
-    fn word_indices(&self) -> WordIndices {
+    fn word_indices(&self) -> WordIndices<'_> {
         WordIndices::new(self.as_bytes())
     }
 
@@ -1921,7 +2047,7 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "unicode")]
     #[inline]
-    fn words_with_breaks(&self) -> WordsWithBreaks {
+    fn words_with_breaks(&self) -> WordsWithBreaks<'_> {
         WordsWithBreaks::new(self.as_bytes())
     }
 
@@ -1958,7 +2084,7 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "unicode")]
     #[inline]
-    fn words_with_break_indices(&self) -> WordsWithBreakIndices {
+    fn words_with_break_indices(&self) -> WordsWithBreakIndices<'_> {
         WordsWithBreakIndices::new(self.as_bytes())
     }
 
@@ -1990,7 +2116,7 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "unicode")]
     #[inline]
-    fn sentences(&self) -> Sentences {
+    fn sentences(&self) -> Sentences<'_> {
         Sentences::new(self.as_bytes())
     }
 
@@ -2024,7 +2150,7 @@ pub trait ByteSlice: Sealed {
     /// ```
     #[cfg(feature = "unicode")]
     #[inline]
-    fn sentence_indices(&self) -> SentenceIndices {
+    fn sentence_indices(&self) -> SentenceIndices<'_> {
         SentenceIndices::new(self.as_bytes())
     }
 
@@ -2055,7 +2181,7 @@ pub trait ByteSlice: Sealed {
     /// ]);
     /// ```
     #[inline]
-    fn lines(&self) -> Lines {
+    fn lines(&self) -> Lines<'_> {
         Lines::new(self.as_bytes())
     }
 
@@ -2099,7 +2225,7 @@ pub trait ByteSlice: Sealed {
     /// ]);
     /// ```
     #[inline]
-    fn lines_with_terminator(&self) -> LinesWithTerminator {
+    fn lines_with_terminator(&self) -> LinesWithTerminator<'_> {
         LinesWithTerminator::new(self.as_bytes())
     }
 
@@ -2278,7 +2404,7 @@ pub trait ByteSlice: Sealed {
     /// let s = B(b"FOO\xFFBAR\xE2\x98BAZ");
     /// assert_eq!(B(b"foo\xFFbar\xE2\x98baz"), s.to_lowercase().as_bytes());
     /// ```
-    #[cfg(all(feature = "std", feature = "unicode"))]
+    #[cfg(all(feature = "alloc", feature = "unicode"))]
     #[inline]
     fn to_lowercase(&self) -> Vec<u8> {
         let mut buf = vec![];
@@ -2340,7 +2466,7 @@ pub trait ByteSlice: Sealed {
     /// s.to_lowercase_into(&mut buf);
     /// assert_eq!(B(b"foo\xFFbar\xE2\x98baz"), buf.as_bytes());
     /// ```
-    #[cfg(all(feature = "std", feature = "unicode"))]
+    #[cfg(all(feature = "alloc", feature = "unicode"))]
     #[inline]
     fn to_lowercase_into(&self, buf: &mut Vec<u8>) {
         // TODO: This is the best we can do given what std exposes I think.
@@ -2395,7 +2521,7 @@ pub trait ByteSlice: Sealed {
     /// let s = B(b"FOO\xFFBAR\xE2\x98BAZ");
     /// assert_eq!(s.to_ascii_lowercase(), B(b"foo\xFFbar\xE2\x98baz"));
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
     fn to_ascii_lowercase(&self) -> Vec<u8> {
         self.as_bytes().to_ascii_lowercase()
@@ -2425,11 +2551,13 @@ pub trait ByteSlice: Sealed {
     /// Invalid UTF-8 remains as is:
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")] {
     /// use bstr::{B, ByteSlice, ByteVec};
     ///
     /// let mut s = <Vec<u8>>::from_slice(b"FOO\xFFBAR\xE2\x98BAZ");
     /// s.make_ascii_lowercase();
     /// assert_eq!(s, B(b"foo\xFFbar\xE2\x98baz"));
+    /// # }
     /// ```
     #[inline]
     fn make_ascii_lowercase(&mut self) {
@@ -2481,7 +2609,7 @@ pub trait ByteSlice: Sealed {
     /// let s = B(b"foo\xFFbar\xE2\x98baz");
     /// assert_eq!(s.to_uppercase(), B(b"FOO\xFFBAR\xE2\x98BAZ"));
     /// ```
-    #[cfg(all(feature = "std", feature = "unicode"))]
+    #[cfg(all(feature = "alloc", feature = "unicode"))]
     #[inline]
     fn to_uppercase(&self) -> Vec<u8> {
         let mut buf = vec![];
@@ -2543,7 +2671,7 @@ pub trait ByteSlice: Sealed {
     /// s.to_uppercase_into(&mut buf);
     /// assert_eq!(buf, B(b"FOO\xFFBAR\xE2\x98BAZ"));
     /// ```
-    #[cfg(all(feature = "std", feature = "unicode"))]
+    #[cfg(all(feature = "alloc", feature = "unicode"))]
     #[inline]
     fn to_uppercase_into(&self, buf: &mut Vec<u8>) {
         // TODO: This is the best we can do given what std exposes I think.
@@ -2595,7 +2723,7 @@ pub trait ByteSlice: Sealed {
     /// let s = B(b"foo\xFFbar\xE2\x98baz");
     /// assert_eq!(s.to_ascii_uppercase(), B(b"FOO\xFFBAR\xE2\x98BAZ"));
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[inline]
     fn to_ascii_uppercase(&self) -> Vec<u8> {
         self.as_bytes().to_ascii_uppercase()
@@ -2625,15 +2753,58 @@ pub trait ByteSlice: Sealed {
     /// Invalid UTF-8 remains as is:
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")] {
     /// use bstr::{B, ByteSlice, ByteVec};
     ///
     /// let mut s = <Vec<u8>>::from_slice(b"foo\xFFbar\xE2\x98baz");
     /// s.make_ascii_uppercase();
     /// assert_eq!(s, B(b"FOO\xFFBAR\xE2\x98BAZ"));
+    /// # }
     /// ```
     #[inline]
     fn make_ascii_uppercase(&mut self) {
         self.as_bytes_mut().make_ascii_uppercase();
+    }
+
+    /// Escapes this byte string into a sequence of `char` values.
+    ///
+    /// When the sequence of `char` values is concatenated into a string, the
+    /// result is always valid UTF-8. Any unprintable or invalid UTF-8 in this
+    /// byte string are escaped using using `\xNN` notation. Moreover, the
+    /// characters `\0`, `\r`, `\n`, `\t` and `\` are escaped as well.
+    ///
+    /// This is useful when one wants to get a human readable view of the raw
+    /// bytes that is also valid UTF-8.
+    ///
+    /// The iterator returned implements the `Display` trait. So one can do
+    /// `b"foo\xFFbar".escape_bytes().to_string()` to get a `String` with its
+    /// bytes escaped.
+    ///
+    /// The dual of this function is [`ByteVec::unescape_bytes`].
+    ///
+    /// Note that this is similar to, but not equivalent to the `Debug`
+    /// implementation on [`BStr`] and [`BString`]. The `Debug` implementations
+    /// also use the debug representation for all Unicode codepoints. However,
+    /// this escaping routine only escapes individual bytes. All Unicode
+    /// codepoints above `U+007F` are passed through unchanged without any
+    /// escaping.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[cfg(feature = "alloc")] {
+    /// use bstr::{B, ByteSlice};
+    ///
+    /// assert_eq!(r"foo\xFFbar", b"foo\xFFbar".escape_bytes().to_string());
+    /// assert_eq!(r"foo\nbar", b"foo\nbar".escape_bytes().to_string());
+    /// assert_eq!(r"foo\tbar", b"foo\tbar".escape_bytes().to_string());
+    /// assert_eq!(r"foo\\bar", b"foo\\bar".escape_bytes().to_string());
+    /// assert_eq!(r"foo☃bar", B("foo☃bar").escape_bytes().to_string());
+    /// # }
+    /// ```
+    #[inline]
+    fn escape_bytes(&self) -> EscapeBytes<'_> {
+        EscapeBytes::new(self.as_bytes())
     }
 
     /// Reverse the bytes in this string, in place.
@@ -2789,7 +2960,7 @@ pub trait ByteSlice: Sealed {
     #[cfg(feature = "unicode")]
     #[inline]
     fn reverse_graphemes(&mut self) {
-        use unicode::decode_grapheme;
+        use crate::unicode::decode_grapheme;
 
         let mut i = 0;
         loop {
@@ -2901,72 +3072,6 @@ pub trait ByteSlice: Sealed {
             Some(index)
         }
     }
-
-    /// Copies elements from one part of the slice to another part of itself,
-    /// where the parts may be overlapping.
-    ///
-    /// `src` is the range within this byte string to copy from, while `dest`
-    /// is the starting index of the range within this byte string to copy to.
-    /// The length indicated by `src` must be less than or equal to the number
-    /// of bytes from `dest` to the end of the byte string.
-    ///
-    /// # Panics
-    ///
-    /// Panics if either range is out of bounds, or if `src` is too big to fit
-    /// into `dest`, or if the end of `src` is before the start.
-    ///
-    /// # Examples
-    ///
-    /// Copying four bytes within a byte string:
-    ///
-    /// ```
-    /// use bstr::{B, ByteSlice};
-    ///
-    /// let mut buf = *b"Hello, World!";
-    /// let s = &mut buf;
-    /// s.copy_within_str(1..5, 8);
-    /// assert_eq!(s, B("Hello, Wello!"));
-    /// ```
-    #[inline]
-    fn copy_within_str<R>(&mut self, src: R, dest: usize)
-    where
-        R: ops::RangeBounds<usize>,
-    {
-        // TODO: Deprecate this once slice::copy_within stabilizes.
-        let src_start = match src.start_bound() {
-            ops::Bound::Included(&n) => n,
-            ops::Bound::Excluded(&n) => {
-                n.checked_add(1).expect("attempted to index slice beyond max")
-            }
-            ops::Bound::Unbounded => 0,
-        };
-        let src_end = match src.end_bound() {
-            ops::Bound::Included(&n) => {
-                n.checked_add(1).expect("attempted to index slice beyond max")
-            }
-            ops::Bound::Excluded(&n) => n,
-            ops::Bound::Unbounded => self.as_bytes().len(),
-        };
-        assert!(src_start <= src_end, "src end is before src start");
-        assert!(src_end <= self.as_bytes().len(), "src is out of bounds");
-        let count = src_end - src_start;
-        assert!(
-            dest <= self.as_bytes().len() - count,
-            "dest is out of bounds",
-        );
-
-        // SAFETY: This is safe because we use ptr::copy to handle overlapping
-        // copies, and is also safe because we've checked all the bounds above.
-        // Finally, we are only dealing with u8 data, which is Copy, which
-        // means we can copy without worrying about ownership/destructors.
-        unsafe {
-            ptr::copy(
-                self.as_bytes().get_unchecked(src_start),
-                self.as_bytes_mut().get_unchecked_mut(dest),
-                count,
-            );
-        }
-    }
 }
 
 /// A single substring searcher fixed to a particular needle.
@@ -2986,15 +3091,13 @@ pub trait ByteSlice: Sealed {
 /// version which permits building a `Finder` that is not connected to the
 /// lifetime of its needle.
 #[derive(Clone, Debug)]
-pub struct Finder<'a> {
-    searcher: TwoWay<'a>,
-}
+pub struct Finder<'a>(memmem::Finder<'a>);
 
 impl<'a> Finder<'a> {
     /// Create a new finder for the given needle.
     #[inline]
     pub fn new<B: ?Sized + AsRef<[u8]>>(needle: &'a B) -> Finder<'a> {
-        Finder { searcher: TwoWay::forward(needle.as_ref()) }
+        Finder(memmem::Finder::new(needle.as_ref()))
     }
 
     /// Convert this finder into its owned variant, such that it no longer
@@ -3003,11 +3106,11 @@ impl<'a> Finder<'a> {
     /// If this is already an owned finder, then this is a no-op. Otherwise,
     /// this copies the needle.
     ///
-    /// This is only available when the `std` feature is enabled.
-    #[cfg(feature = "std")]
+    /// This is only available when the `alloc` feature is enabled.
+    #[cfg(feature = "alloc")]
     #[inline]
     pub fn into_owned(self) -> Finder<'static> {
-        Finder { searcher: self.searcher.into_owned() }
+        Finder(self.0.into_owned())
     }
 
     /// Returns the needle that this finder searches for.
@@ -3018,7 +3121,7 @@ impl<'a> Finder<'a> {
     /// needle returned must necessarily be the shorter of the two.
     #[inline]
     pub fn needle(&self) -> &[u8] {
-        self.searcher.needle()
+        self.0.needle()
     }
 
     /// Returns the index of the first occurrence of this needle in the given
@@ -3050,7 +3153,7 @@ impl<'a> Finder<'a> {
     /// ```
     #[inline]
     pub fn find<B: AsRef<[u8]>>(&self, haystack: B) -> Option<usize> {
-        self.searcher.find(haystack.as_ref())
+        self.0.find(haystack.as_ref())
     }
 }
 
@@ -3071,15 +3174,13 @@ impl<'a> Finder<'a> {
 /// version which permits building a `FinderReverse` that is not connected to
 /// the lifetime of its needle.
 #[derive(Clone, Debug)]
-pub struct FinderReverse<'a> {
-    searcher: TwoWay<'a>,
-}
+pub struct FinderReverse<'a>(memmem::FinderRev<'a>);
 
 impl<'a> FinderReverse<'a> {
     /// Create a new reverse finder for the given needle.
     #[inline]
     pub fn new<B: ?Sized + AsRef<[u8]>>(needle: &'a B) -> FinderReverse<'a> {
-        FinderReverse { searcher: TwoWay::reverse(needle.as_ref()) }
+        FinderReverse(memmem::FinderRev::new(needle.as_ref()))
     }
 
     /// Convert this finder into its owned variant, such that it no longer
@@ -3088,11 +3189,11 @@ impl<'a> FinderReverse<'a> {
     /// If this is already an owned finder, then this is a no-op. Otherwise,
     /// this copies the needle.
     ///
-    /// This is only available when the `std` feature is enabled.
-    #[cfg(feature = "std")]
+    /// This is only available when the `alloc` feature is enabled.
+    #[cfg(feature = "alloc")]
     #[inline]
     pub fn into_owned(self) -> FinderReverse<'static> {
-        FinderReverse { searcher: self.searcher.into_owned() }
+        FinderReverse(self.0.into_owned())
     }
 
     /// Returns the needle that this finder searches for.
@@ -3103,7 +3204,7 @@ impl<'a> FinderReverse<'a> {
     /// the needle returned must necessarily be the shorter of the two.
     #[inline]
     pub fn needle(&self) -> &[u8] {
-        self.searcher.needle()
+        self.0.needle()
     }
 
     /// Returns the index of the last occurrence of this needle in the given
@@ -3135,7 +3236,7 @@ impl<'a> FinderReverse<'a> {
     /// ```
     #[inline]
     pub fn rfind<B: AsRef<[u8]>>(&self, haystack: B) -> Option<usize> {
-        self.searcher.rfind(haystack.as_ref())
+        self.0.rfind(haystack.as_ref())
     }
 }
 
@@ -3143,43 +3244,27 @@ impl<'a> FinderReverse<'a> {
 ///
 /// Matches are reported by the byte offset at which they begin.
 ///
-/// `'a` is the shorter of two lifetimes: the byte string being searched or the
-/// byte string being looked for.
+/// `'h` is the lifetime of the haystack while `'n` is the lifetime of the
+/// needle.
 #[derive(Debug)]
-pub struct Find<'a> {
-    haystack: &'a [u8],
-    prestate: PrefilterState,
-    searcher: TwoWay<'a>,
-    pos: usize,
+pub struct Find<'h, 'n> {
+    it: memmem::FindIter<'h, 'n>,
+    haystack: &'h [u8],
+    needle: &'n [u8],
 }
 
-impl<'a> Find<'a> {
-    fn new(haystack: &'a [u8], needle: &'a [u8]) -> Find<'a> {
-        let searcher = TwoWay::forward(needle);
-        let prestate = searcher.prefilter_state();
-        Find { haystack, prestate, searcher, pos: 0 }
+impl<'h, 'n> Find<'h, 'n> {
+    fn new(haystack: &'h [u8], needle: &'n [u8]) -> Find<'h, 'n> {
+        Find { it: memmem::find_iter(haystack, needle), haystack, needle }
     }
 }
 
-impl<'a> Iterator for Find<'a> {
+impl<'h, 'n> Iterator for Find<'h, 'n> {
     type Item = usize;
 
     #[inline]
     fn next(&mut self) -> Option<usize> {
-        if self.pos > self.haystack.len() {
-            return None;
-        }
-        let result = self
-            .searcher
-            .find_with(&mut self.prestate, &self.haystack[self.pos..]);
-        match result {
-            None => None,
-            Some(i) => {
-                let pos = self.pos + i;
-                self.pos = pos + cmp::max(1, self.searcher.needle().len());
-                Some(pos)
-            }
-        }
+        self.it.next()
     }
 }
 
@@ -3187,58 +3272,39 @@ impl<'a> Iterator for Find<'a> {
 ///
 /// Matches are reported by the byte offset at which they begin.
 ///
-/// `'a` is the shorter of two lifetimes: the byte string being searched or the
-/// byte string being looked for.
+/// `'h` is the lifetime of the haystack while `'n` is the lifetime of the
+/// needle.
 #[derive(Debug)]
-pub struct FindReverse<'a> {
-    haystack: &'a [u8],
-    prestate: PrefilterState,
-    searcher: TwoWay<'a>,
-    /// When searching with an empty needle, this gets set to `None` after
-    /// we've yielded the last element at `0`.
-    pos: Option<usize>,
+pub struct FindReverse<'h, 'n> {
+    it: memmem::FindRevIter<'h, 'n>,
+    haystack: &'h [u8],
+    needle: &'n [u8],
 }
 
-impl<'a> FindReverse<'a> {
-    fn new(haystack: &'a [u8], needle: &'a [u8]) -> FindReverse<'a> {
-        let searcher = TwoWay::reverse(needle);
-        let prestate = searcher.prefilter_state();
-        let pos = Some(haystack.len());
-        FindReverse { haystack, prestate, searcher, pos }
+impl<'h, 'n> FindReverse<'h, 'n> {
+    fn new(haystack: &'h [u8], needle: &'n [u8]) -> FindReverse<'h, 'n> {
+        FindReverse {
+            it: memmem::rfind_iter(haystack, needle),
+            haystack,
+            needle,
+        }
     }
 
-    fn haystack(&self) -> &'a [u8] {
+    fn haystack(&self) -> &'h [u8] {
         self.haystack
     }
 
-    fn needle(&self) -> &[u8] {
-        self.searcher.needle()
+    fn needle(&self) -> &'n [u8] {
+        self.needle
     }
 }
 
-impl<'a> Iterator for FindReverse<'a> {
+impl<'h, 'n> Iterator for FindReverse<'h, 'n> {
     type Item = usize;
 
     #[inline]
     fn next(&mut self) -> Option<usize> {
-        let pos = match self.pos {
-            None => return None,
-            Some(pos) => pos,
-        };
-        let result = self
-            .searcher
-            .rfind_with(&mut self.prestate, &self.haystack[..pos]);
-        match result {
-            None => None,
-            Some(i) => {
-                if pos == i {
-                    self.pos = pos.checked_sub(1);
-                } else {
-                    self.pos = Some(i);
-                }
-                Some(i)
-            }
-        }
+        self.it.next()
     }
 }
 
@@ -3255,7 +3321,7 @@ impl<'a> Bytes<'a> {
     /// This has the same lifetime as the original slice,
     /// and so the iterator can continue to be used while this exists.
     #[inline]
-    pub fn as_slice(&self) -> &'a [u8] {
+    pub fn as_bytes(&self) -> &'a [u8] {
         self.it.as_slice()
     }
 }
@@ -3292,21 +3358,27 @@ impl<'a> iter::FusedIterator for Bytes<'a> {}
 
 /// An iterator over the fields in a byte string, separated by whitespace.
 ///
+/// Whitespace for this iterator is defined by the Unicode property
+/// `White_Space`.
+///
 /// This iterator splits on contiguous runs of whitespace, such that the fields
 /// in `foo\t\t\n  \nbar` are `foo` and `bar`.
 ///
 /// `'a` is the lifetime of the byte string being split.
+#[cfg(feature = "unicode")]
 #[derive(Debug)]
 pub struct Fields<'a> {
     it: FieldsWith<'a, fn(char) -> bool>,
 }
 
+#[cfg(feature = "unicode")]
 impl<'a> Fields<'a> {
     fn new(bytes: &'a [u8]) -> Fields<'a> {
         Fields { it: bytes.fields_with(|ch| ch.is_whitespace()) }
     }
 }
 
+#[cfg(feature = "unicode")]
 impl<'a> Iterator for Fields<'a> {
     type Item = &'a [u8];
 
@@ -3368,10 +3440,11 @@ impl<'a, F: FnMut(char) -> bool> Iterator for FieldsWith<'a, F> {
 
 /// An iterator over substrings in a byte string, split by a separator.
 ///
-/// `'a` is the lifetime of the byte string being split.
+/// `'h` is the lifetime of the byte string being split (the haystack), while
+/// `'s` is the lifetime of the byte string doing the splitting.
 #[derive(Debug)]
-pub struct Split<'a> {
-    finder: Find<'a>,
+pub struct Split<'h, 's> {
+    finder: Find<'h, 's>,
     /// The end position of the previous match of our splitter. The element
     /// we yield corresponds to the substring starting at `last` up to the
     /// beginning of the next match of the splitter.
@@ -3382,23 +3455,23 @@ pub struct Split<'a> {
     done: bool,
 }
 
-impl<'a> Split<'a> {
-    fn new(haystack: &'a [u8], splitter: &'a [u8]) -> Split<'a> {
+impl<'h, 's> Split<'h, 's> {
+    fn new(haystack: &'h [u8], splitter: &'s [u8]) -> Split<'h, 's> {
         let finder = haystack.find_iter(splitter);
         Split { finder, last: 0, done: false }
     }
 }
 
-impl<'a> Iterator for Split<'a> {
-    type Item = &'a [u8];
+impl<'h, 's> Iterator for Split<'h, 's> {
+    type Item = &'h [u8];
 
     #[inline]
-    fn next(&mut self) -> Option<&'a [u8]> {
+    fn next(&mut self) -> Option<&'h [u8]> {
         let haystack = self.finder.haystack;
         match self.finder.next() {
             Some(start) => {
                 let next = &haystack[self.last..start];
-                self.last = start + self.finder.searcher.needle().len();
+                self.last = start + self.finder.needle.len();
                 Some(next)
             }
             None => {
@@ -3423,11 +3496,11 @@ impl<'a> Iterator for Split<'a> {
 /// An iterator over substrings in a byte string, split by a separator, in
 /// reverse.
 ///
-/// `'a` is the lifetime of the byte string being split, while `F` is the type
-/// of the predicate, i.e., `FnMut(char) -> bool`.
+/// `'h` is the lifetime of the byte string being split (the haystack), while
+/// `'s` is the lifetime of the byte string doing the splitting.
 #[derive(Debug)]
-pub struct SplitReverse<'a> {
-    finder: FindReverse<'a>,
+pub struct SplitReverse<'h, 's> {
+    finder: FindReverse<'h, 's>,
     /// The end position of the previous match of our splitter. The element
     /// we yield corresponds to the substring starting at `last` up to the
     /// beginning of the next match of the splitter.
@@ -3438,18 +3511,18 @@ pub struct SplitReverse<'a> {
     done: bool,
 }
 
-impl<'a> SplitReverse<'a> {
-    fn new(haystack: &'a [u8], splitter: &'a [u8]) -> SplitReverse<'a> {
+impl<'h, 's> SplitReverse<'h, 's> {
+    fn new(haystack: &'h [u8], splitter: &'s [u8]) -> SplitReverse<'h, 's> {
         let finder = haystack.rfind_iter(splitter);
         SplitReverse { finder, last: haystack.len(), done: false }
     }
 }
 
-impl<'a> Iterator for SplitReverse<'a> {
-    type Item = &'a [u8];
+impl<'h, 's> Iterator for SplitReverse<'h, 's> {
+    type Item = &'h [u8];
 
     #[inline]
-    fn next(&mut self) -> Option<&'a [u8]> {
+    fn next(&mut self) -> Option<&'h [u8]> {
         let haystack = self.finder.haystack();
         match self.finder.next() {
             Some(start) => {
@@ -3480,31 +3553,31 @@ impl<'a> Iterator for SplitReverse<'a> {
 /// An iterator over at most `n` substrings in a byte string, split by a
 /// separator.
 ///
-/// `'a` is the lifetime of the byte string being split, while `F` is the type
-/// of the predicate, i.e., `FnMut(char) -> bool`.
+/// `'h` is the lifetime of the byte string being split (the haystack), while
+/// `'s` is the lifetime of the byte string doing the splitting.
 #[derive(Debug)]
-pub struct SplitN<'a> {
-    split: Split<'a>,
+pub struct SplitN<'h, 's> {
+    split: Split<'h, 's>,
     limit: usize,
     count: usize,
 }
 
-impl<'a> SplitN<'a> {
+impl<'h, 's> SplitN<'h, 's> {
     fn new(
-        haystack: &'a [u8],
-        splitter: &'a [u8],
+        haystack: &'h [u8],
+        splitter: &'s [u8],
         limit: usize,
-    ) -> SplitN<'a> {
+    ) -> SplitN<'h, 's> {
         let split = haystack.split_str(splitter);
         SplitN { split, limit, count: 0 }
     }
 }
 
-impl<'a> Iterator for SplitN<'a> {
-    type Item = &'a [u8];
+impl<'h, 's> Iterator for SplitN<'h, 's> {
+    type Item = &'h [u8];
 
     #[inline]
-    fn next(&mut self) -> Option<&'a [u8]> {
+    fn next(&mut self) -> Option<&'h [u8]> {
         self.count += 1;
         if self.count > self.limit || self.split.done {
             None
@@ -3519,31 +3592,31 @@ impl<'a> Iterator for SplitN<'a> {
 /// An iterator over at most `n` substrings in a byte string, split by a
 /// separator, in reverse.
 ///
-/// `'a` is the lifetime of the byte string being split, while `F` is the type
-/// of the predicate, i.e., `FnMut(char) -> bool`.
+/// `'h` is the lifetime of the byte string being split (the haystack), while
+/// `'s` is the lifetime of the byte string doing the splitting.
 #[derive(Debug)]
-pub struct SplitNReverse<'a> {
-    split: SplitReverse<'a>,
+pub struct SplitNReverse<'h, 's> {
+    split: SplitReverse<'h, 's>,
     limit: usize,
     count: usize,
 }
 
-impl<'a> SplitNReverse<'a> {
+impl<'h, 's> SplitNReverse<'h, 's> {
     fn new(
-        haystack: &'a [u8],
-        splitter: &'a [u8],
+        haystack: &'h [u8],
+        splitter: &'s [u8],
         limit: usize,
-    ) -> SplitNReverse<'a> {
+    ) -> SplitNReverse<'h, 's> {
         let split = haystack.rsplit_str(splitter);
         SplitNReverse { split, limit, count: 0 }
     }
 }
 
-impl<'a> Iterator for SplitNReverse<'a> {
-    type Item = &'a [u8];
+impl<'h, 's> Iterator for SplitNReverse<'h, 's> {
+    type Item = &'h [u8];
 
     #[inline]
-    fn next(&mut self) -> Option<&'a [u8]> {
+    fn next(&mut self) -> Option<&'h [u8]> {
         self.count += 1;
         if self.count > self.limit || self.split.done {
             None
@@ -3561,6 +3634,7 @@ impl<'a> Iterator for SplitNReverse<'a> {
 /// `\n`.
 ///
 /// `'a` is the lifetime of the byte string being iterated over.
+#[derive(Clone, Debug)]
 pub struct Lines<'a> {
     it: LinesWithTerminator<'a>,
 }
@@ -3569,6 +3643,28 @@ impl<'a> Lines<'a> {
     fn new(bytes: &'a [u8]) -> Lines<'a> {
         Lines { it: LinesWithTerminator::new(bytes) }
     }
+
+    /// Return a copy of the rest of the underlying bytes without affecting the
+    /// iterator itself.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use bstr::{B, ByteSlice};
+    ///
+    /// let s = b"\
+    /// foo
+    /// bar\r
+    /// baz";
+    /// let mut lines = s.lines();
+    /// assert_eq!(lines.next(), Some(B("foo")));
+    /// assert_eq!(lines.as_bytes(), B("bar\r\nbaz"));
+    /// ```
+    pub fn as_bytes(&self) -> &'a [u8] {
+        self.it.bytes
+    }
 }
 
 impl<'a> Iterator for Lines<'a> {
@@ -3576,16 +3672,18 @@ impl<'a> Iterator for Lines<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<&'a [u8]> {
-        let mut line = self.it.next()?;
-        if line.last_byte() == Some(b'\n') {
-            line = &line[..line.len() - 1];
-            if line.last_byte() == Some(b'\r') {
-                line = &line[..line.len() - 1];
-            }
-        }
-        Some(line)
+        Some(trim_last_terminator(self.it.next()?))
     }
 }
+
+impl<'a> DoubleEndedIterator for Lines<'a> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        Some(trim_last_terminator(self.it.next_back()?))
+    }
+}
+
+impl<'a> iter::FusedIterator for Lines<'a> {}
 
 /// An iterator over all lines in a byte string, including their terminators.
 ///
@@ -3600,6 +3698,7 @@ impl<'a> Iterator for Lines<'a> {
 /// the original byte string.
 ///
 /// `'a` is the lifetime of the byte string being iterated over.
+#[derive(Clone, Debug)]
 pub struct LinesWithTerminator<'a> {
     bytes: &'a [u8],
 }
@@ -3607,6 +3706,28 @@ pub struct LinesWithTerminator<'a> {
 impl<'a> LinesWithTerminator<'a> {
     fn new(bytes: &'a [u8]) -> LinesWithTerminator<'a> {
         LinesWithTerminator { bytes }
+    }
+
+    /// Return a copy of the rest of the underlying bytes without affecting the
+    /// iterator itself.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use bstr::{B, ByteSlice};
+    ///
+    /// let s = b"\
+    /// foo
+    /// bar\r
+    /// baz";
+    /// let mut lines = s.lines_with_terminator();
+    /// assert_eq!(lines.next(), Some(B("foo\n")));
+    /// assert_eq!(lines.as_bytes(), B("bar\r\nbaz"));
+    /// ```
+    pub fn as_bytes(&self) -> &'a [u8] {
+        self.bytes
     }
 }
 
@@ -3631,10 +3752,43 @@ impl<'a> Iterator for LinesWithTerminator<'a> {
     }
 }
 
-#[cfg(test)]
+impl<'a> DoubleEndedIterator for LinesWithTerminator<'a> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let end = self.bytes.len().checked_sub(1)?;
+        match self.bytes[..end].rfind_byte(b'\n') {
+            None => {
+                let line = self.bytes;
+                self.bytes = b"";
+                Some(line)
+            }
+            Some(end) => {
+                let line = &self.bytes[end + 1..];
+                self.bytes = &self.bytes[..end + 1];
+                Some(line)
+            }
+        }
+    }
+}
+
+impl<'a> iter::FusedIterator for LinesWithTerminator<'a> {}
+
+fn trim_last_terminator(mut s: &[u8]) -> &[u8] {
+    if s.last_byte() == Some(b'\n') {
+        s = &s[..s.len() - 1];
+        if s.last_byte() == Some(b'\r') {
+            s = &s[..s.len() - 1];
+        }
+    }
+    s
+}
+
+#[cfg(all(test, feature = "std"))]
 mod tests {
-    use ext_slice::{ByteSlice, B};
-    use tests::LOSSY_TESTS;
+    use crate::{
+        ext_slice::{ByteSlice, Lines, LinesWithTerminator, B},
+        tests::LOSSY_TESTS,
+    };
 
     #[test]
     fn to_str_lossy() {
@@ -3662,34 +3816,55 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn copy_within_fail1() {
-        let mut buf = *b"foobar";
-        let s = &mut buf;
-        s.copy_within_str(0..2, 5);
-    }
+    fn lines_iteration() {
+        macro_rules! t {
+            ($it:expr, $forward:expr) => {
+                let mut res: Vec<&[u8]> = Vec::from($forward);
+                assert_eq!($it.collect::<Vec<_>>(), res);
+                res.reverse();
+                assert_eq!($it.rev().collect::<Vec<_>>(), res);
+            };
+        }
 
-    #[test]
-    #[should_panic]
-    fn copy_within_fail2() {
-        let mut buf = *b"foobar";
-        let s = &mut buf;
-        s.copy_within_str(3..2, 0);
-    }
+        t!(Lines::new(b""), []);
+        t!(LinesWithTerminator::new(b""), []);
 
-    #[test]
-    #[should_panic]
-    fn copy_within_fail3() {
-        let mut buf = *b"foobar";
-        let s = &mut buf;
-        s.copy_within_str(5..7, 0);
-    }
+        t!(Lines::new(b"\n"), [B("")]);
+        t!(Lines::new(b"\r\n"), [B("")]);
+        t!(LinesWithTerminator::new(b"\n"), [B("\n")]);
 
-    #[test]
-    #[should_panic]
-    fn copy_within_fail4() {
-        let mut buf = *b"foobar";
-        let s = &mut buf;
-        s.copy_within_str(0..1, 6);
+        t!(Lines::new(b"a"), [B("a")]);
+        t!(LinesWithTerminator::new(b"a"), [B("a")]);
+
+        t!(Lines::new(b"abc"), [B("abc")]);
+        t!(LinesWithTerminator::new(b"abc"), [B("abc")]);
+
+        t!(Lines::new(b"abc\n"), [B("abc")]);
+        t!(Lines::new(b"abc\r\n"), [B("abc")]);
+        t!(LinesWithTerminator::new(b"abc\n"), [B("abc\n")]);
+
+        t!(Lines::new(b"abc\n\n"), [B("abc"), B("")]);
+        t!(LinesWithTerminator::new(b"abc\n\n"), [B("abc\n"), B("\n")]);
+
+        t!(Lines::new(b"abc\n\ndef"), [B("abc"), B(""), B("def")]);
+        t!(
+            LinesWithTerminator::new(b"abc\n\ndef"),
+            [B("abc\n"), B("\n"), B("def")]
+        );
+
+        t!(Lines::new(b"abc\n\ndef\n"), [B("abc"), B(""), B("def")]);
+        t!(
+            LinesWithTerminator::new(b"abc\n\ndef\n"),
+            [B("abc\n"), B("\n"), B("def\n")]
+        );
+
+        t!(Lines::new(b"\na\nb\n"), [B(""), B("a"), B("b")]);
+        t!(
+            LinesWithTerminator::new(b"\na\nb\n"),
+            [B("\n"), B("a\n"), B("b\n")]
+        );
+
+        t!(Lines::new(b"\n\n\n"), [B(""), B(""), B("")]);
+        t!(LinesWithTerminator::new(b"\n\n\n"), [B("\n"), B("\n"), B("\n")]);
     }
 }

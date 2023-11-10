@@ -1,14 +1,24 @@
-use regex_automata::DFA;
+use regex_automata::{dfa::Automaton, Anchored, Input};
 
-use unicode::fsm::whitespace_anchored_fwd::WHITESPACE_ANCHORED_FWD;
-use unicode::fsm::whitespace_anchored_rev::WHITESPACE_ANCHORED_REV;
+use crate::unicode::fsm::{
+    whitespace_anchored_fwd::WHITESPACE_ANCHORED_FWD,
+    whitespace_anchored_rev::WHITESPACE_ANCHORED_REV,
+};
 
 /// Return the first position of a non-whitespace character.
 pub fn whitespace_len_fwd(slice: &[u8]) -> usize {
-    WHITESPACE_ANCHORED_FWD.find(slice).unwrap_or(0)
+    let input = Input::new(slice).anchored(Anchored::Yes);
+    WHITESPACE_ANCHORED_FWD
+        .try_search_fwd(&input)
+        .unwrap()
+        .map_or(0, |hm| hm.offset())
 }
 
 /// Return the last position of a non-whitespace character.
 pub fn whitespace_len_rev(slice: &[u8]) -> usize {
-    WHITESPACE_ANCHORED_REV.rfind(slice).unwrap_or(slice.len())
+    let input = Input::new(slice).anchored(Anchored::Yes);
+    WHITESPACE_ANCHORED_REV
+        .try_search_rev(&input)
+        .unwrap()
+        .map_or(slice.len(), |hm| hm.offset())
 }

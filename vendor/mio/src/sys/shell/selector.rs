@@ -11,17 +11,11 @@ pub type Events = Vec<Event>;
 pub struct Selector {}
 
 impl Selector {
-    #[cfg(not(target_os = "wasi"))]
     pub fn try_clone(&self) -> io::Result<Selector> {
         os_required!();
     }
 
     pub fn select(&self, _: &mut Events, _: Option<Duration>) -> io::Result<()> {
-        os_required!();
-    }
-
-    #[cfg(all(debug_assertions, not(target_os = "wasi")))]
-    pub fn register_waker(&self) -> bool {
         os_required!();
     }
 }

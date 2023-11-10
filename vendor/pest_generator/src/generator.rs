@@ -9,34 +9,34 @@
 
 use std::path::PathBuf;
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{ToTokens, TokenStreamExt};
-use syn::{self, Generics, Ident};
+use syn::{self, Ident};
 
+use pest::unicode::unicode_property_names;
 use pest_meta::ast::*;
 use pest_meta::optimizer::*;
-use pest_meta::UNICODE_PROPERTY_NAMES;
 
-pub fn generate(
-    name: Ident,
-    generics: &Generics,
-    path: Option<PathBuf>,
+use crate::docs::DocComment;
+use crate::ParsedDerive;
+
+pub(crate) fn generate(
+    parsed_derive: ParsedDerive,
+    paths: Vec<PathBuf>,
     rules: Vec<OptimizedRule>,
     defaults: Vec<&str>,
+    doc_comment: &DocComment,
     include_grammar: bool,
 ) -> TokenStream {
     let uses_eoi = defaults.iter().any(|name| *name == "EOI");
-
+    let name = parsed_derive.name;
     let builtins = generate_builtin_rules();
     let include_fix = if include_grammar {
-        match path {
-            Some(ref path) => generate_include(&name, path.to_str().expect("non-Unicode path")),
-            None => quote!(),
-        }
+        generate_include(&name, paths)
     } else {
         quote!()
     };
-    let rule_enum = generate_enum(&rules, uses_eoi);
+    let rule_enum = generate_enum(&rules, doc_comment, uses_eoi, parsed_derive.non_exhaustive);
     let patterns = generate_patterns(&rules, uses_eoi);
     let skip = generate_skip(&rules);
 
@@ -49,7 +49,7 @@ pub fn generate(
         }
     }));
 
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = parsed_derive.generics.split_for_impl();
 
     let result = result_type();
 
@@ -153,13 +153,13 @@ fn generate_builtin_rules() -> Vec<(&'static str, TokenStream)> {
 
     let box_ty = box_type();
 
-    for property in UNICODE_PROPERTY_NAMES {
+    for property in unicode_property_names() {
         let property_ident: Ident = syn::parse_str(property).unwrap();
         // insert manually for #property substitution
         builtins.push((property, quote! {
             #[inline]
             #[allow(dead_code, non_snake_case, unused_variables)]
-            fn #property_ident(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+            fn #property_ident(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                 state.match_char_by(::pest::unicode::#property_ident)
             }
         }));
@@ -167,49 +167,108 @@ fn generate_builtin_rules() -> Vec<(&'static str, TokenStream)> {
     builtins
 }
 
-// Needed because Cargo doesn't watch for changes in grammars.
-fn generate_include(name: &Ident, path: &str) -> TokenStream {
-    let const_name = Ident::new(&format!("_PEST_GRAMMAR_{}", name), Span::call_site());
+/// Generate Rust `include_str!` for grammar files, then Cargo will watch changes in grammars.
+fn generate_include(name: &Ident, paths: Vec<PathBuf>) -> TokenStream {
+    let const_name = format_ident!("_PEST_GRAMMAR_{}", name);
     // Need to make this relative to the current directory since the path to the file
     // is derived from the CARGO_MANIFEST_DIR environment variable
-    let mut current_dir = std::env::current_dir().expect("Unable to get current directory");
-    current_dir.push(path);
-    let relative_path = current_dir.to_str().expect("path contains invalid unicode");
+    let current_dir = std::env::current_dir().expect("Unable to get current directory");
+
+    let include_tokens = paths.iter().map(|path| {
+        let path = path.to_str().expect("non-Unicode path");
+
+        let relative_path = current_dir
+            .join(path)
+            .to_str()
+            .expect("path contains invalid unicode")
+            .to_string();
+
+        quote! {
+            include_str!(#relative_path)
+        }
+    });
+
+    let len = include_tokens.len();
     quote! {
         #[allow(non_upper_case_globals)]
-        const #const_name: &'static str = include_str!(#relative_path);
+        const #const_name: [&'static str; #len] = [
+            #(#include_tokens),*
+        ];
     }
 }
 
-fn generate_enum(rules: &[OptimizedRule], uses_eoi: bool) -> TokenStream {
-    let rules = rules
-        .iter()
-        .map(|rule| Ident::new(rule.name.as_str(), Span::call_site()));
-    if uses_eoi {
-        quote! {
-            #[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
-            #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-            pub enum Rule {
-                EOI,
-                #( #rules ),*
-            }
+fn generate_enum(
+    rules: &[OptimizedRule],
+    doc_comment: &DocComment,
+    uses_eoi: bool,
+    non_exhaustive: bool,
+) -> TokenStream {
+    let rule_variants = rules.iter().map(|rule| {
+        let rule_name = format_ident!("r#{}", rule.name);
+
+        match doc_comment.line_docs.get(&rule.name) {
+            Some(doc) => quote! {
+                #[doc = #doc]
+                #rule_name
+            },
+            None => quote! {
+                #rule_name
+            },
         }
-    } else {
-        quote! {
-            #[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
-            #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-            pub enum Rule {
-                #( #rules ),*
-            }
-        }
+    });
+
+    let grammar_doc = &doc_comment.grammar_doc;
+    let mut result = quote! {
+        #[doc = #grammar_doc]
+        #[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    };
+    if non_exhaustive {
+        result.append_all(quote! {
+            #[non_exhaustive]
+        });
     }
+    result.append_all(quote! {
+        pub enum Rule
+    });
+    if uses_eoi {
+        result.append_all(quote! {
+            {
+                #[doc = "End-of-input"]
+                EOI,
+                #( #rule_variants ),*
+            }
+        });
+    } else {
+        result.append_all(quote! {
+            {
+                #( #rule_variants ),*
+            }
+        })
+    };
+
+    let rules = rules.iter().map(|rule| {
+        let rule_name = format_ident!("r#{}", rule.name);
+        quote! { #rule_name }
+    });
+
+    result.append_all(quote! {
+        impl Rule {
+            pub fn all_rules() -> &'static[Rule] {
+                &[ #(Rule::#rules), * ]
+            }
+        }
+    });
+
+    result
 }
 
 fn generate_patterns(rules: &[OptimizedRule], uses_eoi: bool) -> TokenStream {
     let mut rules: Vec<TokenStream> = rules
         .iter()
         .map(|rule| {
-            let rule = Ident::new(rule.name.as_str(), Span::call_site());
+            let rule = format_ident!("r#{}", rule.name);
+
             quote! {
                 Rule::#rule => rules::#rule(state)
             }
@@ -228,10 +287,10 @@ fn generate_patterns(rules: &[OptimizedRule], uses_eoi: bool) -> TokenStream {
 }
 
 fn generate_rule(rule: OptimizedRule) -> TokenStream {
-    let name = Ident::new(&rule.name, Span::call_site());
+    let name = format_ident!("r#{}", rule.name);
     let expr = if rule.ty == RuleType::Atomic || rule.ty == RuleType::CompoundAtomic {
         generate_expr_atomic(rule.expr)
-    } else if name == "WHITESPACE" || name == "COMMENT" {
+    } else if rule.name == "WHITESPACE" || rule.name == "COMMENT" {
         let atomic = generate_expr_atomic(rule.expr);
 
         quote! {
@@ -249,7 +308,7 @@ fn generate_rule(rule: OptimizedRule) -> TokenStream {
         RuleType::Normal => quote! {
             #[inline]
             #[allow(non_snake_case, unused_variables)]
-            pub fn #name(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+            pub fn #name(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                 state.rule(Rule::#name, |state| {
                     #expr
                 })
@@ -258,14 +317,14 @@ fn generate_rule(rule: OptimizedRule) -> TokenStream {
         RuleType::Silent => quote! {
             #[inline]
             #[allow(non_snake_case, unused_variables)]
-            pub fn #name(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+            pub fn #name(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                 #expr
             }
         },
         RuleType::Atomic => quote! {
             #[inline]
             #[allow(non_snake_case, unused_variables)]
-            pub fn #name(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+            pub fn #name(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                 state.rule(Rule::#name, |state| {
                     state.atomic(::pest::Atomicity::Atomic, |state| {
                         #expr
@@ -276,7 +335,7 @@ fn generate_rule(rule: OptimizedRule) -> TokenStream {
         RuleType::CompoundAtomic => quote! {
             #[inline]
             #[allow(non_snake_case, unused_variables)]
-            pub fn #name(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+            pub fn #name(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                 state.atomic(::pest::Atomicity::CompoundAtomic, |state| {
                     state.rule(Rule::#name, |state| {
                         #expr
@@ -287,7 +346,7 @@ fn generate_rule(rule: OptimizedRule) -> TokenStream {
         RuleType::NonAtomic => quote! {
             #[inline]
             #[allow(non_snake_case, unused_variables)]
-            pub fn #name(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+            pub fn #name(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                 state.atomic(::pest::Atomicity::NonAtomic, |state| {
                     state.rule(Rule::#name, |state| {
                         #expr
@@ -364,7 +423,7 @@ fn generate_expr(expr: OptimizedExpr) -> TokenStream {
             }
         }
         OptimizedExpr::Ident(ident) => {
-            let ident = Ident::new(&ident, Span::call_site());
+            let ident = format_ident!("r#{}", ident);
             quote! { self::#ident(state) }
         }
         OptimizedExpr::PeekSlice(start, end_) => {
@@ -465,6 +524,26 @@ fn generate_expr(expr: OptimizedExpr) -> TokenStream {
                 })
             }
         }
+        #[cfg(feature = "grammar-extras")]
+        OptimizedExpr::RepOnce(expr) => {
+            let expr = generate_expr(*expr);
+
+            quote! {
+                state.sequence(|state| {
+                    #expr.and_then(|state| {
+                        state.repeat(|state| {
+                            state.sequence(|state| {
+                                super::hidden::skip(
+                                    state
+                                ).and_then(|state| {
+                                    #expr
+                                })
+                            })
+                        })
+                    })
+                })
+            }
+        }
         OptimizedExpr::Skip(strings) => {
             quote! {
                 let strings = [#(#strings),*];
@@ -484,6 +563,19 @@ fn generate_expr(expr: OptimizedExpr) -> TokenStream {
 
             quote! {
                 state.restore_on_err(|state| #expr)
+            }
+        }
+        #[cfg(feature = "grammar-extras")]
+        OptimizedExpr::NodeTag(expr, tag) => {
+            let expr = generate_expr(*expr);
+            let tag_cow = {
+                #[cfg(feature = "std")]
+                quote! { ::std::borrow::Cow::Borrowed(#tag) }
+                #[cfg(not(feature = "std"))]
+                quote! { ::alloc::borrow::Cow::Borrowed(#tag) }
+            };
+            quote! {
+                #expr.and_then(|state| state.tag_node(#tag_cow))
             }
         }
     }
@@ -510,7 +602,7 @@ fn generate_expr_atomic(expr: OptimizedExpr) -> TokenStream {
             }
         }
         OptimizedExpr::Ident(ident) => {
-            let ident = Ident::new(&ident, Span::call_site());
+            let ident = format_ident!("r#{}", ident);
             quote! { self::#ident(state) }
         }
         OptimizedExpr::PeekSlice(start, end_) => {
@@ -597,6 +689,22 @@ fn generate_expr_atomic(expr: OptimizedExpr) -> TokenStream {
                 })
             }
         }
+        #[cfg(feature = "grammar-extras")]
+        OptimizedExpr::RepOnce(expr) => {
+            let expr = generate_expr_atomic(*expr);
+
+            quote! {
+                state.sequence(|state| {
+                    #expr.and_then(|state| {
+                        state.repeat(|state| {
+                            state.sequence(|state| {
+                                #expr
+                            })
+                        })
+                    })
+                })
+            }
+        }
         OptimizedExpr::Skip(strings) => {
             quote! {
                 let strings = [#(#strings),*];
@@ -616,6 +724,19 @@ fn generate_expr_atomic(expr: OptimizedExpr) -> TokenStream {
 
             quote! {
                 state.restore_on_err(|state| #expr)
+            }
+        }
+        #[cfg(feature = "grammar-extras")]
+        OptimizedExpr::NodeTag(expr, tag) => {
+            let expr = generate_expr_atomic(*expr);
+            let tag_cow = {
+                #[cfg(feature = "std")]
+                quote! { ::std::borrow::Cow::Borrowed(#tag) }
+                #[cfg(not(feature = "std"))]
+                quote! { ::alloc::borrow::Cow::Borrowed(#tag) }
+            };
+            quote! {
+                #expr.and_then(|state| state.tag_node(#tag_cow))
             }
         }
     }
@@ -661,6 +782,10 @@ fn option_type() -> TokenStream {
 mod tests {
     use super::*;
 
+    use proc_macro2::Span;
+    use std::collections::HashMap;
+    use syn::Generics;
+
     #[test]
     fn rule_enum_simple() {
         let rules = vec![OptimizedRule {
@@ -669,13 +794,28 @@ mod tests {
             expr: OptimizedExpr::Ident("g".to_owned()),
         }];
 
+        let mut line_docs = HashMap::new();
+        line_docs.insert("f".to_owned(), "This is rule comment".to_owned());
+
+        let doc_comment = &DocComment {
+            grammar_doc: "Rule doc\nhello".to_owned(),
+            line_docs,
+        };
+
         assert_eq!(
-            generate_enum(&rules, false).to_string(),
+            generate_enum(&rules, doc_comment, false, false).to_string(),
             quote! {
+                #[doc = "Rule doc\nhello"]
                 #[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
                 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
                 pub enum Rule {
-                    f
+                    #[doc = "This is rule comment"]
+                    r#f
+                }
+                impl Rule {
+                    pub fn all_rules() -> &'static [Rule] {
+                        &[Rule::r#f]
+                    }
                 }
             }
             .to_string()
@@ -863,7 +1003,7 @@ mod tests {
         assert_eq!(
             generate_expr(expr).to_string(),
             quote! {
-                self::a(state).or_else(|state| {
+                self::r#a(state).or_else(|state| {
                     state.sequence(|state| {
                         state.match_range('a'..'b').and_then(|state| {
                             super::hidden::skip(state)
@@ -929,7 +1069,7 @@ mod tests {
         assert_eq!(
             generate_expr_atomic(expr).to_string(),
             quote! {
-                self::a(state).or_else(|state| {
+                self::r#a(state).or_else(|state| {
                     state.sequence(|state| {
                         state.match_range('a'..'b').and_then(|state| {
                             state.lookahead(false, |state| {
@@ -957,30 +1097,61 @@ mod tests {
     }
 
     #[test]
-    fn generate_complete() {
+    fn test_generate_complete() {
         let name = Ident::new("MyParser", Span::call_site());
         let generics = Generics::default();
-        let rules = vec![OptimizedRule {
-            name: "a".to_owned(),
-            ty: RuleType::Silent,
-            expr: OptimizedExpr::Str("b".to_owned()),
-        }];
+
+        let rules = vec![
+            OptimizedRule {
+                name: "a".to_owned(),
+                ty: RuleType::Silent,
+                expr: OptimizedExpr::Str("b".to_owned()),
+            },
+            OptimizedRule {
+                name: "if".to_owned(),
+                ty: RuleType::Silent,
+                expr: OptimizedExpr::Ident("a".to_owned()),
+            },
+        ];
+
+        let mut line_docs = HashMap::new();
+        line_docs.insert("if".to_owned(), "If statement".to_owned());
+
+        let doc_comment = &DocComment {
+            line_docs,
+            grammar_doc: "This is Rule doc\nThis is second line".to_owned(),
+        };
+
         let defaults = vec!["ANY"];
         let result = result_type();
         let box_ty = box_type();
-        let mut current_dir = std::env::current_dir().expect("Unable to get current directory");
-        current_dir.push("test.pest");
-        let test_path = current_dir.to_str().expect("path contains invalid unicode");
+        let current_dir = std::env::current_dir().expect("Unable to get current directory");
+
+        let base_path = current_dir.join("base.pest").to_str().unwrap().to_string();
+        let test_path = current_dir.join("test.pest").to_str().unwrap().to_string();
+        let parsed_derive = ParsedDerive {
+            name,
+            generics,
+            non_exhaustive: false,
+        };
         assert_eq!(
-            generate(name, &generics, Some(PathBuf::from("test.pest")), rules, defaults, true).to_string(),
+            generate(parsed_derive, vec![PathBuf::from("base.pest"), PathBuf::from("test.pest")], rules, defaults, doc_comment, true).to_string(),
             quote! {
                 #[allow(non_upper_case_globals)]
-                const _PEST_GRAMMAR_MyParser: &'static str = include_str!(#test_path);
+                const _PEST_GRAMMAR_MyParser: [&'static str; 2usize] = [include_str!(#base_path), include_str!(#test_path)];
 
+                #[doc = "This is Rule doc\nThis is second line"]
                 #[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
                 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
                 pub enum Rule {
-                    a
+                    r#a,
+                    #[doc = "If statement"]
+                    r#if
+                }
+                impl Rule {
+                    pub fn all_rules() -> &'static [Rule] {
+                        &[Rule::r#a, Rule::r#if]
+                    }
                 }
 
                 #[allow(clippy::all)]
@@ -999,7 +1170,7 @@ mod tests {
 
                                 #[inline]
                                 #[allow(dead_code, non_snake_case, unused_variables)]
-                                pub fn skip(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+                                pub fn skip(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                                     Ok(state)
                                 }
                             }
@@ -1009,13 +1180,19 @@ mod tests {
 
                                 #[inline]
                                 #[allow(non_snake_case, unused_variables)]
-                                pub fn a(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+                                pub fn r#a(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                                     state.match_string("b")
                                 }
 
                                 #[inline]
+                                #[allow(non_snake_case, unused_variables)]
+                                pub fn r#if(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
+                                    self::r#a(state)
+                                }
+
+                                #[inline]
                                 #[allow(dead_code, non_snake_case, unused_variables)]
-                                pub fn ANY(state: #box_ty<::pest::ParserState<Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<Rule>>> {
+                                pub fn ANY(state: #box_ty<::pest::ParserState<'_, Rule>>) -> ::pest::ParseResult<#box_ty<::pest::ParserState<'_, Rule>>> {
                                     state.skip(1)
                                 }
                             }
@@ -1025,7 +1202,8 @@ mod tests {
 
                         ::pest::state(input, |state| {
                             match rule {
-                                Rule::a => rules::a(state)
+                                Rule::r#a => rules::r#a(state),
+                                Rule::r#if => rules::r#if(state)
                             }
                         })
                     }

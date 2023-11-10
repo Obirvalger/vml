@@ -1,19 +1,11 @@
 //! Functions which operate on file descriptors which might be terminals.
 
 use crate::backend;
-#[cfg(any(
-    all(linux_raw, feature = "procfs"),
-    all(libc, not(any(target_os = "fuchsia", target_os = "wasi"))),
-))]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "procfs")))]
-use crate::io;
 use backend::fd::AsFd;
-#[cfg(any(
-    all(linux_raw, feature = "procfs"),
-    all(libc, not(any(target_os = "fuchsia", target_os = "wasi"))),
-))]
+#[cfg(all(feature = "alloc", feature = "procfs"))]
+#[cfg(not(any(target_os = "fuchsia", target_os = "wasi")))]
 use {
-    crate::ffi::CString, crate::path::SMALL_PATH_BUFFER_SIZE, alloc::vec::Vec,
+    crate::ffi::CString, crate::io, crate::path::SMALL_PATH_BUFFER_SIZE, alloc::vec::Vec,
     backend::fd::BorrowedFd,
 };
 
@@ -32,7 +24,7 @@ pub fn isatty<Fd: AsFd>(fd: Fd) -> bool {
 
 /// `ttyname_r(fd)`
 ///
-/// If `reuse` is non-empty, reuse its buffer to store the result if possible.
+/// If `reuse` already has available capacity, reuse it if possible.
 ///
 /// # References
 ///  - [POSIX]
@@ -41,31 +33,50 @@ pub fn isatty<Fd: AsFd>(fd: Fd) -> bool {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/ttyname.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/ttyname.3.html
 #[cfg(not(any(target_os = "fuchsia", target_os = "wasi")))]
-#[cfg(feature = "procfs")]
+#[cfg(all(feature = "alloc", feature = "procfs"))]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "procfs")))]
+#[doc(alias = "ttyname_r")]
 #[inline]
 pub fn ttyname<Fd: AsFd, B: Into<Vec<u8>>>(dirfd: Fd, reuse: B) -> io::Result<CString> {
     _ttyname(dirfd.as_fd(), reuse.into())
 }
 
 #[cfg(not(any(target_os = "fuchsia", target_os = "wasi")))]
-#[cfg(feature = "procfs")]
+#[cfg(all(feature = "alloc", feature = "procfs"))]
+#[allow(unsafe_code)]
 fn _ttyname(dirfd: BorrowedFd<'_>, mut buffer: Vec<u8>) -> io::Result<CString> {
-    // This code would benefit from having a better way to read into
-    // uninitialized memory, but that requires `unsafe`.
     buffer.clear();
     buffer.reserve(SMALL_PATH_BUFFER_SIZE);
-    buffer.resize(buffer.capacity(), 0_u8);
 
     loop {
-        match backend::termios::syscalls::ttyname(dirfd, &mut buffer) {
+        match backend::termios::syscalls::ttyname(dirfd, buffer.spare_capacity_mut()) {
             Err(io::Errno::RANGE) => {
-                buffer.reserve(1); // use `Vec` reallocation strategy to grow capacity exponentially
-                buffer.resize(buffer.capacity(), 0_u8);
+                // Use `Vec` reallocation strategy to grow capacity
+                // exponentially.
+                buffer.reserve(buffer.capacity() + 1);
             }
             Ok(len) => {
-                buffer.resize(len, 0_u8);
-                return Ok(CString::new(buffer).unwrap());
+                // SAFETY: Assume the backend returns the length of the string
+                // excluding the NUL.
+                unsafe {
+                    buffer.set_len(len + 1);
+                }
+
+                // SAFETY:
+                // - “ttyname_r stores this pathname in the buffer buf”
+                // - [POSIX definition 3.271: Pathname]: “A string that is used
+                //   to identify a file.”
+                // - [POSIX definition 3.375: String]: “A contiguous sequence
+                //   of bytes terminated by and including the first null byte.”
+                //
+                // Thus, there will be a single NUL byte at the end of the
+                // string.
+                //
+                // [POSIX definition 3.271: Pathname]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_271
+                // [POSIX definition 3.375: String]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_375
+                unsafe {
+                    return Ok(CString::from_vec_with_nul_unchecked(buffer));
+                }
             }
             Err(errno) => return Err(errno),
         }

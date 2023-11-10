@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -188,5 +189,10 @@ impl PluginCrashedEventInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for PluginCrashedEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

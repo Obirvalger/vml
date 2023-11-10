@@ -13,6 +13,11 @@ impl<T> Mutex<T> {
     }
 
     #[inline]
+    pub(crate) const fn const_new(t: T) -> Mutex<T> {
+        Mutex(sync::Mutex::new(t))
+    }
+
+    #[inline]
     pub(crate) fn lock(&self) -> MutexGuard<'_, T> {
         match self.0.lock() {
             Ok(guard) => guard,

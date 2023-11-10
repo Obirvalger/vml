@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
@@ -25,7 +26,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn label(this: &GpuBindGroupLayout) -> Option<String>;
+    pub fn label(this: &GpuBindGroupLayout) -> String;
     #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (structural , method , setter , js_class = "GPUBindGroupLayout" , js_name = label)]
     #[doc = "Setter for the `label` field of this object."]
@@ -36,5 +37,5 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn set_label(this: &GpuBindGroupLayout, value: Option<&str>);
+    pub fn set_label(this: &GpuBindGroupLayout, value: &str);
 }

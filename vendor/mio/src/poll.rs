@@ -1,9 +1,13 @@
-use crate::{event, sys, Events, Interest, Token};
-use log::trace;
-#[cfg(unix)]
+#[cfg(all(unix, not(mio_unsupported_force_poll_poll), not(target_os = "vita")))]
 use std::os::unix::io::{AsRawFd, RawFd};
+#[cfg(all(debug_assertions, not(target_os = "wasi")))]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(all(debug_assertions, not(target_os = "wasi")))]
+use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io};
+
+use crate::{event, sys, Events, Interest, Token};
 
 /// Polls for readiness events on all registered values.
 ///
@@ -187,6 +191,28 @@ use std::{fmt, io};
 /// operations to go through Mio otherwise it is not able to update it's
 /// internal state properly and won't generate events.
 ///
+/// ### Polling without registering event sources
+///
+///
+/// *The following is **not** guaranteed, just a description of the current
+/// situation!* Mio is allowed to change the following without it being
+/// considered a breaking change, don't depend on this, it's just here to inform
+/// the user. On platforms that use epoll, kqueue or IOCP (see implementation
+/// notes below) polling without previously registering [event sources] will
+/// result in sleeping forever, only a process signal will be able to wake up
+/// the thread.
+///
+/// On WASM/WASI this is different as it doesn't support process signals,
+/// furthermore the WASI specification doesn't specify a behaviour in this
+/// situation, thus it's up to the implementation what to do here. As an
+/// example, the wasmtime runtime will return `EINVAL` in this situation, but
+/// different runtimes may return different results. If you have further
+/// insights or thoughts about this situation (and/or how Mio should handle it)
+/// please add you comment to [pull request#1580].
+///
+/// [event sources]: crate::event::Source
+/// [pull request#1580]: https://github.com/tokio-rs/mio/pull/1580
+///
 /// # Implementation notes
 ///
 /// `Poll` is backed by the selector provided by the operating system.
@@ -231,6 +257,9 @@ pub struct Poll {
 /// Registers I/O resources.
 pub struct Registry {
     selector: sys::Selector,
+    /// Whether this selector currently has an associated waker.
+    #[cfg(all(debug_assertions, not(target_os = "wasi")))]
+    has_waker: Arc<AtomicBool>,
 }
 
 impl Poll {
@@ -240,6 +269,13 @@ impl Poll {
         /// This function will make a syscall to the operating system to create
         /// the system selector. If this syscall fails, `Poll::new` will return
         /// with the error.
+        ///
+        /// close-on-exec flag is set on the file descriptors used by the selector to prevent
+        /// leaking it to executed processes. However, on some systems such as
+        /// old Linux systems that don't support `epoll_create1` syscall it is done
+        /// non-atomically, so a separate thread executing in parallel to this
+        /// function may accidentally leak the file descriptor if it executes a
+        /// new process before this function returns.
         ///
         /// See [struct] level docs for more details.
         ///
@@ -270,7 +306,11 @@ impl Poll {
         /// ```
         pub fn new() -> io::Result<Poll> {
             sys::Selector::new().map(|selector| Poll {
-                registry: Registry { selector },
+                registry: Registry {
+                    selector,
+                    #[cfg(all(debug_assertions, not(target_os = "wasi")))]
+                    has_waker: Arc::new(AtomicBool::new(false)),
+                },
             })
         }
     }
@@ -319,6 +359,10 @@ impl Poll {
     /// This returns any errors without attempting to retry, previous versions
     /// of Mio would automatically retry the poll call if it was interrupted
     /// (if `EINTR` was returned).
+    ///
+    /// Currently if the `timeout` elapses without any readiness events
+    /// triggering this will return `Ok(())`. However we're not guaranteeing
+    /// this behaviour as this depends on the OS.
     ///
     /// # Examples
     ///
@@ -379,7 +423,7 @@ impl Poll {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(mio_unsupported_force_poll_poll), not(target_os = "vita")))]
 impl AsRawFd for Poll {
     fn as_raw_fd(&self) -> RawFd {
         self.registry.as_raw_fd()
@@ -635,11 +679,12 @@ impl Registry {
     ///
     /// Event sources registered with this `Registry` will be registered with
     /// the original `Registry` and `Poll` instance.
-    #[cfg(not(target_os = "wasi"))]
     pub fn try_clone(&self) -> io::Result<Registry> {
-        self.selector
-            .try_clone()
-            .map(|selector| Registry { selector })
+        self.selector.try_clone().map(|selector| Registry {
+            selector,
+            #[cfg(all(debug_assertions, not(target_os = "wasi")))]
+            has_waker: Arc::clone(&self.has_waker),
+        })
     }
 
     /// Internal check to ensure only a single `Waker` is active per [`Poll`]
@@ -647,7 +692,7 @@ impl Registry {
     #[cfg(all(debug_assertions, not(target_os = "wasi")))]
     pub(crate) fn register_waker(&self) {
         assert!(
-            !self.selector.register_waker(),
+            !self.has_waker.swap(true, Ordering::AcqRel),
             "Only a single `Waker` can be active per `Poll` instance"
         );
     }
@@ -665,7 +710,7 @@ impl fmt::Debug for Registry {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(mio_unsupported_force_poll_poll), not(target_os = "vita")))]
 impl AsRawFd for Registry {
     fn as_raw_fd(&self) -> RawFd {
         self.selector.as_raw_fd()
@@ -673,7 +718,11 @@ impl AsRawFd for Registry {
 }
 
 cfg_os_poll! {
-    #[cfg(unix)]
+    #[cfg(all(
+        unix,
+        not(mio_unsupported_force_poll_poll),
+        not(target_os = "vita"),
+    ))]
     #[test]
     pub fn as_raw_fd() {
         let poll = Poll::new().unwrap();

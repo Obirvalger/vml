@@ -18,6 +18,10 @@ fn bench_slug_normal(b: &mut test::Bencher) {
     use slug::slugify;
     b.iter(|| {
         test::black_box(slugify(test::black_box("My test Slug!!")));
+        test::black_box(slugify(test::black_box("Some other.. slug")));
+        test::black_box(slugify(test::black_box(
+            "CAPSLOCK IS AN AUTOPILOT FOR COOL",
+        )));
     })
 }
 
@@ -26,5 +30,6 @@ fn bench_unicode(b: &mut test::Bencher) {
     use slug::slugify;
     b.iter(|| {
         test::black_box(slugify(test::black_box("Æúűűűű--cool?")));
+        test::black_box(slugify(test::black_box("മലയാലമ്げんまい茶??")));
     })
 }

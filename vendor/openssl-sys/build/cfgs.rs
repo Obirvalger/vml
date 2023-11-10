@@ -1,4 +1,4 @@
-#[allow(clippy::inconsistent_digit_grouping)]
+#[allow(clippy::unusual_byte_groupings)]
 pub fn get(openssl_version: Option<u64>, libressl_version: Option<u64>) -> Vec<&'static str> {
     let mut cfgs = vec![];
 
@@ -7,6 +7,9 @@ pub fn get(openssl_version: Option<u64>, libressl_version: Option<u64>) -> Vec<&
 
         if libressl_version >= 0x2_05_01_00_0 {
             cfgs.push("libressl251");
+        }
+        if libressl_version >= 0x2_05_02_00_0 {
+            cfgs.push("libressl252");
         }
         if libressl_version >= 0x2_06_01_00_0 {
             cfgs.push("libressl261");
@@ -29,12 +32,45 @@ pub fn get(openssl_version: Option<u64>, libressl_version: Option<u64>) -> Vec<&
         if libressl_version >= 0x2_09_01_00_0 {
             cfgs.push("libressl291");
         }
+        if libressl_version >= 0x3_01_00_00_0 {
+            cfgs.push("libressl310");
+        }
         if libressl_version >= 0x3_02_01_00_0 {
             cfgs.push("libressl321");
+        }
+        if libressl_version >= 0x3_03_02_00_0 {
+            cfgs.push("libressl332");
+        }
+        if libressl_version >= 0x3_04_00_00_0 {
+            cfgs.push("libressl340");
+        }
+        if libressl_version >= 0x3_05_00_00_0 {
+            cfgs.push("libressl350");
+        }
+        if libressl_version >= 0x3_06_00_00_0 {
+            cfgs.push("libressl360");
+        }
+        if libressl_version >= 0x3_07_00_00_0 {
+            cfgs.push("libressl370");
+        }
+        if libressl_version >= 0x3_08_00_00_0 {
+            cfgs.push("libressl380");
+        }
+        if libressl_version >= 0x3_08_01_00_0 {
+            cfgs.push("libressl381");
+        }
+        if libressl_version >= 0x3_08_02_00_0 {
+            cfgs.push("libressl382");
         }
     } else {
         let openssl_version = openssl_version.unwrap();
 
+        if openssl_version >= 0x3_02_00_00_0 {
+            cfgs.push("ossl320");
+        }
+        if openssl_version >= 0x3_00_00_00_0 {
+            cfgs.push("ossl300");
+        }
         if openssl_version >= 0x1_00_01_00_0 {
             cfgs.push("ossl101");
         }
@@ -67,6 +103,9 @@ pub fn get(openssl_version: Option<u64>, libressl_version: Option<u64>) -> Vec<&
         }
         if openssl_version >= 0x1_01_01_03_0 {
             cfgs.push("ossl111c");
+        }
+        if openssl_version >= 0x1_01_01_04_0 {
+            cfgs.push("ossl111d");
         }
     }
 

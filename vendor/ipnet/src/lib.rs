@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/ipnet/2.3.0")]
+#![doc(html_root_url = "https://docs.rs/ipnet/2.9.0")]
 //! Types for IPv4 and IPv6 network addresses.
 //!
 //! This module provides types and useful methods for working with IPv4
@@ -9,7 +9,7 @@
 //! consistent.
 //! 
 //! The module also provides the [`IpSubnets`], [`Ipv4Subnets`], and
-//! [`Ipv6Subnets`] types for interating over the subnets contained in
+//! [`Ipv6Subnets`] types for iterating over the subnets contained in
 //! an IP address range. The [`IpAddrRange`], [`Ipv4AddrRange`], and
 //! [`Ipv6AddrRange`] types for iterating over IP addresses in a range.
 //! And traits that extend `Ipv4Addr` and `Ipv6Addr` with methods for
@@ -55,7 +55,7 @@
 //! [`IpAdd`]: trait.IpAdd.html
 //! [`IpSub`]: trait.IpSub.html
 //! [`IpBitAnd`]: trait.IpBitAnd.html
-//! [`IpBitOr`]: trait.IpBitOr.htmll
+//! [`IpBitOr`]: trait.IpBitOr.html
 //!
 //! # Serde support
 //!
@@ -78,16 +78,31 @@
 //!
 //! [feature]: https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section
 
+#![no_std]
+#![cfg_attr(not(feature = "std"), feature(error_in_core))]
+#![cfg_attr(not(feature = "std"), feature(ip_in_core))]
+
+#[cfg(feature = "std")]
+extern crate std;
+
+#[cfg_attr(test, macro_use)]
+extern crate alloc;
+
 #[cfg(feature = "serde")]
-#[macro_use]
 extern crate serde;
+#[cfg(feature = "schemars")]
+extern crate schemars;
 
 pub use self::ipext::{IpAdd, IpSub, IpBitAnd, IpBitOr, IpAddrRange, Ipv4AddrRange, Ipv6AddrRange};
 pub use self::ipnet::{IpNet, Ipv4Net, Ipv6Net, PrefixLenError, IpSubnets, Ipv4Subnets, Ipv6Subnets};
 pub use self::parser::AddrParseError;
+pub use self::mask::{ip_mask_to_prefix, ipv4_mask_to_prefix, ipv6_mask_to_prefix};
 
 mod ipext;
 mod ipnet;
 mod parser;
+mod mask;
 #[cfg(feature = "serde")]
 mod ipnet_serde;
+#[cfg(feature = "schemars")]
+mod ipnet_schemars;

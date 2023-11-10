@@ -445,3 +445,33 @@ fn ArrayVec_ser_de() {
     ],
   );
 }
+
+#[test]
+fn ArrayVec_try_from_slice() {
+  use std::convert::TryFrom;
+
+  let nums = [1, 2, 3, 4];
+
+  let empty: Result<ArrayVec<[i32; 2]>, _> = ArrayVec::try_from(&nums[..0]);
+  assert!(empty.is_ok());
+  assert_eq!(empty.unwrap().as_slice(), &[]);
+
+  let fits: Result<ArrayVec<[i32; 2]>, _> = ArrayVec::try_from(&nums[..2]);
+  assert!(fits.is_ok());
+  assert_eq!(fits.unwrap().as_slice(), &[1, 2]);
+
+  let doesnt_fit: Result<ArrayVec<[i32; 2]>, _> =
+    ArrayVec::try_from(&nums[..4]);
+  assert!(doesnt_fit.is_err());
+}
+
+#[test]
+fn ArrayVec_pretty_debug() {
+  let arr: [i32; 3] = [1, 2, 3];
+  let expect = format!("{:#?}", arr);
+
+  let arr: ArrayVec<[i32; 3]> = array_vec![1, 2, 3];
+  let got = format!("{:#?}", arr);
+
+  assert_eq!(got, expect);
+}

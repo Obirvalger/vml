@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -143,5 +144,10 @@ impl RtcCodecStats {
         );
         let _ = r;
         self
+    }
+}
+impl Default for RtcCodecStats {
+    fn default() -> Self {
+        Self::new()
     }
 }

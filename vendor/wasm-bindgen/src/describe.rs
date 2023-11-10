@@ -3,7 +3,7 @@
 
 #![doc(hidden)]
 
-use crate::{Clamped, JsValue};
+use crate::{Clamped, JsError, JsObject, JsValue};
 use cfg_if::cfg_if;
 
 macro_rules! tys {
@@ -34,6 +34,7 @@ tys! {
     STRING
     REF
     REFMUT
+    LONGREF
     SLICE
     VECTOR
     EXTERNREF
@@ -42,17 +43,24 @@ tys! {
     RUST_STRUCT
     CHAR
     OPTIONAL
+    RESULT
     UNIT
     CLAMPED
 }
 
-#[inline(always)] // see `interpret.rs` in the the cli-support crate
+#[inline(always)] // see the wasm-interpreter crate
 pub fn inform(a: u32) {
     unsafe { super::__wbindgen_describe(a) }
 }
 
 pub trait WasmDescribe {
     fn describe();
+}
+
+/// Trait for element types to implement WasmDescribe for vectors of
+/// themselves.
+pub trait WasmDescribeVector {
+    fn describe_vector();
 }
 
 macro_rules! simple {
@@ -96,13 +104,13 @@ cfg_if! {
 
 impl<T> WasmDescribe for *const T {
     fn describe() {
-        inform(I32)
+        inform(U32)
     }
 }
 
 impl<T> WasmDescribe for *mut T {
     fn describe() {
-        inform(I32)
+        inform(U32)
     }
 }
 
@@ -143,10 +151,23 @@ if_std! {
         }
     }
 
-    impl<T: WasmDescribe> WasmDescribe for Box<[T]> {
-        fn describe() {
+    impl WasmDescribeVector for JsValue {
+        fn describe_vector() {
+            inform(VECTOR);
+            JsValue::describe();
+        }
+    }
+
+    impl<T: JsObject> WasmDescribeVector for T {
+        fn describe_vector() {
             inform(VECTOR);
             T::describe();
+        }
+    }
+
+    impl<T: WasmDescribeVector> WasmDescribe for Box<[T]> {
+        fn describe() {
+            T::describe_vector();
         }
     }
 
@@ -170,11 +191,10 @@ impl WasmDescribe for () {
     }
 }
 
-// Note that this is only for `ReturnWasmAbi for Result<T, JsValue>`, which
-// throws the result, so we only need to inform about the `T`.
-impl<T: WasmDescribe> WasmDescribe for Result<T, JsValue> {
+impl<T: WasmDescribe, E: Into<JsValue>> WasmDescribe for Result<T, E> {
     fn describe() {
-        T::describe()
+        inform(RESULT);
+        T::describe();
     }
 }
 
@@ -182,5 +202,11 @@ impl<T: WasmDescribe> WasmDescribe for Clamped<T> {
     fn describe() {
         inform(CLAMPED);
         T::describe();
+    }
+}
+
+impl WasmDescribe for JsError {
+    fn describe() {
+        JsValue::describe();
     }
 }

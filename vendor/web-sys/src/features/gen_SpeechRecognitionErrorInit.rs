@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -100,5 +101,10 @@ impl SpeechRecognitionErrorInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for SpeechRecognitionErrorInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

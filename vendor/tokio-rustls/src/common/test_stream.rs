@@ -129,8 +129,6 @@ async fn stream_good() -> io::Result<()> {
     io::copy(&mut Cursor::new(FILE), &mut server.writer())?;
     server.send_close_notify();
 
-    let mut server = Connection::from(server);
-
     {
         let mut good = Good(&mut server);
         let mut stream = Stream::new(&mut good, &mut client);
@@ -187,6 +185,30 @@ async fn stream_handshake() -> io::Result<()> {
 
     {
         let mut good = Good(&mut server);
+        let mut stream = Stream::new(&mut good, &mut client);
+        let (r, w) = poll_fn(|cx| stream.handshake(cx)).await?;
+
+        assert!(r > 0);
+        assert!(w > 0);
+
+        poll_fn(|cx| stream.handshake(cx)).await?; // finish server handshake
+    }
+
+    assert!(!server.is_handshaking());
+    assert!(!client.is_handshaking());
+
+    Ok(()) as io::Result<()>
+}
+
+#[tokio::test]
+async fn stream_buffered_handshake() -> io::Result<()> {
+    use tokio::io::BufWriter;
+
+    let (server, mut client) = make_pair();
+    let mut server = Connection::from(server);
+
+    {
+        let mut good = BufWriter::new(Good(&mut server));
         let mut stream = Stream::new(&mut good, &mut client);
         let (r, w) = poll_fn(|cx| stream.handshake(cx)).await?;
 
@@ -262,7 +284,7 @@ fn make_pair() -> (ServerConnection, ClientConnection) {
     let (sconfig, cconfig) = utils::make_configs();
     let server = ServerConnection::new(sconfig).unwrap();
 
-    let domain = rustls::ServerName::try_from("localhost").unwrap();
+    let domain = rustls::ServerName::try_from("foobar.com").unwrap();
     let client = ClientConnection::new(cconfig, domain).unwrap();
 
     (server, client)

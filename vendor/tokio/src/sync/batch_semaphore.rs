@@ -28,7 +28,6 @@ use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering::*;
-use std::task::Poll::*;
 use std::task::{Context, Poll, Waker};
 use std::{cmp, fmt};
 
@@ -49,7 +48,7 @@ struct Waitlist {
 /// Error returned from the [`Semaphore::try_acquire`] function.
 ///
 /// [`Semaphore::try_acquire`]: crate::sync::Semaphore::try_acquire
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TryAcquireError {
     /// The semaphore has been [closed] and cannot issue new permits.
     ///
@@ -112,6 +111,14 @@ struct Waiter {
     _p: PhantomPinned,
 }
 
+generate_addr_of_methods! {
+    impl<> Waiter {
+        unsafe fn addr_of_pointers(self: NonNull<Self>) -> NonNull<linked_list::Pointers<Waiter>> {
+            &self.pointers
+        }
+    }
+}
+
 impl Semaphore {
     /// The maximum number of permits which a semaphore can hold.
     ///
@@ -170,20 +177,42 @@ impl Semaphore {
     /// Creates a new semaphore with the initial number of permits.
     ///
     /// Maximum number of permits on 32-bit platforms is `1<<29`.
-    ///
-    /// If the specified number of permits exceeds the maximum permit amount
-    /// Then the value will get clamped to the maximum number of permits.
-    #[cfg(all(feature = "parking_lot", not(all(loom, test))))]
-    pub(crate) const fn const_new(mut permits: usize) -> Self {
-        // NOTE: assertions and by extension panics are still being worked on: https://github.com/rust-lang/rust/issues/74925
-        // currently we just clamp the permit count when it exceeds the max
-        permits &= Self::MAX_PERMITS;
+    #[cfg(not(all(loom, test)))]
+    pub(crate) const fn const_new(permits: usize) -> Self {
+        assert!(permits <= Self::MAX_PERMITS);
 
         Self {
             permits: AtomicUsize::new(permits << Self::PERMIT_SHIFT),
             waiters: Mutex::const_new(Waitlist {
                 queue: LinkedList::new(),
                 closed: false,
+            }),
+            #[cfg(all(tokio_unstable, feature = "tracing"))]
+            resource_span: tracing::Span::none(),
+        }
+    }
+
+    /// Creates a new closed semaphore with 0 permits.
+    pub(crate) fn new_closed() -> Self {
+        Self {
+            permits: AtomicUsize::new(Self::CLOSED),
+            waiters: Mutex::new(Waitlist {
+                queue: LinkedList::new(),
+                closed: true,
+            }),
+            #[cfg(all(tokio_unstable, feature = "tracing"))]
+            resource_span: tracing::Span::none(),
+        }
+    }
+
+    /// Creates a new closed semaphore with 0 permits.
+    #[cfg(not(all(loom, test)))]
+    pub(crate) const fn const_new_closed() -> Self {
+        Self {
+            permits: AtomicUsize::new(Self::CLOSED),
+            waiters: Mutex::const_new(Waitlist {
+                queue: LinkedList::new(),
+                closed: true,
             }),
             #[cfg(all(tokio_unstable, feature = "tracing"))]
             resource_span: tracing::Span::none(),
@@ -256,7 +285,7 @@ impl Semaphore {
 
             match self.permits.compare_exchange(curr, next, AcqRel, Acquire) {
                 Ok(_) => {
-                    // TODO: Instrument once issue has been solved}
+                    // TODO: Instrument once issue has been solved
                     return Ok(());
                 }
                 Err(actual) => curr = actual,
@@ -361,7 +390,7 @@ impl Semaphore {
         let mut waiters = loop {
             // Has the semaphore closed?
             if curr & Self::CLOSED > 0 {
-                return Ready(Err(AcquireError::closed()));
+                return Poll::Ready(Err(AcquireError::closed()));
             }
 
             let mut remaining = 0;
@@ -406,7 +435,7 @@ impl Semaphore {
                                 )
                             });
 
-                            return Ready(Ok(()));
+                            return Poll::Ready(Ok(()));
                         } else if lock.is_none() {
                             break self.waiters.lock();
                         }
@@ -418,7 +447,7 @@ impl Semaphore {
         };
 
         if waiters.closed {
-            return Ready(Err(AcquireError::closed()));
+            return Poll::Ready(Err(AcquireError::closed()));
         }
 
         #[cfg(all(tokio_unstable, feature = "tracing"))]
@@ -432,10 +461,11 @@ impl Semaphore {
 
         if node.assign_permits(&mut acquired) {
             self.add_permits_locked(acquired, waiters);
-            return Ready(Ok(()));
+            return Poll::Ready(Ok(()));
         }
 
         assert_eq!(acquired, 0);
+        let mut old_waker = None;
 
         // Otherwise, register the waker & enqueue the node.
         node.waker.with_mut(|waker| {
@@ -444,10 +474,9 @@ impl Semaphore {
             // Do we need to register the new waker?
             if waker
                 .as_ref()
-                .map(|waker| !waker.will_wake(cx.waker()))
-                .unwrap_or(true)
+                .map_or(true, |waker| !waker.will_wake(cx.waker()))
             {
-                *waker = Some(cx.waker().clone());
+                old_waker = std::mem::replace(waker, Some(cx.waker().clone()));
             }
         });
 
@@ -460,8 +489,10 @@ impl Semaphore {
 
             waiters.queue.push_front(node);
         }
+        drop(waiters);
+        drop(old_waker);
 
-        Pending
+        Poll::Pending
     }
 }
 
@@ -532,22 +563,22 @@ impl Future for Acquire<'_> {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let coop = ready!(trace_poll_op!(
             "poll_acquire",
-            crate::coop::poll_proceed(cx),
+            crate::runtime::coop::poll_proceed(cx),
         ));
 
         #[cfg(not(all(tokio_unstable, feature = "tracing")))]
-        let coop = ready!(crate::coop::poll_proceed(cx));
+        let coop = ready!(crate::runtime::coop::poll_proceed(cx));
 
         let result = match semaphore.poll_acquire(cx, needed, node, *queued) {
-            Pending => {
+            Poll::Pending => {
                 *queued = true;
-                Pending
+                Poll::Pending
             }
-            Ready(r) => {
+            Poll::Ready(r) => {
                 coop.made_progress();
                 r?;
                 *queued = false;
-                Ready(Ok(()))
+                Poll::Ready(Ok(()))
             }
         };
 
@@ -704,12 +735,6 @@ impl std::error::Error for TryAcquireError {}
 ///
 /// `Waiter` is forced to be !Unpin.
 unsafe impl linked_list::Link for Waiter {
-    // XXX: ideally, we would be able to use `Pin` here, to enforce the
-    // invariant that list entries may not move while in the list. However, we
-    // can't do this currently, as using `Pin<&'a mut Waiter>` as the `Handle`
-    // type would require `Semaphore` to be generic over a lifetime. We can't
-    // use `Pin<*mut Waiter>`, as raw pointers are `Unpin` regardless of whether
-    // or not they dereference to an `!Unpin` target.
     type Handle = NonNull<Waiter>;
     type Target = Waiter;
 
@@ -721,7 +746,7 @@ unsafe impl linked_list::Link for Waiter {
         ptr
     }
 
-    unsafe fn pointers(mut target: NonNull<Waiter>) -> NonNull<linked_list::Pointers<Waiter>> {
-        NonNull::from(&mut target.as_mut().pointers)
+    unsafe fn pointers(target: NonNull<Waiter>) -> NonNull<linked_list::Pointers<Waiter>> {
+        Waiter::addr_of_pointers(target)
     }
 }

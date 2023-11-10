@@ -14,7 +14,7 @@
 #[cfg(feature = "__rustls")]
 use rustls::{
     client::HandshakeSignatureValid, client::ServerCertVerified, client::ServerCertVerifier,
-    internal::msgs::handshake::DigitallySignedStruct, Error as TLSError, ServerName,
+    DigitallySignedStruct, Error as TLSError, ServerName,
 };
 use std::fmt;
 
@@ -45,6 +45,8 @@ pub struct Identity {
 enum ClientCert {
     #[cfg(feature = "native-tls")]
     Pkcs12(native_tls_crate::Identity),
+    #[cfg(feature = "native-tls")]
+    Pkcs8(native_tls_crate::Identity),
     #[cfg(feature = "__rustls")]
     Pem {
         key: rustls::PrivateKey,
@@ -179,6 +181,39 @@ impl Identity {
         })
     }
 
+    /// Parses a chain of PEM encoded X509 certificates, with the leaf certificate first.
+    /// `key` is a PEM encoded PKCS #8 formatted private key for the leaf certificate.
+    ///
+    /// The certificate chain should contain any intermediate cerficates that should be sent to
+    /// clients to allow them to build a chain to a trusted root.
+    ///
+    /// A certificate chain here means a series of PEM encoded certificates concatenated together.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::fs;
+    /// # fn pkcs8() -> Result<(), Box<std::error::Error>> {
+    /// let cert = fs::read("client.pem")?;
+    /// let key = fs::read("key.pem")?;
+    /// let pkcs8 = reqwest::Identity::from_pkcs8_pem(&cert, &key)?;
+    /// # drop(pkcs8);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Optional
+    ///
+    /// This requires the `native-tls` Cargo feature enabled.
+    #[cfg(feature = "native-tls")]
+    pub fn from_pkcs8_pem(pem: &[u8], key: &[u8]) -> crate::Result<Identity> {
+        Ok(Identity {
+            inner: ClientCert::Pkcs8(
+                native_tls_crate::Identity::from_pkcs8(pem, key).map_err(crate::error::builder)?,
+            ),
+        })
+    }
+
     /// Parses PEM encoded private key and certificate.
     ///
     /// The input should contain a PEM encoded private key
@@ -253,7 +288,7 @@ impl Identity {
         tls: &mut native_tls_crate::TlsConnectorBuilder,
     ) -> crate::Result<()> {
         match self.inner {
-            ClientCert::Pkcs12(id) => {
+            ClientCert::Pkcs12(id) | ClientCert::Pkcs8(id) => {
                 tls.identity(id);
                 Ok(())
             }
@@ -272,10 +307,12 @@ impl Identity {
     ) -> crate::Result<rustls::ClientConfig> {
         match self.inner {
             ClientCert::Pem { key, certs } => config_builder
-                .with_single_cert(certs, key)
+                .with_client_auth_cert(certs, key)
                 .map_err(crate::error::builder),
             #[cfg(feature = "native-tls")]
-            ClientCert::Pkcs12(..) => Err(crate::error::builder("incompatible TLS identity type")),
+            ClientCert::Pkcs12(..) | ClientCert::Pkcs8(..) => {
+                Err(crate::error::builder("incompatible TLS identity type"))
+            }
         }
     }
 }
@@ -342,6 +379,8 @@ impl Version {
 }
 
 pub(crate) enum TlsBackend {
+    // This is the default and HTTP/3 feature does not use it so suppress it.
+    #[allow(dead_code)]
     #[cfg(feature = "default-tls")]
     Default,
     #[cfg(feature = "native-tls")]
@@ -373,12 +412,15 @@ impl fmt::Debug for TlsBackend {
 
 impl Default for TlsBackend {
     fn default() -> TlsBackend {
-        #[cfg(feature = "default-tls")]
+        #[cfg(all(feature = "default-tls", not(feature = "http3")))]
         {
             TlsBackend::Default
         }
 
-        #[cfg(all(feature = "__rustls", not(feature = "default-tls")))]
+        #[cfg(any(
+            all(feature = "__rustls", not(feature = "default-tls")),
+            feature = "http3"
+        ))]
         {
             TlsBackend::Rustls
         }
@@ -421,6 +463,26 @@ impl ServerCertVerifier for NoVerifier {
     }
 }
 
+/// Hyper extension carrying extra TLS layer information.
+/// Made available to clients on responses when `tls_info` is set.
+#[derive(Clone)]
+pub struct TlsInfo {
+    pub(crate) peer_certificate: Option<Vec<u8>>,
+}
+
+impl TlsInfo {
+    /// Get the DER encoded leaf certificate of the peer.
+    pub fn peer_certificate(&self) -> Option<&[u8]> {
+        self.peer_certificate.as_ref().map(|der| &der[..])
+    }
+}
+
+impl std::fmt::Debug for TlsInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("TlsInfo").finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,6 +503,12 @@ mod tests {
     #[test]
     fn identity_from_pkcs12_der_invalid() {
         Identity::from_pkcs12_der(b"not der", "nope").unwrap_err();
+    }
+
+    #[cfg(feature = "native-tls")]
+    #[test]
+    fn identity_from_pkcs8_pem_invalid() {
+        Identity::from_pkcs8_pem(b"not pem", b"not key").unwrap_err();
     }
 
     #[cfg(feature = "__rustls")]

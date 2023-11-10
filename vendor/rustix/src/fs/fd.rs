@@ -2,49 +2,45 @@
 
 #[cfg(not(target_os = "wasi"))]
 use crate::fs::Mode;
-use crate::io::SeekFrom;
 #[cfg(not(target_os = "wasi"))]
-use crate::process::{Gid, Uid};
+use crate::fs::{Gid, Uid};
+use crate::fs::{OFlags, SeekFrom, Timespec};
 use crate::{backend, io};
 use backend::fd::{AsFd, BorrowedFd};
-
-#[cfg(not(any(target_os = "solaris", target_os = "wasi")))]
-pub use backend::fs::types::FlockOperation;
-
 #[cfg(not(any(
+    netbsdlike,
+    solarish,
     target_os = "aix",
     target_os = "dragonfly",
-    target_os = "illumos",
-    target_os = "netbsd",
-    target_os = "openbsd",
+    target_os = "espidf",
+    target_os = "nto",
     target_os = "redox",
-    target_os = "solaris",
+    target_os = "vita",
 )))]
-pub use backend::fs::types::FallocateFlags;
-
-pub use backend::fs::types::Stat;
-
+use backend::fs::types::FallocateFlags;
 #[cfg(not(any(
-    target_os = "haiku",
-    target_os = "illumos",
-    target_os = "netbsd",
-    target_os = "redox",
+    target_os = "espidf",
     target_os = "solaris",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
+use backend::fs::types::FlockOperation;
+#[cfg(linux_kernel)]
+use backend::fs::types::FsWord;
+use backend::fs::types::Stat;
+#[cfg(not(any(
+    solarish,
+    target_os = "espidf",
+    target_os = "haiku",
+    target_os = "netbsd",
+    target_os = "nto",
+    target_os = "redox",
+    target_os = "vita",
     target_os = "wasi",
 )))]
-pub use backend::fs::types::StatFs;
-
-#[cfg(not(any(
-    target_os = "haiku",
-    target_os = "illumos",
-    target_os = "redox",
-    target_os = "solaris",
-    target_os = "wasi",
-)))]
-pub use backend::fs::types::{StatVfs, StatVfsMountFlags};
-
-#[cfg(any(target_os = "android", target_os = "linux"))]
-pub use backend::fs::types::FsWord;
+use backend::fs::types::StatFs;
+#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
+use backend::fs::types::StatVfs;
 
 /// Timestamps used by [`utimensat`] and [`futimens`].
 ///
@@ -56,27 +52,27 @@ pub use backend::fs::types::FsWord;
 #[derive(Clone, Debug)]
 pub struct Timestamps {
     /// The timestamp of the last access to a filesystem object.
-    pub last_access: crate::fs::Timespec,
+    pub last_access: Timespec,
 
     /// The timestamp of the last modification of a filesystem object.
-    pub last_modification: crate::fs::Timespec,
+    pub last_modification: Timespec,
 }
 
 /// The filesystem magic number for procfs.
 ///
-/// See [the `fstatfs` man page] for more information.
+/// See [the `fstatfs` manual page] for more information.
 ///
-/// [the `fstatfs` man page]: https://man7.org/linux/man-pages/man2/fstatfs.2.html#DESCRIPTION
-#[cfg(any(target_os = "android", target_os = "linux"))]
-pub const PROC_SUPER_MAGIC: FsWord = backend::fs::types::PROC_SUPER_MAGIC;
+/// [the `fstatfs` manual page]: https://man7.org/linux/man-pages/man2/fstatfs.2.html#DESCRIPTION
+#[cfg(linux_kernel)]
+pub const PROC_SUPER_MAGIC: FsWord = backend::c::PROC_SUPER_MAGIC as FsWord;
 
 /// The filesystem magic number for NFS.
 ///
-/// See [the `fstatfs` man page] for more information.
+/// See [the `fstatfs` manual page] for more information.
 ///
-/// [the `fstatfs` man page]: https://man7.org/linux/man-pages/man2/fstatfs.2.html#DESCRIPTION
-#[cfg(any(target_os = "android", target_os = "linux"))]
-pub const NFS_SUPER_MAGIC: FsWord = backend::fs::types::NFS_SUPER_MAGIC;
+/// [the `fstatfs` manual page]: https://man7.org/linux/man-pages/man2/fstatfs.2.html#DESCRIPTION
+#[cfg(linux_kernel)]
+pub const NFS_SUPER_MAGIC: FsWord = backend::c::NFS_SUPER_MAGIC as FsWord;
 
 /// `lseek(fd, offset, whence)`—Repositions a file descriptor within a file.
 ///
@@ -87,6 +83,7 @@ pub const NFS_SUPER_MAGIC: FsWord = backend::fs::types::NFS_SUPER_MAGIC;
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/lseek.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/lseek.2.html
 #[inline]
+#[doc(alias = "lseek")]
 pub fn seek<Fd: AsFd>(fd: Fd, pos: SeekFrom) -> io::Result<u64> {
     backend::fs::syscalls::seek(fd.as_fd(), pos)
 }
@@ -104,14 +101,15 @@ pub fn seek<Fd: AsFd>(fd: Fd, pos: SeekFrom) -> io::Result<u64> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/lseek.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/lseek.2.html
 #[inline]
+#[doc(alias = "lseek")]
 pub fn tell<Fd: AsFd>(fd: Fd) -> io::Result<u64> {
     backend::fs::syscalls::tell(fd.as_fd())
 }
 
-/// `fchmod(fd)`—Sets open file or directory permissions.
+/// `fchmod(fd, mode)`—Sets open file or directory permissions.
 ///
-/// This implementation does not support `O_PATH` file descriptors, even on
-/// platforms where the host libc emulates it.
+/// This implementation does not support [`OFlags::PATH`] file descriptors,
+/// even on platforms where the host libc emulates it.
 ///
 /// # References
 ///  - [POSIX]
@@ -125,7 +123,7 @@ pub fn fchmod<Fd: AsFd>(fd: Fd, mode: Mode) -> io::Result<()> {
     backend::fs::syscalls::fchmod(fd.as_fd(), mode)
 }
 
-/// `fchown(fd)`—Sets open file or directory ownership.
+/// `fchown(fd, owner, group)`—Sets open file or directory ownership.
 ///
 /// # References
 ///  - [POSIX]
@@ -150,7 +148,7 @@ pub fn fchown<Fd: AsFd>(fd: Fd, owner: Option<Uid>, group: Option<Gid>) -> io::R
 ///
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fstat.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/fstat.2.html
-/// [`Mode::from_raw_mode`]: crate::fs::Mode::from_raw_mode
+/// [`Mode::from_raw_mode`]: Mode::from_raw_mode
 /// [`FileType::from_raw_mode`]: crate::fs::FileType::from_raw_mode
 #[inline]
 pub fn fstat<Fd: AsFd>(fd: Fd) -> io::Result<Stat> {
@@ -167,11 +165,13 @@ pub fn fstat<Fd: AsFd>(fd: Fd) -> io::Result<Stat> {
 ///
 /// [Linux]: https://man7.org/linux/man-pages/man2/fstatfs.2.html
 #[cfg(not(any(
+    solarish,
+    target_os = "espidf",
     target_os = "haiku",
-    target_os = "illumos",
     target_os = "netbsd",
+    target_os = "nto",
     target_os = "redox",
-    target_os = "solaris",
+    target_os = "vita",
     target_os = "wasi",
 )))]
 #[inline]
@@ -193,13 +193,7 @@ pub fn fstatfs<Fd: AsFd>(fd: Fd) -> io::Result<StatFs> {
 ///
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fstatvfs.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/fstatvfs.2.html
-#[cfg(not(any(
-    target_os = "haiku",
-    target_os = "illumos",
-    target_os = "redox",
-    target_os = "solaris",
-    target_os = "wasi",
-)))]
+#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
 #[inline]
 pub fn fstatvfs<Fd: AsFd>(fd: Fd) -> io::Result<StatVfs> {
     backend::fs::syscalls::fstatvfs(fd.as_fd())
@@ -213,6 +207,7 @@ pub fn fstatvfs<Fd: AsFd>(fd: Fd) -> io::Result<StatVfs> {
 ///
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/futimens.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/utimensat.2.html
+#[cfg(not(any(target_os = "espidf", target_os = "vita")))]
 #[inline]
 pub fn futimens<Fd: AsFd>(fd: Fd, times: &Timestamps) -> io::Result<()> {
     backend::fs::syscalls::futimens(fd.as_fd(), times)
@@ -234,13 +229,14 @@ pub fn futimens<Fd: AsFd>(fd: Fd, times: &Timestamps) -> io::Result<()> {
 /// [Linux `fallocate`]: https://man7.org/linux/man-pages/man2/fallocate.2.html
 /// [Linux `posix_fallocate`]: https://man7.org/linux/man-pages/man3/posix_fallocate.3.html
 #[cfg(not(any(
+    netbsdlike,
+    solarish,
     target_os = "aix",
     target_os = "dragonfly",
-    target_os = "illumos",
-    target_os = "netbsd",
-    target_os = "openbsd",
+    target_os = "espidf",
+    target_os = "nto",
     target_os = "redox",
-    target_os = "solaris",
+    target_os = "vita",
 )))] // not implemented in libc for netbsd yet
 #[inline]
 #[doc(alias = "posix_fallocate")]
@@ -263,22 +259,17 @@ pub(crate) fn _is_file_read_write(fd: BorrowedFd<'_>) -> io::Result<(bool, bool)
     let mode = backend::fs::syscalls::fcntl_getfl(fd)?;
 
     // Check for `O_PATH`.
-    #[cfg(any(
-        target_os = "android",
-        target_os = "fuchsia",
-        target_os = "linux",
-        target_os = "emscripten",
-    ))]
-    if mode.contains(crate::fs::OFlags::PATH) {
+    #[cfg(any(linux_kernel, target_os = "emscripten", target_os = "fuchsia"))]
+    if mode.contains(OFlags::PATH) {
         return Ok((false, false));
     }
 
     // Use `RWMODE` rather than `ACCMODE` as `ACCMODE` may include `O_PATH`.
     // We handled `O_PATH` above.
-    match mode & crate::fs::OFlags::RWMODE {
-        crate::fs::OFlags::RDONLY => Ok((true, false)),
-        crate::fs::OFlags::RDWR => Ok((true, true)),
-        crate::fs::OFlags::WRONLY => Ok((false, true)),
+    match mode & OFlags::RWMODE {
+        OFlags::RDONLY => Ok((true, false)),
+        OFlags::RDWR => Ok((true, true)),
+        OFlags::WRONLY => Ok((false, true)),
         _ => unreachable!(),
     }
 }
@@ -311,11 +302,12 @@ pub fn fsync<Fd: AsFd>(fd: Fd) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fdatasync.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/fdatasync.2.html
 #[cfg(not(any(
+    apple,
     target_os = "dragonfly",
+    target_os = "espidf",
     target_os = "haiku",
-    target_os = "ios",
-    target_os = "macos",
     target_os = "redox",
+    target_os = "vita",
 )))]
 #[inline]
 pub fn fdatasync<Fd: AsFd>(fd: Fd) -> io::Result<()> {
@@ -341,8 +333,25 @@ pub fn ftruncate<Fd: AsFd>(fd: Fd, length: u64) -> io::Result<()> {
 ///  - [Linux]
 ///
 /// [Linux]: https://man7.org/linux/man-pages/man2/flock.2.html
-#[cfg(not(any(target_os = "solaris", target_os = "wasi")))]
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "solaris",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 #[inline]
 pub fn flock<Fd: AsFd>(fd: Fd, operation: FlockOperation) -> io::Result<()> {
     backend::fs::syscalls::flock(fd.as_fd(), operation)
+}
+
+/// `syncfs(fd)`—Flush cached filesystem data.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man2/syncfs.2.html
+#[cfg(linux_kernel)]
+#[inline]
+pub fn syncfs<Fd: AsFd>(fd: Fd) -> io::Result<()> {
+    backend::fs::syscalls::syncfs(fd.as_fd())
 }

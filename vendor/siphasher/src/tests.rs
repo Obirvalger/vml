@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::sip::{SipHasher, SipHasher13, SipHasher24};
 use std::hash::{Hash, Hasher};
+
+use super::sip::{SipHasher, SipHasher13, SipHasher24};
 
 // Hash just the bytes of the slice, without length prefix
 struct Bytes<'a>(&'a [u8]);
@@ -241,28 +242,6 @@ fn test_siphash_2_4() {
     }
 }
 #[test]
-#[cfg(target_arch = "arm")]
-fn test_hash_usize() {
-    let val = 0xdeadbeef_deadbeef_u64;
-    assert_ne!(hash(&(val as u64)), hash(&(val as usize)));
-    assert_eq!(hash(&(val as u32)), hash(&(val as usize)));
-}
-#[test]
-#[cfg(target_arch = "x86_64")]
-fn test_hash_usize() {
-    let val = 0xdead_beef_dead_beef_u64;
-    assert_eq!(hash(&(val as u64)), hash(&(val as usize)));
-    assert_ne!(hash(&(val as u32)), hash(&(val as usize)));
-}
-#[test]
-#[cfg(target_arch = "x86")]
-fn test_hash_usize() {
-    let val = 0xdeadbeef_deadbeef_u64;
-    assert_ne!(hash(&(val as u64)), hash(&(val as usize)));
-    assert_eq!(hash(&(val as u32)), hash(&(val as usize)));
-}
-
-#[test]
 fn test_hash_idempotent() {
     let val64 = 0xdead_beef_dead_beef_u64;
     assert_eq!(hash(&val64), hash(&val64));
@@ -322,6 +301,28 @@ fn test_hash_no_concat_alias() {
 }
 
 #[test]
+fn test_hash_simple() {
+    let array: &[u8] = &[1, 2, 3];
+    let key: &[u8; 16] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+    let hasher = SipHasher13::new_with_key(key);
+    let h = hasher.hash(array);
+    _ = h;
+}
+
+#[test]
+fn test_hash_incremental() {
+    let array1: &[u8] = &[1, 2, 3];
+    let array2: &[u8] = &[4, 5, 6];
+    let key: &[u8; 16] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+    let mut hasher = SipHasher13::new_with_key(key);
+    hasher.write(array1);
+    hasher.write(array2);
+    let h = hasher.finish();
+    _ = h;
+}
+
+#[test]
+#[cfg(all(feature = "serde", feature = "serde_json"))]
 fn test_hash_serde() {
     let val64 = 0xdead_beef_dead_beef_u64;
     let hash = hash(&val64);

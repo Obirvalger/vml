@@ -1,33 +1,36 @@
 // Copyright © 2017 winapi-rs developers
 // Licensed under the Apache License, Version 2.0
-// <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your option.
+// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.
 // All files in the project carrying such notice may not be copied, modified, or distributed
 // except according to those terms.
 
 #![allow(unused)]
 
-use crate::winapi::CoInitializeEx;
-use crate::winapi::IUnknown;
-use crate::winapi::Interface;
-use crate::winapi::BSTR;
-use crate::winapi::COINIT_MULTITHREADED;
-use crate::winapi::{SysFreeString, SysStringLen};
-use crate::winapi::{HRESULT, S_FALSE, S_OK};
-use std::ffi::{OsStr, OsString};
-use std::mem::forget;
-use std::ops::Deref;
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::ptr::null_mut;
-use std::slice::from_raw_parts;
+use crate::{
+    winapi::{IUnknown, Interface},
+    windows_sys::{
+        CoInitializeEx, SysFreeString, SysStringLen, BSTR, COINIT_MULTITHREADED, HRESULT, S_FALSE,
+        S_OK,
+    },
+};
+use std::{
+    ffi::{OsStr, OsString},
+    mem::ManuallyDrop,
+    ops::Deref,
+    os::windows::ffi::{OsStrExt, OsStringExt},
+    ptr::{null, null_mut},
+    slice::from_raw_parts,
+};
 
 pub fn initialize() -> Result<(), HRESULT> {
-    let err = unsafe { CoInitializeEx(null_mut(), COINIT_MULTITHREADED) };
+    let err = unsafe { CoInitializeEx(null(), COINIT_MULTITHREADED) };
     if err != S_OK && err != S_FALSE {
         // S_FALSE just means COM is already initialized
-        return Err(err);
+        Err(err)
+    } else {
+        Ok(())
     }
-    Ok(())
 }
 
 pub struct ComPtr<T>(*mut T)
@@ -55,9 +58,7 @@ where
     /// Extracts the raw pointer.
     /// You are now responsible for releasing it yourself.
     pub fn into_raw(self) -> *mut T {
-        let p = self.0;
-        forget(self);
-        p
+        ManuallyDrop::new(self).0
     }
     /// For internal use only.
     fn as_unknown(&self) -> &IUnknown {

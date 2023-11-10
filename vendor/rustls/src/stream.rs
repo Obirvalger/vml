@@ -55,22 +55,31 @@ where
         // We call complete_io() in a loop since a single call may read only
         // a partial packet from the underlying transport. A full packet is
         // needed to get more plaintext, which we must do if EOF has not been
-        // hit. Otherwise, we will prematurely signal EOF by returning 0. We
-        // determine if EOF has actually been hit by checking if 0 bytes were
-        // read from the underlying transport.
+        // hit.
         while self.conn.wants_read() {
-            let at_eof = self.conn.complete_io(self.sock)?.0 == 0;
-            if at_eof {
-                if let Ok(io_state) = self.conn.process_new_packets() {
-                    if at_eof && io_state.plaintext_bytes_to_read() == 0 {
-                        return Ok(0);
-                    }
-                }
+            if self.conn.complete_io(self.sock)?.0 == 0 {
                 break;
             }
         }
 
         self.conn.reader().read(buf)
+    }
+
+    #[cfg(read_buf)]
+    fn read_buf(&mut self, cursor: std::io::BorrowedCursor<'_>) -> Result<()> {
+        self.complete_prior_io()?;
+
+        // We call complete_io() in a loop since a single call may read only
+        // a partial packet from the underlying transport. A full packet is
+        // needed to get more plaintext, which we must do if EOF has not been
+        // hit.
+        while self.conn.wants_read() {
+            if self.conn.complete_io(self.sock)?.0 == 0 {
+                break;
+            }
+        }
+
+        self.conn.reader().read_buf(cursor)
     }
 }
 
@@ -127,7 +136,7 @@ where
 /// This allows you to use a rustls Connection like a normal stream.
 #[derive(Debug)]
 pub struct StreamOwned<C: Sized, T: Read + Write + Sized> {
-    /// Our conneciton
+    /// Our connection
     pub conn: C,
 
     /// The underlying transport, like a socket
@@ -182,6 +191,11 @@ where
 {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.as_stream().read(buf)
+    }
+
+    #[cfg(read_buf)]
+    fn read_buf(&mut self, cursor: std::io::BorrowedCursor<'_>) -> Result<()> {
+        self.as_stream().read_buf(cursor)
     }
 }
 

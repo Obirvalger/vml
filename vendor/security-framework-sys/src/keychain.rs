@@ -33,6 +33,7 @@ macro_rules! char_lit_swapped {
 
 #[repr(u32)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum SecProtocolType {
     FTP = char_lit!(b"ftp "),
     FTPAccount = char_lit!(b"ftpa"),
@@ -73,6 +74,7 @@ pub enum SecProtocolType {
 
 #[repr(u32)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum SecAuthenticationType {
     // [sic] Apple has got two related enums each with a different endianness!
     NTLM = char_lit_swapped!(b"ntlm"),
@@ -86,9 +88,22 @@ pub enum SecAuthenticationType {
     Any = 0,
 }
 
+#[repr(i32)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum SecPreferencesDomain {
+    User = 0,
+    System = 1,
+    Common = 2,
+    Dynamic = 3,
+}
+
 extern "C" {
     pub fn SecKeychainGetTypeID() -> CFTypeID;
     pub fn SecKeychainCopyDefault(keychain: *mut SecKeychainRef) -> OSStatus;
+    pub fn SecKeychainCopyDomainDefault(
+        domain: SecPreferencesDomain,
+        keychain: *mut SecKeychainRef,
+    ) -> OSStatus;
     pub fn SecKeychainCreate(
         pathName: *const c_char,
         passwordLength: c_uint,

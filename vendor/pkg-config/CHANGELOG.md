@@ -2,8 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
-and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.3.27] - 2023-05-03
+
+### Added
+
+- Support falling back to `pkgconf` if `pkg-config` is not available (#145).
+
+### Changed
+
+- Simplify running `pkg-config` (#144).
+
+- Document MSRV in `Cargo.toml` via `rust-version`.
+
+- Fix a couple of minor clippy warnings (#147).
+
+## [0.3.26] - 2022-10-26
+
+### Added
+
+- Support for handling full paths to libraries in addition to normal `-l`
+  linker flags (#134).
+
+## [0.3.25] - 2022-03-31
+
+### Added
+
+- Support for parsing `-Wl` linker arguments from the `Libs` lines and
+  passing them to the linker as well as making them available via
+  `Library::ld_args` (#131).
+
+### Changed
+
+- Use SPDX license format and remove obsolete badge info (#129).
+
+## [0.3.24] - 2021-12-11
+
+### Fixed
+
+- Re-add `target_supported()`, which was accidentally removed in 0.3.15 (#128).
+
+## [0.3.23] - 2021-12-06
+
+### Changed
+
+- Improve error messages when a `pkg-config` package can't be found (#127).
+
+## [0.3.22] - 2021-10-24
+
+### Fixed
+
+- `pkg-config` compiles again with Rust 1.30 or newer. 0.3.21 accidentally
+  made use of API only available since 1.40 (#124, #125).
+
+### Changed
+
+- Switched from Travis to GitHub Actions for the CI. Travis is dysfunctional
+  since quite some time (#126).
+
+## [0.3.21] - 2021-10-22
+
+### Fixed
+
+- Tests succeed again on macOS (#122).
+
+### Changed
+
+- Improve error message in case of missing pkg-config and provide instructions
+  how it can be installed (#121).
+
+## [0.3.20] - 2021-09-25
+
+### Fixed
+
+- Use target-specific pkg-config consistently everywhere (#121, #118).
 
 ## [0.3.19] - 2020-10-13
 

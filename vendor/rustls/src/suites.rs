@@ -1,6 +1,6 @@
-use crate::msgs::enums::ProtocolVersion;
-use crate::msgs::enums::{CipherSuite, SignatureAlgorithm, SignatureScheme};
-use crate::msgs::handshake::DecomposedSignatureScheme;
+use std::fmt;
+
+use crate::enums::{CipherSuite, ProtocolVersion, SignatureAlgorithm, SignatureScheme};
 #[cfg(feature = "tls12")]
 use crate::tls12::Tls12CipherSuite;
 #[cfg(feature = "tls12")]
@@ -23,7 +23,7 @@ use crate::versions::{SupportedProtocolVersion, TLS13};
 
 /// Bulk symmetric encryption scheme used by a cipher suite.
 #[allow(non_camel_case_types)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum BulkAlgorithm {
     /// AES with 128-bit keys in Galois counter mode.
     Aes128Gcm,
@@ -36,6 +36,7 @@ pub enum BulkAlgorithm {
 }
 
 /// Common state for cipher suites (both for TLS 1.2 and TLS 1.3)
+#[derive(Debug)]
 pub struct CipherSuiteCommon {
     /// The TLS enumeration naming this cipher suite.
     pub suite: CipherSuite,
@@ -50,7 +51,7 @@ pub struct CipherSuiteCommon {
 ///
 /// All possible instances of this type are provided by the library in
 /// the [`ALL_CIPHER_SUITES`] array.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum SupportedCipherSuite {
     /// A TLS 1.2 cipher suite
     #[cfg(feature = "tls12")]
@@ -59,13 +60,19 @@ pub enum SupportedCipherSuite {
     Tls13(&'static Tls13CipherSuite),
 }
 
+impl fmt::Debug for SupportedCipherSuite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.suite().fmt(f)
+    }
+}
+
 impl SupportedCipherSuite {
     /// Which hash function to use with this suite.
     pub fn hash_algorithm(&self) -> &'static ring::digest::Algorithm {
         match self {
             #[cfg(feature = "tls12")]
-            SupportedCipherSuite::Tls12(inner) => inner.hash_algorithm(),
-            SupportedCipherSuite::Tls13(inner) => inner.hash_algorithm(),
+            Self::Tls12(inner) => inner.hash_algorithm(),
+            Self::Tls13(inner) => inner.hash_algorithm(),
         }
     }
 
@@ -77,16 +84,17 @@ impl SupportedCipherSuite {
     pub(crate) fn common(&self) -> &CipherSuiteCommon {
         match self {
             #[cfg(feature = "tls12")]
-            SupportedCipherSuite::Tls12(inner) => &inner.common,
-            SupportedCipherSuite::Tls13(inner) => &inner.common,
+            Self::Tls12(inner) => &inner.common,
+            Self::Tls13(inner) => &inner.common,
         }
     }
 
+    #[cfg(any(test, feature = "quic"))]
     pub(crate) fn tls13(&self) -> Option<&'static Tls13CipherSuite> {
         match self {
             #[cfg(feature = "tls12")]
-            SupportedCipherSuite::Tls12(_) => None,
-            SupportedCipherSuite::Tls13(inner) => Some(inner),
+            Self::Tls12(_) => None,
+            Self::Tls13(inner) => Some(inner),
         }
     }
 
@@ -94,8 +102,8 @@ impl SupportedCipherSuite {
     pub fn version(&self) -> &'static SupportedProtocolVersion {
         match self {
             #[cfg(feature = "tls12")]
-            SupportedCipherSuite::Tls12(_) => &TLS12,
-            SupportedCipherSuite::Tls13(_) => &TLS13,
+            Self::Tls12(_) => &TLS12,
+            Self::Tls13(_) => &TLS13,
         }
     }
 
@@ -103,9 +111,9 @@ impl SupportedCipherSuite {
     /// signatures.  This resolves to true for all TLS1.3 suites.
     pub fn usable_for_signature_algorithm(&self, _sig_alg: SignatureAlgorithm) -> bool {
         match self {
-            SupportedCipherSuite::Tls13(_) => true, // no constraint expressed by ciphersuite (e.g., TLS1.3)
+            Self::Tls13(_) => true, // no constraint expressed by ciphersuite (e.g., TLS1.3)
             #[cfg(feature = "tls12")]
-            SupportedCipherSuite::Tls12(inner) => inner
+            Self::Tls12(inner) => inner
                 .sign
                 .iter()
                 .any(|scheme| scheme.sign() == _sig_alg),
@@ -206,10 +214,73 @@ pub(crate) fn compatible_sigscheme_for_suites(
         .any(|&suite| suite.usable_for_signature_algorithm(sigalg))
 }
 
+/// Secrets for transmitting/receiving data over a TLS session.
+///
+/// After performing a handshake with rustls, these secrets can be extracted
+/// to configure kTLS for a socket, and have the kernel take over encryption
+/// and/or decryption.
+#[cfg(feature = "secret_extraction")]
+#[cfg_attr(docsrs, doc(cfg(feature = "secret_extraction")))]
+pub struct ExtractedSecrets {
+    /// sequence number and secrets for the "tx" (transmit) direction
+    pub tx: (u64, ConnectionTrafficSecrets),
+
+    /// sequence number and secrets for the "rx" (receive) direction
+    pub rx: (u64, ConnectionTrafficSecrets),
+}
+
+/// [ExtractedSecrets] minus the sequence numbers
+#[cfg(feature = "secret_extraction")]
+pub(crate) struct PartiallyExtractedSecrets {
+    /// secrets for the "tx" (transmit) direction
+    pub(crate) tx: ConnectionTrafficSecrets,
+
+    /// secrets for the "rx" (receive) direction
+    pub(crate) rx: ConnectionTrafficSecrets,
+}
+
+/// Secrets used to encrypt/decrypt data in a TLS session.
+///
+/// These can be used to configure kTLS for a socket in one direction.
+/// The only other piece of information needed is the sequence number,
+/// which is in [ExtractedSecrets].
+#[cfg(feature = "secret_extraction")]
+#[cfg_attr(docsrs, doc(cfg(feature = "secret_extraction")))]
+#[non_exhaustive]
+pub enum ConnectionTrafficSecrets {
+    /// Secrets for the AES_128_GCM AEAD algorithm
+    Aes128Gcm {
+        /// key (16 bytes)
+        key: [u8; 16],
+        /// salt (4 bytes)
+        salt: [u8; 4],
+        /// initialization vector (8 bytes, chopped from key block)
+        iv: [u8; 8],
+    },
+
+    /// Secrets for the AES_256_GCM AEAD algorithm
+    Aes256Gcm {
+        /// key (32 bytes)
+        key: [u8; 32],
+        /// salt (4 bytes)
+        salt: [u8; 4],
+        /// initialization vector (8 bytes, chopped from key block)
+        iv: [u8; 8],
+    },
+
+    /// Secrets for the CHACHA20_POLY1305 AEAD algorithm
+    Chacha20Poly1305 {
+        /// key (32 bytes)
+        key: [u8; 32],
+        /// initialization vector (12 bytes)
+        iv: [u8; 12],
+    },
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::msgs::enums::CipherSuite;
+    use crate::enums::CipherSuite;
 
     #[test]
     fn test_client_pref() {

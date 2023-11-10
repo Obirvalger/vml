@@ -1,7 +1,9 @@
 pub type IEnumNetworkConnections = *mut ::core::ffi::c_void;
 pub type IEnumNetworks = *mut ::core::ffi::c_void;
 pub type INetwork = *mut ::core::ffi::c_void;
+pub type INetwork2 = *mut ::core::ffi::c_void;
 pub type INetworkConnection = *mut ::core::ffi::c_void;
+pub type INetworkConnection2 = *mut ::core::ffi::c_void;
 pub type INetworkConnectionCost = *mut ::core::ffi::c_void;
 pub type INetworkConnectionCostEvents = *mut ::core::ffi::c_void;
 pub type INetworkConnectionEvents = *mut ::core::ffi::c_void;
@@ -11,31 +13,37 @@ pub type INetworkEvents = *mut ::core::ffi::c_void;
 pub type INetworkListManager = *mut ::core::ffi::c_void;
 pub type INetworkListManagerEvents = *mut ::core::ffi::c_void;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_AllowMerge: &str = "NA_AllowMerge";
+pub const NA_AllowMerge: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_AllowMerge");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_CategoryReadOnly: &str = "NA_CategoryReadOnly";
+pub const NA_CategoryReadOnly: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_CategoryReadOnly");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_CategorySetByPolicy: &str = "NA_CategorySetByPolicy";
+pub const NA_CategorySetByPolicy: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_CategorySetByPolicy");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_DescriptionReadOnly: &str = "NA_DescriptionReadOnly";
+pub const NA_DescriptionReadOnly: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_DescriptionReadOnly");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_DescriptionSetByPolicy: &str = "NA_DescriptionSetByPolicy";
+pub const NA_DescriptionSetByPolicy: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_DescriptionSetByPolicy");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_DomainAuthenticationFailed: &str = "NA_DomainAuthenticationFailed";
+pub const NA_DomainAuthenticationFailed: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_DomainAuthenticationFailed");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_IconReadOnly: &str = "NA_IconReadOnly";
+pub const NA_IconReadOnly: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_IconReadOnly");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_IconSetByPolicy: &str = "NA_IconSetByPolicy";
+pub const NA_IconSetByPolicy: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_IconSetByPolicy");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_InternetConnectivityV4: &str = "NA_InternetConnectivityV4";
+pub const NA_InternetConnectivityV4: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_InternetConnectivityV4");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_InternetConnectivityV6: &str = "NA_InternetConnectivityV6";
+pub const NA_InternetConnectivityV6: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_InternetConnectivityV6");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_NameReadOnly: &str = "NA_NameReadOnly";
+pub const NA_NameReadOnly: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_NameReadOnly");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_NameSetByPolicy: &str = "NA_NameSetByPolicy";
+pub const NA_NameSetByPolicy: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_NameSetByPolicy");
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NA_NetworkClass: &str = "NA_NetworkClass";
+pub const NA_NetworkClass: ::windows_sys::core::PCWSTR = ::windows_sys::core::w!("NA_NetworkClass");
+#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
+pub const NLM_MAX_ADDRESS_LIST_SIZE: u32 = 10u32;
+#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
+pub const NLM_UNKNOWN_DATAPLAN_STATUS: u32 = 4294967295u32;
+#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
+pub const NetworkListManager: ::windows_sys::core::GUID = ::windows_sys::core::GUID::from_u128(0xdcb00c01_570f_4a9b_8d69_199fdba5723b);
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
 pub type NLM_CONNECTION_COST = i32;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
@@ -78,27 +86,14 @@ pub const NLM_CONNECTIVITY_IPV6_SUBNET: NLM_CONNECTIVITY = 256i32;
 pub const NLM_CONNECTIVITY_IPV6_LOCALNETWORK: NLM_CONNECTIVITY = 512i32;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
 pub const NLM_CONNECTIVITY_IPV6_INTERNET: NLM_CONNECTIVITY = 1024i32;
-#[repr(C)]
-#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`, `\"Win32_Foundation\"`*"]
-#[cfg(feature = "Win32_Foundation")]
-pub struct NLM_DATAPLAN_STATUS {
-    pub InterfaceGuid: ::windows_sys::core::GUID,
-    pub UsageData: NLM_USAGE_DATA,
-    pub DataLimitInMegabytes: u32,
-    pub InboundBandwidthInKbps: u32,
-    pub OutboundBandwidthInKbps: u32,
-    pub NextBillingCycle: super::super::Foundation::FILETIME,
-    pub MaxTransferSizeInMegabytes: u32,
-    pub Reserved: u32,
-}
-#[cfg(feature = "Win32_Foundation")]
-impl ::core::marker::Copy for NLM_DATAPLAN_STATUS {}
-#[cfg(feature = "Win32_Foundation")]
-impl ::core::clone::Clone for NLM_DATAPLAN_STATUS {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
+#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
+pub type NLM_DOMAIN_AUTHENTICATION_KIND = i32;
+#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
+pub const NLM_DOMAIN_AUTHENTICATION_KIND_NONE: NLM_DOMAIN_AUTHENTICATION_KIND = 0i32;
+#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
+pub const NLM_DOMAIN_AUTHENTICATION_KIND_LDAP: NLM_DOMAIN_AUTHENTICATION_KIND = 1i32;
+#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
+pub const NLM_DOMAIN_AUTHENTICATION_KIND_TLS: NLM_DOMAIN_AUTHENTICATION_KIND = 2i32;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
 pub type NLM_DOMAIN_TYPE = i32;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
@@ -123,8 +118,6 @@ pub const NLM_INTERNET_CONNECTIVITY_WEBHIJACK: NLM_INTERNET_CONNECTIVITY = 1i32;
 pub const NLM_INTERNET_CONNECTIVITY_PROXIED: NLM_INTERNET_CONNECTIVITY = 2i32;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
 pub const NLM_INTERNET_CONNECTIVITY_CORPORATE: NLM_INTERNET_CONNECTIVITY = 4i32;
-#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NLM_MAX_ADDRESS_LIST_SIZE: u32 = 10u32;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
 pub type NLM_NETWORK_CATEGORY = i32;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
@@ -154,6 +147,27 @@ pub const NLM_NETWORK_PROPERTY_CHANGE_ICON: NLM_NETWORK_PROPERTY_CHANGE = 8i32;
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
 pub const NLM_NETWORK_PROPERTY_CHANGE_CATEGORY_VALUE: NLM_NETWORK_PROPERTY_CHANGE = 16i32;
 #[repr(C)]
+#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`, `\"Win32_Foundation\"`*"]
+#[cfg(feature = "Win32_Foundation")]
+pub struct NLM_DATAPLAN_STATUS {
+    pub InterfaceGuid: ::windows_sys::core::GUID,
+    pub UsageData: NLM_USAGE_DATA,
+    pub DataLimitInMegabytes: u32,
+    pub InboundBandwidthInKbps: u32,
+    pub OutboundBandwidthInKbps: u32,
+    pub NextBillingCycle: super::super::Foundation::FILETIME,
+    pub MaxTransferSizeInMegabytes: u32,
+    pub Reserved: u32,
+}
+#[cfg(feature = "Win32_Foundation")]
+impl ::core::marker::Copy for NLM_DATAPLAN_STATUS {}
+#[cfg(feature = "Win32_Foundation")]
+impl ::core::clone::Clone for NLM_DATAPLAN_STATUS {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+#[repr(C)]
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
 pub struct NLM_SIMULATED_PROFILE_INFO {
     pub ProfileName: [u16; 256],
@@ -178,8 +192,6 @@ impl ::core::clone::Clone for NLM_SOCKADDR {
         *self
     }
 }
-#[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`*"]
-pub const NLM_UNKNOWN_DATAPLAN_STATUS: u32 = 4294967295u32;
 #[repr(C)]
 #[doc = "*Required features: `\"Win32_Networking_NetworkListManager\"`, `\"Win32_Foundation\"`*"]
 #[cfg(feature = "Win32_Foundation")]
@@ -195,4 +207,3 @@ impl ::core::clone::Clone for NLM_USAGE_DATA {
         *self
     }
 }
-pub const NetworkListManager: ::windows_sys::core::GUID = ::windows_sys::core::GUID { data1: 3702524929, data2: 22287, data3: 19099, data4: [141, 105, 25, 159, 219, 165, 114, 59] };

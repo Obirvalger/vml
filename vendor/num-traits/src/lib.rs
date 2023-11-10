@@ -12,42 +12,42 @@
 //!
 //! ## Compatibility
 //!
-//! The `num-traits` crate is tested for rustc 1.8 and greater.
+//! The `num-traits` crate is tested for rustc 1.31 and greater.
 
 #![doc(html_root_url = "https://docs.rs/num-traits/0.2")]
 #![deny(unconditional_recursion)]
 #![no_std]
+
+// Need to explicitly bring the crate in for inherent float methods
 #[cfg(feature = "std")]
 extern crate std;
-
-// Only `no_std` builds actually use `libm`.
-#[cfg(all(not(feature = "std"), feature = "libm"))]
-extern crate libm;
 
 use core::fmt;
 use core::num::Wrapping;
 use core::ops::{Add, Div, Mul, Rem, Sub};
 use core::ops::{AddAssign, DivAssign, MulAssign, RemAssign, SubAssign};
 
-pub use bounds::Bounded;
+pub use crate::bounds::Bounded;
 #[cfg(any(feature = "std", feature = "libm"))]
-pub use float::Float;
-pub use float::FloatConst;
+pub use crate::float::Float;
+pub use crate::float::FloatConst;
 // pub use real::{FloatCore, Real}; // NOTE: Don't do this, it breaks `use num_traits::*;`.
-pub use cast::{cast, AsPrimitive, FromPrimitive, NumCast, ToPrimitive};
-pub use identities::{one, zero, One, Zero};
-pub use int::PrimInt;
-pub use ops::checked::{
+pub use crate::cast::{cast, AsPrimitive, FromPrimitive, NumCast, ToPrimitive};
+pub use crate::identities::{one, zero, One, Zero};
+pub use crate::int::PrimInt;
+pub use crate::ops::bytes::{FromBytes, ToBytes};
+pub use crate::ops::checked::{
     CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedShl, CheckedShr, CheckedSub,
 };
-pub use ops::inv::Inv;
-pub use ops::mul_add::{MulAdd, MulAddAssign};
-pub use ops::saturating::{Saturating, SaturatingAdd, SaturatingMul, SaturatingSub};
-pub use ops::wrapping::{
+pub use crate::ops::euclid::{CheckedEuclid, Euclid};
+pub use crate::ops::inv::Inv;
+pub use crate::ops::mul_add::{MulAdd, MulAddAssign};
+pub use crate::ops::saturating::{Saturating, SaturatingAdd, SaturatingMul, SaturatingSub};
+pub use crate::ops::wrapping::{
     WrappingAdd, WrappingMul, WrappingNeg, WrappingShl, WrappingShr, WrappingSub,
 };
-pub use pow::{checked_pow, pow, Pow};
-pub use sign::{abs, abs_sub, signum, Signed, Unsigned};
+pub use crate::pow::{checked_pow, pow, Pow};
+pub use crate::sign::{abs, abs_sub, signum, Signed, Unsigned};
 
 #[macro_use]
 mod macros;
@@ -95,7 +95,7 @@ pub trait Num: PartialEq + Zero + One + NumOps {
     fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr>;
 }
 
-/// The trait for types implementing basic numeric operations
+/// Generic trait for types implementing basic numeric operations
 ///
 /// This is automatically implemented for types which implement the operators.
 pub trait NumOps<Rhs = Self, Output = Self>:
@@ -123,14 +123,16 @@ impl<T, Rhs, Output> NumOps<Rhs, Output> for T where
 pub trait NumRef: Num + for<'r> NumOps<&'r Self> {}
 impl<T> NumRef for T where T: Num + for<'r> NumOps<&'r T> {}
 
-/// The trait for references which implement numeric operations, taking the
+/// The trait for `Num` references which implement numeric operations, taking the
 /// second operand either by value or by reference.
 ///
-/// This is automatically implemented for types which implement the operators.
+/// This is automatically implemented for all types which implement the operators. It covers
+/// every type implementing the operations though, regardless of it being a reference or
+/// related to `Num`.
 pub trait RefNum<Base>: NumOps<Base, Base> + for<'r> NumOps<&'r Base, Base> {}
 impl<T, Base> RefNum<Base> for T where T: NumOps<Base, Base> + for<'r> NumOps<&'r Base, Base> {}
 
-/// The trait for types implementing numeric assignment operators (like `+=`).
+/// Generic trait for types implementing numeric assignment operators (like `+=`).
 ///
 /// This is automatically implemented for types which implement the operators.
 pub trait NumAssignOps<Rhs = Self>:
@@ -169,17 +171,12 @@ macro_rules! int_trait_impl {
         }
     )*)
 }
-int_trait_impl!(Num for usize u8 u16 u32 u64 isize i8 i16 i32 i64);
-#[cfg(has_i128)]
-int_trait_impl!(Num for u128 i128);
+int_trait_impl!(Num for usize u8 u16 u32 u64 u128);
+int_trait_impl!(Num for isize i8 i16 i32 i64 i128);
 
 impl<T: Num> Num for Wrapping<T>
 where
-    Wrapping<T>: Add<Output = Wrapping<T>>
-        + Sub<Output = Wrapping<T>>
-        + Mul<Output = Wrapping<T>>
-        + Div<Output = Wrapping<T>>
-        + Rem<Output = Wrapping<T>>,
+    Wrapping<T>: NumOps,
 {
     type FromStrRadixErr = T::FromStrRadixErr;
     fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
@@ -200,7 +197,7 @@ pub struct ParseFloatError {
 }
 
 impl fmt::Display for ParseFloatError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let description = match self.kind {
             FloatErrorKind::Empty => "cannot parse float from empty string",
             FloatErrorKind::Invalid => "invalid float literal",
@@ -208,6 +205,14 @@ impl fmt::Display for ParseFloatError {
 
         description.fmt(f)
     }
+}
+
+fn str_to_ascii_lower_eq_str(a: &str, b: &str) -> bool {
+    a.len() == b.len()
+        && a.bytes().zip(b.bytes()).all(|(a, b)| {
+            let a_to_ascii_lower = a | (((b'A' <= a && a <= b'Z') as u8) << 5);
+            a_to_ascii_lower == b
+        })
 }
 
 // FIXME: The standard library from_str_radix on floats was deprecated, so we're stuck
@@ -224,21 +229,31 @@ macro_rules! float_trait_impl {
                 use self::FloatErrorKind::*;
                 use self::ParseFloatError as PFE;
 
+                // Special case radix 10 to use more accurate standard library implementation
+                if radix == 10 {
+                    return src.parse().map_err(|_| PFE {
+                        kind: if src.is_empty() { Empty } else { Invalid },
+                    });
+                }
+
                 // Special values
-                match src {
-                    "inf"   => return Ok(core::$t::INFINITY),
-                    "-inf"  => return Ok(core::$t::NEG_INFINITY),
-                    "NaN"   => return Ok(core::$t::NAN),
-                    _       => {},
+                if str_to_ascii_lower_eq_str(src, "inf")
+                    || str_to_ascii_lower_eq_str(src, "infinity")
+                {
+                    return Ok(core::$t::INFINITY);
+                } else if str_to_ascii_lower_eq_str(src, "-inf")
+                    || str_to_ascii_lower_eq_str(src, "-infinity")
+                {
+                    return Ok(core::$t::NEG_INFINITY);
+                } else if str_to_ascii_lower_eq_str(src, "nan") {
+                    return Ok(core::$t::NAN);
+                } else if str_to_ascii_lower_eq_str(src, "-nan") {
+                    return Ok(-core::$t::NAN);
                 }
 
                 fn slice_shift_char(src: &str) -> Option<(char, &str)> {
                     let mut chars = src.chars();
-                    if let Some(ch) = chars.next() {
-                        Some((ch, chars.as_str()))
-                    } else {
-                        None
-                    }
+                    Some((chars.next()?, chars.as_str()))
                 }
 
                 let (is_positive, src) =  match slice_shift_char(src) {
@@ -261,13 +276,13 @@ macro_rules! float_trait_impl {
                     match c.to_digit(radix) {
                         Some(digit) => {
                             // shift significand one digit left
-                            sig = sig * (radix as $t);
+                            sig *= radix as $t;
 
                             // add/subtract current digit depending on sign
                             if is_positive {
-                                sig = sig + ((digit as isize) as $t);
+                                sig += (digit as isize) as $t;
                             } else {
-                                sig = sig - ((digit as isize) as $t);
+                                sig -= (digit as isize) as $t;
                             }
 
                             // Detect overflow by comparing to last value, except
@@ -309,7 +324,7 @@ macro_rules! float_trait_impl {
                         match c.to_digit(radix) {
                             Some(digit) => {
                                 // Decrease power one order of magnitude
-                                power = power / (radix as $t);
+                                power /= radix as $t;
                                 // add/subtract current digit depending on sign
                                 sig = if is_positive {
                                     sig + (digit as $t) * power
@@ -403,6 +418,7 @@ pub fn clamp<T: PartialOrd>(input: T, min: T, max: T) -> T {
 ///
 /// **Panics** in debug mode if `!(min == min)`. (This occurs if `min` is `NAN`.)
 #[inline]
+#[allow(clippy::eq_op)]
 pub fn clamp_min<T: PartialOrd>(input: T, min: T) -> T {
     debug_assert!(min == min, "min must not be NAN");
     if input < min {
@@ -420,6 +436,7 @@ pub fn clamp_min<T: PartialOrd>(input: T, min: T) -> T {
 ///
 /// **Panics** in debug mode if `!(max == max)`. (This occurs if `max` is `NAN`.)
 #[inline]
+#[allow(clippy::eq_op)]
 pub fn clamp_max<T: PartialOrd>(input: T, max: T) -> T {
     debug_assert!(max == max, "max must not be NAN");
     if input > max {
@@ -509,6 +526,28 @@ fn from_str_radix_multi_byte_fail() {
 }
 
 #[test]
+fn from_str_radix_ignore_case() {
+    assert_eq!(
+        f32::from_str_radix("InF", 16).unwrap(),
+        ::core::f32::INFINITY
+    );
+    assert_eq!(
+        f32::from_str_radix("InfinitY", 16).unwrap(),
+        ::core::f32::INFINITY
+    );
+    assert_eq!(
+        f32::from_str_radix("-InF", 8).unwrap(),
+        ::core::f32::NEG_INFINITY
+    );
+    assert_eq!(
+        f32::from_str_radix("-InfinitY", 8).unwrap(),
+        ::core::f32::NEG_INFINITY
+    );
+    assert!(f32::from_str_radix("nAn", 4).unwrap().is_nan());
+    assert!(f32::from_str_radix("-nAn", 4).unwrap().is_nan());
+}
+
+#[test]
 fn wrapping_is_num() {
     fn require_num<T: Num>(_: &T) {}
     require_num(&Wrapping(42_u32));
@@ -582,5 +621,15 @@ fn check_numassign_ops() {
     assert_eq!(compute(1, 2), 1)
 }
 
-// TODO test `NumAssignRef`, but even the standard numeric types don't
-// implement this yet. (see rust pr41336)
+#[test]
+fn check_numassignref_ops() {
+    fn compute<T: NumAssignRef + Copy>(mut x: T, y: &T) -> T {
+        x *= y;
+        x /= y;
+        x %= y;
+        x += y;
+        x -= y;
+        x
+    }
+    assert_eq!(compute(1, &2), 1)
+}

@@ -11,8 +11,9 @@
 
 [package]
 edition = "2018"
+rust-version = "1.63"
 name = "tera"
-version = "1.17.1"
+version = "1.19.1"
 authors = ["Vincent Prouillet <hello@prouilletvincent.com>"]
 include = [
     "/src/**/*",
@@ -21,7 +22,7 @@ include = [
     "/CHANGELOG.md",
 ]
 description = "Template engine based on Jinja2/Django templates"
-homepage = "https://tera.netlify.com/"
+homepage = "http://keats.github.io/tera/"
 readme = "README.md"
 keywords = [
     "template",
@@ -35,7 +36,7 @@ license = "MIT"
 repository = "https://github.com/Keats/tera"
 
 [dependencies.chrono]
-version = "0.4.20"
+version = "0.4.23"
 features = [
     "std",
     "clock",
@@ -44,44 +45,44 @@ optional = true
 default-features = false
 
 [dependencies.chrono-tz]
-version = "0.6"
+version = "0.8"
 optional = true
 
 [dependencies.globwalk]
 version = "0.8.1"
 
 [dependencies.humansize]
-version = "1"
-optional = true
-
-[dependencies.lazy_static]
-version = "1.0"
-
-[dependencies.percent-encoding]
 version = "2.1"
 optional = true
 
+[dependencies.lazy_static]
+version = "1.4"
+
+[dependencies.percent-encoding]
+version = "2.2"
+optional = true
+
 [dependencies.pest]
-version = "2.3.0"
+version = "2.5.5"
 
 [dependencies.pest_derive]
-version = "2.3.0"
+version = "2.5.5"
 
 [dependencies.rand]
 version = "0.8"
 optional = true
 
 [dependencies.regex]
-version = "1.0"
+version = "1.7"
 
 [dependencies.serde]
 version = "1.0"
 
 [dependencies.serde_json]
-version = "1.0.11"
+version = "1.0"
 
 [dependencies.slug]
-version = "0.1.1"
+version = "0.1"
 optional = true
 
 [dependencies.unic-segment]
@@ -112,6 +113,3 @@ date-locale = [
 default = ["builtins"]
 preserve_order = ["serde_json/preserve_order"]
 urlencode = ["percent-encoding"]
-
-[badges.maintenance]
-status = "actively-developed"

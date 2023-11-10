@@ -1,30 +1,4 @@
 #[test]
-fn chdir() {
-    use std::str;
-
-    let mut current_buf = [0; 4096];
-    let current_count = dbg!(crate::getcwd(&mut current_buf)).unwrap();
-    let current = dbg!(str::from_utf8(&current_buf[..current_count])).unwrap();
-
-    let new = "file:";
-    assert_eq!(dbg!(crate::chdir(dbg!(new))), Ok(0));
-    {
-        let mut buf = [0; 4096];
-        let count = dbg!(crate::getcwd(&mut buf)).unwrap();
-        assert_eq!(dbg!(str::from_utf8(&buf[..count])), Ok(new));
-    }
-
-    assert_eq!(dbg!(crate::chdir(current)), Ok(0));
-    {
-        let mut buf = [0; 4096];
-        let count = dbg!(crate::getcwd(&mut buf)).unwrap();
-        assert_eq!(dbg!(str::from_utf8(&buf[..count])), Ok(current));
-    }
-}
-
-//TODO: chmod
-
-#[test]
 fn clone() {
     let expected_status = 42;
     let pid_res = unsafe { crate::clone(crate::CloneFlags::empty()) };
@@ -207,8 +181,6 @@ fn fstatvfs() {
 
 //TODO: futex
 
-// getcwd tested by chdir
-
 #[test]
 fn getegid() {
     assert_eq!(crate::getegid(), Ok(0));
@@ -314,32 +286,6 @@ fn nanosleep() {
 //TODO: physmap
 
 //TODO: physunmap
-
-#[test]
-fn pipe2() {
-    let mut fds = [0, 0];
-    assert_eq!(dbg!(crate::pipe2(&mut fds, crate::O_CLOEXEC)), Ok(0));
-    assert_ne!(dbg!(fds), [0, 0]);
-
-    {
-        let mut buf = [0; 256];
-        for i in 0..buf.len() {
-            buf[i] = i as u8;
-        }
-        assert_eq!(dbg!(crate::write(fds[1], &buf)), Ok(buf.len()));
-    }
-
-    {
-        let mut buf = [0; 256];
-        assert_eq!(dbg!(crate::read(fds[0], &mut buf)), Ok(buf.len()));
-        for i in 0..buf.len() {
-            assert_eq!(buf[i], i as u8);
-        }
-    }
-
-    assert_eq!(dbg!(crate::close(fds[0])), Ok(0));
-    assert_eq!(dbg!(crate::close(fds[1])), Ok(0));
-}
 
 //TODO: read
 

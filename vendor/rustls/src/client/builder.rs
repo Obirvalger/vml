@@ -1,33 +1,32 @@
-use crate::anchors;
 use crate::builder::{ConfigBuilder, WantsVerifier};
-use crate::client::handy;
-use crate::client::{ClientConfig, ResolvesClientCert};
+use crate::client::{handy, ClientConfig, ResolvesClientCert};
 use crate::error::Error;
-use crate::key;
-use crate::keylog::NoKeyLog;
+use crate::key_log::NoKeyLog;
 use crate::kx::SupportedKxGroup;
 use crate::suites::SupportedCipherSuite;
 use crate::verify::{self, CertificateTransparencyPolicy};
-use crate::versions;
+use crate::{anchors, key, versions};
+
+use super::client_conn::Resumption;
 
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 impl ConfigBuilder<ClientConfig, WantsVerifier> {
-    /// Choose how to verify client certificates.
+    /// Choose how to verify server certificates.
     pub fn with_root_certificates(
         self,
-        root_store: anchors::RootCertStore,
+        root_store: impl Into<Arc<anchors::RootCertStore>>,
     ) -> ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert> {
         ConfigBuilder {
             state: WantsTransparencyPolicyOrClientCert {
                 cipher_suites: self.state.cipher_suites,
                 kx_groups: self.state.kx_groups,
                 versions: self.state.versions,
-                root_store,
+                root_store: root_store.into(),
             },
-            side: PhantomData::default(),
+            side: PhantomData,
         }
     }
 
@@ -44,7 +43,7 @@ impl ConfigBuilder<ClientConfig, WantsVerifier> {
                 versions: self.state.versions,
                 verifier,
             },
-            side: PhantomData::default(),
+            side: PhantomData,
         }
     }
 }
@@ -56,11 +55,12 @@ impl ConfigBuilder<ClientConfig, WantsVerifier> {
 /// invoke one of the methods related to client certificates (as in the [`WantsClientCert`] state).
 ///
 /// For more information, see the [`ConfigBuilder`] documentation.
+#[derive(Clone, Debug)]
 pub struct WantsTransparencyPolicyOrClientCert {
     cipher_suites: Vec<SupportedCipherSuite>,
     kx_groups: Vec<&'static SupportedKxGroup>,
     versions: versions::EnabledVersions,
-    root_store: anchors::RootCertStore,
+    root_store: Arc<anchors::RootCertStore>,
 }
 
 impl ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert> {
@@ -89,13 +89,29 @@ impl ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert> {
     /// `key_der` is a DER-encoded RSA, ECDSA, or Ed25519 private key.
     ///
     /// This function fails if `key_der` is invalid.
-    pub fn with_single_cert(
+    pub fn with_client_auth_cert(
         self,
         cert_chain: Vec<key::Certificate>,
         key_der: key::PrivateKey,
     ) -> Result<ClientConfig, Error> {
         self.with_logs(None)
-            .with_single_cert(cert_chain, key_der)
+            .with_client_auth_cert(cert_chain, key_der)
+    }
+
+    /// Sets a single certificate chain and matching private key for use
+    /// in client authentication.
+    ///
+    /// `cert_chain` is a vector of DER-encoded certificates.
+    /// `key_der` is a DER-encoded RSA, ECDSA, or Ed25519 private key.
+    ///
+    /// This function fails if `key_der` is invalid.
+    #[deprecated(since = "0.21.4", note = "Use `with_client_auth_cert` instead")]
+    pub fn with_single_cert(
+        self,
+        cert_chain: Vec<key::Certificate>,
+        key_der: key::PrivateKey,
+    ) -> Result<ClientConfig, Error> {
+        self.with_client_auth_cert(cert_chain, key_der)
     }
 
     /// Do not support client auth.
@@ -136,6 +152,7 @@ impl ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert> {
 /// certificate.
 ///
 /// For more information, see the [`ConfigBuilder`] documentation.
+#[derive(Clone, Debug)]
 pub struct WantsClientCert {
     cipher_suites: Vec<SupportedCipherSuite>,
     kx_groups: Vec<&'static SupportedKxGroup>,
@@ -151,13 +168,29 @@ impl ConfigBuilder<ClientConfig, WantsClientCert> {
     /// `key_der` is a DER-encoded RSA, ECDSA, or Ed25519 private key.
     ///
     /// This function fails if `key_der` is invalid.
-    pub fn with_single_cert(
+    pub fn with_client_auth_cert(
         self,
         cert_chain: Vec<key::Certificate>,
         key_der: key::PrivateKey,
     ) -> Result<ClientConfig, Error> {
         let resolver = handy::AlwaysResolvesClientCert::new(cert_chain, &key_der)?;
         Ok(self.with_client_cert_resolver(Arc::new(resolver)))
+    }
+
+    /// Sets a single certificate chain and matching private key for use
+    /// in client authentication.
+    ///
+    /// `cert_chain` is a vector of DER-encoded certificates.
+    /// `key_der` is a DER-encoded RSA, ECDSA, or Ed25519 private key.
+    ///
+    /// This function fails if `key_der` is invalid.
+    #[deprecated(since = "0.21.4", note = "Use `with_client_auth_cert` instead")]
+    pub fn with_single_cert(
+        self,
+        cert_chain: Vec<key::Certificate>,
+        key_der: key::PrivateKey,
+    ) -> Result<ClientConfig, Error> {
+        self.with_client_auth_cert(cert_chain, key_der)
     }
 
     /// Do not support client auth.
@@ -174,14 +207,15 @@ impl ConfigBuilder<ClientConfig, WantsClientCert> {
             cipher_suites: self.state.cipher_suites,
             kx_groups: self.state.kx_groups,
             alpn_protocols: Vec::new(),
-            session_storage: handy::ClientSessionMemoryCache::new(256),
+            resumption: Resumption::default(),
             max_fragment_size: None,
             client_auth_cert_resolver,
-            enable_tickets: true,
             versions: self.state.versions,
             enable_sni: true,
             verifier: self.state.verifier,
             key_log: Arc::new(NoKeyLog {}),
+            #[cfg(feature = "secret_extraction")]
+            enable_secret_extraction: false,
             enable_early_data: false,
         }
     }

@@ -1,9 +1,10 @@
+use crate::builtins::*;
 use crate::child::{CmdChild, CmdChildHandle, CmdChildren, FunChildren};
 use crate::io::{CmdIn, CmdOut};
+use crate::{debug, warn};
 use crate::{CmdResult, FunResult};
 use faccess::{AccessMode, PathExt};
 use lazy_static::lazy_static;
-use log::{debug, warn};
 use os_pipe::{self, PipeReader, PipeWriter};
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
@@ -64,7 +65,15 @@ type FnFun = fn(&mut CmdEnv) -> CmdResult;
 lazy_static! {
     static ref CMD_MAP: Mutex<HashMap<OsString, FnFun>> = {
         // needs explicit type, or it won't compile
-        let m: HashMap<OsString, FnFun> = HashMap::new();
+        let mut m: HashMap<OsString, FnFun> = HashMap::new();
+        m.insert("echo".into(), builtin_echo);
+        m.insert("trace".into(), builtin_trace);
+        m.insert("debug".into(), builtin_debug);
+        m.insert("info".into(), builtin_info);
+        m.insert("warn".into(), builtin_warn);
+        m.insert("error".into(), builtin_error);
+        m.insert("".into(), builtin_empty);
+
         Mutex::new(m)
     };
 }
@@ -74,14 +83,14 @@ pub fn export_cmd(cmd: &'static str, func: FnFun) {
     CMD_MAP.lock().unwrap().insert(OsString::from(cmd), func);
 }
 
-/// set debug mode or not, false by default
+/// Set debug mode or not, false by default
 ///
 /// Setting environment variable CMD_LIB_DEBUG=0|1 has the same effect
 pub fn set_debug(enable: bool) {
     std::env::set_var("CMD_LIB_DEBUG", if enable { "1" } else { "0" });
 }
 
-/// set pipefail or not, true by default
+/// Set pipefail or not, true by default
 ///
 /// Setting environment variable CMD_LIB_PIPEFAIL=0|1 has the same effect
 pub fn set_pipefail(enable: bool) {
@@ -135,17 +144,7 @@ impl GroupCmds {
     pub fn spawn(mut self, with_output: bool) -> Result<CmdChildren> {
         assert_eq!(self.group_cmds.len(), 1);
         let mut cmds = self.group_cmds.pop().unwrap();
-        let ret = cmds.spawn(&mut self.current_dir, with_output);
-        // spawning error contains no command information, attach it here
-        if let Err(ref e) = ret {
-            if !cmds.ignore_error {
-                return Err(Error::new(
-                    e.kind(),
-                    format!("Spawning {} failed: {}", cmds.get_full_cmds(), e),
-                ));
-            }
-        }
-        ret
+        cmds.spawn(&mut self.current_dir, with_output)
     }
 
     pub fn spawn_with_output(self) -> Result<FunChildren> {
@@ -173,20 +172,17 @@ impl Cmds {
                 // first command in the pipe
                 self.ignore_error = true;
             } else {
-                warn!("Builtin \"ignore\" command at wrong position");
+                warn!("Builtin {IGNORE_CMD:?} command at wrong position");
             }
         }
         self.cmds.push(Some(cmd));
         self
     }
 
-    fn get_full_cmds(&self) -> &str {
-        &self.full_cmds
-    }
-
     fn spawn(&mut self, current_dir: &mut PathBuf, with_output: bool) -> Result<CmdChildren> {
+        let full_cmds = format!("[{}]", self.full_cmds);
         if debug_enabled() {
-            debug!("Running {} ...", self.get_full_cmds());
+            debug!("Running {full_cmds} ...");
         }
 
         // spawning all the sub-processes
@@ -197,13 +193,18 @@ impl Cmds {
             let mut cmd = cmd_opt.take().unwrap();
             if i != len - 1 {
                 // not the last, update redirects
-                let (pipe_reader, pipe_writer) = os_pipe::pipe()?;
-                cmd.setup_redirects(&mut prev_pipe_in, Some(pipe_writer), with_output)?;
+                let (pipe_reader, pipe_writer) =
+                    os_pipe::pipe().map_err(|e| new_cmd_io_error(&e, &full_cmds))?;
+                cmd.setup_redirects(&mut prev_pipe_in, Some(pipe_writer), with_output)
+                    .map_err(|e| new_cmd_io_error(&e, &full_cmds))?;
                 prev_pipe_in = Some(pipe_reader);
             } else {
-                cmd.setup_redirects(&mut prev_pipe_in, None, with_output)?;
+                cmd.setup_redirects(&mut prev_pipe_in, None, with_output)
+                    .map_err(|e| new_cmd_io_error(&e, &full_cmds))?;
             }
-            let child = cmd.spawn(current_dir, with_output)?;
+            let child = cmd
+                .spawn(current_dir, with_output)
+                .map_err(|e| new_cmd_io_error(&e, &full_cmds))?;
             children.push(child);
         }
 
@@ -235,21 +236,21 @@ pub enum Redirect {
 impl fmt::Debug for Redirect {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Redirect::FileToStdin(path) => f.write_str(&format!("< {}", path.display())),
+            Redirect::FileToStdin(path) => f.write_str(&format!("<{:?}", path.display())),
             Redirect::StdoutToStderr => f.write_str(">&2"),
             Redirect::StderrToStdout => f.write_str("2>&1"),
             Redirect::StdoutToFile(path, append) => {
                 if *append {
-                    f.write_str(&format!("1>> {}", path.display()))
+                    f.write_str(&format!("1>>{:?}", path.display()))
                 } else {
-                    f.write_str(&format!("1> {}", path.display()))
+                    f.write_str(&format!("1>{:?}", path.display()))
                 }
             }
             Redirect::StderrToFile(path, append) => {
                 if *append {
-                    f.write_str(&format!("2>> {}", path.display()))
+                    f.write_str(&format!("2>>{:?}", path.display()))
                 } else {
-                    f.write_str(&format!("2> {}", path.display()))
+                    f.write_str(&format!("2>{:?}", path.display()))
                 }
             }
         }
@@ -291,21 +292,28 @@ impl Default for Cmd {
 }
 
 impl Cmd {
-    pub fn add_arg(mut self, arg: OsString) -> Self {
-        let arg_str = arg.to_string_lossy().to_string();
+    pub fn add_arg<O>(mut self, arg: O) -> Self
+    where
+        O: AsRef<OsStr>,
+    {
+        let arg_str = arg.as_ref().to_string_lossy().to_string();
         if arg_str != IGNORE_CMD && !self.args.iter().any(|cmd| *cmd != IGNORE_CMD) {
             let v: Vec<&str> = arg_str.split('=').collect();
             if v.len() == 2 && v[0].chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                 self.vars.insert(v[0].into(), v[1].into());
                 return self;
             }
-            self.in_cmd_map = CMD_MAP.lock().unwrap().contains_key(&arg);
+            self.in_cmd_map = CMD_MAP.lock().unwrap().contains_key(arg.as_ref());
         }
-        self.args.push(arg);
+        self.args.push(arg.as_ref().to_os_string());
         self
     }
 
-    pub fn add_args(mut self, args: Vec<OsString>) -> Self {
+    pub fn add_args<I, O>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = O>,
+        O: AsRef<OsStr>,
+    {
         for arg in args {
             self = self.add_arg(arg);
         }
@@ -326,21 +334,13 @@ impl Cmd {
     }
 
     fn cmd_str(&self) -> String {
-        let mut ret = format!("{:?}", self.args);
-        let mut extra = String::new();
-        if !self.vars.is_empty() {
-            extra += &format!("{:?}", self.vars);
-        }
-        if !self.redirects.is_empty() {
-            if !extra.is_empty() {
-                extra += ", ";
-            }
-            extra += &format!("{:?}", self.redirects);
-        }
-        if !extra.is_empty() {
-            ret += &format!("({})", extra);
-        }
-        ret
+        self.vars
+            .iter()
+            .map(|(k, v)| format!("{k}={v:?}"))
+            .chain(self.args.iter().map(|s| format!("{s:?}")))
+            .chain(self.redirects.iter().map(|r| format!("{r:?}")))
+            .collect::<Vec<String>>()
+            .join(" ")
     }
 
     fn gen_command(mut self) -> (bool, Self) {
@@ -364,9 +364,9 @@ impl Cmd {
     fn spawn(mut self, current_dir: &mut PathBuf, with_output: bool) -> Result<CmdChild> {
         let arg0 = self.arg0();
         if arg0 == CD_CMD {
-            let child = self.run_cd_cmd(current_dir);
+            self.run_cd_cmd(current_dir)?;
             Ok(CmdChild::new(
-                CmdChildHandle::SyncFn(child),
+                CmdChildHandle::SyncFn,
                 self.cmd_str(),
                 self.stdout_logging,
                 self.stderr_logging,
@@ -406,7 +406,7 @@ impl Cmd {
 
             let internal_cmd = CMD_MAP.lock().unwrap()[&arg0];
             if pipe_out || with_output {
-                let handle = thread::Builder::new().spawn(move || internal_cmd(&mut env));
+                let handle = thread::Builder::new().spawn(move || internal_cmd(&mut env))?;
                 Ok(CmdChild::new(
                     CmdChildHandle::Thread(handle),
                     cmd_str,
@@ -414,9 +414,9 @@ impl Cmd {
                     self.stderr_logging,
                 ))
             } else {
-                let child = internal_cmd(&mut env);
+                internal_cmd(&mut env)?;
                 Ok(CmdChild::new(
-                    CmdChildHandle::SyncFn(child),
+                    CmdChildHandle::SyncFn,
                     cmd_str,
                     self.stdout_logging,
                     self.stderr_logging,
@@ -446,7 +446,7 @@ impl Cmd {
             }
 
             // spawning process
-            let child = cmd.spawn();
+            let child = cmd.spawn()?;
             Ok(CmdChild::new(
                 CmdChildHandle::Proc(child),
                 self.cmd_str(),
@@ -458,15 +458,15 @@ impl Cmd {
 
     fn run_cd_cmd(&self, current_dir: &mut PathBuf) -> CmdResult {
         if self.args.len() == 1 {
-            return Err(Error::new(ErrorKind::Other, "cd: missing directory"));
+            return Err(Error::new(ErrorKind::Other, "{CD_CMD}: missing directory"));
         } else if self.args.len() > 2 {
-            let err_msg = format!("cd: too many arguments: {}", self.cmd_str());
+            let err_msg = format!("{CD_CMD}: too many arguments");
             return Err(Error::new(ErrorKind::Other, err_msg));
         }
 
-        let dir = PathBuf::from(&self.args[1]);
+        let dir = current_dir.join(&self.args[1]);
         if !dir.is_dir() {
-            let err_msg = format!("cd {}: No such file or directory", dir.display());
+            let err_msg = format!("{CD_CMD}: No such file or directory");
             return Err(Error::new(ErrorKind::Other, err_msg));
         }
 
@@ -566,7 +566,7 @@ impl<T: ToString> AsOsStr for T {
 }
 
 #[doc(hidden)]
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct CmdString(OsString);
 impl CmdString {
     pub fn append<T: AsRef<OsStr>>(mut self, value: T) -> Self {
@@ -583,6 +583,12 @@ impl CmdString {
     }
 }
 
+impl AsRef<OsStr> for CmdString {
+    fn as_ref(&self) -> &OsStr {
+        self.0.as_ref()
+    }
+}
+
 impl<T: ?Sized + AsRef<OsStr>> From<&T> for CmdString {
     fn from(s: &T) -> Self {
         Self(s.as_ref().into())
@@ -595,6 +601,10 @@ impl fmt::Display for CmdString {
     }
 }
 
+pub(crate) fn new_cmd_io_error(e: &Error, command: &str) -> Error {
+    Error::new(e.kind(), format!("Running {command} failed: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -603,8 +613,8 @@ mod tests {
     fn test_run_piped_cmds() {
         let mut current_dir = PathBuf::new();
         assert!(Cmds::default()
-            .pipe(Cmd::default().add_args(vec!["echo".into(), "rust".into()]))
-            .pipe(Cmd::default().add_args(vec!["wc".into()]))
+            .pipe(Cmd::default().add_args(["echo", "rust"]))
+            .pipe(Cmd::default().add_args(["wc"]))
             .run_cmd(&mut current_dir)
             .is_ok());
     }
@@ -614,7 +624,7 @@ mod tests {
         let mut current_dir = PathBuf::new();
         assert_eq!(
             Cmds::default()
-                .pipe(Cmd::default().add_args(vec!["echo".into(), "rust".into()]))
+                .pipe(Cmd::default().add_args(["echo", "rust"]))
                 .run_fun(&mut current_dir)
                 .unwrap(),
             "rust"
@@ -622,8 +632,8 @@ mod tests {
 
         assert_eq!(
             Cmds::default()
-                .pipe(Cmd::default().add_args(vec!["echo".into(), "rust".into()]))
-                .pipe(Cmd::default().add_args(vec!["wc".into(), "-c".into()]))
+                .pipe(Cmd::default().add_args(["echo", "rust"]))
+                .pipe(Cmd::default().add_args(["wc", "-c"]))
                 .run_fun(&mut current_dir)
                 .unwrap()
                 .trim(),
@@ -635,14 +645,14 @@ mod tests {
     fn test_stdout_redirect() {
         let mut current_dir = PathBuf::new();
         let tmp_file = "/tmp/file_echo_rust";
-        let mut write_cmd = Cmd::default().add_args(vec!["echo".into(), "rust".into()]);
+        let mut write_cmd = Cmd::default().add_args(["echo", "rust"]);
         write_cmd = write_cmd.add_redirect(Redirect::StdoutToFile(PathBuf::from(tmp_file), false));
         assert!(Cmds::default()
             .pipe(write_cmd)
             .run_cmd(&mut current_dir)
             .is_ok());
 
-        let read_cmd = Cmd::default().add_args(vec!["cat".into(), tmp_file.into()]);
+        let read_cmd = Cmd::default().add_args(["cat", tmp_file]);
         assert_eq!(
             Cmds::default()
                 .pipe(read_cmd)
@@ -651,7 +661,7 @@ mod tests {
             "rust"
         );
 
-        let cleanup_cmd = Cmd::default().add_args(vec!["rm".into(), tmp_file.into()]);
+        let cleanup_cmd = Cmd::default().add_args(["rm", tmp_file]);
         assert!(Cmds::default()
             .pipe(cleanup_cmd)
             .run_cmd(&mut current_dir)

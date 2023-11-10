@@ -761,9 +761,6 @@ impl Builder {
 
     /// Set the HTTP method for this request.
     ///
-    /// This function will configure the HTTP method of the `Request` that will
-    /// be returned from `Builder::build`.
-    ///
     /// By default this is `GET`.
     ///
     /// # Examples
@@ -809,9 +806,6 @@ impl Builder {
 
     /// Set the URI for this request.
     ///
-    /// This function will configure the URI of the `Request` that will
-    /// be returned from `Builder::build`.
-    ///
     /// By default this is `/`.
     ///
     /// # Examples
@@ -856,9 +850,6 @@ impl Builder {
 
     /// Set the HTTP version for this request.
     ///
-    /// This function will configure the HTTP version of the `Request` that
-    /// will be returned from `Builder::build`.
-    ///
     /// By default this is HTTP/1.1
     ///
     /// # Examples
@@ -876,6 +867,25 @@ impl Builder {
             head.version = version;
             Ok(head)
         })
+    }
+
+    /// Get the HTTP version for this request
+    ///
+    /// By default this is HTTP/1.1.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use http::*;
+    ///
+    /// let mut req = Request::builder();
+    /// assert_eq!(req.version_ref().unwrap(), &Version::HTTP_11 );
+    ///
+    /// req = req.version(Version::HTTP_2);
+    /// assert_eq!(req.version_ref().unwrap(), &Version::HTTP_2 );
+    /// ```
+    pub fn version_ref(&self) -> Option<&Version> {
+        self.inner.as_ref().ok().map(|h| &h.version)
     }
 
     /// Appends a header to this request builder.

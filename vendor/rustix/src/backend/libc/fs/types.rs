@@ -1,21 +1,13 @@
-use super::super::c;
+use crate::backend::c;
 use bitflags::bitflags;
 
-bitflags! {
-    /// `FD_*` constants for use with [`fcntl_getfd`] and [`fcntl_setfd`].
-    ///
-    /// [`fcntl_getfd`]: crate::fs::fcntl_getfd
-    /// [`fcntl_setfd`]: crate::fs::fcntl_setfd
-    pub struct FdFlags: c::c_int {
-        /// `FD_CLOEXEC`
-        const CLOEXEC = c::FD_CLOEXEC;
-    }
-}
-
+#[cfg(not(any(target_os = "espidf", target_os = "vita")))]
 bitflags! {
     /// `*_OK` constants for use with [`accessat`].
     ///
     /// [`accessat`]: fn.accessat.html
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct Access: c::c_int {
         /// `R_OK`
         const READ_OK = c::R_OK;
@@ -28,49 +20,65 @@ bitflags! {
 
         /// `F_OK`
         const EXISTS = c::F_OK;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "espidf", target_os = "redox")))]
 bitflags! {
     /// `AT_*` constants for use with [`openat`], [`statat`], and other `*at`
     /// functions.
     ///
     /// [`openat`]: crate::fs::openat
     /// [`statat`]: crate::fs::statat
-    pub struct AtFlags: c::c_int {
-        /// `AT_REMOVEDIR`
-        const REMOVEDIR = c::AT_REMOVEDIR;
-
-        /// `AT_SYMLINK_FOLLOW`
-        const SYMLINK_FOLLOW = c::AT_SYMLINK_FOLLOW;
-
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+    pub struct AtFlags: u32 {
         /// `AT_SYMLINK_NOFOLLOW`
-        const SYMLINK_NOFOLLOW = c::AT_SYMLINK_NOFOLLOW;
-
-        /// `AT_EMPTY_PATH`
-        #[cfg(any(
-            target_os = "android",
-            target_os = "fuchsia",
-            target_os = "linux",
-        ))]
-        const EMPTY_PATH = c::AT_EMPTY_PATH;
+        const SYMLINK_NOFOLLOW = bitcast!(c::AT_SYMLINK_NOFOLLOW);
 
         /// `AT_EACCESS`
         #[cfg(not(any(target_os = "emscripten", target_os = "android")))]
-        const EACCESS = c::AT_EACCESS;
+        const EACCESS = bitcast!(c::AT_EACCESS);
+
+        /// `AT_REMOVEDIR`
+        const REMOVEDIR = bitcast!(c::AT_REMOVEDIR);
+
+        /// `AT_SYMLINK_FOLLOW`
+        const SYMLINK_FOLLOW = bitcast!(c::AT_SYMLINK_FOLLOW);
+
+        /// `AT_NO_AUTOMOUNT`
+        #[cfg(any(linux_like, target_os = "fuchsia"))]
+        const NO_AUTOMOUNT = bitcast!(c::AT_NO_AUTOMOUNT);
+
+        /// `AT_EMPTY_PATH`
+        #[cfg(any(
+            linux_kernel,
+            target_os = "freebsd",
+            target_os = "fuchsia",
+        ))]
+        const EMPTY_PATH = bitcast!(c::AT_EMPTY_PATH);
+
+        /// `AT_RESOLVE_BENEATH`
+        #[cfg(target_os = "freebsd")]
+        const RESOLVE_BENEATH = bitcast!(c::AT_RESOLVE_BENEATH);
 
         /// `AT_STATX_SYNC_AS_STAT`
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        const STATX_SYNC_AS_STAT = c::AT_STATX_SYNC_AS_STAT;
+        const STATX_SYNC_AS_STAT = bitcast!(c::AT_STATX_SYNC_AS_STAT);
 
         /// `AT_STATX_FORCE_SYNC`
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        const STATX_FORCE_SYNC = c::AT_STATX_FORCE_SYNC;
+        const STATX_FORCE_SYNC = bitcast!(c::AT_STATX_FORCE_SYNC);
 
         /// `AT_STATX_DONT_SYNC`
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        const STATX_DONT_SYNC = c::AT_STATX_DONT_SYNC;
+        const STATX_DONT_SYNC = bitcast!(c::AT_STATX_DONT_SYNC);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -80,72 +88,78 @@ bitflags! {
     /// [`openat`]: crate::fs::openat
     /// [`chmodat`]: crate::fs::chmodat
     /// [`fchmod`]: crate::fs::fchmod
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct Mode: RawMode {
         /// `S_IRWXU`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const RWXU = c::S_IRWXU as RawMode;
 
         /// `S_IRUSR`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const RUSR = c::S_IRUSR as RawMode;
 
         /// `S_IWUSR`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const WUSR = c::S_IWUSR as RawMode;
 
         /// `S_IXUSR`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const XUSR = c::S_IXUSR as RawMode;
 
         /// `S_IRWXG`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const RWXG = c::S_IRWXG as RawMode;
 
         /// `S_IRGRP`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const RGRP = c::S_IRGRP as RawMode;
 
         /// `S_IWGRP`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const WGRP = c::S_IWGRP as RawMode;
 
         /// `S_IXGRP`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const XGRP = c::S_IXGRP as RawMode;
 
         /// `S_IRWXO`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const RWXO = c::S_IRWXO as RawMode;
 
         /// `S_IROTH`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const ROTH = c::S_IROTH as RawMode;
 
         /// `S_IWOTH`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const WOTH = c::S_IWOTH as RawMode;
 
         /// `S_IXOTH`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const XOTH = c::S_IXOTH as RawMode;
 
         /// `S_ISUID`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const SUID = c::S_ISUID as RawMode;
 
         /// `S_ISGID`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const SGID = c::S_ISGID as RawMode;
 
         /// `S_ISVTX`
-        #[cfg(not(target_os = "wasi"))] // WASI doesn't have Unix-style mode flags.
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
         const SVTX = c::S_ISVTX as RawMode;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
+#[cfg(not(target_os = "espidf"))]
 impl Mode {
-    /// Construct a `Mode` from the mode bits of the `st_mode` field of
-    /// a `Stat`.
+    /// Construct a `Mode` from the mode bits of the `st_mode` field of a
+    /// `Stat`.
     #[inline]
     pub const fn from_raw_mode(st_mode: RawMode) -> Self {
         Self::from_bits_truncate(st_mode)
@@ -158,136 +172,187 @@ impl Mode {
     }
 }
 
+#[cfg(not(target_os = "espidf"))]
+impl From<RawMode> for Mode {
+    /// Support conversions from raw mode values to `Mode`.
+    ///
+    /// ```
+    /// use rustix::fs::{Mode, RawMode};
+    /// assert_eq!(Mode::from(0o700), Mode::RWXU);
+    /// ```
+    #[inline]
+    fn from(st_mode: RawMode) -> Self {
+        Self::from_raw_mode(st_mode)
+    }
+}
+
+#[cfg(not(target_os = "espidf"))]
+impl From<Mode> for RawMode {
+    /// Support conversions from `Mode` to raw mode values.
+    ///
+    /// ```
+    /// use rustix::fs::{Mode, RawMode};
+    /// assert_eq!(RawMode::from(Mode::RWXU), 0o700);
+    /// ```
+    #[inline]
+    fn from(mode: Mode) -> Self {
+        mode.as_raw_mode()
+    }
+}
+
 bitflags! {
     /// `O_*` constants for use with [`openat`].
     ///
     /// [`openat`]: crate::fs::openat
-    pub struct OFlags: c::c_int {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+    pub struct OFlags: u32 {
         /// `O_ACCMODE`
-        const ACCMODE = c::O_ACCMODE;
+        const ACCMODE = bitcast!(c::O_ACCMODE);
 
         /// Similar to `ACCMODE`, but just includes the read/write flags, and
         /// no other flags.
         ///
-        /// Some implementations include `O_PATH` in `O_ACCMODE`, when
+        /// On some platforms, `PATH` may be included in `ACCMODE`, when
         /// sometimes we really just want the read/write bits. Caution is
-        /// indicated, as the presence of `O_PATH` may mean that the read/write
+        /// indicated, as the presence of `PATH` may mean that the read/write
         /// bits don't have their usual meaning.
-        const RWMODE = c::O_RDONLY | c::O_WRONLY | c::O_RDWR;
+        const RWMODE = bitcast!(c::O_RDONLY | c::O_WRONLY | c::O_RDWR);
 
         /// `O_APPEND`
-        const APPEND = c::O_APPEND;
+        const APPEND = bitcast!(c::O_APPEND);
 
         /// `O_CREAT`
         #[doc(alias = "CREAT")]
-        const CREATE = c::O_CREAT;
+        const CREATE = bitcast!(c::O_CREAT);
 
         /// `O_DIRECTORY`
-        const DIRECTORY = c::O_DIRECTORY;
+        #[cfg(not(target_os = "espidf"))]
+        const DIRECTORY = bitcast!(c::O_DIRECTORY);
 
         /// `O_DSYNC`
-        #[cfg(not(any(target_os = "dragonfly", target_os = "freebsd", target_os = "redox")))]
-        const DSYNC = c::O_DSYNC;
+        #[cfg(not(any(target_os = "dragonfly", target_os = "espidf", target_os = "l4re", target_os = "redox", target_os = "vita")))]
+        const DSYNC = bitcast!(c::O_DSYNC);
 
         /// `O_EXCL`
-        const EXCL = c::O_EXCL;
+        const EXCL = bitcast!(c::O_EXCL);
 
         /// `O_FSYNC`
         #[cfg(any(
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "ios",
+            bsd,
             all(target_os = "linux", not(target_env = "musl")),
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
         ))]
-        const FSYNC = c::O_FSYNC;
+        const FSYNC = bitcast!(c::O_FSYNC);
 
         /// `O_NOFOLLOW`
-        const NOFOLLOW = c::O_NOFOLLOW;
+        #[cfg(not(target_os = "espidf"))]
+        const NOFOLLOW = bitcast!(c::O_NOFOLLOW);
 
         /// `O_NONBLOCK`
-        const NONBLOCK = c::O_NONBLOCK;
+        const NONBLOCK = bitcast!(c::O_NONBLOCK);
 
         /// `O_RDONLY`
-        const RDONLY = c::O_RDONLY;
+        const RDONLY = bitcast!(c::O_RDONLY);
 
         /// `O_WRONLY`
-        const WRONLY = c::O_WRONLY;
+        const WRONLY = bitcast!(c::O_WRONLY);
 
         /// `O_RDWR`
-        const RDWR = c::O_RDWR;
+        ///
+        /// This is not equal to `RDONLY | WRONLY`. It's a distinct flag.
+        const RDWR = bitcast!(c::O_RDWR);
 
         /// `O_NOCTTY`
-        #[cfg(not(target_os = "redox"))]
-        const NOCTTY = c::O_NOCTTY;
+        #[cfg(not(any(target_os = "espidf", target_os = "l4re", target_os = "redox", target_os = "vita")))]
+        const NOCTTY = bitcast!(c::O_NOCTTY);
 
         /// `O_RSYNC`
         #[cfg(any(
-            target_os = "android",
+            linux_kernel,
+            netbsdlike,
             target_os = "emscripten",
-            target_os = "linux",
-            target_os = "netbsd",
-            target_os = "openbsd",
             target_os = "wasi",
         ))]
-        const RSYNC = c::O_RSYNC;
+        const RSYNC = bitcast!(c::O_RSYNC);
 
         /// `O_SYNC`
-        #[cfg(not(target_os = "redox"))]
-        const SYNC = c::O_SYNC;
+        #[cfg(not(any(target_os = "l4re", target_os = "redox")))]
+        const SYNC = bitcast!(c::O_SYNC);
 
         /// `O_TRUNC`
-        const TRUNC = c::O_TRUNC;
+        const TRUNC = bitcast!(c::O_TRUNC);
 
         /// `O_PATH`
         #[cfg(any(
-            target_os = "android",
+            linux_kernel,
             target_os = "emscripten",
+            target_os = "freebsd",
             target_os = "fuchsia",
-            target_os = "linux",
             target_os = "redox",
         ))]
-        const PATH = c::O_PATH;
+        const PATH = bitcast!(c::O_PATH);
 
         /// `O_CLOEXEC`
-        const CLOEXEC = c::O_CLOEXEC;
+        const CLOEXEC = bitcast!(c::O_CLOEXEC);
 
         /// `O_TMPFILE`
         #[cfg(any(
-            target_os = "android",
+            linux_kernel,
             target_os = "emscripten",
             target_os = "fuchsia",
-            target_os = "linux",
         ))]
-        const TMPFILE = c::O_TMPFILE;
+        const TMPFILE = bitcast!(c::O_TMPFILE);
 
         /// `O_NOATIME`
         #[cfg(any(
-            target_os = "android",
+            linux_kernel,
             target_os = "fuchsia",
-            target_os = "linux",
         ))]
-        const NOATIME = c::O_NOATIME;
+        const NOATIME = bitcast!(c::O_NOATIME);
+
+        /// `O_DIRECT`
+        #[cfg(any(
+            linux_kernel,
+            target_os = "emscripten",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "netbsd",
+        ))]
+        const DIRECT = bitcast!(c::O_DIRECT);
+
+        /// `O_RESOLVE_BENEATH`
+        #[cfg(target_os = "freebsd")]
+        const RESOLVE_BENEATH = bitcast!(c::O_RESOLVE_BENEATH);
+
+        /// `O_EMPTY_PATH`
+        #[cfg(target_os = "freebsd")]
+        const EMPTY_PATH = bitcast!(c::O_EMPTY_PATH);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(apple)]
 bitflags! {
     /// `CLONE_*` constants for use with [`fclonefileat`].
     ///
     /// [`fclonefileat`]: crate::fs::fclonefileat
-    pub struct CloneFlags: c::c_int {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+    pub struct CloneFlags: u32 {
         /// `CLONE_NOFOLLOW`
         const NOFOLLOW = 1;
 
         /// `CLONE_NOOWNERCOPY`
         const NOOWNERCOPY = 2;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(apple)]
 mod copyfile {
     pub(super) const ACL: u32 = 1 << 0;
     pub(super) const STAT: u32 = 1 << 1;
@@ -298,9 +363,13 @@ mod copyfile {
     pub(super) const ALL: u32 = METADATA | DATA;
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(apple)]
 bitflags! {
-    /// `COPYFILE_*` constants.
+    /// `COPYFILE_*` constants for use with [`fcopyfile`].
+    ///
+    /// [`fcopyfile`]: crate::fs::fcopyfile
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct CopyfileFlags: c::c_uint {
         /// `COPYFILE_ACL`
         const ACL = copyfile::ACL;
@@ -322,15 +391,19 @@ bitflags! {
 
         /// `COPYFILE_ALL`
         const ALL = copyfile::ALL;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
+#[cfg(linux_kernel)]
 bitflags! {
     /// `RESOLVE_*` constants for use with [`openat2`].
     ///
     /// [`openat2`]: crate::fs::openat2
-    #[derive(Default)]
+    #[repr(transparent)]
+    #[derive(Default, Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct ResolveFlags: u64 {
         /// `RESOLVE_NO_XDEV`
         const NO_XDEV = 0x01;
@@ -349,23 +422,31 @@ bitflags! {
 
         /// `RESOLVE_CACHED` (since Linux 5.12)
         const CACHED = 0x20;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
+#[cfg(linux_kernel)]
 bitflags! {
     /// `RENAME_*` constants for use with [`renameat_with`].
     ///
     /// [`renameat_with`]: crate::fs::renameat_with
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct RenameFlags: c::c_uint {
         /// `RENAME_EXCHANGE`
-        const EXCHANGE = c::RENAME_EXCHANGE as _;
+        const EXCHANGE = bitcast!(c::RENAME_EXCHANGE);
 
         /// `RENAME_NOREPLACE`
-        const NOREPLACE = c::RENAME_NOREPLACE as _;
+        const NOREPLACE = bitcast!(c::RENAME_NOREPLACE);
 
         /// `RENAME_WHITEOUT`
-        const WHITEOUT = c::RENAME_WHITEOUT as _;
+        const WHITEOUT = bitcast!(c::RENAME_WHITEOUT);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -406,6 +487,7 @@ pub enum FileType {
 impl FileType {
     /// Construct a `FileType` from the `S_IFMT` bits of the `st_mode` field of
     /// a `Stat`.
+    #[inline]
     pub const fn from_raw_mode(st_mode: RawMode) -> Self {
         match (st_mode as c::mode_t) & c::S_IFMT {
             c::S_IFREG => Self::RegularFile,
@@ -422,6 +504,7 @@ impl FileType {
     }
 
     /// Construct an `st_mode` value from `Stat`.
+    #[inline]
     pub const fn as_raw_mode(self) -> RawMode {
         match self {
             Self::RegularFile => c::S_IFREG as RawMode,
@@ -439,11 +522,15 @@ impl FileType {
 
     /// Construct a `FileType` from the `d_type` field of a `c::dirent`.
     #[cfg(not(any(
+        solarish,
+        target_os = "aix",
+        target_os = "espidf",
         target_os = "haiku",
-        target_os = "illumos",
+        target_os = "nto",
         target_os = "redox",
-        target_os = "solaris"
+        target_os = "vita"
     )))]
+    #[inline]
     pub(crate) const fn from_dirent_d_type(d_type: u8) -> Self {
         match d_type {
             c::DT_REG => Self::RegularFile,
@@ -465,15 +552,14 @@ impl FileType {
 ///
 /// [`fadvise`]: crate::fs::fadvise
 #[cfg(not(any(
+    apple,
+    netbsdlike,
+    solarish,
     target_os = "dragonfly",
+    target_os = "espidf",
     target_os = "haiku",
-    target_os = "illumos",
-    target_os = "ios",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
     target_os = "redox",
-    target_os = "solaris",
+    target_os = "vita",
 )))]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(u32)]
@@ -497,11 +583,13 @@ pub enum Advice {
     DontNeed = c::POSIX_FADV_DONTNEED as c::c_uint,
 }
 
-#[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
+#[cfg(any(linux_kernel, target_os = "freebsd"))]
 bitflags! {
     /// `MFD_*` constants for use with [`memfd_create`].
     ///
     /// [`memfd_create`]: crate::fs::memfd_create
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct MemfdFlags: c::c_uint {
         /// `MFD_CLOEXEC`
         const CLOEXEC = c::MFD_CLOEXEC;
@@ -513,68 +601,59 @@ bitflags! {
         const HUGETLB = c::MFD_HUGETLB;
 
         /// `MFD_HUGE_64KB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_64KB = c::MFD_HUGE_64KB;
         /// `MFD_HUGE_512JB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_512KB = c::MFD_HUGE_512KB;
         /// `MFD_HUGE_1MB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_1MB = c::MFD_HUGE_1MB;
         /// `MFD_HUGE_2MB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_2MB = c::MFD_HUGE_2MB;
         /// `MFD_HUGE_8MB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_8MB = c::MFD_HUGE_8MB;
         /// `MFD_HUGE_16MB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_16MB = c::MFD_HUGE_16MB;
         /// `MFD_HUGE_32MB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_32MB = c::MFD_HUGE_32MB;
         /// `MFD_HUGE_256MB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_256MB = c::MFD_HUGE_256MB;
         /// `MFD_HUGE_512MB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_512MB = c::MFD_HUGE_512MB;
         /// `MFD_HUGE_1GB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_1GB = c::MFD_HUGE_1GB;
         /// `MFD_HUGE_2GB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_2GB = c::MFD_HUGE_2GB;
         /// `MFD_HUGE_16GB`
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         const HUGE_16GB = c::MFD_HUGE_16GB;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-#[cfg(any(
-    target_os = "android",
-    target_os = "freebsd",
-    target_os = "fuchsia",
-    target_os = "linux",
-))]
+#[cfg(any(linux_kernel, target_os = "freebsd", target_os = "fuchsia"))]
 bitflags! {
     /// `F_SEAL_*` constants for use with [`fcntl_add_seals`] and
     /// [`fcntl_get_seals`].
     ///
     /// [`fcntl_add_seals`]: crate::fs::fcntl_add_seals
     /// [`fcntl_get_seals`]: crate::fs::fcntl_get_seals
-    pub struct SealFlags: i32 {
-       /// `F_SEAL_SEAL`.
-       const SEAL = c::F_SEAL_SEAL;
-       /// `F_SEAL_SHRINK`.
-       const SHRINK = c::F_SEAL_SHRINK;
-       /// `F_SEAL_GROW`.
-       const GROW = c::F_SEAL_GROW;
-       /// `F_SEAL_WRITE`.
-       const WRITE = c::F_SEAL_WRITE;
-       /// `F_SEAL_FUTURE_WRITE` (since Linux 5.1)
-       #[cfg(any(target_os = "android", target_os = "linux"))]
-       const FUTURE_WRITE = c::F_SEAL_FUTURE_WRITE;
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+    pub struct SealFlags: u32 {
+        /// `F_SEAL_SEAL`
+        const SEAL = bitcast!(c::F_SEAL_SEAL);
+        /// `F_SEAL_SHRINK`
+        const SHRINK = bitcast!(c::F_SEAL_SHRINK);
+        /// `F_SEAL_GROW`
+        const GROW = bitcast!(c::F_SEAL_GROW);
+        /// `F_SEAL_WRITE`
+        const WRITE = bitcast!(c::F_SEAL_WRITE);
+        /// `F_SEAL_FUTURE_WRITE` (since Linux 5.1)
+        #[cfg(linux_kernel)]
+        const FUTURE_WRITE = bitcast!(c::F_SEAL_FUTURE_WRITE);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -583,6 +662,8 @@ bitflags! {
     /// `STATX_*` constants for use with [`statx`].
     ///
     /// [`statx`]: crate::fs::statx
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct StatxFlags: u32 {
         /// `STATX_TYPE`
         const TYPE = c::STATX_TYPE;
@@ -626,8 +707,14 @@ bitflags! {
         /// `STATX_MNT_ID` (since Linux 5.8)
         const MNT_ID = c::STATX_MNT_ID;
 
+        /// `STATX_DIOALIGN` (since Linux 6.1)
+        const DIOALIGN = c::STATX_DIOALIGN;
+
         /// `STATX_ALL`
         const ALL = c::STATX_ALL;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -639,6 +726,8 @@ bitflags! {
     /// `STATX_*` constants for use with [`statx`].
     ///
     /// [`statx`]: crate::fs::statx
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct StatxFlags: u32 {
         /// `STATX_TYPE`
         const TYPE = 0x0001;
@@ -684,200 +773,184 @@ bitflags! {
 
         /// `STATX_ALL`
         const ALL = 0xfff;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
 #[cfg(not(any(
+    netbsdlike,
+    solarish,
     target_os = "aix",
-    target_os = "illumos",
-    target_os = "netbsd",
-    target_os = "openbsd",
+    target_os = "espidf",
+    target_os = "nto",
     target_os = "redox",
-    target_os = "solaris",
+    target_os = "vita"
 )))]
 bitflags! {
     /// `FALLOC_FL_*` constants for use with [`fallocate`].
     ///
     /// [`fallocate`]: crate::fs::fallocate
-    pub struct FallocateFlags: i32 {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+    pub struct FallocateFlags: u32 {
         /// `FALLOC_FL_KEEP_SIZE`
         #[cfg(not(any(
+            bsd,
             target_os = "aix",
-            target_os = "dragonfly",
-            target_os = "freebsd",
             target_os = "haiku",
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
+            target_os = "hurd",
             target_os = "wasi",
         )))]
-        const KEEP_SIZE = c::FALLOC_FL_KEEP_SIZE;
+        const KEEP_SIZE = bitcast!(c::FALLOC_FL_KEEP_SIZE);
         /// `FALLOC_FL_PUNCH_HOLE`
         #[cfg(not(any(
+            bsd,
             target_os = "aix",
-            target_os = "dragonfly",
-            target_os = "freebsd",
             target_os = "haiku",
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
+            target_os = "hurd",
             target_os = "wasi",
         )))]
-        const PUNCH_HOLE = c::FALLOC_FL_PUNCH_HOLE;
+        const PUNCH_HOLE = bitcast!(c::FALLOC_FL_PUNCH_HOLE);
         /// `FALLOC_FL_NO_HIDE_STALE`
         #[cfg(not(any(
+            bsd,
             target_os = "aix",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "haiku",
-            target_os = "ios",
-            target_os = "linux",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
             target_os = "emscripten",
             target_os = "fuchsia",
+            target_os = "haiku",
+            target_os = "hurd",
+            target_os = "l4re",
+            target_os = "linux",
             target_os = "wasi",
         )))]
-        const NO_HIDE_STALE = c::FALLOC_FL_NO_HIDE_STALE;
+        const NO_HIDE_STALE = bitcast!(c::FALLOC_FL_NO_HIDE_STALE);
         /// `FALLOC_FL_COLLAPSE_RANGE`
         #[cfg(not(any(
+            bsd,
             target_os = "aix",
-            target_os = "dragonfly",
-            target_os = "freebsd",
             target_os = "haiku",
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
+            target_os = "hurd",
             target_os = "emscripten",
             target_os = "wasi",
         )))]
-        const COLLAPSE_RANGE = c::FALLOC_FL_COLLAPSE_RANGE;
+        const COLLAPSE_RANGE = bitcast!(c::FALLOC_FL_COLLAPSE_RANGE);
         /// `FALLOC_FL_ZERO_RANGE`
         #[cfg(not(any(
+            bsd,
             target_os = "aix",
-            target_os = "dragonfly",
-            target_os = "freebsd",
             target_os = "haiku",
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
+            target_os = "hurd",
             target_os = "emscripten",
             target_os = "wasi",
         )))]
-        const ZERO_RANGE = c::FALLOC_FL_ZERO_RANGE;
+        const ZERO_RANGE = bitcast!(c::FALLOC_FL_ZERO_RANGE);
         /// `FALLOC_FL_INSERT_RANGE`
         #[cfg(not(any(
+            bsd,
             target_os = "aix",
-            target_os = "dragonfly",
-            target_os = "freebsd",
             target_os = "haiku",
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
+            target_os = "hurd",
             target_os = "emscripten",
             target_os = "wasi",
         )))]
-        const INSERT_RANGE = c::FALLOC_FL_INSERT_RANGE;
+        const INSERT_RANGE = bitcast!(c::FALLOC_FL_INSERT_RANGE);
         /// `FALLOC_FL_UNSHARE_RANGE`
         #[cfg(not(any(
+            bsd,
             target_os = "aix",
-            target_os = "dragonfly",
-            target_os = "freebsd",
             target_os = "haiku",
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
+            target_os = "hurd",
             target_os = "emscripten",
             target_os = "wasi",
         )))]
-        const UNSHARE_RANGE = c::FALLOC_FL_UNSHARE_RANGE;
+        const UNSHARE_RANGE = bitcast!(c::FALLOC_FL_UNSHARE_RANGE);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-#[cfg(not(any(
-    target_os = "haiku",
-    target_os = "illumos",
-    target_os = "redox",
-    target_os = "solaris",
-    target_os = "wasi",
-)))]
+#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
 bitflags! {
     /// `ST_*` constants for use with [`StatVfs`].
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct StatVfsMountFlags: u64 {
         /// `ST_MANDLOCK`
-        #[cfg(any(target_os = "android", target_os = "emscripten", target_os = "fuchsia", target_os = "linux"))]
-        const MANDLOCK = libc::ST_MANDLOCK as u64;
+        #[cfg(any(linux_kernel, target_os = "emscripten", target_os = "fuchsia"))]
+        const MANDLOCK = c::ST_MANDLOCK as u64;
 
         /// `ST_NOATIME`
-        #[cfg(any(target_os = "android", target_os = "emscripten", target_os = "fuchsia", target_os = "linux"))]
-        const NOATIME = libc::ST_NOATIME as u64;
+        #[cfg(any(linux_kernel, target_os = "emscripten", target_os = "fuchsia"))]
+        const NOATIME = c::ST_NOATIME as u64;
 
         /// `ST_NODEV`
-        #[cfg(any(target_os = "aix", target_os = "android", target_os = "emscripten", target_os = "fuchsia", target_os = "linux"))]
-        const NODEV = libc::ST_NODEV as u64;
+        #[cfg(any(
+            linux_kernel,
+            target_os = "aix",
+            target_os = "emscripten",
+            target_os = "fuchsia"
+        ))]
+        const NODEV = c::ST_NODEV as u64;
 
         /// `ST_NODIRATIME`
-        #[cfg(any(target_os = "android", target_os = "emscripten", target_os = "fuchsia", target_os = "linux"))]
-        const NODIRATIME = libc::ST_NODIRATIME as u64;
+        #[cfg(any(linux_kernel, target_os = "emscripten", target_os = "fuchsia"))]
+        const NODIRATIME = c::ST_NODIRATIME as u64;
 
         /// `ST_NOEXEC`
-        #[cfg(any(target_os = "android", target_os = "emscripten", target_os = "fuchsia", target_os = "linux"))]
-        const NOEXEC = libc::ST_NOEXEC as u64;
+        #[cfg(any(linux_kernel, target_os = "emscripten", target_os = "fuchsia"))]
+        const NOEXEC = c::ST_NOEXEC as u64;
 
         /// `ST_NOSUID`
-        const NOSUID = libc::ST_NOSUID as u64;
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
+        const NOSUID = c::ST_NOSUID as u64;
 
         /// `ST_RDONLY`
-        const RDONLY = libc::ST_RDONLY as u64;
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
+        const RDONLY = c::ST_RDONLY as u64;
 
         /// `ST_RELATIME`
         #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "gnu")))]
-        const RELATIME = libc::ST_RELATIME as u64;
+        const RELATIME = c::ST_RELATIME as u64;
 
         /// `ST_SYNCHRONOUS`
-        #[cfg(any(target_os = "android", target_os = "emscripten", target_os = "fuchsia", target_os = "linux"))]
-        const SYNCHRONOUS = libc::ST_SYNCHRONOUS as u64;
+        #[cfg(any(linux_kernel, target_os = "emscripten", target_os = "fuchsia"))]
+        const SYNCHRONOUS = c::ST_SYNCHRONOUS as u64;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-/// `LOCK_*` constants for use with [`flock`]
+/// `LOCK_*` constants for use with [`flock`] and [`fcntl_lock`].
 ///
 /// [`flock`]: crate::fs::flock
-#[cfg(not(any(target_os = "solaris", target_os = "wasi")))]
+/// [`fcntl_lock`]: crate::fs::fcntl_lock
+#[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "wasi")))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(i32)]
+#[repr(u32)]
 pub enum FlockOperation {
     /// `LOCK_SH`
-    LockShared = c::LOCK_SH,
+    LockShared = bitcast!(c::LOCK_SH),
     /// `LOCK_EX`
-    LockExclusive = c::LOCK_EX,
+    LockExclusive = bitcast!(c::LOCK_EX),
     /// `LOCK_UN`
-    Unlock = c::LOCK_UN,
+    Unlock = bitcast!(c::LOCK_UN),
     /// `LOCK_SH | LOCK_NB`
-    NonBlockingLockShared = c::LOCK_SH | c::LOCK_NB,
+    NonBlockingLockShared = bitcast!(c::LOCK_SH | c::LOCK_NB),
     /// `LOCK_EX | LOCK_NB`
-    NonBlockingLockExclusive = c::LOCK_EX | c::LOCK_NB,
+    NonBlockingLockExclusive = bitcast!(c::LOCK_EX | c::LOCK_NB),
     /// `LOCK_UN | LOCK_NB`
-    NonBlockingUnlock = c::LOCK_UN | c::LOCK_NB,
+    NonBlockingUnlock = bitcast!(c::LOCK_UN | c::LOCK_NB),
 }
 
 /// `struct stat` for use with [`statat`] and [`fstat`].
 ///
 /// [`statat`]: crate::fs::statat
 /// [`fstat`]: crate::fs::fstat
-#[cfg(not(any(
-    target_os = "android",
-    target_os = "linux",
-    target_os = "emscripten",
-    target_os = "l4re",
-)))]
+#[cfg(not(any(linux_like, target_os = "hurd")))]
 pub type Stat = c::stat;
 
 /// `struct stat` for use with [`statat`] and [`fstat`].
@@ -885,10 +958,8 @@ pub type Stat = c::stat;
 /// [`statat`]: crate::fs::statat
 /// [`fstat`]: crate::fs::fstat
 #[cfg(any(
-    all(
-        any(target_os = "android", target_os = "linux"),
-        target_pointer_width = "64",
-    ),
+    all(linux_kernel, target_pointer_width = "64"),
+    target_os = "hurd",
     target_os = "emscripten",
     target_os = "l4re",
 ))]
@@ -901,10 +972,7 @@ pub type Stat = c::stat64;
 // On 32-bit, Linux's `struct stat64` has a 32-bit `st_mtime` and friends, so
 // we use our own struct, populated from `statx` where possible, to avoid the
 // y2038 bug.
-#[cfg(all(
-    any(target_os = "android", target_os = "linux"),
-    target_pointer_width = "32",
-))]
+#[cfg(all(linux_kernel, target_pointer_width = "32"))]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 #[allow(missing_docs)]
@@ -932,15 +1000,14 @@ pub struct Stat {
 /// [`statfs`]: crate::fs::statfs
 /// [`fstatfs`]: crate::fs::fstatfs
 #[cfg(not(any(
-    target_os = "android",
-    target_os = "emscripten",
+    linux_like,
+    solarish,
+    target_os = "espidf",
     target_os = "haiku",
-    target_os = "illumos",
-    target_os = "linux",
-    target_os = "l4re",
     target_os = "netbsd",
+    target_os = "nto",
     target_os = "redox",
-    target_os = "solaris",
+    target_os = "vita",
     target_os = "wasi",
 )))]
 #[allow(clippy::module_name_repetitions)]
@@ -950,25 +1017,14 @@ pub type StatFs = c::statfs;
 ///
 /// [`statfs`]: crate::fs::statfs
 /// [`fstatfs`]: crate::fs::fstatfs
-#[cfg(any(
-    target_os = "android",
-    target_os = "linux",
-    target_os = "emscripten",
-    target_os = "l4re",
-))]
+#[cfg(linux_like)]
 pub type StatFs = c::statfs64;
 
 /// `struct statvfs` for use with [`statvfs`] and [`fstatvfs`].
 ///
 /// [`statvfs`]: crate::fs::statvfs
 /// [`fstatvfs`]: crate::fs::fstatvfs
-#[cfg(not(any(
-    target_os = "haiku",
-    target_os = "illumos",
-    target_os = "redox",
-    target_os = "solaris",
-    target_os = "wasi",
-)))]
+#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
 #[allow(missing_docs)]
 pub struct StatVfs {
     pub f_bsize: u64,
@@ -1088,39 +1144,20 @@ pub type FsWord = u32;
 pub type FsWord = u64;
 
 /// `__fsword_t`
-// s390x uses `u32` for `statfs` entries, even though `__fsword_t` is `u64`.
-#[cfg(all(target_os = "linux", target_arch = "s390x"))]
+// s390x uses `u32` for `statfs` entries on glibc, even though `__fsword_t` is
+// `u64`.
+#[cfg(all(target_os = "linux", target_arch = "s390x", target_env = "gnu"))]
 pub type FsWord = u32;
 
-#[cfg(not(target_os = "redox"))]
-pub use c::{UTIME_NOW, UTIME_OMIT};
-
-/// `PROC_SUPER_MAGIC`—The magic number for the procfs filesystem.
-#[cfg(all(
-    any(target_os = "android", target_os = "linux"),
-    not(target_env = "musl"),
-))]
-pub const PROC_SUPER_MAGIC: FsWord = c::PROC_SUPER_MAGIC as FsWord;
-
-/// `NFS_SUPER_MAGIC`—The magic number for the NFS filesystem.
-#[cfg(all(
-    any(target_os = "android", target_os = "linux"),
-    not(target_env = "musl"),
-))]
-pub const NFS_SUPER_MAGIC: FsWord = c::NFS_SUPER_MAGIC as FsWord;
-
-/// `PROC_SUPER_MAGIC`—The magic number for the procfs filesystem.
-#[cfg(all(any(target_os = "android", target_os = "linux"), target_env = "musl"))]
-pub const PROC_SUPER_MAGIC: FsWord = 0x0000_9fa0;
-
-/// `NFS_SUPER_MAGIC`—The magic number for the NFS filesystem.
-#[cfg(all(any(target_os = "android", target_os = "linux"), target_env = "musl"))]
-pub const NFS_SUPER_MAGIC: FsWord = 0x0000_6969;
+/// `__fsword_t`
+// s390x uses `u64` for `statfs` entries on musl.
+#[cfg(all(target_os = "linux", target_arch = "s390x", target_env = "musl"))]
+pub type FsWord = u64;
 
 /// `copyfile_state_t`—State for use with [`fcopyfile`].
 ///
 /// [`fcopyfile`]: crate::fs::fcopyfile
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(apple)]
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
 #[derive(Copy, Clone)]

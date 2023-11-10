@@ -15,6 +15,7 @@ This crate provides some abstractions over reading input, console screen buffer,
 The following WinAPI calls:
 
 - CONSOLE_SCREEN_BUFFER_INFO (used to extract information like cursor pos, terminal size etc.)
+- CONSOLE_FONT_INFO (used to extract font info like size)
 - HANDLE (the handle needed to run functions from WinAPI)
 - SetConsoleActiveScreenBuffer (activate an other screen buffer)
 - Set/GetConsoleMode (e.g. console modes like disabling output)

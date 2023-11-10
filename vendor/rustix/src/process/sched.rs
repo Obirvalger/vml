@@ -55,7 +55,7 @@ impl CpuSet {
     }
 
     /// Count the number of CPUs set in the `CpuSet`.
-    #[cfg(any(target_os = "android", target_os = "linux"))]
+    #[cfg(linux_kernel)]
     #[inline]
     pub fn count(&self) -> u32 {
         backend::process::cpu_set::CPU_COUNT(&self.cpu_set)
@@ -80,8 +80,8 @@ impl Default for CpuSet {
 /// `pid` is the thread ID to update. If pid is `None`, then the current thread
 /// is updated.
 ///
-/// The `CpuSet` argument specifies the set of CPUs on which the thread will
-/// be eligible to run.
+/// The `CpuSet` argument specifies the set of CPUs on which the thread will be
+/// eligible to run.
 ///
 /// # References
 ///  - [Linux]

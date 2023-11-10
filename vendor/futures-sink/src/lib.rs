@@ -4,11 +4,16 @@
 //! asynchronously.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms, unreachable_pub)]
+#![warn(missing_debug_implementations, missing_docs, rust_2018_idioms, unreachable_pub)]
 // It cannot be included in the published code because this lints have false positives in the minimum required version.
 #![cfg_attr(test, warn(single_use_lifetimes))]
-#![warn(clippy::all)]
-#![doc(test(attr(deny(warnings), allow(dead_code, unused_assignments, unused_variables))))]
+#![doc(test(
+    no_crate_inject,
+    attr(
+        deny(warnings, rust_2018_idioms, single_use_lifetimes),
+        allow(dead_code, unused_assignments, unused_variables)
+    )
+))]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -207,7 +212,10 @@ mod if_alloc {
     impl<S: ?Sized + Sink<Item> + Unpin, Item> Sink<Item> for alloc::boxed::Box<S> {
         type Error = S::Error;
 
-        fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Pin::new(&mut **self).poll_ready(cx)
         }
 
@@ -215,11 +223,17 @@ mod if_alloc {
             Pin::new(&mut **self).start_send(item)
         }
 
-        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_flush(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Pin::new(&mut **self).poll_flush(cx)
         }
 
-        fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_close(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Pin::new(&mut **self).poll_close(cx)
         }
     }

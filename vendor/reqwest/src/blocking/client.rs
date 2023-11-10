@@ -338,6 +338,10 @@ impl ClientBuilder {
 
     /// Clear all `Proxies`, so `Client` will use no proxy anymore.
     ///
+    /// # Note
+    /// To add a proxy exclusion list, use [crate::proxy::Proxy::no_proxy()]
+    /// on all desired proxies instead.
+    ///
     /// This also disables the automatic usage of the "system" proxy.
     pub fn no_proxy(self) -> ClientBuilder {
         self.with_inner(move |inner| inner.no_proxy())
@@ -416,6 +420,20 @@ impl ClientBuilder {
         self.with_inner(|inner| inner.http1_allow_obsolete_multiline_headers_in_responses(value))
     }
 
+    /// Sets whether invalid header lines should be silently ignored in HTTP/1 responses.
+    pub fn http1_ignore_invalid_headers_in_responses(self, value: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.http1_ignore_invalid_headers_in_responses(value))
+    }
+
+    /// Set whether HTTP/1 connections will accept spaces between header
+    /// names and the colon that follow them in responses.
+    ///
+    /// Newline codepoints (\r and \n) will be transformed to spaces when
+    /// parsing.
+    pub fn http1_allow_spaces_after_header_name_in_responses(self, value: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.http1_allow_spaces_after_header_name_in_responses(value))
+    }
+
     /// Only use HTTP/1.
     pub fn http1_only(self) -> ClientBuilder {
         self.with_inner(|inner| inner.http1_only())
@@ -462,7 +480,7 @@ impl ClientBuilder {
 
     // TCP options
 
-    /// Set whether sockets have `SO_NODELAY` enabled.
+    /// Set whether sockets have `TCP_NODELAY` enabled.
     ///
     /// Default is `true`.
     pub fn tcp_nodelay(self, enabled: bool) -> ClientBuilder {
@@ -544,7 +562,7 @@ impl ClientBuilder {
     }
 
     /// Controls the use of built-in system certificates during certificate validation.
-    ///         
+    ///
     /// Defaults to `true` -- built-in system certs will be used.
     ///
     /// # Optional
@@ -618,6 +636,22 @@ impl ClientBuilder {
     )]
     pub fn danger_accept_invalid_certs(self, accept_invalid_certs: bool) -> ClientBuilder {
         self.with_inner(|inner| inner.danger_accept_invalid_certs(accept_invalid_certs))
+    }
+
+    /// Controls the use of TLS server name indication.
+    ///
+    /// Defaults to `true`.
+    #[cfg(feature = "__tls")]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "default-tls",
+            feature = "native-tls",
+            feature = "rustls-tls"
+        )))
+    )]
+    pub fn tls_sni(self, tls_sni: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.tls_sni(tls_sni))
     }
 
     /// Set the minimum required TLS version for connections.
@@ -702,6 +736,25 @@ impl ClientBuilder {
     #[cfg_attr(docsrs, doc(cfg(feature = "rustls-tls")))]
     pub fn use_rustls_tls(self) -> ClientBuilder {
         self.with_inner(move |inner| inner.use_rustls_tls())
+    }
+
+    /// Add TLS information as `TlsInfo` extension to responses.
+    ///
+    /// # Optional
+    ///
+    /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
+    /// feature to be enabled.
+    #[cfg(feature = "__tls")]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "default-tls",
+            feature = "native-tls",
+            feature = "rustls-tls"
+        )))
+    )]
+    pub fn tls_info(self, tls_info: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.tls_info(tls_info))
     }
 
     /// Use a preconfigured TLS backend.

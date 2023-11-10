@@ -1,10 +1,14 @@
-use regex_automata::DFA;
+use regex_automata::{dfa::Automaton, Anchored, Input};
 
-use ext_slice::ByteSlice;
-use unicode::fsm::grapheme_break_fwd::GRAPHEME_BREAK_FWD;
-use unicode::fsm::grapheme_break_rev::GRAPHEME_BREAK_REV;
-use unicode::fsm::regional_indicator_rev::REGIONAL_INDICATOR_REV;
-use utf8;
+use crate::{
+    ext_slice::ByteSlice,
+    unicode::fsm::{
+        grapheme_break_fwd::GRAPHEME_BREAK_FWD,
+        grapheme_break_rev::GRAPHEME_BREAK_REV,
+        regional_indicator_rev::REGIONAL_INDICATOR_REV,
+    },
+    utf8,
+};
 
 /// An iterator over grapheme clusters in a byte string.
 ///
@@ -125,7 +129,7 @@ pub struct GraphemeIndices<'a> {
 
 impl<'a> GraphemeIndices<'a> {
     pub(crate) fn new(bs: &'a [u8]) -> GraphemeIndices<'a> {
-        GraphemeIndices { bs: bs, forward_index: 0, reverse_index: bs.len() }
+        GraphemeIndices { bs, forward_index: 0, reverse_index: bs.len() }
     }
 
     /// View the underlying data as a subslice of the original data.
@@ -191,9 +195,28 @@ impl<'a> DoubleEndedIterator for GraphemeIndices<'a> {
 pub fn decode_grapheme(bs: &[u8]) -> (&str, usize) {
     if bs.is_empty() {
         ("", 0)
-    } else if let Some(end) = GRAPHEME_BREAK_FWD.find(bs) {
+    } else if bs.len() >= 2
+        && bs[0].is_ascii()
+        && bs[1].is_ascii()
+        && !bs[0].is_ascii_whitespace()
+    {
+        // FIXME: It is somewhat sad that we have to special case this, but it
+        // leads to a significant speed up in predominantly ASCII text. The
+        // issue here is that the DFA has a bit of overhead, and running it for
+        // every byte in mostly ASCII text results in a bit slowdown. We should
+        // re-litigate this once regex-automata 0.3 is out, but it might be
+        // hard to avoid the special case. A DFA is always going to at least
+        // require some memory access.
+
+        // Safe because all ASCII bytes are valid UTF-8.
+        let grapheme = unsafe { bs[..1].to_str_unchecked() };
+        (grapheme, 1)
+    } else if let Some(hm) = {
+        let input = Input::new(bs).anchored(Anchored::Yes);
+        GRAPHEME_BREAK_FWD.try_search_fwd(&input).unwrap()
+    } {
         // Safe because a match can only occur for valid UTF-8.
-        let grapheme = unsafe { bs[..end].to_str_unchecked() };
+        let grapheme = unsafe { bs[..hm.offset()].to_str_unchecked() };
         (grapheme, grapheme.len())
     } else {
         const INVALID: &'static str = "\u{FFFD}";
@@ -206,8 +229,11 @@ pub fn decode_grapheme(bs: &[u8]) -> (&str, usize) {
 fn decode_last_grapheme(bs: &[u8]) -> (&str, usize) {
     if bs.is_empty() {
         ("", 0)
-    } else if let Some(mut start) = GRAPHEME_BREAK_REV.rfind(bs) {
-        start = adjust_rev_for_regional_indicator(bs, start);
+    } else if let Some(hm) = {
+        let input = Input::new(bs).anchored(Anchored::Yes);
+        GRAPHEME_BREAK_REV.try_search_rev(&input).unwrap()
+    } {
+        let start = adjust_rev_for_regional_indicator(bs, hm.offset());
         // Safe because a match can only occur for valid UTF-8.
         let grapheme = unsafe { bs[start..].to_str_unchecked() };
         (grapheme, grapheme.len())
@@ -246,8 +272,11 @@ fn adjust_rev_for_regional_indicator(mut bs: &[u8], i: usize) -> usize {
     // regional indicator codepoints. A fix probably requires refactoring this
     // code a bit such that we don't rescan regional indicators.
     let mut count = 0;
-    while let Some(start) = REGIONAL_INDICATOR_REV.rfind(bs) {
-        bs = &bs[..start];
+    while let Some(hm) = {
+        let input = Input::new(bs).anchored(Anchored::Yes);
+        REGIONAL_INDICATOR_REV.try_search_rev(&input).unwrap()
+    } {
+        bs = &bs[..hm.offset()];
         count += 1;
     }
     if count % 2 == 0 {
@@ -257,15 +286,17 @@ fn adjust_rev_for_regional_indicator(mut bs: &[u8], i: usize) -> usize {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
+    #[cfg(not(miri))]
     use ucd_parse::GraphemeClusterBreakTest;
 
+    use crate::{ext_slice::ByteSlice, tests::LOSSY_TESTS};
+
     use super::*;
-    use ext_slice::ByteSlice;
-    use tests::LOSSY_TESTS;
 
     #[test]
+    #[cfg(not(miri))]
     fn forward_ucd() {
         for (i, test) in ucdtests().into_iter().enumerate() {
             let given = test.grapheme_clusters.concat();
@@ -288,6 +319,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(miri))]
     fn reverse_ucd() {
         for (i, test) in ucdtests().into_iter().enumerate() {
             let given = test.grapheme_clusters.concat();
@@ -329,15 +361,18 @@ mod tests {
         }
     }
 
+    #[cfg(not(miri))]
     fn uniescape(s: &str) -> String {
         s.chars().flat_map(|c| c.escape_unicode()).collect::<String>()
     }
 
+    #[cfg(not(miri))]
     fn uniescape_vec(strs: &[String]) -> Vec<String> {
         strs.iter().map(|s| uniescape(s)).collect()
     }
 
     /// Return all of the UCD for grapheme breaks.
+    #[cfg(not(miri))]
     fn ucdtests() -> Vec<GraphemeClusterBreakTest> {
         const TESTDATA: &'static str =
             include_str!("data/GraphemeBreakTest.txt");

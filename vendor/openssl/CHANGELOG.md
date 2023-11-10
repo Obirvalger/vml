@@ -2,6 +2,322 @@
 
 ## [Unreleased]
 
+## [v0.10.59] - 2023-11-03
+
+### Added
+
+* Added `Nid::CHACHA20_POLY1305`
+
+### Changed
+
+* Fixed the availability of `Id::RSA_PSS` on OpenSSL
+
+## [v0.10.58] - 2023-11-01
+
+### Added
+
+* Added `Id::{RSA_PSS,DHX}` constants
+* Added `SslContextBuilder::set_security_level`
+* Added `SslContextRef::security_level`
+* Added `SslRef::set_security_level`, `SslRef::security_level`
+* Added `Cipher::{camellia_128_cbc, camellia_192_cbc, camellia_256_cbc, cast5_cbc, idea_cbc}`
+* Added `X509CrlRef::extension`
+* Added `X509PurposeId::CODE_SIGN`
+
+### Changed
+
+* `Pkey` HKDF functionality now works on LibreSSL
+* `BigNum::mod_sqrt` is now available on all OpenSSLs
+* `MessageDigest::sha3*` are now available on LibreSSL
+
+## [v0.10.57] - 2023-08-27
+
+### Added
+* Added `X509VerifyParam::set_email`
+* `Cipher::chacha20_poly1305` is now available on LibreSSL
+* Added `CipherCtx::copy`
+
+### Changed
+* Updated `bitflags` dependecy to the 2.x series
+
+## [v0.10.56] - 2023-08-06
+
+## Added
+
+* Added `BigNumRef::mod_sqrt`.
+* Added `PkeyCtxRef::set_signature_md` and `PkeyCtxRef::set_rsa_pss_saltlen`.
+* Added `PkeyCtxRef::verify_recover_init` and `PkeyCtxRef::verify_recover`.
+* Added `BigNumRef::is_even` and `BigNumRef::is_odd`.
+* Added `EcPointRef::to_hex_str` and `EcPoint::from_hex_str`.
+* Added support for AES key wrap and wrap pad.
+
+## [v0.10.55] - 2023-06-20
+
+### Fixed
+
+* Fixed compilation with the latest version of BoringSSL.
+* Fixed compilation when OpenSSL is compiled with `OPENSSL_NO_OCB`.
+* Fixed a segfault in `X509VerifyParamRef::set_host` when called with an empty string.
+
+### Added
+
+* Added `Deriver::set_peer_ex`.
+* Added `EcGroupRef::asn1_flag`.
+* Exposed `EcPointRef::affine_coordinates` on BoringSSL and LibreSSL.
+* Added `Nid::SM2` and `Id::SM2`
+
+## [v0.10.54] - 2023-05-31
+
+### Fixed
+
+* `PKey::private_key_to_pkcs8_passphrase` no longer panics if a `passphrase` contains a NUL byte.
+
+## [v0.10.53] - 2023-05-30
+
+### Added
+
+* Added `Dsa::from_pqg`, `Dsa::generate_key`, and `Dsa::generate_params`.
+* Added `SslRef::bytes_to_cipher_list`.
+* Added `SubjectAlternativeName::other_name2`
+
+## [v0.10.52] - 2023-04-24
+
+### Added
+
+* Added `DhRef::check_key`.
+* Added `Id::POLY1305`.
+* Added `X509Ref::subject_key_id`, `X509Ref::authority_key_id`, `X509Ref::authority_issuer`, and `X509Ref::authority_serial`.
+
+
+## [v0.10.51] - 2023-04-20
+
+### Added
+
+* Added `X509RevokedRef::issuer_name` and `X509RevokedRef::reason_code`.
+* Added `Dh::set_key` and `Dh::set_public_key`
+* Added `Asn1OctetString` and `Asn1OctetStringRef1`
+* Added `X509Extension::new_from_der`
+
+### Deprecated
+
+* Deprecated `X509Extension::new` and `X509Extension::new_nid` in favor of `X509Extension::new_from_der` and the `extensions` module.
+* Deprecated `X509Extension::add_alias`, it is not required with `new_from_der` or the `extensions` module.
+
+## [v0.10.50] - 2023-04-09
+
+### Added
+
+* Added `CipherCtxRef::cipher_update_inplace`.
+
+## [v0.10.49] - 2023-04-01
+
+### Fixed
+
+* `SslConnector` no longer sets the SNI extension when connecting to an IP address.
+
+### Added
+
+* Implemented `Ord`, `PartialOrd`, `Eq`, and `PartialEq` for `Asn1Integer` and `Asn1IntegerRef`.
+* Added `X509Ref::crl_distribution_points`, and `DistPoint`.
+
+## [v0.10.48] - 2023-03-23
+
+### Fixed
+
+* Fixed injection vulnerabilities where OpenSSL's configuration mini-language could be used via `x509::extension::SubjectAlternativeName` and `x509::extension::ExtendedKeyUsage`. The mini-language can read arbitrary files amongst other things.
+  * As part of fixing this `SubjectAlternativeName::dir_name` and `SubjectAlternativeName::other_name` are deprecated and their implementations always `panic!`. If you have a use case for these, please file an issue.
+* Fixed several NULL pointer dereferences in OpenSSL that could be triggered via `x509::X509Extension::new` and `x509::X509Extension::new_nid`. Note that these methods still accept OpenSSL's configuration mini-language, and therefore should not be used with untrusted data.
+* Fixed a data-race with `x509::X509Name` that are created with `x509::X509NameBuilder` and then used concurrently.
+* Fixed LibreSSL version checking. More functions should now be correctly available on LibreSSL.
+
+## [v0.10.47] - 2023-03-19
+
+### Added
+
+* Added support for X25519 and Ed25519 on LibreSSL and BoringSSL.
+* Added `Error::library_code` and `Error::reason_code`.
+
+## [v0.10.46] - 2023-03-14
+
+### Fixed
+
+* Fixed a potential null-pointer deref when parsing a PKCS#12 archive with no identity.
+* Fixed builds against OpenSSL built with `no-cast`.
+* Fixed debug formatting of `GeneralName`.
+
+### Deprecated
+
+* Deprecated `PKcs12Ref::parse` in favor of `Pkcs12Ref::parse2`.
+* Deprecated `ParsedPkcs12` in favor of `ParsedPkcs12_2`.
+* Deprecated `Pkcs12Builder::build` in favor of `Pkcs12Builder::build2`.
+
+### Added
+
+* Added `X509VerifyParamRef::set_auth_level`, `X509VerifyParamRef::auth_level`, and `X509VerifyParamRef::set_purpose`.
+* Added `X509PurposeId` and `X509Purpose`.
+* Added `X509NameBuilder::append_entry`.
+* Added `PKeyRef::private_key_to_pkcs8`.
+* Added `X509LookupRef::load_crl_file`.
+* Added `Pkcs12Builder::name`, `Pkcs12Builder::pkey`, and `Pkcs12Builder::cert`.
+* Added `SslRef::set_method`, `SslRef::set_private_key_file`, `SslRef::set_private_key`, `SslRef::set_certificate`, `SslRef::set_certificate_chain_file`, `SslRef::add_client_ca`, `SslRef::set_client_ca_list`, `SslRef::set_min_proto_version`, `SslREf::set_max_proto_version`, `SslRef::set_ciphersuites`, `SslRef::set_cipher_list`, `SslRef::set_verify_cert_store`.
+* Added `X509NameRef::to_owned`.
+* Added `SslContextBuilder::set_num_tickets`, `SslContextRef::num_tickets`, `SslRef::set_num_tickets`, and `SslRef::num_tickets`.
+* Added `CmsContentInfo::verify`.
+
+## [v0.10.45] - 2022-12-20
+
+### Fixed
+
+* Removed the newly added `CipherCtxRef::minimal_output_size` method, which did not work properly.
+* Added `NO_DEPRECATED_3_0` cfg checks for more APIs.
+
+### Added
+
+* Added `SslRef::add_chain_cert`.
+* Added `PKeyRef::security_bits`.
+* Added `Provider::set_default_search_path`.
+* Added `CipherCtxRef::cipher_final_unchecked`.
+
+## [v0.10.44] - 2022-12-06
+
+### Added
+
+* Added `CipherCtxRef::num`, `CipherCtxRef::minimal_output_size`, and `CipherCtxRef::cipher_update_unchecked`.
+* Improved output buffer size checks in `CipherCtxRef::cipher_update`.
+* Added `X509Lookup::file` and `X509LookupRef::load_cert_file`.
+
+## [v0.10.43] - 2022-11-23
+
+### Added
+
+* Added `Nid::BRAINPOOL_P256R1`, `Nid::BRAINPOOL_P384R1`, `Nid::BRAINPOOL_P512R1`.
+* Added `BigNumRef::copy_from_slice`.
+* Added `Cipher` constructors for Camellia, CAST5, and IDEA ciphers.
+* Added `DsaSig`.
+* Added `X509StoreBuilderRef::set_param`.
+* Added `X509VerifyParam::new`, `X509VerifyParamRef::set_time`, and `X509VerifyParamRef::set_depth`.
+
+## [v0.10.42] - 2022-09-26
+
+### Added
+
+* Added `SslRef::psk_identity_hint` and  `SslRef::psk_identity`.
+* Added SHA-3 constants to `Nid`.
+* Added `SslOptions::PRIORITIZE_CHACHA`.
+* Added `X509ReqRef::to_text`.
+* Added `MdCtxRef::size`.
+* Added `X509NameRef::try_cmp`.
+* Added `MdCtxRef::reset`.
+* Added experimental, unstable support for BoringSSL.
+
+### Fixed
+
+* Fixed `MdCtxRef::digest_verify_init` to support `PKey`s with only public components.
+
+## [v0.10.41] - 2022-06-09
+
+### Fixed
+
+* Fixed a use-after-free in `Error::function` and `Error::file` with OpenSSL 3.x.
+
+### Added
+
+* Added `MessageDigest::block_size` and `MdRef::block_size`.
+* Implemented `Ord` and `Eq` for `X509` and `X509Ref`.
+* Added `X509Extension::add_alias`.
+* Added SM4 support.
+* Added `EcGroup::from_components` `EcGropuRef::set_generator`, and `EcPointRef::set_affine_coordinates_gfp`.
+
+## [v0.10.40] - 2022-05-04
+
+### Fixed
+
+* Fixed the openssl-sys dependency version.
+
+## [v0.10.39] - 2022-05-02
+
+### Deprecated
+
+* Deprecated `SslContextBuilder::set_tmp_ecdh_callback` and `SslRef::set_tmp_ecdh_callback`.
+
+### Added
+
+* Added `SslRef::extms_support`.
+* Added `Nid::create`.
+* Added `CipherCtx`, which exposes a more direct interface to `EVP_CIPHER_CTX`.
+* Added `PkeyCtx`, which exposes a more direct interface to `EVP_PKEY_CTX`.
+* Added `MdCtx`, which exposes a more direct interface to `EVP_MD_CTX`.
+* Added `Pkcs12Builder::mac_md`.
+* Added `Provider`.
+* Added `X509Ref::issuer_name_hash`.
+* Added `Decrypter::set_rsa_oaep_label`.
+* Added `X509Ref::to_text`.
+
+## [v0.10.38] - 2021-10-31
+
+### Added
+
+* Added `Pkey::ec_gen`.
+
+## [v0.10.37] - 2021-10-27
+
+### Fixed
+
+* Fixed linkage against OpenSSL distributions built with `no-chacha`.
+
+### Added
+
+* Added `BigNumRef::to_vec_padded`.
+* Added `X509Name::from_der` and `X509NameRef::to_der`.
+* Added `BigNum::new_secure`, `BigNumReef::set_const_time`, `BigNumref::is_const_time`, and `BigNumRef::is_secure`.
+
+## [v0.10.36] - 2021-08-17
+
+### Added
+
+* Added `Asn1Object::as_slice`.
+* Added `PKeyRef::{raw_public_key, raw_private_key, private_key_to_pkcs8_passphrase}` and
+    `PKey::{private_key_from_raw_bytes, public_key_from_raw_bytes}`.
+* Added `Cipher::{seed_cbc, seed_cfb128, seed_ecb, seed_ofb}`.
+
+## [v0.10.35] - 2021-06-18
+
+### Fixed
+
+* Fixed a memory leak in `Deriver`.
+
+### Added
+
+* Added support for OpenSSL 3.x.x.
+* Added `SslStream::peek`.
+
+## [v0.10.34] - 2021-04-28
+
+### Added
+
+* Added `Dh::set_private_key` and `DhRef::private_key`.
+* Added `EcPointRef::affine_coordinates`.
+* Added `TryFrom` implementations to convert between `PKey` and specific key types.
+* Added `X509StoreBuilderRef::set_flags`.
+
+## [v0.10.33] - 2021-03-13
+
+### Fixed
+
+* `Dh::generate_params` now uses `DH_generate_params_ex` rather than the deprecated `DH_generated_params` function.
+
+### Added
+
+* Added `Asn1Type`.
+* Added `CmsContentInfoRef::decrypt_without_cert_check`.
+* Added `EcPointRef::{is_infinity, is_on_curve}`.
+* Added `Encrypter::set_rsa_oaep_label`.
+* Added `MessageDigest::sm3`.
+* Added `Pkcs7Ref::signers`.
+* Added `Cipher::nid`.
+* Added `X509Ref::authority_info` and `AccessDescription::{method, location}`.
+* Added `X509NameBuilder::{append_entry_by_text_with_type, append_entry_by_nid_with_type}`.
+
 ## [v0.10.32] - 2020-12-24
 
 ### Fixed
@@ -509,7 +825,34 @@
 
 Look at the [release tags] for information about older releases.
 
-[Unreleased]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.32...master
+[Unreleased]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.59...master
+[v0.10.59]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.58...openssl-v0.10.59
+[v0.10.58]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.57...openssl-v0.10.58
+[v0.10.57]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.56...openssl-v0.10.57
+[v0.10.56]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.55...openssl-v0.10.56
+[v0.10.55]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.54...openssl-v0.10.55
+[v0.10.54]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.53...openssl-v0.10.54
+[v0.10.53]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.52...openssl-v0.10.53
+[v0.10.52]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.51...openssl-v0.10.52
+[v0.10.51]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.50...openssl-v0.10.51
+[v0.10.50]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.49...openssl-v0.10.50
+[v0.10.49]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.48...openssl-v0.10.49
+[v0.10.48]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.47...openssl-v0.10.48
+[v0.10.47]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.46...openssl-v0.10.47
+[v0.10.46]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.45...openssl-v0.10.46
+[v0.10.45]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.44...openssl-v0.10.45
+[v0.10.44]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.43...openssl-v0.10.44
+[v0.10.43]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.42...openssl-v0.10.43
+[v0.10.42]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.41...openssl-v0.10.42
+[v0.10.41]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.40...openssl-v0.10.41
+[v0.10.40]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.39...openssl-v0.10.40
+[v0.10.39]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.38...openssl-v0.10.39
+[v0.10.38]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.37...openssl-v0.10.38
+[v0.10.37]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.36...openssl-v0.10.37
+[v0.10.36]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.35...openssl-v0.10.36
+[v0.10.35]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.34...openssl-v0.10.35
+[v0.10.34]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.33...openssl-v0.10.34
+[v0.10.33]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.32...openssl-v0.10.33
 [v0.10.32]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.31...openssl-v0.10.32
 [v0.10.31]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.30...openssl-v0.10.31
 [v0.10.30]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.29...openssl-v0.10.30

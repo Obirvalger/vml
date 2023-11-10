@@ -20,7 +20,8 @@ impl<'a, R: AsyncBufRead + ?Sized + Unpin> FillBuf<'a, R> {
 }
 
 impl<'a, R> Future for FillBuf<'a, R>
-    where R: AsyncBufRead + ?Sized + Unpin,
+where
+    R: AsyncBufRead + ?Sized + Unpin,
 {
     type Output = io::Result<&'a [u8]>;
 
@@ -29,7 +30,7 @@ impl<'a, R> Future for FillBuf<'a, R>
         let reader = this.reader.take().expect("Polled FillBuf after completion");
 
         match Pin::new(&mut *reader).poll_fill_buf(cx) {
-            // With polinius it is possible to remove this inner match and just have the correct
+            // With polonius it is possible to remove this inner match and just have the correct
             // lifetime of the reference inferred based on which branch is taken
             Poll::Ready(Ok(_)) => match Pin::new(reader).poll_fill_buf(cx) {
                 Poll::Ready(Ok(slice)) => Poll::Ready(Ok(slice)),

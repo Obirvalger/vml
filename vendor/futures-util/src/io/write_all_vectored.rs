@@ -1,10 +1,9 @@
-use futures_core::ready;
 use futures_core::future::Future;
+use futures_core::ready;
 use futures_core::task::{Context, Poll};
 use futures_io::AsyncWrite;
 use futures_io::IoSlice;
 use std::io;
-use std::mem;
 use std::pin::Pin;
 
 /// Future for the
@@ -19,8 +18,9 @@ pub struct WriteAllVectored<'a, W: ?Sized + Unpin> {
 impl<W: ?Sized + Unpin> Unpin for WriteAllVectored<'_, W> {}
 
 impl<'a, W: AsyncWrite + ?Sized + Unpin> WriteAllVectored<'a, W> {
-    pub(super) fn new(writer: &'a mut W, bufs: &'a mut [IoSlice<'a>]) -> Self {
-        Self { writer, bufs: IoSlice::advance(bufs, 0) }
+    pub(super) fn new(writer: &'a mut W, mut bufs: &'a mut [IoSlice<'a>]) -> Self {
+        IoSlice::advance_slices(&mut bufs, 0);
+        Self { writer, bufs }
     }
 }
 
@@ -34,7 +34,7 @@ impl<W: AsyncWrite + ?Sized + Unpin> Future for WriteAllVectored<'_, W> {
             if n == 0 {
                 return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
             } else {
-                this.bufs = IoSlice::advance(mem::take(&mut this.bufs), n);
+                IoSlice::advance_slices(&mut this.bufs, n);
             }
         }
 
@@ -56,11 +56,7 @@ mod tests {
     /// Create a new writer that reads from at most `n_bufs` and reads
     /// `per_call` bytes (in total) per call to write.
     fn test_writer(n_bufs: usize, per_call: usize) -> TestWriter {
-        TestWriter {
-            n_bufs,
-            per_call,
-            written: Vec::new(),
-        }
+        TestWriter { n_bufs, per_call, written: Vec::new() }
     }
 
     // TODO: maybe move this the future-test crate?
@@ -110,10 +106,9 @@ mod tests {
             let expected = $expected;
             match $e {
                 Poll::Ready(Ok(ok)) if ok == expected => {}
-                got => panic!(
-                    "unexpected result, got: {:?}, wanted: Ready(Ok({:?}))",
-                    got, expected
-                ),
+                got => {
+                    panic!("unexpected result, got: {:?}, wanted: Ready(Ok({:?}))", got, expected)
+                }
             }
         };
     }
@@ -154,11 +149,7 @@ mod tests {
         assert_poll_ok!(dst.as_mut().poll_write_vectored(&mut cx, bufs), 3);
 
         // Read at most 3 bytes from three buffers.
-        let bufs = &[
-            IoSlice::new(&[3]),
-            IoSlice::new(&[4]),
-            IoSlice::new(&[5, 5]),
-        ];
+        let bufs = &[IoSlice::new(&[3]), IoSlice::new(&[4]), IoSlice::new(&[5, 5])];
         assert_poll_ok!(dst.as_mut().poll_write_vectored(&mut cx, bufs), 3);
 
         assert_eq!(dst.written, &[1, 2, 2, 3, 4, 5]);

@@ -1,5 +1,12 @@
-//! Low-level implementation details for libc-like runtime libraries such as
-//! [origin].
+//! Experimental low-level implementation details for libc-like runtime
+//! libraries such as [Origin].
+//!
+//! Do not use the functions in this module unless you've read all of their
+//! code. They don't always behave the same way as functions with similar names
+//! in `libc`. Sometimes information about the differences is included in the
+//! Linux documentation under “C library/kernel differences” sections. And, if
+//! there is a libc in the process, these functions may have surprising
+//! interactions with it.
 //!
 //! These functions are for implementing thread-local storage (TLS), managing
 //! threads, loaded libraries, and other process-wide resources. Most of
@@ -10,7 +17,7 @@
 //! The API for these functions is not stable, and this module is
 //! `doc(hidden)`.
 //!
-//! [origin]: https://github.com/sunfishcode/mustang/tree/main/origin
+//! [Origin]: https://github.com/sunfishcode/origin#readme
 //!
 //! # Safety
 //!
@@ -23,38 +30,83 @@ use crate::backend;
 #[cfg(linux_raw)]
 use crate::ffi::CStr;
 #[cfg(linux_raw)]
+#[cfg(feature = "fs")]
 use crate::fs::AtFlags;
 #[cfg(linux_raw)]
 use crate::io;
 #[cfg(linux_raw)]
-use crate::process::Pid;
+use crate::pid::Pid;
 #[cfg(linux_raw)]
+#[cfg(feature = "fs")]
 use backend::fd::AsFd;
 #[cfg(linux_raw)]
 use core::ffi::c_void;
 
 #[cfg(linux_raw)]
+pub use crate::signal::Signal;
+
+/// `sigaction`
+#[cfg(linux_raw)]
+pub type Sigaction = linux_raw_sys::general::kernel_sigaction;
+
+/// `stack_t`
+#[cfg(linux_raw)]
+pub type Stack = linux_raw_sys::general::stack_t;
+
+/// `sigset_t`
+#[cfg(linux_raw)]
+pub type Sigset = linux_raw_sys::general::kernel_sigset_t;
+
+/// `siginfo_t`
+#[cfg(linux_raw)]
+pub type Siginfo = linux_raw_sys::general::siginfo_t;
+
+pub use crate::timespec::{Nsecs, Secs, Timespec};
+
+/// `SIG_*` constants for use with [`sigprocmask`].
+#[cfg(linux_raw)]
+#[repr(u32)]
+pub enum How {
+    /// `SIG_BLOCK`
+    BLOCK = linux_raw_sys::general::SIG_BLOCK,
+
+    /// `SIG_UNBLOCK`
+    UNBLOCK = linux_raw_sys::general::SIG_UNBLOCK,
+
+    /// `SIG_SETMASK`
+    SETMASK = linux_raw_sys::general::SIG_SETMASK,
+}
+
 #[cfg(target_arch = "x86")]
 #[inline]
 pub unsafe fn set_thread_area(u_info: &mut UserDesc) -> io::Result<()> {
     backend::runtime::syscalls::tls::set_thread_area(u_info)
 }
 
-#[cfg(linux_raw)]
 #[cfg(target_arch = "arm")]
 #[inline]
 pub unsafe fn arm_set_tls(data: *mut c_void) -> io::Result<()> {
     backend::runtime::syscalls::tls::arm_set_tls(data)
 }
 
-#[cfg(linux_raw)]
+/// `prctl(PR_SET_FS, data)`—Set the x86-64 `fs` register.
+///
+/// # Safety
+///
+/// This is a very low-level feature for implementing threading libraries.
+/// See the references links above.
 #[cfg(target_arch = "x86_64")]
 #[inline]
 pub unsafe fn set_fs(data: *mut c_void) {
     backend::runtime::syscalls::tls::set_fs(data)
 }
 
-#[cfg(linux_raw)]
+/// Set the x86-64 thread ID address.
+///
+/// # Safety
+///
+/// This is a very low-level feature for implementing threading libraries.
+/// See the references links above.
 #[inline]
 pub unsafe fn set_tid_address(data: *mut c_void) -> Pid {
     backend::runtime::syscalls::tls::set_tid_address(data)
@@ -63,7 +115,7 @@ pub unsafe fn set_tid_address(data: *mut c_void) -> Pid {
 /// `prctl(PR_SET_NAME, name)`
 ///
 /// # References
-///  - [Linux]: https://man7.org/linux/man-pages/man2/prctl.2.html
+///  - [Linux]
 ///
 /// # Safety
 ///
@@ -71,7 +123,6 @@ pub unsafe fn set_tid_address(data: *mut c_void) -> Pid {
 /// See the references links above.
 ///
 /// [Linux]: https://man7.org/linux/man-pages/man2/prctl.2.html
-#[cfg(linux_raw)]
 #[inline]
 pub unsafe fn set_thread_name(name: &CStr) -> io::Result<()> {
     backend::runtime::syscalls::tls::set_thread_name(name)
@@ -86,7 +137,6 @@ pub use backend::runtime::tls::UserDesc;
 /// # Safety
 ///
 /// This is a very low-level feature for implementing threading libraries.
-#[cfg(linux_raw)]
 #[inline]
 pub unsafe fn exit_thread(status: i32) -> ! {
     backend::runtime::syscalls::tls::exit_thread(status)
@@ -96,7 +146,7 @@ pub unsafe fn exit_thread(status: i32) -> ! {
 ///
 /// This is equivalent to `_exit` and `_Exit` in libc.
 ///
-/// This does not all any `__cxa_atexit`, `atexit`, or any other destructors.
+/// This does not call any `__cxa_atexit`, `atexit`, or any other destructors.
 /// Most programs should use [`std::process::exit`] instead of calling this
 /// directly.
 ///
@@ -107,34 +157,76 @@ pub unsafe fn exit_thread(status: i32) -> ! {
 ///
 /// [POSIX `_Exit`]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/_Exit.html
 /// [Linux `exit_group`]: https://man7.org/linux/man-pages/man2/exit_group.2.html
-/// [Linux `_Exit`]: https://man7.org/linux/man-pages/man2/exit.2.html
+/// [Linux `_Exit`]: https://man7.org/linux/man-pages/man2/_Exit.2.html
 #[doc(alias = "_exit")]
 #[doc(alias = "_Exit")]
 #[inline]
 pub fn exit_group(status: i32) -> ! {
-    backend::process::syscalls::exit_group(status)
+    backend::runtime::syscalls::exit_group(status)
 }
+
+/// `EXIT_SUCCESS` for use with [`exit_group`].
+///
+/// # References
+///  - [POSIX]
+///  - [Linux]
+///
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/stdlib.h.html
+/// [Linux]: https://man7.org/linux/man-pages/man3/exit.3.html
+pub const EXIT_SUCCESS: i32 = backend::c::EXIT_SUCCESS;
+
+/// `EXIT_FAILURE` for use with [`exit_group`].
+///
+/// # References
+///  - [POSIX]
+///  - [Linux]
+///
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/stdlib.h.html
+/// [Linux]: https://man7.org/linux/man-pages/man3/exit.3.html
+pub const EXIT_FAILURE: i32 = backend::c::EXIT_FAILURE;
 
 /// Return fields from the main executable segment headers ("phdrs") relevant
 /// to initializing TLS provided to the program at startup.
-#[cfg(linux_raw)]
+///
+/// `addr` will always be non-null, even when the TLS data is absent, so that
+/// the `addr` and `file_size` parameters are suitable for creating a slice
+/// with `slice::from_raw_parts`.
 #[inline]
 pub fn startup_tls_info() -> StartupTlsInfo {
     backend::runtime::tls::startup_tls_info()
 }
 
-/// `(getauxval(AT_PHDR), getauxval(AT_PHNUM))`—Returns the address and
-/// number of ELF segment headers for the main executable.
+/// `(getauxval(AT_PHDR), getauxval(AT_PHENT), getauxval(AT_PHNUM))`—Returns
+/// the address, ELF segment header size, and number of ELF segment headers for
+/// the main executable.
 ///
 /// # References
 ///  - [Linux]
 ///
 /// [Linux]: https://man7.org/linux/man-pages/man3/getauxval.3.html
-#[cfg(linux_raw)]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 #[inline]
-pub fn exe_phdrs() -> (*const c_void, usize) {
+pub fn exe_phdrs() -> (*const c_void, usize, usize) {
     backend::param::auxv::exe_phdrs()
+}
+
+/// `getauxval(AT_ENTRY)`—Returns the address of the program entrypoint.
+///
+/// Most code interested in the program entrypoint address should instead use a
+/// symbol reference to `_start`. That will be properly PC-relative or
+/// relocated if needed, and will come with appropriate pointer type and
+/// pointer provenance.
+///
+/// This function is intended only for use in code that implements those
+/// relocations, to compute the ASLR offset. It has type `usize`, so it doesn't
+/// carry any provenance, and it shouldn't be used to dereference memory.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man3/getauxval.3.html
+#[inline]
+pub fn entry() -> usize {
+    backend::param::auxv::entry()
 }
 
 #[cfg(linux_raw)]
@@ -181,13 +273,19 @@ pub use backend::runtime::tls::StartupTlsInfo;
 ///    that could cause undefined behavior. The extent to which this also
 ///    applies to Rust functions is unclear at this time.
 ///
+///  - And more.
+///
 /// # Safety
 ///
 /// The child must avoid accessing any memory shared with the parent in a
 /// way that invokes undefined behavior. It must avoid accessing any threading
 /// runtime functions in a way that invokes undefined behavior. And it must
 /// avoid invoking any undefined behavior through any function that is not
-/// guaranteed to be async-signal-safe.
+/// guaranteed to be async-signal-safe. But, what does async-signal-safe even
+/// mean in a Rust program? This documentation does not have all the answers.
+///
+/// So you're on your own. And on top of all the troubles with `fork` in
+/// general, this wrapper implementation is highly experimental.
 ///
 /// # References
 ///  - [POSIX]
@@ -209,7 +307,7 @@ pub use backend::runtime::tls::StartupTlsInfo;
 /// > It is better you
 /// > Do not.
 ///
-/// - "Rules", by Karla Kuskin
+/// - “Rules”, by Karla Kuskin
 ///
 /// [`MAP_SHARED`]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/mmap.html
 /// [not considered unsafe]: https://doc.rust-lang.org/reference/behavior-not-considered-unsafe.html#deadlocks
@@ -217,7 +315,6 @@ pub use backend::runtime::tls::StartupTlsInfo;
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/fork.2.html
 /// [async-signal-safe]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_04_03
-#[cfg(linux_raw)]
 pub unsafe fn fork() -> io::Result<Option<Pid>> {
     backend::runtime::syscalls::fork()
 }
@@ -234,8 +331,9 @@ pub unsafe fn fork() -> io::Result<Option<Pid>> {
 ///  - [Linux]
 ///
 /// [Linux]: https://man7.org/linux/man-pages/man2/execveat.2.html
-#[cfg(linux_raw)]
 #[inline]
+#[cfg(feature = "fs")]
+#[cfg_attr(doc_cfg, doc(cfg(feature = "fs")))]
 pub unsafe fn execveat<Fd: AsFd>(
     dirfd: Fd,
     path: &CStr,
@@ -258,8 +356,170 @@ pub unsafe fn execveat<Fd: AsFd>(
 ///  - [Linux]
 ///
 /// [Linux]: https://man7.org/linux/man-pages/man2/execve.2.html
-#[cfg(linux_raw)]
 #[inline]
 pub unsafe fn execve(path: &CStr, argv: *const *const u8, envp: *const *const u8) -> io::Errno {
     backend::runtime::syscalls::execve(path, argv, envp)
+}
+
+/// `sigaction(signal, &new, &old)`—Modify or query a signal handler.
+///
+/// # Safety
+///
+/// You're on your own. And on top of all the troubles with signal handlers,
+/// this implementation is highly experimental. Even further, it differs from
+/// the libc `sigaction` in several non-obvious and unsafe ways.
+///
+/// # References
+///  - [POSIX]
+///  - [Linux]
+///
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/sigaction.html
+/// [Linux]: https://man7.org/linux/man-pages/man2/sigaction.2.html
+#[inline]
+pub unsafe fn sigaction(signal: Signal, new: Option<Sigaction>) -> io::Result<Sigaction> {
+    backend::runtime::syscalls::sigaction(signal, new)
+}
+
+/// `sigaltstack(new, old)`—Modify or query a signal stack.
+///
+/// # Safety
+///
+/// You're on your own. And on top of all the troubles with signal handlers,
+/// this implementation is highly experimental.
+///
+/// # References
+///  - [POSIX]
+///  - [Linux]
+///
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/sigaltstack.html
+/// [Linux]: https://man7.org/linux/man-pages/man2/sigaltstack.2.html
+#[inline]
+pub unsafe fn sigaltstack(new: Option<Stack>) -> io::Result<Stack> {
+    backend::runtime::syscalls::sigaltstack(new)
+}
+
+/// `tkill(tid, sig)`—Send a signal to a thread.
+///
+/// # Safety
+///
+/// You're on your own. And on top of all the troubles with signal handlers,
+/// this implementation is highly experimental. The warning about the hazard
+/// of recycled thread ID's applies.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man2/tkill.2.html
+#[inline]
+pub unsafe fn tkill(tid: Pid, sig: Signal) -> io::Result<()> {
+    backend::runtime::syscalls::tkill(tid, sig)
+}
+
+/// `sigprocmask(how, set, oldset)`—Adjust the process signal mask.
+///
+/// # Safety
+///
+/// You're on your own. And on top of all the troubles with signal handlers,
+/// this implementation is highly experimental. Even further, it differs from
+/// the libc `sigprocmask` in several non-obvious and unsafe ways.
+///
+/// # References
+///  - [Linux `sigprocmask`]
+///  - [Linux `pthread_sigmask`]
+///
+/// [Linux `sigprocmask`]: https://man7.org/linux/man-pages/man2/sigprocmask.2.html
+/// [Linux `pthread_sigmask`]: https://man7.org/linux/man-pages/man3/pthread_sigmask.3.html
+#[inline]
+#[doc(alias = "pthread_sigmask")]
+pub unsafe fn sigprocmask(how: How, set: Option<&Sigset>) -> io::Result<Sigset> {
+    backend::runtime::syscalls::sigprocmask(how, set)
+}
+
+/// `sigwait(set)`—Wait for signals.
+///
+/// # Safety
+///
+/// If code elsewhere in the process is depending on delivery of a signal to
+/// prevent it from executing some code, this could cause it to miss that
+/// signal and execute that code.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man3/sigwait.3.html
+#[inline]
+pub unsafe fn sigwait(set: &Sigset) -> io::Result<Signal> {
+    backend::runtime::syscalls::sigwait(set)
+}
+
+/// `sigwait(set)`—Wait for signals, returning a [`Siginfo`].
+///
+/// # Safety
+///
+/// If code elsewhere in the process is depending on delivery of a signal to
+/// prevent it from executing some code, this could cause it to miss that
+/// signal and execute that code.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man2/sigwaitinfo.2.html
+#[inline]
+pub unsafe fn sigwaitinfo(set: &Sigset) -> io::Result<Siginfo> {
+    backend::runtime::syscalls::sigwaitinfo(set)
+}
+
+/// `sigtimedwait(set)`—Wait for signals, optionally with a timeout.
+///
+/// # Safety
+///
+/// If code elsewhere in the process is depending on delivery of a signal to
+/// prevent it from executing some code, this could cause it to miss that
+/// signal and execute that code.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man2/sigtimedwait.2.html
+#[inline]
+pub unsafe fn sigtimedwait(set: &Sigset, timeout: Option<Timespec>) -> io::Result<Siginfo> {
+    backend::runtime::syscalls::sigtimedwait(set, timeout)
+}
+
+/// `getauxval(AT_SECURE)`—Returns the Linux “secure execution” mode.
+///
+/// Return a boolean value indicating whether “secure execution” mode was
+/// requested, due to the process having elevated privileges. This includes
+/// whether the `AT_SECURE` AUX value is set, and whether the initial real UID
+/// and GID differ from the initial effective UID and GID.
+///
+/// The meaning of “secure execution” mode is beyond the scope of this comment.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man3/getauxval.3.html
+#[cfg(any(
+    linux_raw,
+    any(
+        all(target_os = "android", target_pointer_width = "64"),
+        target_os = "linux",
+    )
+))]
+#[inline]
+pub fn linux_secure() -> bool {
+    backend::param::auxv::linux_secure()
+}
+
+/// `brk(addr)`—Change the location of the “program break”.
+///
+/// # Safety
+///
+/// This is not identical to `brk` in libc. libc `brk` may have bookkeeping
+/// that needs to be kept up to date that this doesn't keep up to date, so
+/// don't use it unless you are implementing libc.
+#[cfg(linux_raw)]
+#[inline]
+pub unsafe fn brk(addr: *mut c_void) -> io::Result<*mut c_void> {
+    backend::runtime::syscalls::brk(addr)
 }

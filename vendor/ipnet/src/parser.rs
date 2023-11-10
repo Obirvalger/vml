@@ -4,12 +4,18 @@
 //! is private. It is copied and extended here with methods for parsing
 //! IP network addresses.
 
+use alloc::{str::FromStr, boxed::Box};
+use core::fmt;
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+#[cfg(feature = "std")]
 use std::error::Error;
-use std::fmt;
+#[cfg(not(feature = "std"))]
+use core::net::{Ipv4Addr, Ipv6Addr};
+#[cfg(feature = "std")]
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::str::FromStr;
 
-use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+use crate::ipnet::{IpNet, Ipv4Net, Ipv6Net};
 
 pub struct Parser<'a> {
     // parsing as ASCII, so can use byte array
@@ -338,12 +344,8 @@ pub struct AddrParseError(());
 
 impl fmt::Display for AddrParseError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())
+        fmt.write_str("invalid IP address syntax")
     }
 }
 
-impl Error for AddrParseError {
-    fn description(&self) -> &str {
-        "invalid IP address syntax"
-    }
-}
+impl Error for AddrParseError {}

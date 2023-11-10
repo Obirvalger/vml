@@ -1,13 +1,13 @@
 use crate::stream::Fuse;
+use alloc::vec::Vec;
+use core::mem;
+use core::pin::Pin;
 use futures_core::ready;
-use futures_core::stream::{Stream, FusedStream};
+use futures_core::stream::{FusedStream, Stream};
 use futures_core::task::{Context, Poll};
 #[cfg(feature = "sink")]
 use futures_sink::Sink;
 use pin_project_lite::pin_project;
-use core::mem;
-use core::pin::Pin;
-use alloc::vec::Vec;
 
 pin_project! {
     /// Stream for the [`chunks`](super::StreamExt::chunks) method.
@@ -21,7 +21,7 @@ pin_project! {
     }
 }
 
-impl<St: Stream> Chunks<St> where St: Stream {
+impl<St: Stream> Chunks<St> {
     pub(super) fn new(stream: St, capacity: usize) -> Self {
         assert!(capacity > 0);
 
@@ -43,10 +43,7 @@ impl<St: Stream> Chunks<St> where St: Stream {
 impl<St: Stream> Stream for Chunks<St> {
     type Item = Vec<St::Item>;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.as_mut().project();
         loop {
             match ready!(this.stream.as_mut().poll_next(cx)) {
@@ -56,7 +53,7 @@ impl<St: Stream> Stream for Chunks<St> {
                 Some(item) => {
                     this.items.push(item);
                     if this.items.len() >= *this.cap {
-                        return Poll::Ready(Some(self.take()))
+                        return Poll::Ready(Some(self.take()));
                     }
                 }
 
@@ -66,7 +63,7 @@ impl<St: Stream> Stream for Chunks<St> {
                     let last = if this.items.is_empty() {
                         None
                     } else {
-                        let full_buf = mem::replace(this.items, Vec::new());
+                        let full_buf = mem::take(this.items);
                         Some(full_buf)
                     };
 
@@ -77,9 +74,9 @@ impl<St: Stream> Stream for Chunks<St> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let chunk_len = if self.items.is_empty() { 0 } else { 1 };
+        let chunk_len = usize::from(!self.items.is_empty());
         let (lower, upper) = self.stream.size_hint();
-        let lower = lower.saturating_add(chunk_len);
+        let lower = (lower / self.cap).saturating_add(chunk_len);
         let upper = match upper {
             Some(x) => x.checked_add(chunk_len),
             None => None,

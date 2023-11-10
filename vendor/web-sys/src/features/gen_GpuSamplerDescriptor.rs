@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
@@ -240,14 +241,14 @@ impl GpuSamplerDescriptor {
         self
     }
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GpuFilterMode")]
+    #[cfg(feature = "GpuMipmapFilterMode")]
     #[doc = "Change the `mipmapFilter` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuFilterMode`, `GpuSamplerDescriptor`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuMipmapFilterMode`, `GpuSamplerDescriptor`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn mipmap_filter(&mut self, val: GpuFilterMode) -> &mut Self {
+    pub fn mipmap_filter(&mut self, val: GpuMipmapFilterMode) -> &mut Self {
         use wasm_bindgen::JsValue;
         let r = ::js_sys::Reflect::set(
             self.as_ref(),
@@ -260,5 +261,11 @@ impl GpuSamplerDescriptor {
         );
         let _ = r;
         self
+    }
+}
+#[cfg(web_sys_unstable_apis)]
+impl Default for GpuSamplerDescriptor {
+    fn default() -> Self {
+        Self::new()
     }
 }

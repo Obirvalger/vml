@@ -1,15 +1,23 @@
-use crate::msgs::enums::ProtocolVersion;
+use std::fmt;
 
-/// A TLS protocl version supported by rustls.
+use crate::enums::ProtocolVersion;
+
+/// A TLS protocol version supported by rustls.
 ///
 /// All possible instances of this class are provided by the library in
 /// the [`ALL_VERSIONS`] array, as well as individually as [`TLS12`]
 /// and [`TLS13`].
-#[derive(Debug, PartialEq)]
+#[derive(Eq, PartialEq)]
 pub struct SupportedProtocolVersion {
     /// The TLS enumeration naming this version.
     pub version: ProtocolVersion,
     is_private: (),
+}
+
+impl fmt::Debug for SupportedProtocolVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.version.fmt(f)
+    }
 }
 
 /// TLS1.2
@@ -39,11 +47,25 @@ pub static ALL_VERSIONS: &[&SupportedProtocolVersion] = &[
 /// versions.
 pub static DEFAULT_VERSIONS: &[&SupportedProtocolVersion] = ALL_VERSIONS;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct EnabledVersions {
     #[cfg(feature = "tls12")]
     tls12: Option<&'static SupportedProtocolVersion>,
     tls13: Option<&'static SupportedProtocolVersion>,
+}
+
+impl fmt::Debug for EnabledVersions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut list = &mut f.debug_list();
+        #[cfg(feature = "tls12")]
+        if let Some(v) = self.tls12 {
+            list = list.entry(v);
+        }
+        if let Some(v) = self.tls13 {
+            list = list.entry(v);
+        }
+        list.finish()
+    }
 }
 
 impl EnabledVersions {

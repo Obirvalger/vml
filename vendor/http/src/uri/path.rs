@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 use std::str::FromStr;
-use std::{cmp, fmt, str};
+use std::{cmp, fmt, hash, str};
 
 use bytes::Bytes;
 
@@ -50,6 +50,18 @@ impl PathAndQuery {
                     0x61..=0x7A |
                     0x7C |
                     0x7E => {},
+
+                    // These are code points that are supposed to be
+                    // percent-encoded in the path but there are clients
+                    // out there sending them as is and httparse accepts
+                    // to parse those requests, so they are allowed here
+                    // for parity.
+                    //
+                    // For reference, those are code points that are used
+                    // to send requests with JSON directly embedded in
+                    // the URI path. Yes, those things happen for real.
+                    b'"' |
+                    b'{' | b'}' => {},
 
                     _ => return Err(ErrorKind::InvalidUriChar.into()),
                 }
@@ -279,11 +291,19 @@ impl<'a> TryFrom<&'a str> for PathAndQuery {
     }
 }
 
+impl<'a> TryFrom<Vec<u8>> for PathAndQuery {
+    type Error = InvalidUri;
+    #[inline]
+    fn try_from(vec: Vec<u8>) -> Result<Self, Self::Error> {
+        PathAndQuery::from_shared(vec.into())
+    }
+}
+
 impl TryFrom<String> for PathAndQuery {
     type Error = InvalidUri;
     #[inline]
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        TryFrom::try_from(s.as_bytes())
+        PathAndQuery::from_shared(s.into())
     }
 }
 
@@ -319,6 +339,12 @@ impl fmt::Display for PathAndQuery {
         } else {
             write!(fmt, "/")
         }
+    }
+}
+
+impl hash::Hash for PathAndQuery {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
     }
 }
 
@@ -525,6 +551,11 @@ mod tests {
         assert_eq!("/aa%2", pq("/aa%2").path());
         assert_eq!("/aa%2", pq("/aa%2?r=1").path());
         assert_eq!("qr=%3", pq("/a/b?qr=%3").query().unwrap());
+    }
+
+    #[test]
+    fn json_is_fine() {
+        assert_eq!(r#"/{"bread":"baguette"}"#, pq(r#"/{"bread":"baguette"}"#).path());
     }
 
     fn pq(s: &str) -> PathAndQuery {

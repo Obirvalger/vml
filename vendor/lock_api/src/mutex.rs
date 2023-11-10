@@ -189,11 +189,16 @@ impl<R, T> Mutex<R, T> {
 }
 
 impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
+    /// Creates a new `MutexGuard` without checking if the mutex is locked.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds the lock.
+    ///
+    /// Calling this function when a guard has already been produced is undefined behaviour unless
+    /// the guard was forgotten with `mem::forget`.
     #[inline]
-    unsafe fn guard(&self) -> MutexGuard<'_, R, T> {
+    pub unsafe fn make_guard_unchecked(&self) -> MutexGuard<'_, R, T> {
         MutexGuard {
             mutex: self,
             marker: PhantomData,
@@ -213,7 +218,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     pub fn lock(&self) -> MutexGuard<'_, R, T> {
         self.raw.lock();
         // SAFETY: The lock is held, as required.
-        unsafe { self.guard() }
+        unsafe { self.make_guard_unchecked() }
     }
 
     /// Attempts to acquire this lock.
@@ -227,7 +232,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     pub fn try_lock(&self) -> Option<MutexGuard<'_, R, T>> {
         if self.raw.try_lock() {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
+            Some(unsafe { self.make_guard_unchecked() })
         } else {
             None
         }
@@ -257,7 +262,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// # Safety
     ///
     /// This method must only be called if the current thread logically owns a
-    /// `MutexGuard` but that guard has be discarded using `mem::forget`.
+    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
     pub unsafe fn force_unlock(&self) {
@@ -294,12 +299,17 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
         self.data.get()
     }
 
+    /// Creates a new `ArcMutexGuard` without checking if the mutex is locked.
+    ///
     /// # Safety
     ///
-    /// The lock needs to be held for the behavior of this function to be defined.
+    /// This method must only be called if the thread logically holds the lock.
+    ///
+    /// Calling this function when a guard has already been produced is undefined behaviour unless
+    /// the guard was forgotten with `mem::forget`.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    unsafe fn guard_arc(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
+    unsafe fn make_arc_guard_unchecked(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
         ArcMutexGuard {
             mutex: self.clone(),
             marker: PhantomData,
@@ -315,7 +325,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
         self.raw.lock();
         // SAFETY: the locking guarantee is upheld
-        unsafe { self.guard_arc() }
+        unsafe { self.make_arc_guard_unchecked() }
     }
 
     /// Attempts to acquire a lock through an `Arc`.
@@ -327,7 +337,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcMutexGuard<R, T>> {
         if self.raw.try_lock() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
@@ -344,7 +354,7 @@ impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
     /// # Safety
     ///
     /// This method must only be called if the current thread logically owns a
-    /// `MutexGuard` but that guard has be discarded using `mem::forget`.
+    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
     pub unsafe fn force_unlock_fair(&self) {
@@ -362,7 +372,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<MutexGuard<'_, R, T>> {
         if self.raw.try_lock_for(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
+            Some(unsafe { self.make_guard_unchecked() })
         } else {
             None
         }
@@ -377,7 +387,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<MutexGuard<'_, R, T>> {
         if self.raw.try_lock_until(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
+            Some(unsafe { self.make_guard_unchecked() })
         } else {
             None
         }
@@ -392,7 +402,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     pub fn try_lock_arc_for(self: &Arc<Self>, timeout: R::Duration) -> Option<ArcMutexGuard<R, T>> {
         if self.raw.try_lock_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
@@ -410,7 +420,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     ) -> Option<ArcMutexGuard<R, T>> {
         if self.raw.try_lock_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
@@ -485,6 +495,7 @@ where
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` and `DerefMut` implementations.
+#[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MutexGuard<'a, R: RawMutex, T: ?Sized> {
     mutex: &'a Mutex<R, T>,
@@ -678,18 +689,42 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'
 /// This is similar to the `MutexGuard` struct, except instead of using a reference to unlock the `Mutex` it
 /// uses an `Arc<Mutex>`. This has several advantages, most notably that it has an `'static` lifetime.
 #[cfg(feature = "arc_lock")]
+#[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct ArcMutexGuard<R: RawMutex, T: ?Sized> {
     mutex: Arc<Mutex<R, T>>,
-    marker: PhantomData<R::GuardMarker>,
+    marker: PhantomData<*const ()>,
+}
+
+#[cfg(feature = "arc_lock")]
+unsafe impl<R: RawMutex + Send + Sync, T: Send + ?Sized> Send for ArcMutexGuard<R, T> where
+    R::GuardMarker: Send
+{
+}
+#[cfg(feature = "arc_lock")]
+unsafe impl<R: RawMutex + Sync, T: Sync + ?Sized> Sync for ArcMutexGuard<R, T> where
+    R::GuardMarker: Sync
+{
 }
 
 #[cfg(feature = "arc_lock")]
 impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     /// Returns a reference to the `Mutex` this is guarding, contained in its `Arc`.
     #[inline]
-    pub fn mutex(&self) -> &Arc<Mutex<R, T>> {
-        &self.mutex
+    pub fn mutex(s: &Self) -> &Arc<Mutex<R, T>> {
+        &s.mutex
+    }
+
+    /// Unlocks the mutex and returns the `Arc` that was held by the [`ArcMutexGuard`].
+    #[inline]
+    pub fn into_arc(s: Self) -> Arc<Mutex<R, T>> {
+        // Safety: Skip our Drop impl and manually unlock the mutex.
+        let arc = unsafe { ptr::read(&s.mutex) };
+        mem::forget(s);
+        unsafe {
+            arc.raw.unlock();
+        }
+        arc
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -790,6 +825,7 @@ impl<R: RawMutex, T: ?Sized> Drop for ArcMutexGuard<R, T> {
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
+#[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized> {
     raw: &'a R,

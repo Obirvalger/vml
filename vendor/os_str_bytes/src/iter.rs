@@ -6,7 +6,7 @@ use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::iter::FusedIterator;
-use std::str;
+use std::mem;
 
 use super::pattern::Encoded;
 use super::Pattern;
@@ -17,7 +17,7 @@ use super::RawOsStr;
 // [DoubleEndedIterator], and its implementation would likely require
 // significant changes to implement that trait.
 /// The iterator returned by [`RawOsStr::split`].
-pub struct Split<'a, P>
+pub struct RawSplit<'a, P>
 where
     P: Pattern,
 {
@@ -25,10 +25,11 @@ where
     pat: P::__Encoded,
 }
 
-impl<'a, P> Split<'a, P>
+impl<'a, P> RawSplit<'a, P>
 where
     P: Pattern,
 {
+    #[track_caller]
     pub(super) fn new(string: &'a RawOsStr, pat: P) -> Self {
         let pat = pat.__encode();
         assert!(
@@ -43,12 +44,14 @@ where
 }
 
 macro_rules! impl_next {
-    ( $self:ident , $split_method:ident , $swap_fn:expr ) => {{
+    ( $self:ident , $split_method:ident , $swap:expr ) => {{
         $self
             .string?
             .$split_method(&$self.pat)
-            .map(|substrings| {
-                let (substring, string) = $swap_fn(substrings);
+            .map(|(mut substring, mut string)| {
+                if $swap {
+                    mem::swap(&mut substring, &mut string);
+                }
                 $self.string = Some(string);
                 substring
             })
@@ -56,32 +59,7 @@ macro_rules! impl_next {
     }};
 }
 
-impl<P> DoubleEndedIterator for Split<'_, P>
-where
-    P: Pattern,
-{
-    fn next_back(&mut self) -> Option<Self::Item> {
-        impl_next!(self, rsplit_once_raw, |(prefix, suffix)| (suffix, prefix))
-    }
-}
-
-impl<'a, P> Iterator for Split<'a, P>
-where
-    P: Pattern,
-{
-    type Item = &'a RawOsStr;
-
-    #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
-    }
-
-    fn next(&mut self) -> Option<Self::Item> {
-        impl_next!(self, split_once_raw, |x| x)
-    }
-}
-
-impl<P> Clone for Split<'_, P>
+impl<P> Clone for RawSplit<'_, P>
 where
     P: Pattern,
 {
@@ -94,20 +72,46 @@ where
     }
 }
 
-impl<P> Debug for Split<'_, P>
+impl<P> Debug for RawSplit<'_, P>
 where
     P: Pattern,
 {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Split")
+        f.debug_struct("RawSplit")
             .field("string", &self.string)
-            .field(
-                "pat",
-                &str::from_utf8(self.pat.__get()).expect("invalid pattern"),
-            )
+            .field("pat", &self.pat)
             .finish()
     }
 }
 
-impl<P> FusedIterator for Split<'_, P> where P: Pattern {}
+impl<P> DoubleEndedIterator for RawSplit<'_, P>
+where
+    P: Pattern,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        impl_next!(self, rsplit_once_raw, true)
+    }
+}
+
+impl<P> FusedIterator for RawSplit<'_, P> where P: Pattern {}
+
+impl<'a, P> Iterator for RawSplit<'a, P>
+where
+    P: Pattern,
+{
+    type Item = &'a RawOsStr;
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        impl_next!(self, split_once_raw, false)
+    }
+}
+
+/// A temporary type alias providing backward compatibility.
+#[deprecated(since = "6.6.0", note = "use `RawSplit` instead")]
+pub type Split<'a, P> = RawSplit<'a, P>;

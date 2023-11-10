@@ -1,4 +1,5 @@
 use memchr::{memchr, memchr2, memchr3, memrchr, memrchr2, memrchr3};
+
 mod scalar;
 
 #[inline]
@@ -79,10 +80,9 @@ pub(crate) fn rfind_not(haystack: &[u8], byteset: &[u8]) -> Option<usize> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std", not(miri)))]
 mod tests {
-
-    quickcheck! {
+    quickcheck::quickcheck! {
         fn qc_byteset_forward_matches_naive(
             haystack: Vec<u8>,
             needles: Vec<u8>

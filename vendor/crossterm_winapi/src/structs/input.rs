@@ -164,6 +164,16 @@ impl ButtonState {
         self.state > 0
     }
 
+    /// Returns whether there is a horizontal scroll to the right.
+    pub fn scroll_right(&self) -> bool {
+        self.state > 0
+    }
+
+    /// Returns whether there is a horizontal scroll to the left.
+    pub fn scroll_left(&self) -> bool {
+        self.state < 0
+    }
+
     /// Returns the raw state.
     pub fn state(&self) -> i32 {
         self.state

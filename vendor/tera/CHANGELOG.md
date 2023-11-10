@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.19.1 (2023-09-03)
+
+- Minimum supported Rust version (MSRV) is now 1.63 due to transitive dependencies.
+- Update crates.io metadata for the website
+
+## 1.19.0 (2023-05-31)
+
+- Revert change to glob path to not error if the path doesn't exist
+- Allow macro definition in renderable template
+
+## 1.18.1 (2023-03-15)
+
+- Fix panic on invalid globs to Tera::new
+
+## 1.18.0 (2023-03-08)
+
+- Add `abs` filter
+- Add `indent` filter
+- Deprecate `get_json_pointer` in favour of `dotted_pointer`, a faster alternative
+- Always canonicalize glob paths passed to Tera to workaround a globwalk bug
+- Handle apostrophes in title case filter
+- Some performance improvement
+
 ## 1.17.1 (2022-09-19)
 
 - Make `get_random` use isize instead of i32 and bad error message

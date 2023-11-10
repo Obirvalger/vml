@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -110,5 +111,10 @@ impl CompositionEventInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for CompositionEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -1,9 +1,8 @@
 #![warn(rust_2018_idioms)]
-#![cfg(feature = "full")]
+#![cfg(all(feature = "full", not(target_os = "wasi")))] // Wasi doesn't support panic recovery or bind
 
 use tokio::net::TcpListener;
 
-use std::convert::TryFrom;
 use std::net;
 
 #[test]

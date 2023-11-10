@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -44,5 +45,10 @@ impl StorageEstimate {
         );
         let _ = r;
         self
+    }
+}
+impl Default for StorageEstimate {
+    fn default() -> Self {
+        Self::new()
     }
 }

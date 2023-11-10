@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 Thanks to [Mark Drobnak](https://github.com/AzureMarker) for the changelog.
+## [6.8.1] - 2023-06-30
+
+- Fix failing compilation under compression feature [#182](https://github.com/pyrossh/rust-embed/issues/182). Thanks to [osiewicz](https://github.com/osiewicz)  
+
+## [6.8.0] - 2023-06-30
+
+- Update `include-flate` to v0.2 [#182](https://github.com/pyrossh/rust-embed/issues/182)
+
+## [6.7.0] - 2023-06-09
+
+- Update `syn` to v2.0 [#211](https://github.com/pyrossh/rust-embed/issues/211)
+
+## [6.6.1] - 2023-03-25
+
+- Fix mime-guess feature not working properly [#209](https://github.com/pyrossh/rust-embed/issues/209)
+
+## [6.6.0] - 2023-03-05
+
+- sort_by_file_name() requires walkdir v2.3.2 [#206](https://github.com/pyrossh/rust-embed/issues/206)
+- Add `mime-guess` feature to statically store mimetype [#192](https://github.com/pyrossh/rust-embed/issues/192)
+
+## [6.4.2] - 2022-10-20
+
+- Fail the proc macro if include/exclude are used without the feature [#187](https://github.com/pyrossh/rust-embed/issues/187)
 
 ## [6.4.1] - 2022-09-13
 

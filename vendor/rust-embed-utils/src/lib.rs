@@ -87,12 +87,19 @@ pub struct EmbeddedFile {
 pub struct Metadata {
   hash: [u8; 32],
   last_modified: Option<u64>,
+  #[cfg(feature = "mime-guess")]
+  mimetype: Cow<'static, str>,
 }
 
 impl Metadata {
   #[doc(hidden)]
-  pub fn __rust_embed_new(hash: [u8; 32], last_modified: Option<u64>) -> Self {
-    Self { hash, last_modified }
+  pub fn __rust_embed_new(hash: [u8; 32], last_modified: Option<u64>, #[cfg(feature = "mime-guess")] mimetype: &'static str) -> Self {
+    Self {
+      hash,
+      last_modified,
+      #[cfg(feature = "mime-guess")]
+      mimetype: mimetype.into(),
+    }
   }
 
   /// The SHA256 hash of the file
@@ -105,6 +112,12 @@ impl Metadata {
   pub fn last_modified(&self) -> Option<u64> {
     self.last_modified
   }
+
+  /// The mime type of the file
+  #[cfg(feature = "mime-guess")]
+  pub fn mimetype(&self) -> &str {
+    &self.mimetype
+  }
 }
 
 pub fn read_file_from_fs(file_path: &Path) -> io::Result<EmbeddedFile> {
@@ -115,6 +128,11 @@ pub fn read_file_from_fs(file_path: &Path) -> io::Result<EmbeddedFile> {
   hasher.update(&data);
   let hash: [u8; 32] = hasher.finalize().into();
 
+  let source_date_epoch = match std::env::var("SOURCE_DATE_EPOCH") {
+    Ok(value) => value.parse::<u64>().map_or(None, |v| Some(v)),
+    Err(_) => None,
+  };
+
   let last_modified = fs::metadata(file_path)?.modified().ok().map(|last_modified| {
     last_modified
       .duration_since(SystemTime::UNIX_EPOCH)
@@ -122,9 +140,17 @@ pub fn read_file_from_fs(file_path: &Path) -> io::Result<EmbeddedFile> {
       .as_secs()
   });
 
+  #[cfg(feature = "mime-guess")]
+  let mimetype = mime_guess::from_path(file_path).first_or_octet_stream().to_string();
+
   Ok(EmbeddedFile {
     data,
-    metadata: Metadata { hash, last_modified },
+    metadata: Metadata {
+      hash,
+      last_modified: source_date_epoch.or(last_modified),
+      #[cfg(feature = "mime-guess")]
+      mimetype: mimetype.into(),
+    },
   })
 }
 

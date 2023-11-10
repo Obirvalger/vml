@@ -12,7 +12,6 @@
  * and create derivative works of this document.
  */
 
-/*TODO
 enum SelectionMode {
   "select",
   "start",
@@ -20,6 +19,7 @@ enum SelectionMode {
   "preserve",
 };
 
+/*TODO
 interface XULControllers;
 */
 
@@ -134,6 +134,9 @@ interface HTMLInputElement : HTMLElement {
     unsigned long end, optional SelectionMode selectionMode = "preserve");
   [Throws]
   undefined setSelectionRange(unsigned long start, unsigned long end, optional DOMString direction);
+
+  [Throws]
+  undefined showPicker();
 
   // also has obsolete members
 };

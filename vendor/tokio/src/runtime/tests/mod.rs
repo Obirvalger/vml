@@ -1,8 +1,30 @@
+// Enable dead_code / unreachable_pub here. It has been disabled in lib.rs for
+// other code when running loom tests.
+#![cfg_attr(loom, warn(dead_code, unreachable_pub))]
+
+use self::noop_scheduler::NoopSchedule;
 use self::unowned_wrapper::unowned;
 
+mod noop_scheduler {
+    use crate::runtime::task::{self, Task};
+
+    /// `task::Schedule` implementation that does nothing, for testing.
+    pub(crate) struct NoopSchedule;
+
+    impl task::Schedule for NoopSchedule {
+        fn release(&self, _task: &Task<Self>) -> Option<Task<Self>> {
+            None
+        }
+
+        fn schedule(&self, _task: task::Notified<Self>) {
+            unreachable!();
+        }
+    }
+}
+
 mod unowned_wrapper {
-    use crate::runtime::blocking::NoopSchedule;
     use crate::runtime::task::{Id, JoinHandle, Notified};
+    use crate::runtime::tests::NoopSchedule;
 
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     pub(crate) fn unowned<T>(task: T) -> (Notified<NoopSchedule>, JoinHandle<T::Output>)
@@ -29,17 +51,21 @@ mod unowned_wrapper {
 }
 
 cfg_loom! {
-    mod loom_basic_scheduler;
     mod loom_blocking;
-    mod loom_local;
-    mod loom_oneshot;
-    mod loom_pool;
-    mod loom_queue;
-    mod loom_shutdown_join;
+    mod loom_current_thread;
     mod loom_join_set;
+    mod loom_local;
+    mod loom_multi_thread;
+    mod loom_multi_thread_alt;
+    mod loom_oneshot;
+
+    // Make sure debug assertions are enabled
+    #[cfg(not(debug_assertions))]
+    compile_error!("these tests require debug assertions to be enabled");
 }
 
 cfg_not_loom! {
+    mod inject;
     mod queue;
 
     #[cfg(not(miri))]

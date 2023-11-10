@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -18,5 +19,10 @@ impl RtcOfferAnswerOptions {
         #[allow(unused_mut)]
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
+    }
+}
+impl Default for RtcOfferAnswerOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

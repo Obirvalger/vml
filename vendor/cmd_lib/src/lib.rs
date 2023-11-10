@@ -15,11 +15,11 @@
 //! [Redirection](https://en.wikipedia.org/wiki/Redirection_(computing)) or
 //! [Piping](https://en.wikipedia.org/wiki/Redirection_(computing)#Piping) is needed, you need to
 //! set up the parent and child IO handles manually, like this in the
-//! [rust cookbook](https://rust-lang-nursery.github.io/rust-cookbook/os/external.html), which is often a tedious
-//! work.
+//! [rust cookbook](https://rust-lang-nursery.github.io/rust-cookbook/os/external.html), which is often tedious
+//! and [error prone](https://github.com/ijackson/rust-rfcs/blob/command/text/0000-command-ergonomics.md#currently-accepted-wrong-programs).
 //!
 //! A lot of developers just choose shell(sh, bash, ...) scripts for such tasks, by using `<` to redirect input,
-//! `>` to redirect output and '|' to pipe outputs. In my experience, this is **the only good parts** of shell script.
+//! `>` to redirect output and `|` to pipe outputs. In my experience, this is **the only good parts** of shell script.
 //! You can find all kinds of pitfalls and mysterious tricks to make other parts of shell script work. As the shell
 //! scripts grow, they will ultimately be unmaintainable and no one wants to touch them any more.
 //!
@@ -58,12 +58,10 @@
 //!         | awk r#"/copied/{print $(NF-1) " " $NF}"#
 //!     )
 //!     .unwrap_or_else(|_| cmd_die!("thread $i failed"));
-//!     cmd_info!("thread $i bandwidth: $bandwidth");
+//!     info!("thread {i} bandwidth: {bandwidth}");
 //! });
-//! let total_bandwidth = Byte::from_bytes((DATA_SIZE / now.elapsed().as_secs()) as u128)
-//!     .get_appropriate_unit(true)
-//!     .to_string();
-//! cmd_info!("Total bandwidth: ${total_bandwidth}/s");
+//! let total_bandwidth = Byte::from_bytes((DATA_SIZE / now.elapsed().as_secs()) as u128).get_appropriate_unit(true);
+//! info!("Total bandwidth: {total_bandwidth}/s");
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
@@ -71,15 +69,15 @@
 //!
 //! ```console
 //! ➜  rust_cmd_lib git:(master) ✗ cargo run --example dd_test -- -b 4096 -f /dev/nvme0n1 -t 4
-//!     Finished dev [unoptimized + debuginfo] target(s) in 1.56s
+//!     Finished dev [unoptimized + debuginfo] target(s) in 0.04s
 //!      Running `target/debug/examples/dd_test -b 4096 -f /dev/nvme0n1 -t 4`
-//! INFO - Dropping caches at first
-//! INFO - Running with thread_num: 4, block_size: 4096
-//! INFO - thread 1 bandwidth: 286 MB/s
-//! INFO - thread 3 bandwidth: 269 MB/s
-//! INFO - thread 2 bandwidth: 267 MB/s
-//! INFO - thread 0 bandwidth: 265 MB/s
-//! INFO - Total bandwidth: 1.01 GiB/s
+//! [INFO ] Dropping caches at first
+//! [INFO ] Running with thread_num: 4, block_size: 4096
+//! [INFO ] thread 3 bandwidth: 317 MB/s
+//! [INFO ] thread 1 bandwidth: 289 MB/s
+//! [INFO ] thread 0 bandwidth: 281 MB/s
+//! [INFO ] thread 2 bandwidth: 279 MB/s
+//! [INFO ] Total bandwidth: 1.11 GiB/s
 //! ```
 //!
 //! ## What this library provides
@@ -101,16 +99,14 @@
 //! // if any command fails, just return Err(...)
 //! let file = "/tmp/f";
 //! let keyword = "rust";
-//! if run_cmd! {
+//! run_cmd! {
 //!     cat ${file} | grep ${keyword};
 //!     echo "bad cmd" >&2;
 //!     ignore ls /nofile;
 //!     date;
 //!     ls oops;
 //!     cat oops;
-//! }.is_err() {
-//!     // your error handling code
-//! }
+//! }?;
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
@@ -186,26 +182,33 @@
 //! ### Logging
 //!
 //! This library provides convenient macros and builtin commands for logging. All messages which
-//! are printed to stderr will be logged. Since it is returning result type, you can also log the
-//! errors if command execution fails.
+//! are printed to stderr will be logged. It will also include the full running commands in the error
+//! result.
 //!
 //! ```no_run
 //! # use cmd_lib::*;
-//! // this code snppit is using a builtin simple logger, you can replace it with a real logger
-//! init_builtin_logger();
 //! let dir: &str = "folder with spaces";
-//! assert!(run_cmd!(mkdir /tmp/$dir; ls /tmp/$dir).is_ok());
-//! assert!(run_cmd!(mkdir /tmp/"$dir"; ls /tmp/"$dir"; rmdir /tmp/"$dir").is_err());
+//! run_cmd!(mkdir /tmp/$dir; ls /tmp/$dir)?;
+//! run_cmd!(mkdir /tmp/$dir; ls /tmp/$dir; rmdir /tmp/$dir)?;
 //! // output:
-//! // INFO - mkdir: cannot create directory ‘/tmp/folder with spaces’: File exists
+//! // [INFO ] mkdir: cannot create directory ‘/tmp/folder with spaces’: File exists
+//! // Error: Running ["mkdir" "/tmp/folder with spaces"] exited with error; status code: 1
+//! # Ok::<(), std::io::Error>(())
 //! ```
 //!
 //! It is using rust [log crate](https://crates.io/crates/log), and you can use your actual favorite
-//! logging implementation. Notice that if you don't provide any logger, the stderr output will be discarded.
+//! logger implementation. Notice that if you don't provide any logger, it will use env_logger to print
+//! messages from process's stderr.
+//!
+//! You can also mark your `main()` function with `#[cmd_lib::main]`, which will log error from
+//! main() by default. Like this:
+//! ```console
+//! [ERROR] FATAL: Running ["mkdir" "/tmp/folder with spaces"] exited with error; status code: 1
+//! ```
 //!
 //! ### Builtin commands
 //! #### cd
-//! cd: set process current directory, which can be used without importing.
+//! cd: set process current directory.
 //! ```no_run
 //! # use cmd_lib::run_cmd;
 //! run_cmd! (
@@ -223,17 +226,26 @@
 //!
 //! #### ignore
 //!
-//! Ignore errors for command execution, which can be used without importing.
+//! Ignore errors for command execution.
 //!
 //! #### echo
+//! Print messages to stdout.
 //!
-//! Print messages to stdout, which needs to be imported with `use_builtin_cmd!` macro.
+//! -n     do not output the trailing newline
 //!
-//! ```
-//! # use cmd_lib::{run_cmd, use_builtin_cmd};
-//! use_builtin_cmd!(echo, warn); // find more builtin commands in src/builtins.rs
-//! run_cmd!(echo "This is from builtin command!")?;
-//! run_cmd!(warn "This is from builtin command!")?;
+//! #### error, warn, info, debug, trace
+//!
+//! Print messages to logging with different logging levels.
+//!
+//! ```no_run
+//! # use cmd_lib::*;
+//! run_cmd!(error "This is an error message")?;
+//! run_cmd!(warn "This is a warning message")?;
+//! run_cmd!(info "This is an infomation message")?;
+//! // output:
+//! // [ERROR] This is an error message
+//! // [WARN ] This is a warning message
+//! // [INFO ] This is an infomation message
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
@@ -348,28 +360,28 @@
 //!
 
 pub use cmd_lib_macros::{
-    cmd_debug, cmd_die, cmd_echo, cmd_error, cmd_info, cmd_trace, cmd_warn, export_cmd, run_cmd,
-    run_fun, spawn, spawn_with_output, use_builtin_cmd, use_custom_cmd,
+    cmd_die, export_cmd, main, run_cmd, run_fun, spawn, spawn_with_output, use_custom_cmd,
 };
 /// Return type for run_fun!() macro
 pub type FunResult = std::io::Result<String>;
 /// Return type for run_cmd!() macro
 pub type CmdResult = std::io::Result<()>;
-pub use builtins::{
-    builtin_cat, builtin_debug, builtin_die, builtin_echo, builtin_error, builtin_info,
-    builtin_trace, builtin_warn,
-};
 pub use child::{CmdChildren, FunChildren};
 #[doc(hidden)]
-pub use log;
-pub use logger::init_builtin_logger;
-pub use process::{
-    export_cmd, set_debug, set_pipefail, AsOsStr, Cmd, CmdEnv, CmdString, Cmds, GroupCmds, Redirect,
-};
+pub use log as inner_log;
+#[doc(hidden)]
+pub use logger::try_init_default_logger;
+#[doc(hidden)]
+pub use main_error::MainError;
+pub use main_error::MainResult;
+#[doc(hidden)]
+pub use process::{export_cmd, AsOsStr, Cmd, CmdString, Cmds, GroupCmds, Redirect};
+pub use process::{set_debug, set_pipefail, CmdEnv};
 
 mod builtins;
 mod child;
 mod io;
 mod logger;
+mod main_error;
 mod process;
 mod thread_local;

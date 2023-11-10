@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
@@ -106,5 +107,11 @@ impl ValueEventInit {
         );
         let _ = r;
         self
+    }
+}
+#[cfg(web_sys_unstable_apis)]
+impl Default for ValueEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

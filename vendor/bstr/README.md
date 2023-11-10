@@ -6,7 +6,7 @@ differs from the standard library's `String` and `str` types in that they are
 not required to be valid UTF-8, but may be fully or partially valid UTF-8.
 
 [![Build status](https://github.com/BurntSushi/bstr/workflows/ci/badge.svg)](https://github.com/BurntSushi/bstr/actions)
-[![](https://meritbadge.herokuapp.com/bstr)](https://crates.io/crates/bstr)
+[![crates.io](https://img.shields.io/crates/v/bstr.svg)](https://crates.io/crates/bstr)
 
 
 ### Documentation
@@ -17,7 +17,7 @@ https://docs.rs/bstr
 ### When should I use byte strings?
 
 See this part of the documentation for more details:
-https://docs.rs/bstr/0.2.*/bstr/#when-should-i-use-byte-strings.
+<https://docs.rs/bstr/1.*/bstr/#when-should-i-use-byte-strings>.
 
 The short story is that byte strings are useful when it is inconvenient or
 incorrect to require valid UTF-8.
@@ -25,26 +25,18 @@ incorrect to require valid UTF-8.
 
 ### Usage
 
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-bstr = "0.2"
-```
-
+`cargo add bstr`
 
 ### Examples
 
 The following two examples exhibit both the API features of byte strings and
 the I/O convenience functions provided for reading line-by-line quickly.
 
-This first example simply shows how to efficiently iterate over lines in
-stdin, and print out lines containing a particular substring:
+This first example simply shows how to efficiently iterate over lines in stdin,
+and print out lines containing a particular substring:
 
 ```rust
-use std::error::Error;
-use std::io::{self, Write};
-
+use std::{error::Error, io::{self, Write}};
 use bstr::{ByteSlice, io::BufReadExt};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -65,9 +57,7 @@ This example shows how to count all of the words (Unicode-aware) in stdin,
 line-by-line:
 
 ```rust
-use std::error::Error;
-use std::io;
-
+use std::{error::Error, io};
 use bstr::{ByteSlice, io::BufReadExt};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -88,9 +78,7 @@ text, this is quite a bit faster than what you can (easily) do with standard
 library APIs. (N.B. Any invalid UTF-8 bytes are passed through unchanged.)
 
 ```rust
-use std::error::Error;
-use std::io::{self, Write};
-
+use std::{error::Error, io::{self, Write}};
 use bstr::{ByteSlice, io::BufReadExt};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -113,9 +101,7 @@ clusters) from each line, where invalid UTF-8 sequences are generally treated
 as a single character and are passed through correctly:
 
 ```rust
-use std::error::Error;
-use std::io::{self, Write};
-
+use std::{error::Error, io::{self, Write}};
 use bstr::{ByteSlice, io::BufReadExt};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -140,25 +126,27 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 ### Cargo features
 
-This crates comes with a few features that control standard library, serde
-and Unicode support.
+This crates comes with a few features that control standard library, serde and
+Unicode support.
 
 * `std` - **Enabled** by default. This provides APIs that require the standard
-  library, such as `Vec<u8>`.
+  library, such as `Vec<u8>` and `PathBuf`. Enabling this feature also enables
+  the `alloc` feature.
+* `alloc` - **Enabled** by default. This provides APIs that require allocations
+  via the `alloc` crate, such as `Vec<u8>`.
 * `unicode` - **Enabled** by default. This provides APIs that require sizable
   Unicode data compiled into the binary. This includes, but is not limited to,
   grapheme/word/sentence segmenters. When this is disabled, basic support such
-  as UTF-8 decoding is still included.
-* `serde1` - **Disabled** by default. Enables implementations of serde traits
-  for the `BStr` and `BString` types.
-* `serde1-nostd` - **Disabled** by default. Enables implementations of serde
-  traits for the `BStr` type only, intended for use without the standard
-  library. Generally, you either want `serde1` or `serde1-nostd`, not both.
+  as UTF-8 decoding is still included. Note that currently, enabling this
+  feature also requires enabling the `std` feature. It is expected that this
+  limitation will be lifted at some point.
+* `serde` - Enables implementations of serde traits for `BStr`, and also
+  `BString` when `alloc` is enabled.
 
 
 ### Minimum Rust version policy
 
-This crate's minimum supported `rustc` version (MSRV) is `1.28.0`.
+This crate's minimum supported `rustc` version (MSRV) is `1.65`.
 
 In general, this crate will be conservative with respect to the minimum
 supported version of Rust. MSRV may be bumped in minor version releases.
@@ -166,27 +154,27 @@ supported version of Rust. MSRV may be bumped in minor version releases.
 
 ### Future work
 
-Since this is meant to be a core crate, getting a `1.0` release is a priority.
-My hope is to move to `1.0` within the next year and commit to its API so that
-`bstr` can be used as a public dependency.
+Since it is plausible that some of the types in this crate might end up in your
+public API (e.g., `BStr` and `BString`), we will commit to being very
+conservative with respect to new major version releases. It's difficult to say
+precisely how conservative, but unless there is a major issue with the `1.0`
+release, I wouldn't expect a `2.0` release to come out any sooner than some
+period of years.
 
 A large part of the API surface area was taken from the standard library, so
-from an API design perspective, a good portion of this crate should be mature.
-The main differences from the standard library are in how the various substring
-search routines work. The standard library provides generic infrastructure for
-supporting different types of searches with a single method, where as this
-library prefers to define new methods for each type of search and drop the
-generic infrastructure.
+from an API design perspective, a good portion of this crate should be on solid
+ground. The main differences from the standard library are in how the various
+substring search routines work. The standard library provides generic
+infrastructure for supporting different types of searches with a single method,
+where as this library prefers to define new methods for each type of search and
+drop the generic infrastructure.
 
 Some _probable_ future considerations for APIs include, but are not limited to:
 
-* A convenience layer on top of the `aho-corasick` crate.
 * Unicode normalization.
 * More sophisticated support for dealing with Unicode case, perhaps by
   combining the use cases supported by [`caseless`](https://docs.rs/caseless)
   and [`unicase`](https://docs.rs/unicase).
-* Add facilities for dealing with OS strings and file paths, probably via
-  simple conversion routines.
 
 Here are some examples that are _probably_ out of scope for this crate:
 
@@ -195,10 +183,10 @@ Here are some examples that are _probably_ out of scope for this crate:
 
 The exact scope isn't quite clear, but I expect we can iterate on it.
 
-In general, as stated below, this crate is an experiment in bringing lots of
-related APIs together into a single crate while simultaneously attempting to
-keep the total number of dependencies low. Indeed, every dependency of `bstr`,
-except for `memchr`, is optional.
+In general, as stated below, this crate brings lots of related APIs together
+into a single crate while simultaneously attempting to keep the total number of
+dependencies low. Indeed, every dependency of `bstr`, except for `memchr`, is
+optional.
 
 
 ### High level motivation
@@ -208,16 +196,16 @@ achieved with the standard library `Vec<u8>`/`&[u8]` APIs and the ecosystem of
 library crates. For example:
 
 * The standard library's
-  [`Utf8Error`](https://doc.rust-lang.org/std/str/struct.Utf8Error.html)
-  can be used for incremental lossy decoding of `&[u8]`.
+  [`Utf8Error`](https://doc.rust-lang.org/std/str/struct.Utf8Error.html) can be
+  used for incremental lossy decoding of `&[u8]`.
 * The
   [`unicode-segmentation`](https://unicode-rs.github.io/unicode-segmentation/unicode_segmentation/index.html)
   crate can be used for iterating over graphemes (or words), but is only
   implemented for `&str` types. One could use `Utf8Error` above to implement
   grapheme iteration with the same semantics as what `bstr` provides (automatic
   Unicode replacement codepoint substitution).
-* The [`twoway`](https://docs.rs/twoway) crate can be used for
-  fast substring searching on `&[u8]`.
+* The [`twoway`](https://docs.rs/twoway) crate can be used for fast substring
+  searching on `&[u8]`.
 
 So why create `bstr`? Part of the point of the `bstr` crate is to provide a
 uniform API of coupled components instead of relying on users to piece together
@@ -229,13 +217,10 @@ Consider, for example, trimming and splitting, along with their different
 variants.
 
 In other words, `bstr` is partially a way of pushing back against the
-micro-crate ecosystem that appears to be evolving. It's not clear to me whether
-this experiment will be successful or not, but it is definitely a goal of
+micro-crate ecosystem that appears to be evolving. Namely, it is a goal of
 `bstr` to keep its dependency list lightweight. For example, `serde` is an
-optional dependency because there is no feasible alternative, but `twoway` is
-not, where we instead prefer to implement our own substring search. In service
-of this philosophy, currently, the only required dependency of `bstr` is
-`memchr`.
+optional dependency because there is no feasible alternative. In service of
+this philosophy, currently, the only required dependency of `bstr` is `memchr`.
 
 
 ### License

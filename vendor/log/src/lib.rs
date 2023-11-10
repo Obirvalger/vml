@@ -24,7 +24,7 @@
 //! though that default may be overridden. Logger implementations typically use
 //! the target to filter requests based on some user configuration.
 //!
-//! # Use
+//! # Usage
 //!
 //! The basic use of the log crate is through the five logging macros: [`error!`],
 //! [`warn!`], [`info!`], [`debug!`] and [`trace!`]
@@ -86,6 +86,42 @@
 //!
 //! The logging system may only be initialized once.
 //!
+//! ## Structured logging
+//!
+//! If you enable the `kv_unstable` feature you can associate structured values
+//! with your log records. If we take the example from before, we can include
+//! some additional context besides what's in the formatted message:
+//!
+//! ```edition2018
+//! # #[macro_use] extern crate serde;
+//! # #[derive(Debug, Serialize)] pub struct Yak(String);
+//! # impl Yak { fn shave(&mut self, _: u32) {} }
+//! # fn find_a_razor() -> Result<u32, std::io::Error> { Ok(1) }
+//! # #[cfg(feature = "kv_unstable_serde")]
+//! # fn main() {
+//! use log::{info, warn, as_serde, as_error};
+//!
+//! pub fn shave_the_yak(yak: &mut Yak) {
+//!     info!(target: "yak_events", yak = as_serde!(yak); "Commencing yak shaving");
+//!
+//!     loop {
+//!         match find_a_razor() {
+//!             Ok(razor) => {
+//!                 info!(razor = razor; "Razor located");
+//!                 yak.shave(razor);
+//!                 break;
+//!             }
+//!             Err(err) => {
+//!                 warn!(err = as_error!(err); "Unable to locate a razor, retrying");
+//!             }
+//!         }
+//!     }
+//! }
+//! # }
+//! # #[cfg(not(feature = "kv_unstable_serde"))]
+//! # fn main() {}
+//! ```
+//!
 //! # Available logging implementations
 //!
 //! In order to produce log output executables have to use
@@ -100,12 +136,23 @@
 //!     * [pretty_env_logger]
 //!     * [stderrlog]
 //!     * [flexi_logger]
+//!     * [call_logger]
+//!     * [structured-logger]
 //! * Complex configurable frameworks:
 //!     * [log4rs]
 //!     * [fern]
 //! * Adaptors for other facilities:
 //!     * [syslog]
 //!     * [slog-stdlog]
+//!     * [systemd-journal-logger]
+//!     * [android_log]
+//!     * [win_dbg_logger]
+//!     * [db_logger]
+//!     * [log-to-defmt]
+//! * For WebAssembly binaries:
+//!     * [console_log]
+//! * For dynamic libraries:
+//!     * You may need to construct an FFI-safe wrapper over `log` to initialize in your libraries
 //!
 //! # Implementing a Logger
 //!
@@ -258,18 +305,26 @@
 //! [pretty_env_logger]: https://docs.rs/pretty_env_logger/*/pretty_env_logger/
 //! [stderrlog]: https://docs.rs/stderrlog/*/stderrlog/
 //! [flexi_logger]: https://docs.rs/flexi_logger/*/flexi_logger/
+//! [call_logger]: https://docs.rs/call_logger/*/call_logger/
 //! [syslog]: https://docs.rs/syslog/*/syslog/
 //! [slog-stdlog]: https://docs.rs/slog-stdlog/*/slog_stdlog/
 //! [log4rs]: https://docs.rs/log4rs/*/log4rs/
 //! [fern]: https://docs.rs/fern/*/fern/
+//! [systemd-journal-logger]: https://docs.rs/systemd-journal-logger/*/systemd_journal_logger/
+//! [android_log]: https://docs.rs/android_log/*/android_log/
+//! [win_dbg_logger]: https://docs.rs/win_dbg_logger/*/win_dbg_logger/
+//! [db_logger]: https://docs.rs/db_logger/*/db_logger/
+//! [log-to-defmt]: https://docs.rs/log-to-defmt/*/log_to_defmt/
+//! [console_log]: https://docs.rs/console_log/*/console_log/
+//! [structured-logger]: https://docs.rs/structured-logger/latest/structured_logger/
 
 #![doc(
     html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
     html_favicon_url = "https://www.rust-lang.org/favicon.ico",
-    html_root_url = "https://docs.rs/log/0.4.14"
+    html_root_url = "https://docs.rs/log/0.4.20"
 )]
 #![warn(missing_docs)]
-#![deny(missing_debug_implementations)]
+#![deny(missing_debug_implementations, unconditional_recursion)]
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 // When compiled for the rustc compiler itself we want to make sure that this is
 // an unstable crate
@@ -278,9 +333,6 @@
 
 #[cfg(all(not(feature = "std"), not(test)))]
 extern crate core as std;
-
-#[macro_use]
-extern crate cfg_if;
 
 use std::cmp;
 #[cfg(feature = "std")]
@@ -296,20 +348,20 @@ mod serde;
 #[cfg(feature = "kv_unstable")]
 pub mod kv;
 
-#[cfg(has_atomics)]
+#[cfg(target_has_atomic = "ptr")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(not(has_atomics))]
+#[cfg(not(target_has_atomic = "ptr"))]
 use std::cell::Cell;
-#[cfg(not(has_atomics))]
+#[cfg(not(target_has_atomic = "ptr"))]
 use std::sync::atomic::Ordering;
 
-#[cfg(not(has_atomics))]
+#[cfg(not(target_has_atomic = "ptr"))]
 struct AtomicUsize {
     v: Cell<usize>,
 }
 
-#[cfg(not(has_atomics))]
+#[cfg(not(target_has_atomic = "ptr"))]
 impl AtomicUsize {
     const fn new(v: usize) -> AtomicUsize {
         AtomicUsize { v: Cell::new(v) }
@@ -323,7 +375,7 @@ impl AtomicUsize {
         self.v.set(val)
     }
 
-    #[cfg(atomic_cas)]
+    #[cfg(target_has_atomic = "ptr")]
     fn compare_exchange(
         &self,
         current: usize,
@@ -341,7 +393,7 @@ impl AtomicUsize {
 
 // Any platform without atomics is unlikely to have multiple cores, so
 // writing via Cell will not be a race condition.
-#[cfg(not(has_atomics))]
+#[cfg(not(target_has_atomic = "ptr"))]
 unsafe impl Sync for AtomicUsize {}
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
@@ -373,7 +425,7 @@ static LEVEL_PARSE_ERROR: &str =
 /// [`log!`](macro.log.html), and comparing a `Level` directly to a
 /// [`LevelFilter`](enum.LevelFilter.html).
 #[repr(usize)]
-#[derive(Copy, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum Level {
     /// The "error" level.
     ///
@@ -400,20 +452,6 @@ pub enum Level {
     Trace,
 }
 
-impl Clone for Level {
-    #[inline]
-    fn clone(&self) -> Level {
-        *self
-    }
-}
-
-impl PartialEq for Level {
-    #[inline]
-    fn eq(&self, other: &Level) -> bool {
-        *self as usize == *other as usize
-    }
-}
-
 impl PartialEq<LevelFilter> for Level {
     #[inline]
     fn eq(&self, other: &LevelFilter) -> bool {
@@ -421,64 +459,10 @@ impl PartialEq<LevelFilter> for Level {
     }
 }
 
-impl PartialOrd for Level {
-    #[inline]
-    fn partial_cmp(&self, other: &Level) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-
-    #[inline]
-    fn lt(&self, other: &Level) -> bool {
-        (*self as usize) < *other as usize
-    }
-
-    #[inline]
-    fn le(&self, other: &Level) -> bool {
-        *self as usize <= *other as usize
-    }
-
-    #[inline]
-    fn gt(&self, other: &Level) -> bool {
-        *self as usize > *other as usize
-    }
-
-    #[inline]
-    fn ge(&self, other: &Level) -> bool {
-        *self as usize >= *other as usize
-    }
-}
-
 impl PartialOrd<LevelFilter> for Level {
     #[inline]
     fn partial_cmp(&self, other: &LevelFilter) -> Option<cmp::Ordering> {
         Some((*self as usize).cmp(&(*other as usize)))
-    }
-
-    #[inline]
-    fn lt(&self, other: &LevelFilter) -> bool {
-        (*self as usize) < *other as usize
-    }
-
-    #[inline]
-    fn le(&self, other: &LevelFilter) -> bool {
-        *self as usize <= *other as usize
-    }
-
-    #[inline]
-    fn gt(&self, other: &LevelFilter) -> bool {
-        *self as usize > *other as usize
-    }
-
-    #[inline]
-    fn ge(&self, other: &LevelFilter) -> bool {
-        *self as usize >= *other as usize
-    }
-}
-
-impl Ord for Level {
-    #[inline]
-    fn cmp(&self, other: &Level) -> cmp::Ordering {
-        (*self as usize).cmp(&(*other as usize))
     }
 }
 
@@ -489,32 +473,13 @@ fn ok_or<T, E>(t: Option<T>, e: E) -> Result<T, E> {
     }
 }
 
-// Reimplemented here because std::ascii is not available in libcore
-fn eq_ignore_ascii_case(a: &str, b: &str) -> bool {
-    fn to_ascii_uppercase(c: u8) -> u8 {
-        if c >= b'a' && c <= b'z' {
-            c - b'a' + b'A'
-        } else {
-            c
-        }
-    }
-
-    if a.len() == b.len() {
-        a.bytes()
-            .zip(b.bytes())
-            .all(|(a, b)| to_ascii_uppercase(a) == to_ascii_uppercase(b))
-    } else {
-        false
-    }
-}
-
 impl FromStr for Level {
     type Err = ParseLevelError;
     fn from_str(level: &str) -> Result<Level, Self::Err> {
         ok_or(
             LOG_LEVEL_NAMES
                 .iter()
-                .position(|&name| eq_ignore_ascii_case(name, level))
+                .position(|&name| name.eq_ignore_ascii_case(level))
                 .into_iter()
                 .filter(|&idx| idx != 0)
                 .map(|idx| Level::from_usize(idx).unwrap())
@@ -560,6 +525,24 @@ impl Level {
     pub fn as_str(&self) -> &'static str {
         LOG_LEVEL_NAMES[*self as usize]
     }
+
+    /// Iterate through all supported logging levels.
+    ///
+    /// The order of iteration is from more severe to less severe log messages.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use log::Level;
+    ///
+    /// let mut levels = Level::iter();
+    ///
+    /// assert_eq!(Some(Level::Error), levels.next());
+    /// assert_eq!(Some(Level::Trace), levels.last());
+    /// ```
+    pub fn iter() -> impl Iterator<Item = Self> {
+        (1..6).map(|i| Self::from_usize(i).unwrap())
+    }
 }
 
 /// An enum representing the available verbosity level filters of the logger.
@@ -571,7 +554,7 @@ impl Level {
 /// [`max_level()`]: fn.max_level.html
 /// [`set_max_level`]: fn.set_max_level.html
 #[repr(usize)]
-#[derive(Copy, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum LevelFilter {
     /// A level lower than all log levels.
     Off,
@@ -587,22 +570,6 @@ pub enum LevelFilter {
     Trace,
 }
 
-// Deriving generates terrible impls of these traits
-
-impl Clone for LevelFilter {
-    #[inline]
-    fn clone(&self) -> LevelFilter {
-        *self
-    }
-}
-
-impl PartialEq for LevelFilter {
-    #[inline]
-    fn eq(&self, other: &LevelFilter) -> bool {
-        *self as usize == *other as usize
-    }
-}
-
 impl PartialEq<Level> for LevelFilter {
     #[inline]
     fn eq(&self, other: &Level) -> bool {
@@ -610,64 +577,10 @@ impl PartialEq<Level> for LevelFilter {
     }
 }
 
-impl PartialOrd for LevelFilter {
-    #[inline]
-    fn partial_cmp(&self, other: &LevelFilter) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-
-    #[inline]
-    fn lt(&self, other: &LevelFilter) -> bool {
-        (*self as usize) < *other as usize
-    }
-
-    #[inline]
-    fn le(&self, other: &LevelFilter) -> bool {
-        *self as usize <= *other as usize
-    }
-
-    #[inline]
-    fn gt(&self, other: &LevelFilter) -> bool {
-        *self as usize > *other as usize
-    }
-
-    #[inline]
-    fn ge(&self, other: &LevelFilter) -> bool {
-        *self as usize >= *other as usize
-    }
-}
-
 impl PartialOrd<Level> for LevelFilter {
     #[inline]
     fn partial_cmp(&self, other: &Level) -> Option<cmp::Ordering> {
         Some((*self as usize).cmp(&(*other as usize)))
-    }
-
-    #[inline]
-    fn lt(&self, other: &Level) -> bool {
-        (*self as usize) < *other as usize
-    }
-
-    #[inline]
-    fn le(&self, other: &Level) -> bool {
-        *self as usize <= *other as usize
-    }
-
-    #[inline]
-    fn gt(&self, other: &Level) -> bool {
-        *self as usize > *other as usize
-    }
-
-    #[inline]
-    fn ge(&self, other: &Level) -> bool {
-        *self as usize >= *other as usize
-    }
-}
-
-impl Ord for LevelFilter {
-    #[inline]
-    fn cmp(&self, other: &LevelFilter) -> cmp::Ordering {
-        (*self as usize).cmp(&(*other as usize))
     }
 }
 
@@ -677,7 +590,7 @@ impl FromStr for LevelFilter {
         ok_or(
             LOG_LEVEL_NAMES
                 .iter()
-                .position(|&name| eq_ignore_ascii_case(name, level))
+                .position(|&name| name.eq_ignore_ascii_case(level))
                 .map(|p| LevelFilter::from_usize(p).unwrap()),
             ParseLevelError(()),
         )
@@ -702,6 +615,7 @@ impl LevelFilter {
             _ => None,
         }
     }
+
     /// Returns the most verbose logging level filter.
     #[inline]
     pub fn max() -> LevelFilter {
@@ -721,6 +635,24 @@ impl LevelFilter {
     /// This returns the same string as the `fmt::Display` implementation.
     pub fn as_str(&self) -> &'static str {
         LOG_LEVEL_NAMES[*self as usize]
+    }
+
+    /// Iterate through all supported filtering levels.
+    ///
+    /// The order of iteration is from less to more verbose filtering.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use log::LevelFilter;
+    ///
+    /// let mut levels = LevelFilter::iter();
+    ///
+    /// assert_eq!(Some(LevelFilter::Off), levels.next());
+    /// assert_eq!(Some(LevelFilter::Trace), levels.last());
+    /// ```
+    pub fn iter() -> impl Iterator<Item = Self> {
+        (0..6).map(|i| Self::from_usize(i).unwrap())
     }
 }
 
@@ -762,7 +694,7 @@ impl<'a> MaybeStaticStr<'a> {
 /// struct SimpleLogger;
 ///
 /// impl log::Log for SimpleLogger {
-///    fn enabled(&self, metadata: &log::Metadata) -> bool {
+///    fn enabled(&self, _metadata: &log::Metadata) -> bool {
 ///        true
 ///    }
 ///
@@ -880,7 +812,7 @@ impl<'a> Record<'a> {
         self.line
     }
 
-    /// The structued key-value pairs associated with the message.
+    /// The structured key-value pairs associated with the message.
     #[cfg(feature = "kv_unstable")]
     #[inline]
     pub fn key_values(&self) -> &dyn kv::Source {
@@ -914,7 +846,6 @@ impl<'a> Record<'a> {
 /// the created object when `build` is called.
 ///
 /// # Examples
-///
 ///
 /// ```edition2018
 /// use log::{Level, Record};
@@ -1058,6 +989,12 @@ impl<'a> RecordBuilder<'a> {
     }
 }
 
+impl<'a> Default for RecordBuilder<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Metadata about a log message.
 ///
 /// # Use
@@ -1181,6 +1118,12 @@ impl<'a> MetadataBuilder<'a> {
     }
 }
 
+impl<'a> Default for MetadataBuilder<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A trait encapsulating the operations required of a logger.
 pub trait Log: Sync + Send {
     /// Determines if a log message with the specified metadata would be
@@ -1189,9 +1132,17 @@ pub trait Log: Sync + Send {
     /// This is used by the `log_enabled!` macro to allow callers to avoid
     /// expensive computation of log message arguments if the message would be
     /// discarded anyway.
+    ///
+    /// # For implementors
+    ///
+    /// This method isn't called automatically by the `log!` macros.
+    /// It's up to an implementation of the `Log` trait to call `enabled` in its own
+    /// `log` method implementation to guarantee that filtering is applied.
     fn enabled(&self, metadata: &Metadata) -> bool;
 
     /// Logs the `Record`.
+    ///
+    /// # For implementors
     ///
     /// Note that `enabled` is *not* necessarily called before this method.
     /// Implementations of `log` should perform all necessary filtering
@@ -1214,8 +1165,41 @@ impl Log for NopLogger {
     fn flush(&self) {}
 }
 
+impl<T> Log for &'_ T
+where
+    T: ?Sized + Log,
+{
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        (**self).enabled(metadata)
+    }
+
+    fn log(&self, record: &Record) {
+        (**self).log(record);
+    }
+    fn flush(&self) {
+        (**self).flush();
+    }
+}
+
 #[cfg(feature = "std")]
 impl<T> Log for std::boxed::Box<T>
+where
+    T: ?Sized + Log,
+{
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        self.as_ref().enabled(metadata)
+    }
+
+    fn log(&self, record: &Record) {
+        self.as_ref().log(record)
+    }
+    fn flush(&self) {
+        self.as_ref().flush()
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T> Log for std::sync::Arc<T>
 where
     T: ?Sized + Log,
 {
@@ -1234,9 +1218,39 @@ where
 /// Sets the global maximum log level.
 ///
 /// Generally, this should only be called by the active logging implementation.
+///
+/// Note that `Trace` is the maximum level, because it provides the maximum amount of detail in the emitted logs.
 #[inline]
+#[cfg(target_has_atomic = "ptr")]
 pub fn set_max_level(level: LevelFilter) {
-    MAX_LOG_LEVEL_FILTER.store(level as usize, Ordering::SeqCst)
+    MAX_LOG_LEVEL_FILTER.store(level as usize, Ordering::Relaxed);
+}
+
+/// A thread-unsafe version of [`set_max_level`].
+///
+/// This function is available on all platforms, even those that do not have
+/// support for atomics that is needed by [`set_max_level`].
+///
+/// In almost all cases, [`set_max_level`] should be preferred.
+///
+/// # Safety
+///
+/// This function is only safe to call when no other level setting function is
+/// called while this function still executes.
+///
+/// This can be upheld by (for example) making sure that **there are no other
+/// threads**, and (on embedded) that **interrupts are disabled**.
+///
+/// Is is safe to use all other logging functions while this function runs
+/// (including all logging macros).
+///
+/// [`set_max_level`]: fn.set_max_level.html
+#[inline]
+pub unsafe fn set_max_level_racy(level: LevelFilter) {
+    // `MAX_LOG_LEVEL_FILTER` uses a `Cell` as the underlying primitive when a
+    // platform doesn't support `target_has_atomic = "ptr"`, so even though this looks the same
+    // as `set_max_level` it may have different safety properties.
+    MAX_LOG_LEVEL_FILTER.store(level as usize, Ordering::Relaxed);
 }
 
 /// Returns the current maximum log level.
@@ -1276,7 +1290,7 @@ pub fn max_level() -> LevelFilter {
 /// An error is returned if a logger has already been set.
 ///
 /// [`set_logger`]: fn.set_logger.html
-#[cfg(all(feature = "std", atomic_cas))]
+#[cfg(all(feature = "std", target_has_atomic = "ptr"))]
 pub fn set_boxed_logger(logger: Box<dyn Log>) -> Result<(), SetLoggerError> {
     set_logger_inner(|| Box::leak(logger))
 }
@@ -1334,12 +1348,12 @@ pub fn set_boxed_logger(logger: Box<dyn Log>) -> Result<(), SetLoggerError> {
 /// ```
 ///
 /// [`set_logger_racy`]: fn.set_logger_racy.html
-#[cfg(atomic_cas)]
+#[cfg(target_has_atomic = "ptr")]
 pub fn set_logger(logger: &'static dyn Log) -> Result<(), SetLoggerError> {
     set_logger_inner(|| logger)
 }
 
-#[cfg(atomic_cas)]
+#[cfg(target_has_atomic = "ptr")]
 fn set_logger_inner<F>(make_logger: F) -> Result<(), SetLoggerError>
 where
     F: FnOnce() -> &'static dyn Log,
@@ -1362,6 +1376,8 @@ where
         }
         INITIALIZING => {
             while STATE.load(Ordering::SeqCst) == INITIALIZING {
+                // TODO: replace with `hint::spin_loop` once MSRV is 1.49.0.
+                #[allow(deprecated)]
                 std::sync::atomic::spin_loop_hint();
             }
             Err(SetLoggerError(()))
@@ -1425,7 +1441,7 @@ impl error::Error for SetLoggerError {}
 ///
 /// [`from_str`]: https://doc.rust-lang.org/std/str/trait.FromStr.html#tymethod.from_str
 #[allow(missing_copy_implementations)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ParseLevelError(());
 
 impl fmt::Display for ParseLevelError {
@@ -1452,28 +1468,7 @@ pub fn logger() -> &'static dyn Log {
 
 // WARNING: this is not part of the crate's public API and is subject to change at any time
 #[doc(hidden)]
-pub fn __private_api_log(
-    args: fmt::Arguments,
-    level: Level,
-    &(target, module_path, file, line): &(&str, &'static str, &'static str, u32),
-) {
-    logger().log(
-        &Record::builder()
-            .args(args)
-            .level(level)
-            .target(target)
-            .module_path_static(Some(module_path))
-            .file_static(Some(file))
-            .line(Some(line))
-            .build(),
-    );
-}
-
-// WARNING: this is not part of the crate's public API and is subject to change at any time
-#[doc(hidden)]
-pub fn __private_api_enabled(level: Level, target: &str) -> bool {
-    logger().enabled(&Metadata::builder().level(level).target(target).build())
-}
+pub mod __private_api;
 
 /// The statically resolved maximum log level.
 ///
@@ -1486,31 +1481,57 @@ pub fn __private_api_enabled(level: Level, target: &str) -> bool {
 /// [`logger`]: fn.logger.html
 pub const STATIC_MAX_LEVEL: LevelFilter = MAX_LEVEL_INNER;
 
-cfg_if! {
-    if #[cfg(all(not(debug_assertions), feature = "release_max_level_off"))] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Off;
-    } else if #[cfg(all(not(debug_assertions), feature = "release_max_level_error"))] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Error;
-    } else if #[cfg(all(not(debug_assertions), feature = "release_max_level_warn"))] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Warn;
-    } else if #[cfg(all(not(debug_assertions), feature = "release_max_level_info"))] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Info;
-    } else if #[cfg(all(not(debug_assertions), feature = "release_max_level_debug"))] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Debug;
-    } else if #[cfg(all(not(debug_assertions), feature = "release_max_level_trace"))] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Trace;
-    } else if #[cfg(feature = "max_level_off")] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Off;
-    } else if #[cfg(feature = "max_level_error")] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Error;
-    } else if #[cfg(feature = "max_level_warn")] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Warn;
-    } else if #[cfg(feature = "max_level_info")] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Info;
-    } else if #[cfg(feature = "max_level_debug")] {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Debug;
-    } else {
-        const MAX_LEVEL_INNER: LevelFilter = LevelFilter::Trace;
+const MAX_LEVEL_INNER: LevelFilter = get_max_level_inner();
+
+const fn get_max_level_inner() -> LevelFilter {
+    #[allow(unreachable_code)]
+    {
+        #[cfg(all(not(debug_assertions), feature = "release_max_level_off"))]
+        {
+            return LevelFilter::Off;
+        }
+        #[cfg(all(not(debug_assertions), feature = "release_max_level_error"))]
+        {
+            return LevelFilter::Error;
+        }
+        #[cfg(all(not(debug_assertions), feature = "release_max_level_warn"))]
+        {
+            return LevelFilter::Warn;
+        }
+        #[cfg(all(not(debug_assertions), feature = "release_max_level_info"))]
+        {
+            return LevelFilter::Info;
+        }
+        #[cfg(all(not(debug_assertions), feature = "release_max_level_debug"))]
+        {
+            return LevelFilter::Debug;
+        }
+        #[cfg(all(not(debug_assertions), feature = "release_max_level_trace"))]
+        {
+            return LevelFilter::Trace;
+        }
+        #[cfg(feature = "max_level_off")]
+        {
+            return LevelFilter::Off;
+        }
+        #[cfg(feature = "max_level_error")]
+        {
+            return LevelFilter::Error;
+        }
+        #[cfg(feature = "max_level_warn")]
+        {
+            return LevelFilter::Warn;
+        }
+        #[cfg(feature = "max_level_info")]
+        {
+            return LevelFilter::Info;
+        }
+        #[cfg(feature = "max_level_debug")]
+        {
+            return LevelFilter::Debug;
+        }
+
+        LevelFilter::Trace
     }
 }
 
@@ -1771,5 +1792,36 @@ mod tests {
                 .to_borrowed_str()
                 .expect("invalid value")
         );
+    }
+
+    // Test that the `impl Log for Foo` blocks work
+    // This test mostly operates on a type level, so failures will be compile errors
+    #[test]
+    fn test_foreign_impl() {
+        use super::Log;
+        #[cfg(feature = "std")]
+        use std::sync::Arc;
+
+        fn assert_is_log<T: Log + ?Sized>() {}
+
+        assert_is_log::<&dyn Log>();
+
+        #[cfg(feature = "std")]
+        assert_is_log::<Box<dyn Log>>();
+
+        #[cfg(feature = "std")]
+        assert_is_log::<Arc<dyn Log>>();
+
+        // Assert these statements for all T: Log + ?Sized
+        #[allow(unused)]
+        fn forall<T: Log + ?Sized>() {
+            #[cfg(feature = "std")]
+            assert_is_log::<Box<T>>();
+
+            assert_is_log::<&T>();
+
+            #[cfg(feature = "std")]
+            assert_is_log::<Arc<T>>();
+        }
     }
 }

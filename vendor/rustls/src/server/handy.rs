@@ -1,3 +1,4 @@
+use crate::dns_name::DnsNameRef;
 use crate::error::Error;
 use crate::key;
 use crate::limited_cache;
@@ -155,12 +156,49 @@ impl ResolvesServerCertUsingSni {
     /// it's not valid for the supplied certificate, or if the certificate
     /// chain is syntactically faulty.
     pub fn add(&mut self, name: &str, ck: sign::CertifiedKey) -> Result<(), Error> {
-        let checked_name = webpki::DnsNameRef::try_from_ascii_str(name)
-            .map_err(|_| Error::General("Bad DNS name".into()))?;
+        let checked_name = DnsNameRef::try_from(name)
+            .map_err(|_| Error::General("Bad DNS name".into()))
+            .map(|dns| dns.to_lowercase_owned())?;
 
-        ck.cross_check_end_entity_cert(Some(checked_name))?;
+        // Check the certificate chain for validity:
+        // - it should be non-empty list
+        // - the first certificate should be parsable as a x509v3,
+        // - the first certificate should quote the given server name
+        //   (if provided)
+        //
+        // These checks are not security-sensitive.  They are the
+        // *server* attempting to detect accidental misconfiguration.
+
+        // Always reject an empty certificate chain.
+        let end_entity_cert = ck.end_entity_cert().map_err(|_| {
+            Error::General("No end-entity certificate in certificate chain".to_string())
+        })?;
+
+        // Reject syntactically-invalid end-entity certificates.
+        let end_entity_cert =
+            webpki::EndEntityCert::try_from(end_entity_cert.as_ref()).map_err(|_| {
+                Error::General(
+                    "End-entity certificate in certificate chain is syntactically invalid"
+                        .to_string(),
+                )
+            })?;
+
+        // Note that this doesn't fully validate that the certificate is valid; it only validates that the name is one
+        // that the certificate is valid for, if the certificate is
+        // valid.
+        let general_error =
+            || Error::General("The server certificate is not valid for the given name".to_string());
+
+        let name = webpki::DnsNameRef::try_from_ascii(checked_name.as_ref().as_bytes())
+            .map_err(|_| general_error())?;
+
+        end_entity_cert
+            .verify_is_valid_for_subject_name(webpki::SubjectNameRef::DnsName(name))
+            .map_err(|_| general_error())?;
+
+        let as_str: &str = checked_name.as_ref();
         self.by_name
-            .insert(name.into(), Arc::new(ck));
+            .insert(as_str.to_string(), Arc::new(ck));
         Ok(())
     }
 }
@@ -186,7 +224,7 @@ mod test {
     #[test]
     fn test_noserversessionstorage_drops_put() {
         let c = NoServerSessionStorage {};
-        assert_eq!(c.put(vec![0x01], vec![0x02]), false);
+        assert!(!c.put(vec![0x01], vec![0x02]));
     }
 
     #[test]
@@ -209,13 +247,13 @@ mod test {
     #[test]
     fn test_serversessionmemorycache_accepts_put() {
         let c = ServerSessionMemoryCache::new(4);
-        assert_eq!(c.put(vec![0x01], vec![0x02]), true);
+        assert!(c.put(vec![0x01], vec![0x02]));
     }
 
     #[test]
     fn test_serversessionmemorycache_persists_put() {
         let c = ServerSessionMemoryCache::new(4);
-        assert_eq!(c.put(vec![0x01], vec![0x02]), true);
+        assert!(c.put(vec![0x01], vec![0x02]));
         assert_eq!(c.get(&[0x01]), Some(vec![0x02]));
         assert_eq!(c.get(&[0x01]), Some(vec![0x02]));
     }
@@ -223,19 +261,19 @@ mod test {
     #[test]
     fn test_serversessionmemorycache_overwrites_put() {
         let c = ServerSessionMemoryCache::new(4);
-        assert_eq!(c.put(vec![0x01], vec![0x02]), true);
-        assert_eq!(c.put(vec![0x01], vec![0x04]), true);
+        assert!(c.put(vec![0x01], vec![0x02]));
+        assert!(c.put(vec![0x01], vec![0x04]));
         assert_eq!(c.get(&[0x01]), Some(vec![0x04]));
     }
 
     #[test]
     fn test_serversessionmemorycache_drops_to_maintain_size_invariant() {
         let c = ServerSessionMemoryCache::new(2);
-        assert_eq!(c.put(vec![0x01], vec![0x02]), true);
-        assert_eq!(c.put(vec![0x03], vec![0x04]), true);
-        assert_eq!(c.put(vec![0x05], vec![0x06]), true);
-        assert_eq!(c.put(vec![0x07], vec![0x08]), true);
-        assert_eq!(c.put(vec![0x09], vec![0x0a]), true);
+        assert!(c.put(vec![0x01], vec![0x02]));
+        assert!(c.put(vec![0x03], vec![0x04]));
+        assert!(c.put(vec![0x05], vec![0x06]));
+        assert!(c.put(vec![0x07], vec![0x08]));
+        assert!(c.put(vec![0x09], vec![0x0a]));
 
         let count = c.get(&[0x01]).iter().count()
             + c.get(&[0x03]).iter().count()
@@ -249,7 +287,7 @@ mod test {
     #[test]
     fn test_neverproducestickets_does_nothing() {
         let npt = NeverProducesTickets {};
-        assert_eq!(false, npt.enabled());
+        assert!(!npt.enabled());
         assert_eq!(0, npt.lifetime());
         assert_eq!(None, npt.encrypt(&[]));
         assert_eq!(None, npt.decrypt(&[]));
@@ -259,18 +297,18 @@ mod test {
     fn test_resolvesservercertusingsni_requires_sni() {
         let rscsni = ResolvesServerCertUsingSni::new();
         assert!(rscsni
-            .resolve(ClientHello::new(&None, &[], None))
+            .resolve(ClientHello::new(&None, &[], None, &[]))
             .is_none());
     }
 
     #[test]
     fn test_resolvesservercertusingsni_handles_unknown_name() {
         let rscsni = ResolvesServerCertUsingSni::new();
-        let name = webpki::DnsNameRef::try_from_ascii_str("hello.com")
+        let name = DnsNameRef::try_from("hello.com")
             .unwrap()
             .to_owned();
         assert!(rscsni
-            .resolve(ClientHello::new(&Some(name), &[], None))
+            .resolve(ClientHello::new(&Some(name), &[], None, &[]))
             .is_none());
     }
 }

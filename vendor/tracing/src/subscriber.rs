@@ -5,16 +5,16 @@ pub use tracing_core::subscriber::*;
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub use tracing_core::dispatcher::DefaultGuard;
 
-/// Sets this subscriber as the default for the duration of a closure.
+/// Sets this [`Subscriber`] as the default for the current thread for the
+/// duration of a closure.
 ///
 /// The default subscriber is used when creating a new [`Span`] or
-/// [`Event`], _if no span is currently executing_. If a span is currently
-/// executing, new spans or events are dispatched to the subscriber that
-/// tagged that span, instead.
+/// [`Event`].
 ///
-/// [`Span`]: ../span/struct.Span.html
-/// [`Subscriber`]: ../subscriber/trait.Subscriber.html
-/// [`Event`]: :../event/struct.Event.html
+///
+/// [`Span`]: super::span::Span
+/// [`Subscriber`]: super::subscriber::Subscriber
+/// [`Event`]: super::event::Event
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub fn with_default<T, S>(subscriber: S, f: impl FnOnce() -> T) -> T
@@ -33,9 +33,9 @@ where
 /// Note: Libraries should *NOT* call `set_global_default()`! That will cause conflicts when
 /// executables try to set them later.
 ///
-/// [span]: ../span/index.html
-/// [`Subscriber`]: ../subscriber/trait.Subscriber.html
-/// [`Event`]: ../event/struct.Event.html
+/// [span]: super::span
+/// [`Subscriber`]: super::subscriber::Subscriber
+/// [`Event`]: super::event::Event
 pub fn set_global_default<S>(subscriber: S) -> Result<(), SetGlobalDefaultError>
 where
     S: Subscriber + Send + Sync + 'static,
@@ -43,18 +43,15 @@ where
     crate::dispatcher::set_global_default(crate::Dispatch::new(subscriber))
 }
 
-/// Sets the subscriber as the default for the duration of the lifetime of the
-/// returned [`DefaultGuard`]
+/// Sets the [`Subscriber`] as the default for the current thread for the
+/// duration of the lifetime of the returned [`DefaultGuard`].
 ///
-/// The default subscriber is used when creating a new [`Span`] or
-/// [`Event`], _if no span is currently executing_. If a span is currently
-/// executing, new spans or events are dispatched to the subscriber that
-/// tagged that span, instead.
+/// The default subscriber is used when creating a new [`Span`] or [`Event`].
 ///
-/// [`Span`]: ../span/struct.Span.html
-/// [`Subscriber`]: ../subscriber/trait.Subscriber.html
-/// [`Event`]: :../event/struct.Event.html
-/// [`DefaultGuard`]: ../dispatcher/struct.DefaultGuard.html
+/// [`Span`]: super::span::Span
+/// [`Subscriber`]: super::subscriber::Subscriber
+/// [`Event`]: super::event::Event
+/// [`DefaultGuard`]: super::dispatcher::DefaultGuard
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[must_use = "Dropping the guard unregisters the subscriber."]

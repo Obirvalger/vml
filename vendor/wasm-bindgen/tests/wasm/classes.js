@@ -43,6 +43,10 @@ exports.js_exceptions = () => {
     let b = wasm.ClassesExceptions1.new();
     b.foo(b);
     assert.throws(() => b.bar(b), /recursive use of an object/);
+    // TODO: throws because it tries to borrow_mut, but the throw_str from the previous line doesn't clean up the
+    // RefMut so the object is left in a broken state.
+    // We still try to call free here so the object is removed from the FinalizationRegistry when weak refs are enabled.
+    assert.throws(() => b.free(), /recursive use of an object/);
 
     let c = wasm.ClassesExceptions1.new();
     let d = wasm.ClassesExceptions2.new();
@@ -110,6 +114,18 @@ exports.js_public_fields = () => {
     assert.strictEqual(a.d, 3);
 
     assert.strictEqual(a.skipped, undefined);
+};
+
+exports.js_getter_with_clone = () => {
+    const a = wasm.GetterWithCloneStruct.new();
+    assert.strictEqual(a.a, '');
+    a.a = 'foo';
+    assert.strictEqual(a.a, 'foo');
+
+    const b = wasm.GetterWithCloneStructField.new();
+    assert.strictEqual(b.a, '');
+    b.a = 'foo';
+    assert.strictEqual(b.a, 'foo');
 };
 
 exports.js_using_self = () => {
@@ -212,7 +228,7 @@ exports.js_test_inspectable_classes = () => {
     assert.strictEqual(not_inspectable.toJSON, undefined);
     assert.strictEqual(not_inspectable.toString(), '[object Object]');
     // Non-inspectable classes in Node.js have no special console.log formatting
-    assert.strictEqual(console_log_to_string(not_inspectable), `NotInspectable { ptr: ${not_inspectable.ptr} }`);
+    assert.strictEqual(console_log_to_string(not_inspectable), `NotInspectable { __wbg_ptr: ${not_inspectable.__wbg_ptr} }`);
     inspectable.free();
     not_inspectable.free();
 };

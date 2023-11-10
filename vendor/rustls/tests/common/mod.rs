@@ -1,30 +1,20 @@
-use std::convert::{TryFrom, TryInto};
+#![allow(dead_code)]
+
 use std::io;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use rustls_pemfile;
-
 use rustls::internal::msgs::codec::Reader;
 use rustls::internal::msgs::message::{Message, OpaqueMessage, PlainMessage};
-use rustls::server::AllowAnyAuthenticatedClient;
+use rustls::server::{
+    AllowAnyAnonymousOrAuthenticatedClient, AllowAnyAuthenticatedClient, UnparsedCertRevocationList,
+};
 use rustls::Connection;
 use rustls::Error;
 use rustls::RootCertStore;
 use rustls::{Certificate, PrivateKey};
 use rustls::{ClientConfig, ClientConnection};
 use rustls::{ConnectionCommon, ServerConfig, ServerConnection, SideData};
-
-#[cfg(feature = "dangerous_configuration")]
-use rustls::client::{
-    HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier, WebPkiVerifier,
-};
-#[cfg(feature = "dangerous_configuration")]
-use rustls::server::{ClientCertVerified, ClientCertVerifier};
-#[cfg(feature = "dangerous_configuration")]
-use rustls::{
-    internal::msgs::handshake::DigitallySignedStruct, DistinguishedNames, SignatureScheme,
-};
 
 macro_rules! embed_files {
     (
@@ -57,6 +47,7 @@ embed_files! {
     (ECDSA_CLIENT_FULLCHAIN, "ecdsa", "client.fullchain");
     (ECDSA_CLIENT_KEY, "ecdsa", "client.key");
     (ECDSA_CLIENT_REQ, "ecdsa", "client.req");
+    (ECDSA_CLIENT_CRL_PEM, "ecdsa", "client.revoked.crl.pem");
     (ECDSA_END_CERT, "ecdsa", "end.cert");
     (ECDSA_END_CHAIN, "ecdsa", "end.chain");
     (ECDSA_END_FULLCHAIN, "ecdsa", "end.fullchain");
@@ -76,6 +67,7 @@ embed_files! {
     (EDDSA_CLIENT_FULLCHAIN, "eddsa", "client.fullchain");
     (EDDSA_CLIENT_KEY, "eddsa", "client.key");
     (EDDSA_CLIENT_REQ, "eddsa", "client.req");
+    (EDDSA_CLIENT_CRL_PEM, "eddsa", "client.revoked.crl.pem");
     (EDDSA_END_CERT, "eddsa", "end.cert");
     (EDDSA_END_CHAIN, "eddsa", "end.chain");
     (EDDSA_END_FULLCHAIN, "eddsa", "end.fullchain");
@@ -94,6 +86,7 @@ embed_files! {
     (RSA_CLIENT_KEY, "rsa", "client.key");
     (RSA_CLIENT_REQ, "rsa", "client.req");
     (RSA_CLIENT_RSA, "rsa", "client.rsa");
+    (RSA_CLIENT_CRL_PEM, "rsa", "client.revoked.crl.pem");
     (RSA_END_CERT, "rsa", "end.cert");
     (RSA_END_CHAIN, "rsa", "end.chain");
     (RSA_END_FULLCHAIN, "rsa", "end.fullchain");
@@ -142,9 +135,16 @@ pub fn transfer_eof(conn: &mut (impl DerefMut + Deref<Target = ConnectionCommon<
     assert_eq!(sz, 0);
 }
 
+pub enum Altered {
+    /// message has been edited in-place (or is unchanged)
+    InPlace,
+    /// send these raw bytes instead of the message.
+    Raw(Vec<u8>),
+}
+
 pub fn transfer_altered<F>(left: &mut Connection, filter: F, right: &mut Connection) -> usize
 where
-    F: Fn(&mut Message),
+    F: Fn(&mut Message) -> Altered,
 {
     let mut buf = [0u8; 262144];
     let mut total = 0;
@@ -163,10 +163,13 @@ where
         while reader.any_left() {
             let message = OpaqueMessage::read(&mut reader).unwrap();
             let mut message = Message::try_from(message.into_plain_message()).unwrap();
-            filter(&mut message);
-            let message_enc = PlainMessage::from(message)
-                .into_unencrypted_opaque()
-                .encode();
+            let message_enc = match filter(&mut message) {
+                Altered::InPlace => PlainMessage::from(message)
+                    .into_unencrypted_opaque()
+                    .encode(),
+                Altered::Raw(data) => data,
+            };
+
             let message_enc_reader: &mut dyn io::Read = &mut &message_enc[..];
             let len = right
                 .read_tls(message_enc_reader)
@@ -178,21 +181,21 @@ where
     total
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum KeyType {
-    RSA,
-    ECDSA,
-    ED25519,
+    Rsa,
+    Ecdsa,
+    Ed25519,
 }
 
-pub static ALL_KEY_TYPES: [KeyType; 3] = [KeyType::RSA, KeyType::ECDSA, KeyType::ED25519];
+pub static ALL_KEY_TYPES: [KeyType; 3] = [KeyType::Rsa, KeyType::Ecdsa, KeyType::Ed25519];
 
 impl KeyType {
     fn bytes_for(&self, part: &str) -> &'static [u8] {
         match self {
-            KeyType::RSA => bytes_for("rsa", part),
-            KeyType::ECDSA => bytes_for("ecdsa", part),
-            KeyType::ED25519 => bytes_for("eddsa", part),
+            Self::Rsa => bytes_for("rsa", part),
+            Self::Ecdsa => bytes_for("ecdsa", part),
+            Self::Ed25519 => bytes_for("eddsa", part),
         }
     }
 
@@ -218,6 +221,18 @@ impl KeyType {
             .iter()
             .map(|v| Certificate(v.clone()))
             .collect()
+    }
+
+    pub fn client_crl(&self) -> UnparsedCertRevocationList {
+        UnparsedCertRevocationList(
+            rustls_pemfile::crls(&mut io::BufReader::new(
+                self.bytes_for("client.revoked.crl.pem"),
+            ))
+            .unwrap()
+            .into_iter()
+            .next() // We only expect one CRL.
+            .unwrap(),
+        )
     }
 
     fn get_client_key(&self) -> PrivateKey {
@@ -273,7 +288,9 @@ pub fn make_server_config_with_kx_groups(
 }
 
 pub fn get_client_root_store(kt: KeyType) -> RootCertStore {
-    let roots = kt.get_chain();
+    let mut roots = kt.get_chain();
+    // drop server cert
+    roots.drain(0..1);
     let mut client_auth_roots = RootCertStore::empty();
     for root in roots {
         client_auth_roots.add(&root).unwrap();
@@ -281,14 +298,40 @@ pub fn get_client_root_store(kt: KeyType) -> RootCertStore {
     client_auth_roots
 }
 
-pub fn make_server_config_with_mandatory_client_auth(kt: KeyType) -> ServerConfig {
+pub fn make_server_config_with_mandatory_client_auth_crls(
+    kt: KeyType,
+    crls: Vec<UnparsedCertRevocationList>,
+) -> ServerConfig {
     let client_auth_roots = get_client_root_store(kt);
 
-    let client_auth = AllowAnyAuthenticatedClient::new(client_auth_roots);
+    let client_auth = AllowAnyAuthenticatedClient::new(client_auth_roots)
+        .with_crls(crls)
+        .unwrap();
 
     ServerConfig::builder()
         .with_safe_defaults()
-        .with_client_cert_verifier(client_auth)
+        .with_client_cert_verifier(Arc::new(client_auth))
+        .with_single_cert(kt.get_chain(), kt.get_key())
+        .unwrap()
+}
+
+pub fn make_server_config_with_mandatory_client_auth(kt: KeyType) -> ServerConfig {
+    make_server_config_with_mandatory_client_auth_crls(kt, Vec::new())
+}
+
+pub fn make_server_config_with_optional_client_auth(
+    kt: KeyType,
+    crls: Vec<UnparsedCertRevocationList>,
+) -> ServerConfig {
+    let client_auth_roots = get_client_root_store(kt);
+
+    let client_auth = AllowAnyAnonymousOrAuthenticatedClient::new(client_auth_roots)
+        .with_crls(crls)
+        .unwrap();
+
+    ServerConfig::builder()
+        .with_safe_defaults()
+        .with_client_cert_verifier(Arc::new(client_auth))
         .with_single_cert(kt.get_chain(), kt.get_key())
         .unwrap()
 }
@@ -316,7 +359,7 @@ pub fn finish_client_config_with_creds(
 
     config
         .with_root_certificates(root_store)
-        .with_single_cert(kt.get_client_chain(), kt.get_client_key())
+        .with_client_auth_cert(kt.get_client_chain(), kt.get_client_key())
         .unwrap()
 }
 
@@ -380,7 +423,7 @@ pub fn make_pair_for_arc_configs(
     server_config: &Arc<ServerConfig>,
 ) -> (ClientConnection, ServerConnection) {
     (
-        ClientConnection::new(Arc::clone(&client_config), dns_name("localhost")).unwrap(),
+        ClientConnection::new(Arc::clone(client_config), dns_name("localhost")).unwrap(),
         ServerConnection::new(Arc::clone(server_config)).unwrap(),
     )
 }
@@ -399,176 +442,6 @@ pub fn do_handshake(
     (to_server, to_client)
 }
 
-#[cfg(feature = "dangerous_configuration")]
-pub struct MockServerVerifier {
-    cert_rejection_error: Option<Error>,
-    tls12_signature_error: Option<Error>,
-    tls13_signature_error: Option<Error>,
-    wants_scts: bool,
-    signature_schemes: Vec<SignatureScheme>,
-}
-
-#[cfg(feature = "dangerous_configuration")]
-impl ServerCertVerifier for MockServerVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &rustls::Certificate,
-        intermediates: &[rustls::Certificate],
-        server_name: &rustls::ServerName,
-        scts: &mut dyn Iterator<Item = &[u8]>,
-        oscp_response: &[u8],
-        now: std::time::SystemTime,
-    ) -> Result<ServerCertVerified, Error> {
-        let scts: Vec<Vec<u8>> = scts.map(|x| x.to_owned()).collect();
-        println!(
-            "verify_server_cert({:?}, {:?}, {:?}, {:?}, {:?}, {:?})",
-            end_entity, intermediates, server_name, scts, oscp_response, now
-        );
-        if let Some(error) = &self.cert_rejection_error {
-            Err(error.clone())
-        } else {
-            Ok(ServerCertVerified::assertion())
-        }
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &Certificate,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, Error> {
-        println!(
-            "verify_tls12_signature({:?}, {:?}, {:?})",
-            message, cert, dss
-        );
-        if let Some(error) = &self.tls12_signature_error {
-            Err(error.clone())
-        } else {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &Certificate,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, Error> {
-        println!(
-            "verify_tls13_signature({:?}, {:?}, {:?})",
-            message, cert, dss
-        );
-        if let Some(error) = &self.tls13_signature_error {
-            Err(error.clone())
-        } else {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.signature_schemes.clone()
-    }
-
-    fn request_scts(&self) -> bool {
-        println!("request_scts? {:?}", self.wants_scts);
-        self.wants_scts
-    }
-}
-
-#[cfg(feature = "dangerous_configuration")]
-impl MockServerVerifier {
-    pub fn accepts_anything() -> Self {
-        MockServerVerifier {
-            cert_rejection_error: None,
-            ..Default::default()
-        }
-    }
-
-    pub fn requests_scts() -> Self {
-        MockServerVerifier {
-            wants_scts: true,
-            ..Default::default()
-        }
-    }
-
-    pub fn rejects_certificate(err: Error) -> Self {
-        MockServerVerifier {
-            cert_rejection_error: Some(err),
-            ..Default::default()
-        }
-    }
-
-    pub fn rejects_tls12_signatures(err: Error) -> Self {
-        MockServerVerifier {
-            tls12_signature_error: Some(err),
-            ..Default::default()
-        }
-    }
-
-    pub fn rejects_tls13_signatures(err: Error) -> Self {
-        MockServerVerifier {
-            tls13_signature_error: Some(err),
-            ..Default::default()
-        }
-    }
-
-    pub fn offers_no_signature_schemes() -> Self {
-        MockServerVerifier {
-            signature_schemes: vec![],
-            ..Default::default()
-        }
-    }
-}
-
-#[cfg(feature = "dangerous_configuration")]
-impl Default for MockServerVerifier {
-    fn default() -> Self {
-        MockServerVerifier {
-            cert_rejection_error: None,
-            tls12_signature_error: None,
-            tls13_signature_error: None,
-            wants_scts: false,
-            signature_schemes: WebPkiVerifier::verification_schemes(),
-        }
-    }
-}
-
-#[cfg(feature = "dangerous_configuration")]
-pub struct MockClientVerifier {
-    pub verified: fn() -> Result<ClientCertVerified, Error>,
-    pub subjects: Option<DistinguishedNames>,
-    pub mandatory: Option<bool>,
-    pub offered_schemes: Option<Vec<SignatureScheme>>,
-}
-
-#[cfg(feature = "dangerous_configuration")]
-impl ClientCertVerifier for MockClientVerifier {
-    fn client_auth_mandatory(&self) -> Option<bool> {
-        self.mandatory
-    }
-
-    fn client_auth_root_subjects(&self) -> Option<DistinguishedNames> {
-        self.subjects.as_ref().cloned()
-    }
-
-    fn verify_client_cert(
-        &self,
-        _end_entity: &Certificate,
-        _intermediates: &[Certificate],
-        _now: std::time::SystemTime,
-    ) -> Result<ClientCertVerified, Error> {
-        (self.verified)()
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        if let Some(schemes) = &self.offered_schemes {
-            schemes.clone()
-        } else {
-            WebPkiVerifier::verification_schemes()
-        }
-    }
-}
-
 #[derive(PartialEq, Debug)]
 pub enum ErrorFromPeer {
     Client(Error),
@@ -583,11 +456,11 @@ pub fn do_handshake_until_error(
         transfer(client, server);
         server
             .process_new_packets()
-            .map_err(|err| ErrorFromPeer::Server(err))?;
+            .map_err(ErrorFromPeer::Server)?;
         transfer(server, client);
         client
             .process_new_packets()
-            .map_err(|err| ErrorFromPeer::Client(err))?;
+            .map_err(ErrorFromPeer::Client)?;
     }
 
     Ok(())
@@ -603,7 +476,7 @@ pub fn do_handshake_until_both_error(
             transfer(server, client);
             let client_err = client
                 .process_new_packets()
-                .map_err(|err| ErrorFromPeer::Client(err))
+                .map_err(ErrorFromPeer::Client)
                 .expect_err("client didn't produce error after server error");
             errors.push(client_err);
             Err(errors)
@@ -614,7 +487,7 @@ pub fn do_handshake_until_both_error(
             transfer(client, server);
             let server_err = server
                 .process_new_packets()
-                .map_err(|err| ErrorFromPeer::Server(err))
+                .map_err(ErrorFromPeer::Server)
                 .expect_err("server didn't produce error after client error");
             errors.push(server_err);
             Err(errors)
@@ -634,7 +507,7 @@ pub struct FailsReads {
 
 impl FailsReads {
     pub fn new(errkind: io::ErrorKind) -> Self {
-        FailsReads { errkind }
+        Self { errkind }
     }
 }
 

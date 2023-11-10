@@ -48,11 +48,15 @@ struct LocalFile {
 
 impl Interner {
     fn new() -> Interner {
+        let root = env::var_os("CARGO_MANIFEST_DIR")
+            .expect("should have CARGO_MANIFEST_DIR env var")
+            .into();
+        let crate_name = env::var("CARGO_PKG_NAME").expect("should have CARGO_PKG_NAME env var");
         Interner {
             bump: bumpalo::Bump::new(),
             files: RefCell::new(HashMap::new()),
-            root: env::var_os("CARGO_MANIFEST_DIR").unwrap().into(),
-            crate_name: env::var("CARGO_PKG_NAME").unwrap(),
+            root,
+            crate_name,
             has_package_json: Cell::new(false),
         }
     }
@@ -73,19 +77,19 @@ impl Interner {
     ///
     /// Note that repeated invocations of this function will be memoized, so the
     /// same `id` will always return the same resulting unique `id`.
-    fn resolve_import_module(&self, id: &str, span: Span) -> Result<&str, Diagnostic> {
+    fn resolve_import_module(&self, id: &str, span: Span) -> Result<ImportModule, Diagnostic> {
         let mut files = self.files.borrow_mut();
         if let Some(file) = files.get(id) {
-            return Ok(self.intern_str(&file.new_identifier));
+            return Ok(ImportModule::Named(self.intern_str(&file.new_identifier)));
         }
         self.check_for_package_json();
-        let path = if id.starts_with("/") {
-            self.root.join(&id[1..])
+        let path = if let Some(id) = id.strip_prefix('/') {
+            self.root.join(id)
         } else if id.starts_with("./") || id.starts_with("../") {
             let msg = "relative module paths aren't supported yet";
             return Err(Diagnostic::span_error(span, msg));
         } else {
-            return Ok(self.intern_str(&id));
+            return Ok(ImportModule::RawNamed(self.intern_str(id)));
         };
 
         // Generate a unique ID which is somewhat readable as well, so mix in
@@ -140,8 +144,14 @@ fn shared_program<'a>(
         typescript_custom_sections: prog
             .typescript_custom_sections
             .iter()
-            .map(|x| -> &'a str { &x })
+            .map(|x| -> &'a str { x })
             .collect(),
+        linked_modules: prog
+            .linked_modules
+            .iter()
+            .enumerate()
+            .map(|(i, a)| shared_linked_module(&prog.link_function_name(i), a, intern))
+            .collect::<Result<Vec<_>, _>>()?,
         local_modules: intern
             .files
             .borrow()
@@ -176,13 +186,10 @@ fn shared_export<'a>(
     export: &'a ast::Export,
     intern: &'a Interner,
 ) -> Result<Export<'a>, Diagnostic> {
-    let consumed = match export.method_self {
-        Some(ast::MethodSelf::ByValue) => true,
-        _ => false,
-    };
+    let consumed = matches!(export.method_self, Some(ast::MethodSelf::ByValue));
     let method_kind = from_ast_method_kind(&export.function, intern, &export.method_kind)?;
     Ok(Export {
-        class: export.js_class.as_ref().map(|s| &**s),
+        class: export.js_class.as_deref(),
         comments: export.comments.iter().map(|s| &**s).collect(),
         consumed,
         function: shared_function(&export.function, intern),
@@ -205,8 +212,11 @@ fn shared_function<'a>(func: &'a ast::Function, _intern: &'a Interner) -> Functi
         .collect::<Vec<_>>();
     Function {
         arg_names,
+        asyncness: func.r#async,
         name: &func.name,
         generate_typescript: func.generate_typescript,
+        generate_jsdoc: func.generate_jsdoc,
+        variadic: func.variadic,
     }
 }
 
@@ -233,16 +243,35 @@ fn shared_variant<'a>(v: &'a ast::Variant, intern: &'a Interner) -> EnumVariant<
 
 fn shared_import<'a>(i: &'a ast::Import, intern: &'a Interner) -> Result<Import<'a>, Diagnostic> {
     Ok(Import {
-        module: match &i.module {
-            ast::ImportModule::Named(m, span) => {
-                ImportModule::Named(intern.resolve_import_module(m, *span)?)
-            }
-            ast::ImportModule::RawNamed(m, _span) => ImportModule::RawNamed(intern.intern_str(m)),
-            ast::ImportModule::Inline(idx, _) => ImportModule::Inline(*idx as u32),
-            ast::ImportModule::None => ImportModule::None,
-        },
+        module: i
+            .module
+            .as_ref()
+            .map(|m| shared_module(m, intern))
+            .transpose()?,
         js_namespace: i.js_namespace.clone(),
         kind: shared_import_kind(&i.kind, intern)?,
+    })
+}
+
+fn shared_linked_module<'a>(
+    name: &str,
+    i: &'a ast::ImportModule,
+    intern: &'a Interner,
+) -> Result<LinkedModule<'a>, Diagnostic> {
+    Ok(LinkedModule {
+        module: shared_module(i, intern)?,
+        link_function_name: intern.intern_str(name),
+    })
+}
+
+fn shared_module<'a>(
+    m: &'a ast::ImportModule,
+    intern: &'a Interner,
+) -> Result<ImportModule<'a>, Diagnostic> {
+    Ok(match m {
+        ast::ImportModule::Named(m, span) => intern.resolve_import_module(m, *span)?,
+        ast::ImportModule::RawNamed(m, _span) => ImportModule::RawNamed(intern.intern_str(m)),
+        ast::ImportModule::Inline(idx, _) => ImportModule::Inline(*idx as u32),
     })
 }
 
@@ -320,6 +349,7 @@ fn shared_struct_field<'a>(s: &'a ast::StructField, _intern: &'a Interner) -> St
         readonly: s.readonly,
         comments: s.comments.iter().map(|s| &**s).collect(),
         generate_typescript: s.generate_typescript,
+        generate_jsdoc: s.generate_jsdoc,
     }
 }
 
@@ -339,11 +369,8 @@ impl Encoder {
     }
 
     fn finish(mut self) -> Vec<u8> {
-        let len = self.dst.len() - 4;
-        self.dst[0] = (len >> 0) as u8;
-        self.dst[1] = (len >> 8) as u8;
-        self.dst[2] = (len >> 16) as u8;
-        self.dst[3] = (len >> 24) as u8;
+        let len = (self.dst.len() - 4) as u32;
+        self.dst[..4].copy_from_slice(&len.to_le_bytes()[..]);
         self.dst
     }
 
@@ -380,7 +407,7 @@ impl Encode for usize {
 impl<'a> Encode for &'a [u8] {
     fn encode(&self, dst: &mut Encoder) {
         self.len().encode(dst);
-        dst.dst.extend_from_slice(*self);
+        dst.dst.extend_from_slice(self);
     }
 }
 
@@ -390,7 +417,7 @@ impl<'a> Encode for &'a str {
     }
 }
 
-impl<'a> Encode for String {
+impl Encode for String {
     fn encode(&self, dst: &mut Encoder) {
         self.as_bytes().encode(dst);
     }

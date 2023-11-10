@@ -14,6 +14,49 @@
 use crate::parser::{default_port, Context, Input, Parser, SchemeType};
 use crate::{Host, ParseError, Position, Url};
 
+/// Internal components / offsets of a URL.
+///
+/// https://user@pass:example.com:1234/foo/bar?baz#quux
+///      |      |    |          | ^^^^|       |   |
+///      |      |    |          | |   |       |   `----- fragment_start
+///      |      |    |          | |   |       `--------- query_start
+///      |      |    |          | |   `----------------- path_start
+///      |      |    |          | `--------------------- port
+///      |      |    |          `----------------------- host_end
+///      |      |    `---------------------------------- host_start
+///      |      `--------------------------------------- username_end
+///      `---------------------------------------------- scheme_end
+#[derive(Copy, Clone)]
+#[cfg(feature = "expose_internals")]
+pub struct InternalComponents {
+    pub scheme_end: u32,
+    pub username_end: u32,
+    pub host_start: u32,
+    pub host_end: u32,
+    pub port: Option<u16>,
+    pub path_start: u32,
+    pub query_start: Option<u32>,
+    pub fragment_start: Option<u32>,
+}
+
+/// Internal component / parsed offsets of the URL.
+///
+/// This can be useful for implementing efficient serialization
+/// for the URL.
+#[cfg(feature = "expose_internals")]
+pub fn internal_components(url: &Url) -> InternalComponents {
+    InternalComponents {
+        scheme_end: url.scheme_end,
+        username_end: url.username_end,
+        host_start: url.host_start,
+        host_end: url.host_end,
+        port: url.port,
+        path_start: url.path_start,
+        query_start: url.query_start,
+        fragment_start: url.fragment_start,
+    }
+}
+
 /// https://url.spec.whatwg.org/#dom-url-domaintoascii
 pub fn domain_to_ascii(domain: &str) -> String {
     match Host::parse(domain) {
@@ -56,7 +99,7 @@ pub fn protocol(url: &Url) -> &str {
 }
 
 /// Setter for https://url.spec.whatwg.org/#dom-url-protocol
-#[allow(clippy::clippy::result_unit_err)]
+#[allow(clippy::result_unit_err)]
 pub fn set_protocol(url: &mut Url, mut new_protocol: &str) -> Result<(), ()> {
     // The scheme state in the spec ignores everything after the first `:`,
     // but `set_scheme` errors if there is more.
@@ -73,7 +116,7 @@ pub fn username(url: &Url) -> &str {
 }
 
 /// Setter for https://url.spec.whatwg.org/#dom-url-username
-#[allow(clippy::clippy::result_unit_err)]
+#[allow(clippy::result_unit_err)]
 pub fn set_username(url: &mut Url, new_username: &str) -> Result<(), ()> {
     url.set_username(new_username)
 }
@@ -85,7 +128,7 @@ pub fn password(url: &Url) -> &str {
 }
 
 /// Setter for https://url.spec.whatwg.org/#dom-url-password
-#[allow(clippy::clippy::result_unit_err)]
+#[allow(clippy::result_unit_err)]
 pub fn set_password(url: &mut Url, new_password: &str) -> Result<(), ()> {
     url.set_password(if new_password.is_empty() {
         None
@@ -101,7 +144,7 @@ pub fn host(url: &Url) -> &str {
 }
 
 /// Setter for https://url.spec.whatwg.org/#dom-url-host
-#[allow(clippy::clippy::result_unit_err)]
+#[allow(clippy::result_unit_err)]
 pub fn set_host(url: &mut Url, new_host: &str) -> Result<(), ()> {
     // If context object’s url’s cannot-be-a-base-URL flag is set, then return.
     if url.cannot_be_a_base() {
@@ -109,7 +152,7 @@ pub fn set_host(url: &mut Url, new_host: &str) -> Result<(), ()> {
     }
     // Host parsing rules are strict,
     // We don't want to trim the input
-    let input = Input::no_trim(new_host);
+    let input = Input::new_no_trim(new_host);
     let host;
     let opt_port;
     {
@@ -138,14 +181,10 @@ pub fn set_host(url: &mut Url, new_host: &str) -> Result<(), ()> {
         }
     }
     // Make sure we won't set an empty host to a url with a username or a port
-    if host == Host::Domain("".to_string()) {
-        if !username(&url).is_empty() {
-            return Err(());
-        } else if let Some(Some(_)) = opt_port {
-            return Err(());
-        } else if url.port().is_some() {
-            return Err(());
-        }
+    if host == Host::Domain("".to_string())
+        && (!username(url).is_empty() || matches!(opt_port, Some(Some(_))) || url.port().is_some())
+    {
+        return Err(());
     }
     url.set_host_internal(host, opt_port);
     Ok(())
@@ -158,13 +197,13 @@ pub fn hostname(url: &Url) -> &str {
 }
 
 /// Setter for https://url.spec.whatwg.org/#dom-url-hostname
-#[allow(clippy::clippy::result_unit_err)]
+#[allow(clippy::result_unit_err)]
 pub fn set_hostname(url: &mut Url, new_hostname: &str) -> Result<(), ()> {
     if url.cannot_be_a_base() {
         return Err(());
     }
     // Host parsing rules are strict we don't want to trim the input
-    let input = Input::no_trim(new_hostname);
+    let input = Input::new_no_trim(new_hostname);
     let scheme_type = SchemeType::from(url.scheme());
     if scheme_type == SchemeType::File && new_hostname.is_empty() {
         url.set_host_internal(Host::Domain(String::new()), None);
@@ -177,10 +216,10 @@ pub fn set_hostname(url: &mut Url, new_hostname: &str) -> Result<(), ()> {
                 // Empty host on special not file url
                 if SchemeType::from(url.scheme()) == SchemeType::SpecialNotFile
                     // Port with an empty host
-                    ||!port(&url).is_empty()
+                    ||!port(url).is_empty()
                     // Empty host that includes credentials
                     || !url.username().is_empty()
-                    || !url.password().unwrap_or(&"").is_empty()
+                    || !url.password().unwrap_or("").is_empty()
                 {
                     return Err(());
                 }
@@ -200,7 +239,7 @@ pub fn port(url: &Url) -> &str {
 }
 
 /// Setter for https://url.spec.whatwg.org/#dom-url-port
-#[allow(clippy::clippy::result_unit_err)]
+#[allow(clippy::result_unit_err)]
 pub fn set_port(url: &mut Url, new_port: &str) -> Result<(), ()> {
     let result;
     {
@@ -210,7 +249,7 @@ pub fn set_port(url: &mut Url, new_port: &str) -> Result<(), ()> {
             return Err(());
         }
         result = Parser::parse_port(
-            Input::new(new_port),
+            Input::new_no_trim(new_port),
             || default_port(scheme),
             Context::Setter,
         )

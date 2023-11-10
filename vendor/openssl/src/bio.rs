@@ -1,11 +1,11 @@
-use ffi;
+use cfg_if::cfg_if;
 use libc::c_int;
 use std::marker::PhantomData;
 use std::ptr;
 use std::slice;
 
-use cvt_p;
-use error::ErrorStack;
+use crate::cvt_p;
+use crate::error::ErrorStack;
 
 pub struct MemBioSlice<'a>(*mut ffi::BIO, PhantomData<&'a [u8]>);
 
@@ -25,7 +25,7 @@ impl<'a> MemBioSlice<'a> {
         let bio = unsafe {
             cvt_p(BIO_new_mem_buf(
                 buf.as_ptr() as *const _,
-                buf.len() as c_int,
+                buf.len() as crate::SLenType,
             ))?
         };
 
@@ -67,13 +67,14 @@ impl MemBio {
         }
     }
 
+    #[cfg(not(boringssl))]
     pub unsafe fn from_ptr(bio: *mut ffi::BIO) -> MemBio {
         MemBio(bio)
     }
 }
 
 cfg_if! {
-    if #[cfg(ossl102)] {
+    if #[cfg(any(ossl102, boringssl))] {
         use ffi::BIO_new_mem_buf;
     } else {
         #[allow(bad_style)]

@@ -12,25 +12,53 @@
 [package]
 edition = "2021"
 name = "byte-unit"
-version = "4.0.14"
+version = "4.0.19"
 authors = ["Magic Len <len@magiclen.org>"]
-include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE"]
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+]
 description = "A library for interaction with units of bytes."
 homepage = "https://magiclen.org/byte-unit"
 readme = "README.md"
-keywords = ["byte", "unit", "kb", "mb", "gb"]
-categories = ["no-std", "parser-implementations", "value-formatting"]
+keywords = [
+    "byte",
+    "unit",
+    "kb",
+    "mb",
+    "gb",
+]
+categories = [
+    "no-std",
+    "parser-implementations",
+    "value-formatting",
+]
 license = "MIT"
 repository = "https://github.com/magiclen/byte-unit"
-resolver = "2"
+
 [dependencies.serde]
 version = "1"
+features = ["alloc"]
 optional = true
+default-features = false
 
 [dependencies.utf8-width]
 version = "0.1"
 
 [features]
-default = ["std", "u128"]
-std = []
+alloc = []
+default = [
+    "std",
+    "u128",
+]
+serde = [
+    "alloc",
+    "dep:serde",
+]
+std = [
+    "serde/std",
+    "alloc",
+]
 u128 = []

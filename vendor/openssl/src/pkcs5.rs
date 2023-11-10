@@ -1,11 +1,15 @@
-use ffi;
+#[cfg(not(boringssl))]
 use libc::c_int;
+use std::convert::TryInto;
+#[cfg(not(boringssl))]
 use std::ptr;
 
-use cvt;
-use error::ErrorStack;
-use hash::MessageDigest;
-use symm::Cipher;
+use crate::cvt;
+use crate::error::ErrorStack;
+use crate::hash::MessageDigest;
+#[cfg(not(boringssl))]
+use crate::symm::Cipher;
+use openssl_macros::corresponds;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct KeyIvPair {
@@ -23,7 +27,9 @@ pub struct KeyIvPair {
 ///
 /// New applications should not use this and instead use
 /// `pbkdf2_hmac` or another more modern key derivation algorithm.
+#[corresponds(EVP_BytesToKey)]
 #[allow(clippy::useless_conversion)]
+#[cfg(not(boringssl))]
 pub fn bytes_to_key(
     cipher: Cipher,
     digest: MessageDigest,
@@ -81,6 +87,7 @@ pub fn bytes_to_key(
 }
 
 /// Derives a key from a password and salt using the PBKDF2-HMAC algorithm with a digest function.
+#[corresponds(PKCS5_PBKDF2_HMAC)]
 pub fn pbkdf2_hmac(
     pass: &[u8],
     salt: &[u8],
@@ -89,19 +96,15 @@ pub fn pbkdf2_hmac(
     key: &mut [u8],
 ) -> Result<(), ErrorStack> {
     unsafe {
-        assert!(pass.len() <= c_int::max_value() as usize);
-        assert!(salt.len() <= c_int::max_value() as usize);
-        assert!(key.len() <= c_int::max_value() as usize);
-
         ffi::init();
         cvt(ffi::PKCS5_PBKDF2_HMAC(
             pass.as_ptr() as *const _,
-            pass.len() as c_int,
+            pass.len().try_into().unwrap(),
             salt.as_ptr(),
-            salt.len() as c_int,
-            iter as c_int,
+            salt.len().try_into().unwrap(),
+            iter.try_into().unwrap(),
             hash.as_ptr(),
-            key.len() as c_int,
+            key.len().try_into().unwrap(),
             key.as_mut_ptr(),
         ))
         .map(|_| ())
@@ -111,7 +114,9 @@ pub fn pbkdf2_hmac(
 /// Derives a key from a password and salt using the scrypt algorithm.
 ///
 /// Requires OpenSSL 1.1.0 or newer.
-#[cfg(any(ossl110))]
+#[corresponds(EVP_PBE_scrypt)]
+#[cfg(all(any(ossl110, boringssl), not(osslconf = "OPENSSL_NO_SCRYPT")))]
+#[allow(clippy::useless_conversion)]
 pub fn scrypt(
     pass: &[u8],
     salt: &[u8],
@@ -131,7 +136,7 @@ pub fn scrypt(
             n,
             r,
             p,
-            maxmem,
+            maxmem.try_into().unwrap(),
             key.as_mut_ptr() as *mut _,
             key.len(),
         ))
@@ -141,8 +146,9 @@ pub fn scrypt(
 
 #[cfg(test)]
 mod tests {
-    use hash::MessageDigest;
-    use symm::Cipher;
+    use crate::hash::MessageDigest;
+    #[cfg(not(boringssl))]
+    use crate::symm::Cipher;
 
     // Test vectors from
     // https://git.lysator.liu.se/nettle/nettle/blob/nettle_3.1.1_release_20150424/testsuite/pbkdf2-test.c
@@ -243,6 +249,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(boringssl))]
     fn bytes_to_key() {
         let salt = [16_u8, 34_u8, 19_u8, 23_u8, 141_u8, 4_u8, 207_u8, 221_u8];
 
@@ -279,10 +286,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg(any(ossl110))]
+    #[cfg(any(ossl110, boringssl))]
     fn scrypt() {
-        use hex;
-
         let pass = "pleaseletmein";
         let salt = "SodiumChloride";
         let expected =

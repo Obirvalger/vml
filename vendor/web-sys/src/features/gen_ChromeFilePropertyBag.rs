@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -78,5 +79,10 @@ impl ChromeFilePropertyBag {
         );
         let _ = r;
         self
+    }
+}
+impl Default for ChromeFilePropertyBag {
+    fn default() -> Self {
+        Self::new()
     }
 }

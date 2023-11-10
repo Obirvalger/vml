@@ -1,4 +1,5 @@
 #![allow(clippy::upper_case_acronyms)]
+#![allow(missing_docs)]
 
 #[macro_use]
 mod macros;
@@ -8,12 +9,9 @@ pub mod base;
 pub mod ccs;
 pub mod codec;
 pub mod deframer;
-#[allow(non_camel_case_types)]
 pub mod enums;
 pub mod fragmenter;
-#[allow(non_camel_case_types)]
 pub mod handshake;
-pub mod hsjoiner;
 pub mod message;
 pub mod persist;
 
@@ -21,18 +19,10 @@ pub mod persist;
 mod handshake_test;
 
 #[cfg(test)]
-mod persist_test;
-
-#[cfg(test)]
-mod enums_test;
-
-#[cfg(test)]
 mod message_test;
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
-
     #[test]
     fn smoketest() {
         use super::codec::Reader;
@@ -44,7 +34,7 @@ mod test {
             let m = OpaqueMessage::read(&mut r).unwrap();
 
             let out = m.clone().encode();
-            assert!(out.len() > 0);
+            assert!(!out.is_empty());
 
             Message::try_from(m.into_plain_message()).unwrap();
         }

@@ -35,9 +35,12 @@ cfg_io_util! {
     where
         T: AsyncRead + AsyncWrite,
     {
+        let is_write_vectored = stream.is_write_vectored();
+
         let inner = Arc::new(Inner {
             locked: AtomicBool::new(false),
             stream: UnsafeCell::new(stream),
+            is_write_vectored,
         });
 
         let rd = ReadHalf {
@@ -53,6 +56,7 @@ cfg_io_util! {
 struct Inner<T> {
     locked: AtomicBool,
     stream: UnsafeCell<T>,
+    is_write_vectored: bool,
 }
 
 struct Guard<'a, T> {
@@ -74,7 +78,11 @@ impl<T> ReadHalf<T> {
     /// same `split` operation this method will panic.
     /// This can be checked ahead of time by comparing the stream ID
     /// of the two halves.
-    pub fn unsplit(self, wr: WriteHalf<T>) -> T {
+    #[track_caller]
+    pub fn unsplit(self, wr: WriteHalf<T>) -> T
+    where
+        T: Unpin,
+    {
         if self.is_pair_of(&wr) {
             drop(wr);
 
@@ -126,6 +134,19 @@ impl<T: AsyncWrite> AsyncWrite for WriteHalf<T> {
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         let mut inner = ready!(self.inner.poll_lock(cx));
         inner.stream_pin().poll_shutdown(cx)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<Result<usize, io::Error>> {
+        let mut inner = ready!(self.inner.poll_lock(cx));
+        inner.stream_pin().poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored
     }
 }
 

@@ -1,12 +1,10 @@
 #![feature(test)]
 #![allow(deprecated)]
 
-#[macro_use]
-extern crate smallvec;
 extern crate test;
 
 use self::test::Bencher;
-use smallvec::{ExtendFromSlice, SmallVec};
+use smallvec::{ExtendFromSlice, smallvec, SmallVec};
 
 const VEC_SIZE: usize = 16;
 const SPILLED_SIZE: usize = 100;
@@ -96,6 +94,8 @@ make_benches! {
     SmallVec<[u64; VEC_SIZE]> {
         bench_push => gen_push(SPILLED_SIZE as _),
         bench_push_small => gen_push(VEC_SIZE as _),
+        bench_insert_push => gen_insert_push(SPILLED_SIZE as _),
+        bench_insert_push_small => gen_insert_push(VEC_SIZE as _),
         bench_insert => gen_insert(SPILLED_SIZE as _),
         bench_insert_small => gen_insert(VEC_SIZE as _),
         bench_remove => gen_remove(SPILLED_SIZE as _),
@@ -118,6 +118,8 @@ make_benches! {
     Vec<u64> {
         bench_push_vec => gen_push(SPILLED_SIZE as _),
         bench_push_vec_small => gen_push(VEC_SIZE as _),
+        bench_insert_push_vec => gen_insert_push(SPILLED_SIZE as _),
+        bench_insert_push_vec_small => gen_insert_push(VEC_SIZE as _),
         bench_insert_vec => gen_insert(SPILLED_SIZE as _),
         bench_insert_vec_small => gen_insert(VEC_SIZE as _),
         bench_remove_vec => gen_remove(SPILLED_SIZE as _),
@@ -146,6 +148,21 @@ fn gen_push<V: Vector<u64>>(n: u64, b: &mut Bencher) {
         let mut vec = V::new();
         for x in 0..n {
             push_noinline(&mut vec, x);
+        }
+        vec
+    });
+}
+
+fn gen_insert_push<V: Vector<u64>>(n: u64, b: &mut Bencher) {
+    #[inline(never)]
+    fn insert_push_noinline<V: Vector<u64>>(vec: &mut V, x: u64) {
+        vec.insert(x as usize, x);
+    }
+
+    b.iter(|| {
+        let mut vec = V::new();
+        for x in 0..n {
+            insert_push_noinline(&mut vec, x);
         }
         vec
     });

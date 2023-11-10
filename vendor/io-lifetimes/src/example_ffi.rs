@@ -1,14 +1,14 @@
 //! This is just a sample of what FFI using this crate can look like.
 
-#![cfg_attr(not(rustc_attrs), allow(unused_imports))]
+#![cfg_attr(not(io_safety_is_in_std), allow(unused_imports))]
 #![allow(missing_docs)]
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 use crate::{BorrowedFd, OwnedFd};
 #[cfg(windows)]
 use crate::{BorrowedHandle, HandleOrInvalid};
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 use libc::{c_char, c_int, c_void, size_t, ssize_t};
 #[cfg(windows)]
 use {
@@ -17,13 +17,16 @@ use {
     windows_sys::Win32::Foundation::BOOL,
     windows_sys::Win32::Security::SECURITY_ATTRIBUTES,
     windows_sys::Win32::Storage::FileSystem::{
-        FILE_ACCESS_FLAGS, FILE_CREATION_DISPOSITION, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_MODE,
+        FILE_CREATION_DISPOSITION, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_MODE,
     },
     windows_sys::Win32::System::IO::OVERLAPPED,
 };
 
 // Declare a few FFI functions ourselves, to show off the FFI ergonomics.
-#[cfg(all(rustc_attrs, any(unix, target_os = "wasi")))]
+#[cfg(all(
+    io_safety_is_in_std,
+    any(unix, target_os = "wasi", target_os = "hermit")
+))]
 extern "C" {
     pub fn open(pathname: *const c_char, flags: c_int, ...) -> Option<OwnedFd>;
 }
@@ -42,7 +45,7 @@ pub use libc::{O_CLOEXEC, O_CREAT, O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY};
 extern "system" {
     pub fn CreateFileW(
         lpfilename: PCWSTR,
-        dwdesiredaccess: FILE_ACCESS_FLAGS,
+        dwdesiredaccess: u32,
         dwsharemode: FILE_SHARE_MODE,
         lpsecurityattributes: *const SECURITY_ATTRIBUTES,
         dwcreationdisposition: FILE_CREATION_DISPOSITION,

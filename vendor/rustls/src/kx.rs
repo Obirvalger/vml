@@ -1,12 +1,7 @@
-use crate::msgs::enums::NamedGroup;
+use std::fmt;
 
-/// The result of a key exchange.  This has our public key,
-/// and the agreed shared secret (also known as the "premaster secret"
-/// in TLS1.0-era protocols, and "Z" in TLS1.3).
-pub(crate) struct KeyExchangeResult {
-    pub(crate) pubkey: ring::agreement::PublicKey,
-    pub(crate) shared_secret: Vec<u8>,
-}
+use crate::error::{Error, PeerMisbehaved};
+use crate::msgs::enums::NamedGroup;
 
 /// An in-progress key exchange.  This has the algorithm,
 /// our private key, and our public key.
@@ -50,18 +45,14 @@ impl KeyExchange {
         self.skxg.name
     }
 
-    /// Completes the key exchange, given the peer's public key.  The shared
-    /// secret is returned as a KeyExchangeResult.
-    pub(crate) fn complete(self, peer: &[u8]) -> Option<KeyExchangeResult> {
+    /// Completes the key exchange, given the peer's public key.
+    ///
+    /// The shared secret is passed into the closure passed down in `f`, and the result of calling
+    /// `f` is returned to the caller.
+    pub(crate) fn complete<T>(self, peer: &[u8], f: impl FnOnce(&[u8]) -> T) -> Result<T, Error> {
         let peer_key = ring::agreement::UnparsedPublicKey::new(self.skxg.agreement_algorithm, peer);
-        let pubkey = self.pubkey;
-        ring::agreement::agree_ephemeral(self.privkey, &peer_key, (), move |v| {
-            Ok(KeyExchangeResult {
-                pubkey,
-                shared_secret: Vec::from(v),
-            })
-        })
-        .ok()
+        ring::agreement::agree_ephemeral(self.privkey, &peer_key, f)
+            .map_err(|_| PeerMisbehaved::InvalidKeyShare.into())
     }
 }
 
@@ -69,13 +60,18 @@ impl KeyExchange {
 ///
 /// All possible instances of this class are provided by the library in
 /// the `ALL_KX_GROUPS` array.
-#[derive(Debug)]
 pub struct SupportedKxGroup {
     /// The IANA "TLS Supported Groups" name of the group
     pub name: NamedGroup,
 
     /// The corresponding ring agreement::Algorithm
     agreement_algorithm: &'static ring::agreement::Algorithm,
+}
+
+impl fmt::Debug for SupportedKxGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.name.fmt(f)
+    }
 }
 
 /// Ephemeral ECDH on curve25519 (see RFC7748)

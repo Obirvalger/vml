@@ -189,7 +189,8 @@ impl_pow_f!(f64);
 
 macro_rules! impl_pow_i {
     () => ();
-    ($t: ty $(, $tail:tt)*) => (
+    ($(#[$meta:meta])*  $t: ty $(, $tail:tt)*) => (
+        $(#[$meta])*
         impl Pow<UTerm> for $t {
             type Output = $t;
             #[inline]
@@ -198,6 +199,7 @@ macro_rules! impl_pow_i {
             }
         }
 
+        $(#[$meta])*
         impl<U: Unsigned, B: Bit> Pow<UInt<U, B>> for $t {
             type Output = $t;
             #[inline]
@@ -206,6 +208,7 @@ macro_rules! impl_pow_i {
             }
         }
 
+        $(#[$meta])*
         impl Pow<Z0> for $t {
             type Output = $t;
             #[inline]
@@ -214,6 +217,7 @@ macro_rules! impl_pow_i {
             }
         }
 
+        $(#[$meta])*
         impl<U: Unsigned + NonZero> Pow<PInt<U>> for $t {
             type Output = $t;
             #[inline]
@@ -228,7 +232,11 @@ macro_rules! impl_pow_i {
 
 impl_pow_i!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
 #[cfg(feature = "i128")]
-impl_pow_i!(u128, i128);
+impl_pow_i!(
+    #[cfg_attr(docsrs, doc(cfg(feature = "i128")))]
+    u128,
+    i128
+);
 
 #[test]
 fn pow_test() {
@@ -587,4 +595,6 @@ pub trait Gcd<Rhs> {
 pub trait ToInt<T> {
     /// Method returning the concrete value for the type.
     fn to_int() -> T;
+    /// The concrete value for the type. Can be used in `const` contexts.
+    const INT: T;
 }

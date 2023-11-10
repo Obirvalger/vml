@@ -6,10 +6,16 @@ use std::result;
 
 #[cfg(all(target_vendor = "fortanix", target_env = "sgx"))]
 use std::os::fortanix_sgx as os;
-#[cfg(any(target_os = "hermit", unix))]
+#[cfg(target_os = "hermit")]
+use std::os::hermit as os;
+#[cfg(target_os = "solid_asp3")]
+use std::os::solid as os;
+#[cfg(unix)]
 use std::os::unix as os;
 #[cfg(target_os = "wasi")]
 use std::os::wasi as os;
+#[cfg(target_os = "xous")]
+use std::os::xous as os;
 
 use os::ffi::OsStrExt;
 use os::ffi::OsStringExt;
@@ -20,7 +26,7 @@ if_raw_str! {
 
 pub(super) type EncodingError = Infallible;
 
-type Result<T> = result::Result<T, EncodingError>;
+pub(super) type Result<T> = result::Result<T, EncodingError>;
 
 pub(super) fn os_str_from_bytes(string: &[u8]) -> Result<Cow<'_, OsStr>> {
     Ok(Cow::Borrowed(OsStrExt::from_bytes(string)))

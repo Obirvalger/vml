@@ -19,10 +19,7 @@ pin_project! {
 
 impl<St: TryStream, C: Default> TryCollect<St, C> {
     pub(super) fn new(s: St) -> Self {
-        Self {
-            stream: s,
-            items: Default::default(),
-        }
+        Self { stream: s, items: Default::default() }
     }
 }
 
@@ -43,15 +40,12 @@ where
 {
     type Output = Result<C, St::Error>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         Poll::Ready(Ok(loop {
             match ready!(this.stream.as_mut().try_poll_next(cx)?) {
                 Some(x) => this.items.extend(Some(x)),
-                None => break mem::replace(this.items, Default::default()),
+                None => break mem::take(this.items),
             }
         }))
     }

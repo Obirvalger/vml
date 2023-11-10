@@ -7,12 +7,13 @@ facilities for conveniently and efficiently working with lines as byte strings.
 More APIs may be added in the future.
 */
 
+use alloc::{vec, vec::Vec};
+
 use std::io;
 
-use ext_slice::ByteSlice;
-use ext_vec::ByteVec;
+use crate::{ext_slice::ByteSlice, ext_vec::ByteVec};
 
-/// An extention trait for
+/// An extension trait for
 /// [`std::io::BufRead`](https://doc.rust-lang.org/std/io/trait.BufRead.html)
 /// which provides convenience APIs for dealing with byte strings.
 pub trait BufReadExt: io::BufRead {
@@ -36,7 +37,7 @@ pub trait BufReadExt: io::BufRead {
     /// use bstr::io::BufReadExt;
     ///
     /// # fn example() -> Result<(), io::Error> {
-    /// let cursor = io::Cursor::new(b"lorem\nipsum\r\ndolor");
+    /// let mut cursor = io::Cursor::new(b"lorem\nipsum\r\ndolor");
     ///
     /// let mut lines = vec![];
     /// for result in cursor.byte_lines() {
@@ -79,7 +80,7 @@ pub trait BufReadExt: io::BufRead {
     /// use bstr::io::BufReadExt;
     ///
     /// # fn example() -> Result<(), io::Error> {
-    /// let cursor = io::Cursor::new(b"lorem\x00ipsum\x00dolor");
+    /// let mut cursor = io::Cursor::new(b"lorem\x00ipsum\x00dolor");
     ///
     /// let mut records = vec![];
     /// for result in cursor.byte_records(b'\x00') {
@@ -122,7 +123,7 @@ pub trait BufReadExt: io::BufRead {
     /// use bstr::io::BufReadExt;
     ///
     /// # fn example() -> Result<(), io::Error> {
-    /// let cursor = io::Cursor::new(b"lorem\nipsum\r\ndolor");
+    /// let mut cursor = io::Cursor::new(b"lorem\nipsum\r\ndolor");
     ///
     /// let mut lines = vec![];
     /// cursor.for_byte_line(|line| {
@@ -135,7 +136,7 @@ pub trait BufReadExt: io::BufRead {
     /// assert_eq!(lines[2], "dolor".as_bytes());
     /// # Ok(()) }; example().unwrap()
     /// ```
-    fn for_byte_line<F>(self, mut for_each_line: F) -> io::Result<()>
+    fn for_byte_line<F>(&mut self, mut for_each_line: F) -> io::Result<()>
     where
         Self: Sized,
         F: FnMut(&[u8]) -> io::Result<bool>,
@@ -169,7 +170,7 @@ pub trait BufReadExt: io::BufRead {
     /// use bstr::io::BufReadExt;
     ///
     /// # fn example() -> Result<(), io::Error> {
-    /// let cursor = io::Cursor::new(b"lorem\x00ipsum\x00dolor");
+    /// let mut cursor = io::Cursor::new(b"lorem\x00ipsum\x00dolor");
     ///
     /// let mut records = vec![];
     /// cursor.for_byte_record(b'\x00', |record| {
@@ -183,7 +184,7 @@ pub trait BufReadExt: io::BufRead {
     /// # Ok(()) }; example().unwrap()
     /// ```
     fn for_byte_record<F>(
-        self,
+        &mut self,
         terminator: u8,
         mut for_each_record: F,
     ) -> io::Result<()>
@@ -223,7 +224,7 @@ pub trait BufReadExt: io::BufRead {
     /// use bstr::io::BufReadExt;
     ///
     /// # fn example() -> Result<(), io::Error> {
-    /// let cursor = io::Cursor::new(b"lorem\nipsum\r\ndolor");
+    /// let mut cursor = io::Cursor::new(b"lorem\nipsum\r\ndolor");
     ///
     /// let mut lines = vec![];
     /// cursor.for_byte_line_with_terminator(|line| {
@@ -237,7 +238,7 @@ pub trait BufReadExt: io::BufRead {
     /// # Ok(()) }; example().unwrap()
     /// ```
     fn for_byte_line_with_terminator<F>(
-        self,
+        &mut self,
         for_each_line: F,
     ) -> io::Result<()>
     where
@@ -269,11 +270,10 @@ pub trait BufReadExt: io::BufRead {
     /// ```
     /// use std::io;
     ///
-    /// use bstr::B;
-    /// use bstr::io::BufReadExt;
+    /// use bstr::{io::BufReadExt, B};
     ///
     /// # fn example() -> Result<(), io::Error> {
-    /// let cursor = io::Cursor::new(b"lorem\x00ipsum\x00dolor");
+    /// let mut cursor = io::Cursor::new(b"lorem\x00ipsum\x00dolor");
     ///
     /// let mut records = vec![];
     /// cursor.for_byte_record_with_terminator(b'\x00', |record| {
@@ -287,7 +287,7 @@ pub trait BufReadExt: io::BufRead {
     /// # Ok(()) }; example().unwrap()
     /// ```
     fn for_byte_record_with_terminator<F>(
-        mut self,
+        &mut self,
         terminator: u8,
         mut for_each_record: F,
     ) -> io::Result<()>
@@ -438,10 +438,11 @@ fn trim_record_slice(mut record: &[u8], terminator: u8) -> &[u8] {
     record
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
+    use crate::bstring::BString;
+
     use super::BufReadExt;
-    use bstring::BString;
 
     fn collect_lines<B: AsRef<[u8]>>(slice: B) -> Vec<BString> {
         let mut lines = vec![];

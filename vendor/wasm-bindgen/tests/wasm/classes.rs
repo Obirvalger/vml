@@ -16,6 +16,7 @@ extern "C" {
     fn js_constructors();
     fn js_empty_structs();
     fn js_public_fields();
+    fn js_getter_with_clone();
     fn js_using_self();
     fn js_readonly_fields();
     fn js_double_consume();
@@ -285,6 +286,38 @@ pub struct PublicFields {
 impl PublicFields {
     pub fn new() -> PublicFields {
         PublicFields::default()
+    }
+}
+
+#[wasm_bindgen_test]
+fn getter_with_clone() {
+    js_getter_with_clone();
+}
+
+#[wasm_bindgen(getter_with_clone)]
+#[derive(Default)]
+pub struct GetterWithCloneStruct {
+    pub a: String,
+}
+
+#[wasm_bindgen]
+impl GetterWithCloneStruct {
+    pub fn new() -> GetterWithCloneStruct {
+        GetterWithCloneStruct::default()
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct GetterWithCloneStructField {
+    #[wasm_bindgen(getter_with_clone)]
+    pub a: String,
+}
+
+#[wasm_bindgen]
+impl GetterWithCloneStructField {
+    pub fn new() -> GetterWithCloneStructField {
+        GetterWithCloneStructField::default()
     }
 }
 
@@ -566,12 +599,12 @@ impl OverriddenInspectable {
     }
 
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> String {
+    pub fn js_to_json(&self) -> String {
         String::from("JSON was overwritten")
     }
 
     #[wasm_bindgen(js_name = toString)]
-    pub fn to_string(&self) -> String {
+    pub fn js_to_string(&self) -> String {
         String::from("string was overwritten")
     }
 }

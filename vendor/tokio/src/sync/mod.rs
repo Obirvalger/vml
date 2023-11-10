@@ -85,7 +85,6 @@
 //! }
 //! ```
 //!
-//! [oneshot]: oneshot
 //! [`JoinHandle`]: crate::task::JoinHandle
 //!
 //! ## `mpsc` channel
@@ -93,6 +92,10 @@
 //! The [`mpsc` channel][mpsc] supports sending **many** values from **many**
 //! producers to a single consumer. This channel is often used to send work to a
 //! task or to receive the result of many computations.
+//!
+//! This is also the channel you should use if you want to send many messages
+//! from a single producer to a single consumer. There is no dedicated spsc
+//! channel.
 //!
 //! **Example:** using an mpsc to incrementally stream the results of a series
 //! of computations.
@@ -171,11 +174,11 @@
 //! }
 //! ```
 //!
-//! The [`mpsc`][mpsc] and [`oneshot`][oneshot] channels can be combined to
-//! provide a request / response type synchronization pattern with a shared
-//! resource. A task is spawned to synchronize a resource and waits on commands
-//! received on a [`mpsc`][mpsc] channel. Each command includes a
-//! [`oneshot`][oneshot] `Sender` on which the result of the command is sent.
+//! The [`mpsc`] and [`oneshot`] channels can be combined to provide a request /
+//! response type synchronization pattern with a shared resource. A task is
+//! spawned to synchronize a resource and waits on commands received on a
+//! [`mpsc`] channel. Each command includes a [`oneshot`] `Sender` on which the
+//! result of the command is sent.
 //!
 //! **Example:** use a task to synchronize a `u64` counter. Each task sends an
 //! "fetch and increment" command. The counter value **before** the increment is
@@ -232,8 +235,6 @@
 //! }
 //! ```
 //!
-//! [mpsc]: mpsc
-//!
 //! ## `broadcast` channel
 //!
 //! The [`broadcast` channel] supports sending **many** values from
@@ -243,6 +244,10 @@
 //!
 //! This channel tends to be used less often than `oneshot` and `mpsc` but still
 //! has its use cases.
+//!
+//! This is also the channel you should use if you want to broadcast values from
+//! a single producer to many consumers. There is no dedicated spmc broadcast
+//! channel.
 //!
 //! Basic usage
 //!
@@ -375,7 +380,7 @@
 //!                         sleep.set(time::sleep_until(op_start + conf.timeout));
 //!                     }
 //!                     _ = rx.changed() => {
-//!                         conf = rx.borrow().clone();
+//!                         conf = rx.borrow_and_update().clone();
 //!
 //!                         // The configuration has been updated. Update the
 //!                         // `sleep` using the new `timeout` value.
@@ -408,24 +413,24 @@
 //! operate in a similar way as their `std` counterparts but will wait
 //! asynchronously instead of blocking the thread.
 //!
-//! * [`Barrier`](Barrier) Ensures multiple tasks will wait for each other to
-//!   reach a point in the program, before continuing execution all together.
+//! * [`Barrier`] Ensures multiple tasks will wait for each other to reach a
+//!   point in the program, before continuing execution all together.
 //!
-//! * [`Mutex`](Mutex) Mutual Exclusion mechanism, which ensures that at most
-//!   one thread at a time is able to access some data.
+//! * [`Mutex`] Mutual Exclusion mechanism, which ensures that at most one
+//!   thread at a time is able to access some data.
 //!
-//! * [`Notify`](Notify) Basic task notification. `Notify` supports notifying a
+//! * [`Notify`] Basic task notification. `Notify` supports notifying a
 //!   receiving task without sending data. In this case, the task wakes up and
 //!   resumes processing.
 //!
-//! * [`RwLock`](RwLock) Provides a mutual exclusion mechanism which allows
-//!   multiple readers at the same time, while allowing only one writer at a
-//!   time. In some cases, this can be more efficient than a mutex.
+//! * [`RwLock`] Provides a mutual exclusion mechanism which allows multiple
+//!   readers at the same time, while allowing only one writer at a time. In
+//!   some cases, this can be more efficient than a mutex.
 //!
-//! * [`Semaphore`](Semaphore) Limits the amount of concurrency. A semaphore
-//!   holds a number of permits, which tasks may request in order to enter a
-//!   critical section. Semaphores are useful for implementing limiting or
-//!   bounding of any kind.
+//! * [`Semaphore`] Limits the amount of concurrency. A semaphore holds a
+//!   number of permits, which tasks may request in order to enter a critical
+//!   section. Semaphores are useful for implementing limiting or bounding of
+//!   any kind.
 
 cfg_sync! {
     /// Named future types.
@@ -441,7 +446,7 @@ cfg_sync! {
     pub mod mpsc;
 
     mod mutex;
-    pub use mutex::{Mutex, MutexGuard, TryLockError, OwnedMutexGuard, MappedMutexGuard};
+    pub use mutex::{Mutex, MutexGuard, TryLockError, OwnedMutexGuard, MappedMutexGuard, OwnedMappedMutexGuard};
 
     pub(crate) mod notify;
     pub use notify::Notify;

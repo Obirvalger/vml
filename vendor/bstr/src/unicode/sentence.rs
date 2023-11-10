@@ -1,8 +1,9 @@
-use regex_automata::DFA;
+use regex_automata::{dfa::Automaton, Anchored, Input};
 
-use ext_slice::ByteSlice;
-use unicode::fsm::sentence_break_fwd::SENTENCE_BREAK_FWD;
-use utf8;
+use crate::{
+    ext_slice::ByteSlice,
+    unicode::fsm::sentence_break_fwd::SENTENCE_BREAK_FWD, utf8,
+};
 
 /// An iterator over sentences in a byte string.
 ///
@@ -97,7 +98,7 @@ pub struct SentenceIndices<'a> {
 
 impl<'a> SentenceIndices<'a> {
     pub(crate) fn new(bs: &'a [u8]) -> SentenceIndices<'a> {
-        SentenceIndices { bs: bs, forward_index: 0 }
+        SentenceIndices { bs, forward_index: 0 }
     }
 
     /// View the underlying data as a subslice of the original data.
@@ -144,9 +145,12 @@ impl<'a> Iterator for SentenceIndices<'a> {
 fn decode_sentence(bs: &[u8]) -> (&str, usize) {
     if bs.is_empty() {
         ("", 0)
-    } else if let Some(end) = SENTENCE_BREAK_FWD.find(bs) {
+    } else if let Some(hm) = {
+        let input = Input::new(bs).anchored(Anchored::Yes);
+        SENTENCE_BREAK_FWD.try_search_fwd(&input).unwrap()
+    } {
         // Safe because a match can only occur for valid UTF-8.
-        let sentence = unsafe { bs[..end].to_str_unchecked() };
+        let sentence = unsafe { bs[..hm.offset()].to_str_unchecked() };
         (sentence, sentence.len())
     } else {
         const INVALID: &'static str = "\u{FFFD}";
@@ -156,13 +160,15 @@ fn decode_sentence(bs: &[u8]) -> (&str, usize) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
+    #[cfg(not(miri))]
     use ucd_parse::SentenceBreakTest;
 
-    use ext_slice::ByteSlice;
+    use crate::ext_slice::ByteSlice;
 
     #[test]
+    #[cfg(not(miri))]
     fn forward_ucd() {
         for (i, test) in ucdtests().into_iter().enumerate() {
             let given = test.sentences.concat();
@@ -198,11 +204,13 @@ mod tests {
         bytes.sentences().collect()
     }
 
+    #[cfg(not(miri))]
     fn strs_to_bstrs<S: AsRef<str>>(strs: &[S]) -> Vec<&[u8]> {
         strs.iter().map(|s| s.as_ref().as_bytes()).collect()
     }
 
     /// Return all of the UCD for sentence breaks.
+    #[cfg(not(miri))]
     fn ucdtests() -> Vec<SentenceBreakTest> {
         const TESTDATA: &'static str =
             include_str!("data/SentenceBreakTest.txt");

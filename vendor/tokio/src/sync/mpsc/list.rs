@@ -44,7 +44,7 @@ pub(crate) enum TryPopResult<T> {
 
 pub(crate) fn channel<T>() -> (Tx<T>, Rx<T>) {
     // Create the initial block shared between the tx and rx halves.
-    let initial_block = Box::new(Block::new(0));
+    let initial_block = Block::new(0);
     let initial_block_ptr = Box::into_raw(initial_block);
 
     let tx = Tx {
@@ -82,7 +82,7 @@ impl<T> Tx<T> {
     /// Closes the send half of the list.
     ///
     /// Similar process as pushing a value, but instead of writing the value &
-    /// setting the ready flag, the TX_CLOSED flag is set on the block.
+    /// setting the ready flag, the `TX_CLOSED` flag is set on the block.
     pub(crate) fn close(&self) {
         // First, claim a slot for the value. This is the last slot that will be
         // claimed.
@@ -204,7 +204,7 @@ impl<T> Tx<T> {
         // TODO: Unify this logic with Block::grow
         for _ in 0..3 {
             match curr.as_ref().try_push(&mut block, AcqRel, Acquire) {
-                Ok(_) => {
+                Ok(()) => {
                     reused = true;
                     break;
                 }

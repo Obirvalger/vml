@@ -1,11 +1,6 @@
 use std::io;
 use std::io::prelude::*;
 
-#[cfg(feature = "tokio")]
-use futures::Poll;
-#[cfg(feature = "tokio")]
-use tokio_io::{AsyncRead, AsyncWrite};
-
 use crate::zio;
 use crate::{Compress, Decompress};
 
@@ -46,6 +41,14 @@ impl<W: Write> ZlibEncoder<W> {
     pub fn new(w: W, level: crate::Compression) -> ZlibEncoder<W> {
         ZlibEncoder {
             inner: zio::Writer::new(w, Compress::new(level, true)),
+        }
+    }
+
+    /// Creates a new encoder which will write compressed data to the stream
+    /// `w` with the given `compression` settings.
+    pub fn new_with_compress(w: W, compression: Compress) -> ZlibEncoder<W> {
+        ZlibEncoder {
+            inner: zio::Writer::new(w, compression),
         }
     }
 
@@ -139,7 +142,7 @@ impl<W: Write> ZlibEncoder<W> {
         Ok(self.inner.take_inner())
     }
 
-    /// Returns the number of bytes that have been written to this compresor.
+    /// Returns the number of bytes that have been written to this compressor.
     ///
     /// Note that not all bytes written to this object may be accounted for,
     /// there may still be some active buffering.
@@ -166,22 +169,11 @@ impl<W: Write> Write for ZlibEncoder<W> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<W: AsyncWrite> AsyncWrite for ZlibEncoder<W> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.try_finish()?;
-        self.get_mut().shutdown()
-    }
-}
-
 impl<W: Read + Write> Read for ZlibEncoder<W> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.get_mut().read(buf)
     }
 }
-
-#[cfg(feature = "tokio")]
-impl<W: AsyncRead + AsyncWrite> AsyncRead for ZlibEncoder<W> {}
 
 /// A ZLIB decoder, or decompressor.
 ///
@@ -231,6 +223,17 @@ impl<W: Write> ZlibDecoder<W> {
     pub fn new(w: W) -> ZlibDecoder<W> {
         ZlibDecoder {
             inner: zio::Writer::new(w, Decompress::new(true)),
+        }
+    }
+
+    /// Creates a new decoder which will write uncompressed data to the stream `w`
+    /// using the given `decompression` settings.
+    ///
+    /// When this decoder is dropped or unwrapped the final pieces of data will
+    /// be flushed.
+    pub fn new_with_decompress(w: W, decompression: Decompress) -> ZlibDecoder<W> {
+        ZlibDecoder {
+            inner: zio::Writer::new(w, decompression),
         }
     }
 
@@ -330,19 +333,8 @@ impl<W: Write> Write for ZlibDecoder<W> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<W: AsyncWrite> AsyncWrite for ZlibDecoder<W> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.inner.finish()?;
-        self.inner.get_mut().shutdown()
-    }
-}
-
 impl<W: Read + Write> Read for ZlibDecoder<W> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.get_mut().read(buf)
     }
 }
-
-#[cfg(feature = "tokio")]
-impl<W: AsyncRead + AsyncWrite> AsyncRead for ZlibDecoder<W> {}

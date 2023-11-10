@@ -1,13 +1,12 @@
+use super::DEFAULT_BUF_SIZE;
+use futures_core::future::Future;
 use futures_core::ready;
 use futures_core::task::{Context, Poll};
-#[cfg(feature = "read-initializer")]
-use futures_io::Initializer;
 use futures_io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite, IoSliceMut, SeekFrom};
 use pin_project_lite::pin_project;
 use std::io::{self, Read};
 use std::pin::Pin;
 use std::{cmp, fmt};
-use super::DEFAULT_BUF_SIZE;
 
 pin_project! {
     /// The `BufReader` struct adds buffering to any reader.
@@ -51,12 +50,7 @@ impl<R: AsyncRead> BufReader<R> {
             let mut buffer = Vec::with_capacity(capacity);
             buffer.set_len(capacity);
             super::initialize(&inner, &mut buffer);
-            Self {
-                inner,
-                buffer: buffer.into_boxed_slice(),
-                pos: 0,
-                cap: 0,
-            }
+            Self { inner, buffer: buffer.into_boxed_slice(), pos: 0, cap: 0 }
         }
     }
 
@@ -75,6 +69,40 @@ impl<R: AsyncRead> BufReader<R> {
         let this = self.project();
         *this.pos = 0;
         *this.cap = 0;
+    }
+}
+
+impl<R: AsyncRead + AsyncSeek> BufReader<R> {
+    /// Seeks relative to the current position. If the new position lies within the buffer,
+    /// the buffer will not be flushed, allowing for more efficient seeks.
+    /// This method does not return the location of the underlying reader, so the caller
+    /// must track this information themselves if it is required.
+    pub fn seek_relative(self: Pin<&mut Self>, offset: i64) -> SeeKRelative<'_, R> {
+        SeeKRelative { inner: self, offset, first: true }
+    }
+
+    /// Attempts to seek relative to the current position. If the new position lies within the buffer,
+    /// the buffer will not be flushed, allowing for more efficient seeks.
+    /// This method does not return the location of the underlying reader, so the caller
+    /// must track this information themselves if it is required.
+    pub fn poll_seek_relative(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        offset: i64,
+    ) -> Poll<io::Result<()>> {
+        let pos = self.pos as u64;
+        if offset < 0 {
+            if let Some(new_pos) = pos.checked_sub((-offset) as u64) {
+                *self.project().pos = new_pos as usize;
+                return Poll::Ready(Ok(()));
+            }
+        } else if let Some(new_pos) = pos.checked_add(offset as u64) {
+            if new_pos <= self.cap as u64 {
+                *self.project().pos = new_pos as usize;
+                return Poll::Ready(Ok(()));
+            }
+        }
+        self.poll_seek(cx, SeekFrom::Current(offset)).map(|res| res.map(|_| ()))
     }
 }
 
@@ -114,19 +142,10 @@ impl<R: AsyncRead> AsyncRead for BufReader<R> {
         self.consume(nread);
         Poll::Ready(Ok(nread))
     }
-
-    // we can't skip unconditionally because of the large buffer case in read.
-    #[cfg(feature = "read-initializer")]
-    unsafe fn initializer(&self) -> Initializer {
-        self.inner.initializer()
-    }
 }
 
 impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
-    fn poll_fill_buf(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<&[u8]>> {
+    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
         let this = self.project();
 
         // If we've reached the end of our internal buffer then we need to fetch
@@ -171,6 +190,10 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
     /// `.into_inner()` immediately after a seek yields the underlying reader
     /// at the same position.
     ///
+    /// To seek without discarding the internal buffer, use
+    /// [`BufReader::seek_relative`](BufReader::seek_relative) or
+    /// [`BufReader::poll_seek_relative`](BufReader::poll_seek_relative).
+    ///
     /// See [`AsyncSeek`](futures_io::AsyncSeek) for more details.
     ///
     /// Note: In the edge case where you're seeking with `SeekFrom::Current(n)`
@@ -192,7 +215,8 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
             // support seeking by i64::min_value() so we need to handle underflow when subtracting
             // remainder.
             if let Some(offset) = n.checked_sub(remainder) {
-                result = ready!(self.as_mut().project().inner.poll_seek(cx, SeekFrom::Current(offset)))?;
+                result =
+                    ready!(self.as_mut().project().inner.poll_seek(cx, SeekFrom::Current(offset)))?;
             } else {
                 // seek backwards by our remainder, and then by the offset
                 ready!(self.as_mut().project().inner.poll_seek(cx, SeekFrom::Current(-remainder)))?;
@@ -205,5 +229,35 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
         }
         self.discard_buffer();
         Poll::Ready(Ok(result))
+    }
+}
+
+/// Future for the [`BufReader::seek_relative`](self::BufReader::seek_relative) method.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+pub struct SeeKRelative<'a, R> {
+    inner: Pin<&'a mut BufReader<R>>,
+    offset: i64,
+    first: bool,
+}
+
+impl<R> Future for SeeKRelative<'_, R>
+where
+    R: AsyncRead + AsyncSeek,
+{
+    type Output = io::Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let offset = self.offset;
+        if self.first {
+            self.first = false;
+            self.inner.as_mut().poll_seek_relative(cx, offset)
+        } else {
+            self.inner
+                .as_mut()
+                .as_mut()
+                .poll_seek(cx, SeekFrom::Current(offset))
+                .map(|res| res.map(|_| ()))
+        }
     }
 }

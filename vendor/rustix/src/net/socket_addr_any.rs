@@ -1,7 +1,7 @@
 //! A socket address for any kind of socket.
 //!
 //! This is similar to [`std::net::SocketAddr`], but also supports Unix-domain
-//! socket addresses.
+//! socket addresses on Unix.
 //!
 //! # Safety
 //!
@@ -11,7 +11,7 @@
 
 #[cfg(unix)]
 use crate::net::SocketAddrUnix;
-use crate::net::{AddressFamily, SocketAddrV4, SocketAddrV6};
+use crate::net::{AddressFamily, SocketAddr, SocketAddrV4, SocketAddrV6};
 use crate::{backend, io};
 #[cfg(feature = "std")]
 use core::fmt;
@@ -30,6 +30,38 @@ pub enum SocketAddrAny {
     /// `struct sockaddr_un`
     #[cfg(unix)]
     Unix(SocketAddrUnix),
+}
+
+impl From<SocketAddr> for SocketAddrAny {
+    #[inline]
+    fn from(from: SocketAddr) -> Self {
+        match from {
+            SocketAddr::V4(v4) => Self::V4(v4),
+            SocketAddr::V6(v6) => Self::V6(v6),
+        }
+    }
+}
+
+impl From<SocketAddrV4> for SocketAddrAny {
+    #[inline]
+    fn from(from: SocketAddrV4) -> Self {
+        Self::V4(from)
+    }
+}
+
+impl From<SocketAddrV6> for SocketAddrAny {
+    #[inline]
+    fn from(from: SocketAddrV6) -> Self {
+        Self::V6(from)
+    }
+}
+
+#[cfg(unix)]
+impl From<SocketAddrUnix> for SocketAddrAny {
+    #[inline]
+    fn from(from: SocketAddrUnix) -> Self {
+        Self::Unix(from)
+    }
 }
 
 impl SocketAddrAny {

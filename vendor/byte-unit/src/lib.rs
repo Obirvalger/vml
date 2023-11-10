@@ -122,6 +122,7 @@ let byte = Byte::from_bytes(1500000);
 
 let adjusted_byte = byte.get_appropriate_unit(false);
 
+# #[cfg(feature = "alloc")]
 assert_eq!("1.5 MB", adjusted_byte.format(1));
 ```
 
@@ -149,6 +150,7 @@ features = ["serde"]
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(feature = "alloc")]
 #[macro_use]
 extern crate alloc;
 

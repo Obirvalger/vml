@@ -3,13 +3,11 @@
 //! # Safety
 //!
 //! See the `rustix::backend::syscalls` module documentation for details.
-#![allow(unsafe_code)]
-#![allow(clippy::undocumented_unsafe_blocks)]
+#![allow(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
-use super::super::conv::{by_mut, c_uint, pass_usize, ret, ret_c_uint, ret_owned_fd};
-use crate::fd::BorrowedFd;
+use crate::backend::conv::{by_mut, c_uint, pass_usize, ret_c_uint, ret_owned_fd};
+use crate::fd::{BorrowedFd, OwnedFd};
 use crate::io;
-use crate::io::OwnedFd;
 use crate::io_uring::{io_uring_params, IoringEnterFlags, IoringRegisterOp};
 use core::ffi::c_void;
 
@@ -30,8 +28,8 @@ pub(crate) unsafe fn io_uring_register(
     opcode: IoringRegisterOp,
     arg: *const c_void,
     nr_args: u32,
-) -> io::Result<()> {
-    ret(syscall_readonly!(
+) -> io::Result<u32> {
+    ret_c_uint(syscall_readonly!(
         __NR_io_uring_register,
         fd,
         c_uint(opcode as u32),

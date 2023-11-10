@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -48,5 +49,10 @@ impl L10nValue {
         );
         let _ = r;
         self
+    }
+}
+impl Default for L10nValue {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -4,9 +4,9 @@
 //! closures" from Rust to JS. Some more details can be found on the `Closure`
 //! type itself.
 
+#![allow(clippy::fn_to_numeric_cast)]
+
 use std::fmt;
-#[cfg(feature = "nightly")]
-use std::marker::Unsize;
 use std::mem::{self, ManuallyDrop};
 use std::prelude::v1::*;
 
@@ -31,9 +31,7 @@ use crate::UnwrapThrowExt;
 ///
 /// The type parameter on `Closure` is the type of closure that this represents.
 /// Currently this can only be the `Fn` and `FnMut` traits with up to 7
-/// arguments (and an optional return value). The arguments/return value of the
-/// trait must be numbers like `u32` for now, although this restriction may be
-/// lifted in the future!
+/// arguments (and an optional return value).
 ///
 /// # Examples
 ///
@@ -69,11 +67,11 @@ use crate::UnwrapThrowExt;
 ///
 /// #[wasm_bindgen]
 /// pub fn run() -> IntervalHandle {
-///     // First up we use `Closure::wrap` to wrap up a Rust closure and create
+///     // First up we use `Closure::new` to wrap up a Rust closure and create
 ///     // a JS closure.
-///     let cb = Closure::wrap(Box::new(|| {
+///     let cb = Closure::new(|| {
 ///         log("interval elapsed!");
-///     }) as Box<dyn FnMut()>);
+///     });
 ///
 ///     // Next we pass this via reference to the `setInterval` function, and
 ///     // `setInterval` gets a handle to the corresponding JS closure.
@@ -113,9 +111,9 @@ use crate::UnwrapThrowExt;
 ///
 /// #[wasm_bindgen]
 /// pub fn run() -> Result<IntervalHandle, JsValue> {
-///     let cb = Closure::wrap(Box::new(|| {
-///         web_sys::console::log_1(&"inverval elapsed!".into());
-///     }) as Box<dyn FnMut()>);
+///     let cb = Closure::new(|| {
+///         web_sys::console::log_1(&"interval elapsed!".into());
+///     });
 ///
 ///     let window = web_sys::window().unwrap();
 ///     let interval_id = window.set_interval_with_callback_and_timeout_and_arguments_0(
@@ -254,24 +252,9 @@ impl<T> Closure<T>
 where
     T: ?Sized + WasmClosure,
 {
-    /// A more ergonomic version of `Closure::wrap` that does the boxing and
-    /// cast to trait object for you.
+    /// Creates a new instance of `Closure` from the provided Rust function.
     ///
-    /// *This method requires the `nightly` feature of the `wasm-bindgen` crate
-    /// to be enabled, meaning this is a nightly-only API. Users on stable
-    /// should use `Closure::wrap`.*
-    #[cfg(feature = "nightly")]
-    pub fn new<F>(t: F) -> Closure<T>
-    where
-        F: Unsize<T> + 'static,
-    {
-        Closure::wrap(Box::new(t) as Box<T>)
-    }
-
-    /// Creates a new instance of `Closure` from the provided boxed Rust
-    /// function.
-    ///
-    /// Note that the closure provided here, `Box<T>`, has a few requirements
+    /// Note that the closure provided here, `F`, has a few requirements
     /// associated with it:
     ///
     /// * It must implement `Fn` or `FnMut` (for `FnOnce` functions see
@@ -285,6 +268,15 @@ where
     /// * Its arguments and return values are all types that can be shared with
     ///   JS (i.e. have `#[wasm_bindgen]` annotations or are simple numbers,
     ///   etc.)
+    pub fn new<F>(t: F) -> Closure<T>
+    where
+        F: IntoWasmClosure<T> + 'static,
+    {
+        Closure::wrap(Box::new(t).unsize())
+    }
+
+    /// A more direct version of `Closure::new` which creates a `Closure` from
+    /// a `Box<dyn Fn>`/`Box<dyn FnMut>`, which is how it's kept internally.
     pub fn wrap(mut data: Box<T>) -> Closure<T> {
         assert_eq!(mem::size_of::<*const T>(), mem::size_of::<FatPtr<T>>());
         let (a, b) = unsafe {
@@ -436,7 +428,6 @@ impl Closure<dyn FnOnce()> {
     /// and everything it closes over will leak.
     ///
     /// ```rust,ignore
-    /// use js_sys;
     /// use wasm_bindgen::{prelude::*, JsCast};
     ///
     /// let f = Closure::once_into_js(move || {
@@ -491,6 +482,15 @@ where
     }
 }
 
+impl<'a, T> OptionIntoWasmAbi for &'a Closure<T>
+where
+    T: WasmClosure + ?Sized,
+{
+    fn none() -> Self::Abi {
+        0
+    }
+}
+
 fn _check() {
     fn _assert<T: IntoWasmAbi>() {}
     _assert::<&Closure<dyn Fn()>>();
@@ -534,6 +534,15 @@ pub unsafe trait WasmClosure {
     fn describe();
 }
 
+/// An internal trait for the `Closure` type.
+///
+/// This trait is not stable and it's not recommended to use this in bounds or
+/// implement yourself.
+#[doc(hidden)]
+pub trait IntoWasmClosure<T: ?Sized> {
+    fn unsize(self: Box<Self>) -> Box<T>;
+}
+
 // The memory safety here in these implementations below is a bit tricky. We
 // want to be able to drop the `Closure` object from within the invocation of a
 // `Closure` for cases like promises. That means that while it's running we
@@ -550,7 +559,7 @@ pub unsafe trait WasmClosure {
 
 macro_rules! doit {
     ($(
-        ($($var:ident)*)
+        ($($var:ident $arg1:ident $arg2:ident $arg3:ident $arg4:ident)*)
     )*) => ($(
         unsafe impl<$($var,)* R> WasmClosure for dyn Fn($($var),*) -> R + 'static
             where $($var: FromWasmAbi + 'static,)*
@@ -561,10 +570,15 @@ macro_rules! doit {
                 unsafe extern "C" fn invoke<$($var: FromWasmAbi,)* R: ReturnWasmAbi>(
                     a: usize,
                     b: usize,
-                    $($var: <$var as FromWasmAbi>::Abi),*
-                ) -> <R as ReturnWasmAbi>::Abi {
+                    $(
+                    $arg1: <$var::Abi as WasmAbi>::Prim1,
+                    $arg2: <$var::Abi as WasmAbi>::Prim2,
+                    $arg3: <$var::Abi as WasmAbi>::Prim3,
+                    $arg4: <$var::Abi as WasmAbi>::Prim4,
+                    )*
+                ) -> WasmRet<R::Abi> {
                     if a == 0 {
-                        throw_str("closure invoked recursively or destroyed already");
+                        throw_str("closure invoked after being dropped");
                     }
                     // Make sure all stack variables are converted before we
                     // convert `ret` as it may throw (for `Result`, for
@@ -573,11 +587,11 @@ macro_rules! doit {
                         let f: *const dyn Fn($($var),*) -> R =
                             FatPtr { fields: (a, b) }.ptr;
                         $(
-                            let $var = <$var as FromWasmAbi>::from_abi($var);
+                            let $var = <$var as FromWasmAbi>::from_abi($var::Abi::join($arg1, $arg2, $arg3, $arg4));
                         )*
                         (*f)($($var),*)
                     };
-                    ret.return_abi()
+                    ret.return_abi().into()
                 }
 
                 inform(invoke::<$($var,)* R> as u32);
@@ -613,10 +627,15 @@ macro_rules! doit {
                 unsafe extern "C" fn invoke<$($var: FromWasmAbi,)* R: ReturnWasmAbi>(
                     a: usize,
                     b: usize,
-                    $($var: <$var as FromWasmAbi>::Abi),*
-                ) -> <R as ReturnWasmAbi>::Abi {
+                    $(
+                    $arg1: <$var::Abi as WasmAbi>::Prim1,
+                    $arg2: <$var::Abi as WasmAbi>::Prim2,
+                    $arg3: <$var::Abi as WasmAbi>::Prim3,
+                    $arg4: <$var::Abi as WasmAbi>::Prim4,
+                    )*
+                ) -> WasmRet<R::Abi> {
                     if a == 0 {
-                        throw_str("closure invoked recursively or destroyed already");
+                        throw_str("closure invoked recursively or after being dropped");
                     }
                     // Make sure all stack variables are converted before we
                     // convert `ret` as it may throw (for `Result`, for
@@ -626,11 +645,11 @@ macro_rules! doit {
                             FatPtr { fields: (a, b) }.ptr;
                         let f = f as *mut dyn FnMut($($var),*) -> R;
                         $(
-                            let $var = <$var as FromWasmAbi>::from_abi($var);
+                            let $var = <$var as FromWasmAbi>::from_abi($var::Abi::join($arg1, $arg2, $arg3, $arg4));
                         )*
                         (*f)($($var),*)
                     };
-                    ret.return_abi()
+                    ret.return_abi().into()
                 }
 
                 inform(invoke::<$($var,)* R> as u32);
@@ -702,19 +721,35 @@ macro_rules! doit {
                 js_val
             }
         }
+
+        impl<T, $($var,)* R> IntoWasmClosure<dyn FnMut($($var),*) -> R> for T
+            where T: 'static + FnMut($($var),*) -> R,
+                  $($var: FromWasmAbi + 'static,)*
+                  R: ReturnWasmAbi + 'static,
+        {
+            fn unsize(self: Box<Self>) -> Box<dyn FnMut($($var),*) -> R> { self }
+        }
+
+        impl<T, $($var,)* R> IntoWasmClosure<dyn Fn($($var),*) -> R> for T
+            where T: 'static + Fn($($var),*) -> R,
+                  $($var: FromWasmAbi + 'static,)*
+                  R: ReturnWasmAbi + 'static,
+        {
+            fn unsize(self: Box<Self>) -> Box<dyn Fn($($var),*) -> R> { self }
+        }
     )*)
 }
 
 doit! {
     ()
-    (A)
-    (A B)
-    (A B C)
-    (A B C D)
-    (A B C D E)
-    (A B C D E F)
-    (A B C D E F G)
-    (A B C D E F G H)
+    (A a1 a2 a3 a4)
+    (A a1 a2 a3 a4 B b1 b2 b3 b4)
+    (A a1 a2 a3 a4 B b1 b2 b3 b4 C c1 c2 c3 c4)
+    (A a1 a2 a3 a4 B b1 b2 b3 b4 C c1 c2 c3 c4 D d1 d2 d3 d4)
+    (A a1 a2 a3 a4 B b1 b2 b3 b4 C c1 c2 c3 c4 D d1 d2 d3 d4 E e1 e2 e3 e4)
+    (A a1 a2 a3 a4 B b1 b2 b3 b4 C c1 c2 c3 c4 D d1 d2 d3 d4 E e1 e2 e3 e4 F f1 f2 f3 f4)
+    (A a1 a2 a3 a4 B b1 b2 b3 b4 C c1 c2 c3 c4 D d1 d2 d3 d4 E e1 e2 e3 e4 F f1 f2 f3 f4 G g1 g2 g3 g4)
+    (A a1 a2 a3 a4 B b1 b2 b3 b4 C c1 c2 c3 c4 D d1 d2 d3 d4 E e1 e2 e3 e4 F f1 f2 f3 f4 G g1 g2 g3 g4 H h1 h2 h3 h4)
 }
 
 // Copy the above impls down here for where there's only one argument and it's a
@@ -733,20 +768,23 @@ where
         unsafe extern "C" fn invoke<A: RefFromWasmAbi, R: ReturnWasmAbi>(
             a: usize,
             b: usize,
-            arg: <A as RefFromWasmAbi>::Abi,
-        ) -> <R as ReturnWasmAbi>::Abi {
+            arg1: <A::Abi as WasmAbi>::Prim1,
+            arg2: <A::Abi as WasmAbi>::Prim2,
+            arg3: <A::Abi as WasmAbi>::Prim3,
+            arg4: <A::Abi as WasmAbi>::Prim4,
+        ) -> WasmRet<R::Abi> {
             if a == 0 {
-                throw_str("closure invoked recursively or destroyed already");
+                throw_str("closure invoked after being dropped");
             }
             // Make sure all stack variables are converted before we
             // convert `ret` as it may throw (for `Result`, for
             // example)
             let ret = {
                 let f: *const dyn Fn(&A) -> R = FatPtr { fields: (a, b) }.ptr;
-                let arg = <A as RefFromWasmAbi>::ref_from_abi(arg);
+                let arg = <A as RefFromWasmAbi>::ref_from_abi(A::Abi::join(arg1, arg2, arg3, arg4));
                 (*f)(&*arg)
             };
-            ret.return_abi()
+            ret.return_abi().into()
         }
 
         inform(invoke::<A, R> as u32);
@@ -776,10 +814,13 @@ where
         unsafe extern "C" fn invoke<A: RefFromWasmAbi, R: ReturnWasmAbi>(
             a: usize,
             b: usize,
-            arg: <A as RefFromWasmAbi>::Abi,
-        ) -> <R as ReturnWasmAbi>::Abi {
+            arg1: <A::Abi as WasmAbi>::Prim1,
+            arg2: <A::Abi as WasmAbi>::Prim2,
+            arg3: <A::Abi as WasmAbi>::Prim3,
+            arg4: <A::Abi as WasmAbi>::Prim4,
+        ) -> WasmRet<R::Abi> {
             if a == 0 {
-                throw_str("closure invoked recursively or destroyed already");
+                throw_str("closure invoked recursively or after being dropped");
             }
             // Make sure all stack variables are converted before we
             // convert `ret` as it may throw (for `Result`, for
@@ -787,10 +828,10 @@ where
             let ret = {
                 let f: *const dyn FnMut(&A) -> R = FatPtr { fields: (a, b) }.ptr;
                 let f = f as *mut dyn FnMut(&A) -> R;
-                let arg = <A as RefFromWasmAbi>::ref_from_abi(arg);
+                let arg = <A as RefFromWasmAbi>::ref_from_abi(A::Abi::join(arg1, arg2, arg3, arg4));
                 (*f)(&*arg)
             };
-            ret.return_abi()
+            ret.return_abi().into()
         }
 
         inform(invoke::<A, R> as u32);

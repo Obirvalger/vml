@@ -28,7 +28,6 @@
 //! [`rayon::ThreadPool`]: https://docs.rs/rayon/1.*/rayon/struct.ThreadPool.html
 #![cfg_attr(test, deny(warnings))]
 #![deny(missing_docs)]
-#![doc(html_root_url = "https://docs.rs/num_cpus/1.13.0")]
 #![allow(non_snake_case)]
 
 #[cfg(not(windows))]
@@ -46,6 +45,8 @@ use linux::{get_num_cpus, get_num_physical_cpus};
 ///
 /// This function will get the number of logical cores. Sometimes this is different from the number
 /// of physical cores (See [Simultaneous multithreading on Wikipedia][smt]).
+///
+/// This will always return at least `1`.
 ///
 /// # Examples
 ///
@@ -74,6 +75,8 @@ pub fn get() -> usize {
 }
 
 /// Returns the number of physical cores of the current system.
+///
+/// This will always return at least `1`.
 ///
 /// # Note
 ///
@@ -107,7 +110,12 @@ pub fn get_physical() -> usize {
 }
 
 
-#[cfg(not(any(target_os = "linux", target_os = "windows", target_os="macos", target_os="openbsd")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "openbsd",
+    target_os = "aix")))]
 #[inline]
 fn get_num_physical_cpus() -> usize {
     // Not implemented, fall back
@@ -324,11 +332,31 @@ fn get_num_physical_cpus() -> usize {
     cpus as usize
 }
 
+#[cfg(target_os = "aix")]
+fn get_num_physical_cpus() -> usize {
+    match get_smt_threads_aix() {
+        Some(num) => get_num_cpus() / num,
+        None => get_num_cpus(),
+    }
+}
+
+#[cfg(target_os = "aix")]
+fn get_smt_threads_aix() -> Option<usize> {
+    let smt = unsafe {
+        libc::getsystemcfg(libc::SC_SMT_TC)
+    };
+    if smt == u64::MAX {
+        return None;
+    }
+    Some(smt as usize)
+}
+
 #[cfg(any(
     target_os = "nacl",
     target_os = "macos",
     target_os = "ios",
     target_os = "android",
+    target_os = "aix",
     target_os = "solaris",
     target_os = "illumos",
     target_os = "fuchsia")
@@ -410,6 +438,7 @@ fn get_num_cpus() -> usize {
     target_os = "macos",
     target_os = "ios",
     target_os = "android",
+    target_os = "aix",
     target_os = "solaris",
     target_os = "illumos",
     target_os = "fuchsia",

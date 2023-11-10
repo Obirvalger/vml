@@ -5,6 +5,8 @@ use core::iter::IntoIterator;
 use core::ops::Index;
 use core::slice;
 use phf_shared::{self, HashKey, PhfBorrow, PhfHash};
+#[cfg(feature = "serde")]
+use serde::ser::{Serialize, SerializeMap, Serializer};
 
 /// An immutable map constructed at compile time.
 ///
@@ -44,7 +46,23 @@ where
     }
 }
 
+impl<K, V> Default for Map<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K, V> Map<K, V> {
+    /// Create a new, empty, immutable map.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            key: 0,
+            disps: &[],
+            entries: &[],
+        }
+    }
+
     /// Returns the number of entries in the `Map`.
     #[inline]
     pub const fn len(&self) -> usize {
@@ -97,7 +115,7 @@ impl<K, V> Map<K, V> {
             return None;
         } //Prevent panic on empty map
         let hashes = phf_shared::hash(key, &self.key);
-        let index = phf_shared::get_index(&hashes, &*self.disps, self.entries.len());
+        let index = phf_shared::get_index(&hashes, self.disps, self.entries.len());
         let entry = &self.entries[index as usize];
         let b: &T = entry.0.borrow();
         if b == key {
@@ -279,3 +297,21 @@ impl<'a, K, V> DoubleEndedIterator for Values<'a, K, V> {
 impl<'a, K, V> ExactSizeIterator for Values<'a, K, V> {}
 
 impl<'a, K, V> FusedIterator for Values<'a, K, V> {}
+
+#[cfg(feature = "serde")]
+impl<K, V> Serialize for Map<K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.len()))?;
+        for (k, v) in self.entries() {
+            map.serialize_entry(k, v)?;
+        }
+        map.end()
+    }
+}

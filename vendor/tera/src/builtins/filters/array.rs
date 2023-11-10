@@ -1,7 +1,7 @@
 /// Filters operating on array
 use std::collections::HashMap;
 
-use crate::context::{get_json_pointer, ValueRender};
+use crate::context::{dotted_pointer, ValueRender};
 use crate::errors::{Error, Result};
 use crate::filter_utils::{get_sort_strategy_for_type, get_unique_strategy_for_type};
 use crate::utils::render_to_string;
@@ -59,7 +59,7 @@ pub fn join(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
         .iter()
         .map(|v| render_to_string(|| "joining array".to_string(), |w| v.render(w)))
         .collect::<Result<Vec<_>>>()?;
-    to_value(&rendered.join(&sep)).map_err(Error::json)
+    to_value(rendered.join(&sep)).map_err(Error::json)
 }
 
 /// Sorts the array in ascending order.
@@ -74,18 +74,14 @@ pub fn sort(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
         Some(val) => try_get_value!("sort", "attribute", String, val),
         None => String::new(),
     };
-    let ptr = match attribute.as_str() {
-        "" => "".to_string(),
-        s => get_json_pointer(s),
-    };
 
-    let first = arr[0].pointer(&ptr).ok_or_else(|| {
+    let first = dotted_pointer(&arr[0], &attribute).ok_or_else(|| {
         Error::msg(format!("attribute '{}' does not reference a field", attribute))
     })?;
 
     let mut strategy = get_sort_strategy_for_type(first)?;
     for v in &arr {
-        let key = v.pointer(&ptr).ok_or_else(|| {
+        let key = dotted_pointer(v, &attribute).ok_or_else(|| {
             Error::msg(format!("attribute '{}' does not reference a field", attribute))
         })?;
         strategy.try_add_pair(v, key)?;
@@ -113,12 +109,8 @@ pub fn unique(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
         Some(val) => try_get_value!("unique", "attribute", String, val),
         None => String::new(),
     };
-    let ptr = match attribute.as_str() {
-        "" => "".to_string(),
-        s => get_json_pointer(s),
-    };
 
-    let first = arr[0].pointer(&ptr).ok_or_else(|| {
+    let first = dotted_pointer(&arr[0], &attribute).ok_or_else(|| {
         Error::msg(format!("attribute '{}' does not reference a field", attribute))
     })?;
 
@@ -127,7 +119,7 @@ pub fn unique(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
 
     let arr = arr
         .into_iter()
-        .filter_map(|v| match v.pointer(&ptr) {
+        .filter_map(|v| match dotted_pointer(&v, &attribute) {
             Some(key) => {
                 if disc == std::mem::discriminant(key) {
                     match strategy.insert(key) {
@@ -163,10 +155,9 @@ pub fn group_by(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
     };
 
     let mut grouped = Map::new();
-    let json_pointer = get_json_pointer(&key);
 
     for val in arr {
-        if let Some(key_val) = val.pointer(&json_pointer).cloned() {
+        if let Some(key_val) = dotted_pointer(&val, &key).cloned() {
             if key_val.is_null() {
                 continue;
             }
@@ -203,11 +194,10 @@ pub fn filter(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
     };
     let value = args.get("value").unwrap_or(&Value::Null);
 
-    let json_pointer = get_json_pointer(&key);
     arr = arr
         .into_iter()
         .filter(|v| {
-            let val = v.pointer(&json_pointer).unwrap_or(&Value::Null);
+            let val = dotted_pointer(v, &key).unwrap_or(&Value::Null);
             if value.is_null() {
                 !val.is_null()
             } else {
@@ -232,10 +222,9 @@ pub fn map(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
         None => return Err(Error::msg("The `map` filter has to have an `attribute` argument")),
     };
 
-    let json_pointer = get_json_pointer(&attribute);
     let arr = arr
         .into_iter()
-        .filter_map(|v| match v.pointer(&json_pointer) {
+        .filter_map(|v| match dotted_pointer(&v, &attribute) {
             Some(val) if !val.is_null() => Some(val.clone()),
             _ => None,
         })
@@ -323,9 +312,9 @@ mod tests {
     fn test_nth() {
         let mut args = HashMap::new();
         args.insert("n".to_string(), to_value(1).unwrap());
-        let result = nth(&to_value(&vec![1, 2, 3, 4]).unwrap(), &args);
+        let result = nth(&to_value(vec![1, 2, 3, 4]).unwrap(), &args);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), to_value(&2).unwrap());
+        assert_eq!(result.unwrap(), to_value(2).unwrap());
     }
 
     #[test]
@@ -333,30 +322,30 @@ mod tests {
         let v: Vec<Value> = Vec::new();
         let mut args = HashMap::new();
         args.insert("n".to_string(), to_value(1).unwrap());
-        let result = nth(&to_value(&v).unwrap(), &args);
+        let result = nth(&to_value(v).unwrap(), &args);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), to_value("").unwrap());
     }
 
     #[test]
     fn test_first() {
-        let result = first(&to_value(&vec![1, 2, 3, 4]).unwrap(), &HashMap::new());
+        let result = first(&to_value(vec![1, 2, 3, 4]).unwrap(), &HashMap::new());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), to_value(&1).unwrap());
+        assert_eq!(result.unwrap(), to_value(1).unwrap());
     }
 
     #[test]
     fn test_first_empty() {
         let v: Vec<Value> = Vec::new();
 
-        let result = first(&to_value(&v).unwrap(), &HashMap::new());
+        let result = first(&to_value(v).unwrap(), &HashMap::new());
         assert!(result.is_ok());
         assert_eq!(result.ok().unwrap(), to_value("").unwrap());
     }
 
     #[test]
     fn test_last() {
-        let result = last(&to_value(&vec!["Hello", "World"]).unwrap(), &HashMap::new());
+        let result = last(&to_value(vec!["Hello", "World"]).unwrap(), &HashMap::new());
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), to_value("World").unwrap());
     }
@@ -365,7 +354,7 @@ mod tests {
     fn test_last_empty() {
         let v: Vec<Value> = Vec::new();
 
-        let result = last(&to_value(&v).unwrap(), &HashMap::new());
+        let result = last(&to_value(v).unwrap(), &HashMap::new());
         assert!(result.is_ok());
         assert_eq!(result.ok().unwrap(), to_value("").unwrap());
     }
@@ -373,29 +362,29 @@ mod tests {
     #[test]
     fn test_join_sep() {
         let mut args = HashMap::new();
-        args.insert("sep".to_owned(), to_value(&"==").unwrap());
+        args.insert("sep".to_owned(), to_value("==").unwrap());
 
-        let result = join(&to_value(&vec!["Cats", "Dogs"]).unwrap(), &args);
+        let result = join(&to_value(vec!["Cats", "Dogs"]).unwrap(), &args);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), to_value(&"Cats==Dogs").unwrap());
+        assert_eq!(result.unwrap(), to_value("Cats==Dogs").unwrap());
     }
 
     #[test]
     fn test_join_sep_omitted() {
-        let result = join(&to_value(&vec![1.2, 3.4]).unwrap(), &HashMap::new());
+        let result = join(&to_value(vec![1.2, 3.4]).unwrap(), &HashMap::new());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), to_value(&"1.23.4").unwrap());
+        assert_eq!(result.unwrap(), to_value("1.23.4").unwrap());
     }
 
     #[test]
     fn test_join_empty() {
         let v: Vec<Value> = Vec::new();
         let mut args = HashMap::new();
-        args.insert("sep".to_owned(), to_value(&"==").unwrap());
+        args.insert("sep".to_owned(), to_value("==").unwrap());
 
-        let result = join(&to_value(&v).unwrap(), &args);
+        let result = join(&to_value(v).unwrap(), &args);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), to_value(&"").unwrap());
+        assert_eq!(result.unwrap(), to_value("").unwrap());
     }
 
     #[test]
@@ -432,7 +421,7 @@ mod tests {
         ])
         .unwrap();
         let mut args = HashMap::new();
-        args.insert("attribute".to_string(), to_value(&"a").unwrap());
+        args.insert("attribute".to_string(), to_value("a").unwrap());
 
         let result = sort(&v, &args);
         assert!(result.is_ok());
@@ -452,7 +441,7 @@ mod tests {
     fn test_sort_invalid_attribute() {
         let v = to_value(vec![Foo { a: 3, b: 5 }]).unwrap();
         let mut args = HashMap::new();
-        args.insert("attribute".to_string(), to_value(&"invalid_field").unwrap());
+        args.insert("attribute".to_string(), to_value("invalid_field").unwrap());
 
         let result = sort(&v, &args);
         assert!(result.is_err());
@@ -557,7 +546,7 @@ mod tests {
         ])
         .unwrap();
         let mut args = HashMap::new();
-        args.insert("attribute".to_string(), to_value(&"a").unwrap());
+        args.insert("attribute".to_string(), to_value("a").unwrap());
 
         let result = unique(&v, &args);
         assert!(result.is_ok());
@@ -571,7 +560,7 @@ mod tests {
     fn test_unique_invalid_attribute() {
         let v = to_value(vec![Foo { a: 3, b: 5 }]).unwrap();
         let mut args = HashMap::new();
-        args.insert("attribute".to_string(), to_value(&"invalid_field").unwrap());
+        args.insert("attribute".to_string(), to_value("invalid_field").unwrap());
 
         let result = unique(&v, &args);
         assert!(result.is_err());

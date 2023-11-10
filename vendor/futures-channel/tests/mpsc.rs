@@ -1,13 +1,13 @@
 use futures::channel::{mpsc, oneshot};
 use futures::executor::{block_on, block_on_stream};
-use futures::future::{FutureExt, poll_fn};
-use futures::stream::{Stream, StreamExt};
-use futures::sink::{Sink, SinkExt};
-use futures::task::{Context, Poll};
+use futures::future::{poll_fn, FutureExt};
 use futures::pin_mut;
+use futures::sink::{Sink, SinkExt};
+use futures::stream::{Stream, StreamExt};
+use futures::task::{Context, Poll};
 use futures_test::task::{new_count_waker, noop_context};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 trait AssertSend: Send {}
@@ -77,7 +77,7 @@ fn send_shared_recv() {
 fn send_recv_threads() {
     let (mut tx, rx) = mpsc::channel::<i32>(16);
 
-    let t = thread::spawn(move|| {
+    let t = thread::spawn(move || {
         block_on(tx.send(1)).unwrap();
     });
 
@@ -200,11 +200,11 @@ fn tx_close_gets_none() {
 
 #[test]
 fn stress_shared_unbounded() {
-    const AMT: u32 = 10000;
+    const AMT: u32 = if cfg!(miri) { 100 } else { 10000 };
     const NTHREADS: u32 = 8;
     let (tx, rx) = mpsc::unbounded::<i32>();
 
-    let t = thread::spawn(move|| {
+    let t = thread::spawn(move || {
         let result: Vec<_> = block_on(rx.collect());
         assert_eq!(result.len(), (AMT * NTHREADS) as usize);
         for item in result {
@@ -215,7 +215,7 @@ fn stress_shared_unbounded() {
     for _ in 0..NTHREADS {
         let tx = tx.clone();
 
-        thread::spawn(move|| {
+        thread::spawn(move || {
             for _ in 0..AMT {
                 tx.unbounded_send(1).unwrap();
             }
@@ -229,11 +229,11 @@ fn stress_shared_unbounded() {
 
 #[test]
 fn stress_shared_bounded_hard() {
-    const AMT: u32 = 10000;
+    const AMT: u32 = if cfg!(miri) { 100 } else { 10000 };
     const NTHREADS: u32 = 8;
     let (tx, rx) = mpsc::channel::<i32>(0);
 
-    let t = thread::spawn(move|| {
+    let t = thread::spawn(move || {
         let result: Vec<_> = block_on(rx.collect());
         assert_eq!(result.len(), (AMT * NTHREADS) as usize);
         for item in result {
@@ -259,7 +259,7 @@ fn stress_shared_bounded_hard() {
 #[allow(clippy::same_item_push)]
 #[test]
 fn stress_receiver_multi_task_bounded_hard() {
-    const AMT: usize = 10_000;
+    const AMT: usize = if cfg!(miri) { 100 } else { 10_000 };
     const NTHREADS: u32 = 2;
 
     let (mut tx, rx) = mpsc::channel::<usize>(0);
@@ -297,9 +297,9 @@ fn stress_receiver_multi_task_bounded_hard() {
                             }
                             Poll::Ready(None) => {
                                 *rx_opt = None;
-                                break
-                            },
-                            Poll::Pending => {},
+                                break;
+                            }
+                            Poll::Pending => {}
                         }
                     }
                 } else {
@@ -310,7 +310,6 @@ fn stress_receiver_multi_task_bounded_hard() {
 
         th.push(t);
     }
-
 
     for i in 0..AMT {
         block_on(tx.send(i)).unwrap();
@@ -328,7 +327,9 @@ fn stress_receiver_multi_task_bounded_hard() {
 /// after sender dropped.
 #[test]
 fn stress_drop_sender() {
-    fn list() -> impl Stream<Item=i32> {
+    const ITER: usize = if cfg!(miri) { 100 } else { 10000 };
+
+    fn list() -> impl Stream<Item = i32> {
         let (tx, rx) = mpsc::channel(1);
         thread::spawn(move || {
             block_on(send_one_two_three(tx));
@@ -336,7 +337,7 @@ fn stress_drop_sender() {
         rx
     }
 
-    for _ in 0..10000 {
+    for _ in 0..ITER {
         let v: Vec<_> = block_on(list().collect());
         assert_eq!(v, vec![1, 2, 3]);
     }
@@ -383,7 +384,9 @@ fn stress_close_receiver_iter() {
 
 #[test]
 fn stress_close_receiver() {
-    for _ in 0..10000 {
+    const ITER: usize = if cfg!(miri) { 50 } else { 10000 };
+
+    for _ in 0..ITER {
         stress_close_receiver_iter();
     }
 }
@@ -398,7 +401,7 @@ async fn stress_poll_ready_sender(mut sender: mpsc::Sender<u32>, count: u32) {
 #[allow(clippy::same_item_push)]
 #[test]
 fn stress_poll_ready() {
-    const AMT: u32 = 1000;
+    const AMT: u32 = if cfg!(miri) { 100 } else { 1000 };
     const NTHREADS: u32 = 8;
 
     /// Run a stress test using the specified channel capacity.
@@ -407,9 +410,7 @@ fn stress_poll_ready() {
         let mut threads = Vec::new();
         for _ in 0..NTHREADS {
             let sender = tx.clone();
-            threads.push(thread::spawn(move || {
-                block_on(stress_poll_ready_sender(sender, AMT))
-            }));
+            threads.push(thread::spawn(move || block_on(stress_poll_ready_sender(sender, AMT))));
         }
         drop(tx);
 
@@ -429,14 +430,14 @@ fn stress_poll_ready() {
 
 #[test]
 fn try_send_1() {
-    const N: usize = 3000;
+    const N: usize = if cfg!(miri) { 100 } else { 3000 };
     let (mut tx, rx) = mpsc::channel(0);
 
     let t = thread::spawn(move || {
         for i in 0..N {
             loop {
                 if tx.try_send(i).is_ok() {
-                    break
+                    break;
                 }
             }
         }
@@ -542,8 +543,8 @@ fn is_connected_to() {
 
 #[test]
 fn hash_receiver() {
-    use std::hash::Hasher;
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::Hasher;
 
     let mut hasher_a1 = DefaultHasher::new();
     let mut hasher_a2 = DefaultHasher::new();
@@ -630,4 +631,27 @@ fn send_backpressure_multi_senders() {
 
     let item = block_on(rx.next()).unwrap();
     assert_eq!(item, 2);
+}
+
+/// Test that empty channel has zero length and that non-empty channel has length equal to number
+/// of enqueued items
+#[test]
+fn unbounded_len() {
+    let (tx, mut rx) = mpsc::unbounded();
+    assert_eq!(tx.len(), 0);
+    assert!(tx.is_empty());
+    tx.unbounded_send(1).unwrap();
+    assert_eq!(tx.len(), 1);
+    assert!(!tx.is_empty());
+    tx.unbounded_send(2).unwrap();
+    assert_eq!(tx.len(), 2);
+    assert!(!tx.is_empty());
+    let item = block_on(rx.next()).unwrap();
+    assert_eq!(item, 1);
+    assert_eq!(tx.len(), 1);
+    assert!(!tx.is_empty());
+    let item = block_on(rx.next()).unwrap();
+    assert_eq!(item, 2);
+    assert_eq!(tx.len(), 0);
+    assert!(tx.is_empty());
 }

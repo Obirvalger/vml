@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -117,6 +118,20 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `HtmlElement`*"]
     pub fn set_hidden(this: &HtmlElement, value: bool);
+    # [wasm_bindgen (structural , method , getter , js_class = "HTMLElement" , js_name = inert)]
+    #[doc = "Getter for the `inert` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/inert)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `HtmlElement`*"]
+    pub fn inert(this: &HtmlElement) -> bool;
+    # [wasm_bindgen (structural , method , setter , js_class = "HTMLElement" , js_name = inert)]
+    #[doc = "Setter for the `inert` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/inert)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `HtmlElement`*"]
+    pub fn set_inert(this: &HtmlElement, value: bool);
     # [wasm_bindgen (structural , method , getter , js_class = "HTMLElement" , js_name = tabIndex)]
     #[doc = "Getter for the `tabIndex` field of this object."]
     #[doc = ""]

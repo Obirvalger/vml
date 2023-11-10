@@ -17,6 +17,7 @@ pub trait Executor01CompatExt: Executor01<Executor01Future> + Clone + Send + 'st
     /// futures 0.3 [`Spawn`](futures_task::Spawn).
     ///
     /// ```
+    /// # if cfg!(miri) { return; } // Miri does not support epoll
     /// use futures::task::SpawnExt;
     /// use futures::future::{FutureExt, TryFutureExt};
     /// use futures_util::compat::Executor01CompatExt;
@@ -66,9 +67,7 @@ where
     fn spawn_obj(&self, future: FutureObj<'static, ()>) -> Result<(), SpawnError03> {
         let future = future.unit_error().compat();
 
-        self.executor01
-            .execute(future)
-            .map_err(|_| SpawnError03::shutdown())
+        self.executor01.execute(future).map_err(|_| SpawnError03::shutdown())
     }
 }
 

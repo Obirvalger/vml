@@ -35,13 +35,13 @@
 .\"     from: @(#)strftime.3	5.12 (Berkeley) 6/29/91
 .\"	$Id: strftime.3,v 1.4 1993/12/15 20:33:00 jtc Exp $
 .\"
-.TH NEWSTRFTIME 3
+.TH newstrftime 3 "" "Time Zone Database"
 .SH NAME
 strftime \- format date and time
 .SH SYNOPSIS
 .nf
-.ie \n(.g .ds - \f(CW-\fP
-.el ds - \-
+.ie \n(.g .ds - \f(CR-\fP
+.el .ds - \-
 .B #include <time.h>
 .PP
 .B "size_t strftime(char *restrict buf, size_t maxsize,"
@@ -55,7 +55,7 @@ strftime \- format date and time
 .ie '\(rq'' .ds rq \&"\"
 .el .ds rq \(rq\"
 .de c
-.ie \n(.g \f(CW\\$1\fP\\$2
+.ie \n(.g \f(CR\\$1\fP\\$2
 .el \\$1\\$2
 ..
 .de q

@@ -76,8 +76,6 @@ macro_rules! ast_enum_of_structs_impl {
                 $variant:ident $( ($($member:ident)::+) )*,
             )*
         }
-
-        $($remaining:tt)*
     ) => {
         check_keyword_matches!(pub $pub);
         check_keyword_matches!(enum $enum);
@@ -88,7 +86,6 @@ macro_rules! ast_enum_of_structs_impl {
 
         #[cfg(feature = "printing")]
         generate_to_tokens! {
-            $($remaining)*
             ()
             tokens
             $name {
@@ -116,13 +113,7 @@ macro_rules! ast_enum_from_struct {
 }
 
 #[cfg(feature = "printing")]
-#[cfg_attr(
-    not(any(feature = "full", feature = "derive")),
-    allow(unknown_lints, unused_macro_rules)
-)]
 macro_rules! generate_to_tokens {
-    (do_not_generate_to_tokens $($foo:tt)*) => ();
-
     (
         ($($arms:tt)*) $tokens:ident $name:ident {
             $(#[cfg $cfg_attr:tt])*
@@ -174,4 +165,21 @@ macro_rules! strip_attrs_pub {
 macro_rules! check_keyword_matches {
     (enum enum) => {};
     (pub pub) => {};
+}
+
+// Rustdoc bug: does not respect the doc(hidden) on some items.
+#[cfg(all(doc, feature = "parsing"))]
+macro_rules! pub_if_not_doc {
+    ($(#[$m:meta])* pub $($item:tt)*) => {
+        $(#[$m])*
+        pub(crate) $($item)*
+    };
+}
+
+#[cfg(all(not(doc), feature = "parsing"))]
+macro_rules! pub_if_not_doc {
+    ($(#[$m:meta])* pub $($item:tt)*) => {
+        $(#[$m])*
+        pub $($item)*
+    };
 }

@@ -142,8 +142,8 @@ impl<R: RuleType> BitOr for Op<R> {
 ///         .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
 ///         .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
 ///         .op(Op::infix(Rule::pow, Assoc::Right))
-///         .op(Op::postfix(Rule::fac))
-///         .op(Op::prefix(Rule::neg));
+///         .op(Op::prefix(Rule::neg))
+///         .op(Op::postfix(Rule::fac));
 /// ```
 ///
 /// To parse an expression, call the [`map_primary`], [`map_prefix`], [`map_postfix`],
@@ -235,10 +235,10 @@ impl<R: RuleType> PrattParser<R> {
     }
 
     /// Maps primary expressions with a closure `primary`.
-    pub fn map_primary<'pratt, 'i, X, T>(
+    pub fn map_primary<'pratt, 'a, 'i, X, T>(
         &'pratt self,
         primary: X,
-    ) -> PrattParserMap<'pratt, 'i, R, X, T>
+    ) -> PrattParserMap<'pratt, 'a, 'i, R, X, T>
     where
         X: FnMut(Pair<'i, R>) -> T,
         R: 'pratt,
@@ -254,29 +254,29 @@ impl<R: RuleType> PrattParser<R> {
     }
 }
 
-type PrefixFn<'i, R, T> = Box<dyn FnMut(Pair<'i, R>, T) -> T + 'i>;
-type PostfixFn<'i, R, T> = Box<dyn FnMut(T, Pair<'i, R>) -> T + 'i>;
-type InfixFn<'i, R, T> = Box<dyn FnMut(T, Pair<'i, R>, T) -> T + 'i>;
+type PrefixFn<'a, 'i, R, T> = Box<dyn FnMut(Pair<'i, R>, T) -> T + 'a>;
+type PostfixFn<'a, 'i, R, T> = Box<dyn FnMut(T, Pair<'i, R>) -> T + 'a>;
+type InfixFn<'a, 'i, R, T> = Box<dyn FnMut(T, Pair<'i, R>, T) -> T + 'a>;
 
 /// Product of calling [`map_primary`] on [`PrattParser`], defines how expressions should
 /// be mapped.
 ///
 /// [`map_primary`]: struct.PrattParser.html#method.map_primary
 /// [`PrattParser`]: struct.PrattParser.html
-pub struct PrattParserMap<'pratt, 'i, R, F, T>
+pub struct PrattParserMap<'pratt, 'a, 'i, R, F, T>
 where
-    R: RuleType + 'pratt,
+    R: RuleType,
     F: FnMut(Pair<'i, R>) -> T,
 {
     pratt: &'pratt PrattParser<R>,
     primary: F,
-    prefix: Option<PrefixFn<'i, R, T>>,
-    postfix: Option<PostfixFn<'i, R, T>>,
-    infix: Option<InfixFn<'i, R, T>>,
+    prefix: Option<PrefixFn<'a, 'i, R, T>>,
+    postfix: Option<PostfixFn<'a, 'i, R, T>>,
+    infix: Option<InfixFn<'a, 'i, R, T>>,
     phantom: PhantomData<T>,
 }
 
-impl<'pratt, 'i, R, F, T> PrattParserMap<'pratt, 'i, R, F, T>
+impl<'pratt, 'a, 'i, R, F, T> PrattParserMap<'pratt, 'a, 'i, R, F, T>
 where
     R: RuleType + 'pratt,
     F: FnMut(Pair<'i, R>) -> T,
@@ -284,7 +284,7 @@ where
     /// Maps prefix operators with closure `prefix`.
     pub fn map_prefix<X>(mut self, prefix: X) -> Self
     where
-        X: FnMut(Pair<'i, R>, T) -> T + 'i,
+        X: FnMut(Pair<'i, R>, T) -> T + 'a,
     {
         self.prefix = Some(Box::new(prefix));
         self
@@ -293,7 +293,7 @@ where
     /// Maps postfix operators with closure `postfix`.
     pub fn map_postfix<X>(mut self, postfix: X) -> Self
     where
-        X: FnMut(T, Pair<'i, R>) -> T + 'i,
+        X: FnMut(T, Pair<'i, R>) -> T + 'a,
     {
         self.postfix = Some(Box::new(postfix));
         self
@@ -302,12 +302,20 @@ where
     /// Maps infix operators with a closure `infix`.
     pub fn map_infix<X>(mut self, infix: X) -> Self
     where
-        X: FnMut(T, Pair<'i, R>, T) -> T + 'i,
+        X: FnMut(T, Pair<'i, R>, T) -> T + 'a,
     {
         self.infix = Some(Box::new(infix));
         self
     }
 
+    /// The last method to call on the provided pairs to execute the Pratt
+    /// parser (previously defined using [`map_primary`], [`map_prefix`], [`map_postfix`],
+    /// and [`map_infix`] methods).
+    ///
+    /// [`map_primary`]: struct.PrattParser.html#method.map_primary
+    /// [`map_prefix`]: struct.PrattParserMap.html#method.map_prefix
+    /// [`map_postfix`]: struct.PrattParserMap.html#method.map_postfix
+    /// [`map_infix`]: struct.PrattParserMap.html#method.map_infix
     pub fn parse<P: Iterator<Item = Pair<'i, R>>>(&mut self, pairs: P) -> T {
         self.expr(&mut pairs.peekable(), 0)
     }

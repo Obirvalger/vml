@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
 #[wasm_bindgen]
@@ -12,4 +13,5 @@ use wasm_bindgen::prelude::*;
 pub enum XrSessionMode {
     Inline = "inline",
     ImmersiveVr = "immersive-vr",
+    ImmersiveAr = "immersive-ar",
 }

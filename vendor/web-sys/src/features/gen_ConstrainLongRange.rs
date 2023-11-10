@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -70,5 +71,10 @@ impl ConstrainLongRange {
         );
         let _ = r;
         self
+    }
+}
+impl Default for ConstrainLongRange {
+    fn default() -> Self {
+        Self::new()
     }
 }

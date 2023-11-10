@@ -1,7 +1,7 @@
 //! Functions which duplicate file descriptors.
 
-use crate::backend;
-use crate::io::{self, OwnedFd};
+use crate::fd::OwnedFd;
+use crate::{backend, io};
 use backend::fd::AsFd;
 
 #[cfg(not(target_os = "wasi"))]
@@ -21,12 +21,24 @@ pub use backend::io::types::DupFlags;
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
+///  - [FreeBSD]
+///  - [NetBSD]
+///  - [OpenBSD]
+///  - [DragonFly BSD]
+///  - [illumos]
+///  - [glibc]
 ///
 /// [file description]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_258
-/// [`fcntl_dupfd_cloexec`]: crate::fs::fcntl_dupfd_cloexec
+/// [`fcntl_dupfd_cloexec`]: crate::io::fcntl_dupfd_cloexec
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/dup.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/dup.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/dup.2.html
+/// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=dup&sektion=2
+/// [NetBSD]: https://man.netbsd.org/dup.2
+/// [OpenBSD]: https://man.openbsd.org/dup.2
+/// [DragonFly BSD]: https://man.dragonflybsd.org/?command=dup&section=2
+/// [illumos]: https://illumos.org/man/2/dup
+/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Duplicating-Descriptors.html
 #[cfg(not(target_os = "wasi"))]
 #[inline]
 pub fn dup<Fd: AsFd>(fd: Fd) -> io::Result<OwnedFd> {
@@ -44,16 +56,34 @@ pub fn dup<Fd: AsFd>(fd: Fd) -> io::Result<OwnedFd> {
 /// set `O_CLOEXEC`, use [`dup3`] with [`DupFlags::CLOEXEC`] on platforms which
 /// support it, or [`fcntl_dupfd_cloexec`]
 ///
+/// For `dup2` to stdin, stdout, and stderr, see [`stdio::dup2_stdin`],
+/// [`stdio::dup2_stdout`], and [`stdio::dup2_stderr`].
+///
 /// # References
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
+///  - [FreeBSD]
+///  - [NetBSD]
+///  - [OpenBSD]
+///  - [DragonFly BSD]
+///  - [illumos]
+///  - [glibc]
 ///
 /// [file description]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_258
-/// [`fcntl_dupfd_cloexec`]: crate::fs::fcntl_dupfd_cloexec
+/// [`fcntl_dupfd_cloexec`]: crate::io::fcntl_dupfd_cloexec
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/dup2.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/dup2.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/dup2.2.html
+/// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=dup2&sektion=2
+/// [NetBSD]: https://man.netbsd.org/dup2.2
+/// [OpenBSD]: https://man.openbsd.org/dup2.2
+/// [DragonFly BSD]: https://man.dragonflybsd.org/?command=dup2&section=2
+/// [illumos]: https://illumos.org/man/2/dup
+/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Duplicating-Descriptors.html
+/// [`stdio::dup2_stdin`]: https://docs.rs/rustix/*/rustix/stdio/fn.dup2_stdin.html
+/// [`stdio::dup2_stdout`]: https://docs.rs/rustix/*/rustix/stdio/fn.dup2_stdout.html
+/// [`stdio::dup2_stderr`]: https://docs.rs/rustix/*/rustix/stdio/fn.dup2_stderr.html
 #[cfg(not(target_os = "wasi"))]
 #[inline]
 pub fn dup2<Fd: AsFd>(fd: Fd, new: &mut OwnedFd) -> io::Result<()> {
@@ -70,10 +100,24 @@ pub fn dup2<Fd: AsFd>(fd: Fd, new: &mut OwnedFd) -> io::Result<()> {
 ///
 /// # References
 ///  - [Linux]
+///  - [FreeBSD]
+///  - [NetBSD]
+///  - [OpenBSD]
+///  - [DragonFly BSD]
 ///
 /// [file description]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_258
 /// [Linux]: https://man7.org/linux/man-pages/man2/dup3.2.html
-#[cfg(not(any(target_os = "aix", target_os = "wasi")))]
+/// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=dup3&sektion=3
+/// [NetBSD]: https://man.netbsd.org/dup3.2
+/// [OpenBSD]: https://man.openbsd.org/dup3.2
+/// [DragonFly BSD]: https://man.dragonflybsd.org/?command=dup3&section=3
+#[cfg(not(any(
+    target_os = "aix",
+    target_os = "espidf",
+    target_os = "nto",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 #[inline]
 pub fn dup3<Fd: AsFd>(fd: Fd, new: &mut OwnedFd, flags: DupFlags) -> io::Result<()> {
     backend::io::syscalls::dup3(fd.as_fd(), new, flags)

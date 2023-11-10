@@ -10,10 +10,10 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
-rust-version = "1.56"
+edition = "2021"
+rust-version = "1.61"
 name = "pest_meta"
-version = "2.4.0"
+version = "2.7.5"
 authors = ["Dragoș Tiselice <dragostiselice@gmail.com>"]
 exclude = ["src/grammar.pest"]
 include = [
@@ -24,7 +24,7 @@ include = [
     "LICENSE-*",
 ]
 description = "pest meta language parser and validator"
-homepage = "https://pest-parser.github.io/"
+homepage = "https://pest.rs/"
 documentation = "https://docs.rs/pest"
 readme = "_README.md"
 keywords = [
@@ -34,15 +34,24 @@ keywords = [
     "optimizer",
 ]
 categories = ["parsing"]
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/pest-parser/pest"
 
 [dependencies.once_cell]
 version = "1.8.0"
 
 [dependencies.pest]
-version = "2.4.0"
+version = "2.7.5"
 
-[build-dependencies.sha1]
+[build-dependencies.cargo]
+version = "0.72.2"
+optional = true
+
+[build-dependencies.sha2]
 version = "0.10"
 default-features = false
+
+[features]
+default = []
+grammar-extras = []
+not-bootstrap-in-src = ["dep:cargo"]

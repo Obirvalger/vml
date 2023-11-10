@@ -2,13 +2,80 @@
 //! as a stopgap until Rust [RFC 2725] adding first-class target feature detection
 //! macros to `libcore` is implemented.
 //!
-//! Supported target architectures:
-//! - `aarch64`: Linux and macOS/M4 only (ARM64 does not support OS-independent feature detection)
-//!   - Target features: `aes`, `sha2`, `sha3`
-//! - `x86`/`x86_64`: OS independent and `no_std`-friendly
-//!   - Target features: `adx`, `aes`, `avx`, `avx2`, `bmi1`, `bmi2`, `fma`,
-//!     `mmx`, `pclmulqdq`, `popcnt`, `rdrand`, `rdseed`, `sgx`, `sha`, `sse`,
-//!     `sse2`, `sse3`, `sse4.1`, `sse4.2`, `ssse3`
+//! # Supported target architectures
+//!
+//! *NOTE: target features with an asterisk are unstable (nightly-only) and
+//! subject to change to match upstream name changes in the Rust standard
+//! library.
+//!
+//! ## `aarch64`
+//!
+//! Linux, iOS, and macOS/ARM only (ARM64 does not support OS-independent feature detection)
+//!
+//! Target features:
+//!
+//! - `aes`*
+//! - `sha2`*
+//! - `sha3`*
+//!
+//! Linux only
+//!
+//! - `sm4`*
+//!
+//! ## `loongarch64`
+//!
+//! Linux only (LoongArch64 does not support OS-independent feature detection)
+//!
+//! Target features:
+//!
+//! - `lam`*
+//! - `ual`*
+//! - `fpu`*
+//! - `lsx`*
+//! - `lasx`*
+//! - `crc32`*
+//! - `complex`*
+//! - `crypto`*
+//! - `lvz`*
+//! - `lbt.x86`*
+//! - `lbt.arm`*
+//! - `lbt.mips`*
+//! - `ptw`*
+//!
+//! ## `x86`/`x86_64`
+//!
+//! OS independent and `no_std`-friendly
+//!
+//! Target features:
+//!
+//! - `adx`
+//! - `aes`
+//! - `avx`
+//! - `avx2`
+//! - `avx512bw`*
+//! - `avx512cd`*
+//! - `avx512dq`*
+//! - `avx512er`*
+//! - `avx512f`*
+//! - `avx512ifma`*
+//! - `avx512pf`*
+//! - `avx512vl`*
+//! - `bmi1`
+//! - `bmi2`
+//! - `fma`,
+//! - `mmx`
+//! - `pclmulqdq`
+//! - `popcnt`
+//! - `rdrand`
+//! - `rdseed`
+//! - `sgx`
+//! - `sha`
+//! - `sse`
+//! - `sse2`
+//! - `sse3`
+//! - `sse4.1`
+//! - `sse4.2`
+//! - `ssse3`
 //!
 //! If you would like detection support for a target feature which is not on
 //! this list, please [open a GitHub issue][gh].
@@ -55,20 +122,34 @@
 
 #![no_std]
 #![doc(
-    html_logo_url = "https://raw.githubusercontent.com/RustCrypto/meta/master/logo.svg",
-    html_favicon_url = "https://raw.githubusercontent.com/RustCrypto/meta/master/logo.svg",
-    html_root_url = "https://docs.rs/cpufeatures/0.2.1"
+    html_logo_url = "https://raw.githubusercontent.com/RustCrypto/media/6ee8e381/logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/RustCrypto/media/6ee8e381/logo.svg"
 )]
 
-#[cfg(all(target_arch = "aarch64"))]
+#[cfg(not(miri))]
+#[cfg(target_arch = "aarch64")]
 #[doc(hidden)]
 pub mod aarch64;
 
+#[cfg(not(miri))]
+#[cfg(target_arch = "loongarch64")]
+#[doc(hidden)]
+pub mod loongarch64;
+
+#[cfg(not(miri))]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod x86;
 
-#[cfg(not(any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")))]
-compile_error!("This crate works only on `aarch64`, `x86`, and `x86-64` targets.");
+#[cfg(miri)]
+mod miri;
+
+#[cfg(not(any(
+    target_arch = "aarch64",
+    target_arch = "loongarch64",
+    target_arch = "x86",
+    target_arch = "x86_64"
+)))]
+compile_error!("This crate works only on `aarch64`, `loongarch64`, `x86`, and `x86-64` targets.");
 
 /// Create module with CPU feature detection code.
 #[macro_export]

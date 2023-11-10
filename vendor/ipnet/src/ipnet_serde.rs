@@ -1,8 +1,11 @@
-use {IpNet, Ipv4Net, Ipv6Net};
-use std::fmt;
+use crate::{IpNet, Ipv4Net, Ipv6Net};
+use core::fmt;
+#[cfg(not(feature = "std"))]
+use core::net::{Ipv4Addr, Ipv6Addr};
+#[cfg(feature = "std")]
 use std::net::{Ipv4Addr, Ipv6Addr};
 use serde::{self, Serialize, Deserialize, Serializer, Deserializer};
-use serde::ser::{SerializeTuple};
+use serde::ser::SerializeTuple;
 use serde::de::{EnumAccess, Error, VariantAccess, Visitor};
 
 impl Serialize for IpNet {
@@ -53,7 +56,7 @@ impl<'de> Deserialize<'de> for IpNet {
                 V4,
                 V6,
             }
-            
+
             impl<'de> Visitor<'de> for EnumVisitor {
                 type Value = IpNet;
 
@@ -64,7 +67,7 @@ impl<'de> Deserialize<'de> for IpNet {
                 fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
                     where A: EnumAccess<'de>
                 {
-                    match try!(data.variant()) {
+                    match data.variant()? {
                         (IpNetKind::V4, v) => v.newtype_variant().map(IpNet::V4),
                         (IpNetKind::V6, v) => v.newtype_variant().map(IpNet::V6),
                     }
@@ -81,7 +84,14 @@ impl Serialize for Ipv4Net {
         where S: Serializer
     {
         if serializer.is_human_readable() {
-            serializer.serialize_str(&self.to_string())
+            #[cfg(feature = "ser_as_str")]
+            {
+                let mut buf = heapless::String::<18>::new();
+                fmt::write(&mut buf, format_args!("{self}")).unwrap();
+                serializer.serialize_str(&buf)
+            }
+            #[cfg(not(feature = "ser_as_str"))]
+            serializer.collect_str(self)
         } else {
             let mut seq = serializer.serialize_tuple(5)?;
             for octet in &self.addr().octets() {
@@ -127,7 +137,14 @@ impl Serialize for Ipv6Net {
         where S: Serializer
     {
         if serializer.is_human_readable() {
-            serializer.serialize_str(&self.to_string())
+            #[cfg(feature = "ser_as_str")]
+            {
+                let mut buf = heapless::String::<43>::new();
+                fmt::write(&mut buf, format_args!("{self}")).unwrap();
+                serializer.serialize_str(&buf)
+            }
+            #[cfg(not(feature = "ser_as_str"))]
+            serializer.collect_str(self)
         } else {
             let mut seq = serializer.serialize_tuple(17)?;
             for octet in &self.addr().octets() {
@@ -177,7 +194,7 @@ impl<'de> Deserialize<'de> for Ipv6Net {
 mod tests {
     extern crate serde_test;
 
-    use {IpNet, Ipv4Net, Ipv6Net};
+    use crate::{IpNet, Ipv4Net, Ipv6Net};
     use self::serde_test::{assert_tokens, Configure, Token};
 
     #[test]
@@ -196,7 +213,7 @@ mod tests {
             Token::TupleEnd,
         ]);
     }
-    
+
     #[test]
     fn test_serialize_ipnet_v6() {
         let net_str = "fd00::/32";
@@ -225,7 +242,7 @@ mod tests {
             Token::U8(0),
             Token::U8(32),
             Token::TupleEnd,
-        ]); 
+        ]);
     }
 
     #[test]

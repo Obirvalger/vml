@@ -1,18 +1,14 @@
 use std::io;
 use std::io::prelude::*;
 
-#[cfg(feature = "tokio")]
-use futures::Poll;
-#[cfg(feature = "tokio")]
-use tokio_io::{AsyncRead, AsyncWrite};
-
 use super::bufread;
 use crate::bufreader::BufReader;
+use crate::Decompress;
 
 /// A ZLIB encoder, or compressor.
 ///
-/// This structure implements a [`Read`] interface and will read uncompressed
-/// data from an underlying stream and emit a stream of compressed data.
+/// This structure implements a [`Read`] interface. When read from, it reads
+/// uncompressed data from the underlying [`Read`] and provides the compressed data.
 ///
 /// [`Read`]: https://doc.rust-lang.org/std/io/trait.Read.html
 ///
@@ -29,9 +25,9 @@ use crate::bufreader::BufReader;
 /// # fn open_hello_world() -> std::io::Result<Vec<u8>> {
 /// let f = File::open("examples/hello_world.txt")?;
 /// let mut z = ZlibEncoder::new(f, Compression::fast());
-/// let mut buffer = [0;50];
-/// let byte_count = z.read(&mut buffer)?;
-/// # Ok(buffer[0..byte_count].to_vec())
+/// let mut buffer = Vec::new();
+/// z.read_to_end(&mut buffer)?;
+/// # Ok(buffer)
 /// # }
 /// ```
 #[derive(Debug)]
@@ -45,6 +41,14 @@ impl<R: Read> ZlibEncoder<R> {
     pub fn new(r: R, level: crate::Compression) -> ZlibEncoder<R> {
         ZlibEncoder {
             inner: bufread::ZlibEncoder::new(BufReader::new(r), level),
+        }
+    }
+
+    /// Creates a new encoder with the given `compression` settings which will
+    /// read uncompressed data from the given stream `r` and emit the compressed stream.
+    pub fn new_with_compress(r: R, compression: crate::Compress) -> ZlibEncoder<R> {
+        ZlibEncoder {
+            inner: bufread::ZlibEncoder::new_with_compress(BufReader::new(r), compression),
         }
     }
 }
@@ -110,9 +114,6 @@ impl<R: Read> Read for ZlibEncoder<R> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<R: AsyncRead> AsyncRead for ZlibEncoder<R> {}
-
 impl<W: Read + Write> Write for ZlibEncoder<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.get_mut().write(buf)
@@ -123,17 +124,10 @@ impl<W: Read + Write> Write for ZlibEncoder<W> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<R: AsyncRead + AsyncWrite> AsyncWrite for ZlibEncoder<R> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.get_mut().shutdown()
-    }
-}
-
 /// A ZLIB decoder, or decompressor.
 ///
-/// This structure implements a [`Read`] interface and takes a stream of
-/// compressed data as input, providing the decompressed data when read from.
+/// This structure implements a [`Read`] interface. When read from, it reads
+/// compressed data from the underlying [`Read`] and provides the uncompressed data.
 ///
 /// [`Read`]: https://doc.rust-lang.org/std/io/trait.Read.html
 ///
@@ -175,13 +169,39 @@ impl<R: Read> ZlibDecoder<R> {
         ZlibDecoder::new_with_buf(r, vec![0; 32 * 1024])
     }
 
-    /// Same as `new`, but the intermediate buffer for data is specified.
+    /// Creates a new decoder which will decompress data read from the given
+    /// stream `r`, using `buf` as backing to speed up reading.
     ///
     /// Note that the specified buffer will only be used up to its current
     /// length. The buffer's capacity will also not grow over time.
     pub fn new_with_buf(r: R, buf: Vec<u8>) -> ZlibDecoder<R> {
         ZlibDecoder {
             inner: bufread::ZlibDecoder::new(BufReader::with_buf(buf, r)),
+        }
+    }
+
+    /// Creates a new decoder which will decompress data read from the given
+    /// stream `r`, along with `decompression` settings.
+    pub fn new_with_decompress(r: R, decompression: Decompress) -> ZlibDecoder<R> {
+        ZlibDecoder::new_with_decompress_and_buf(r, vec![0; 32 * 1024], decompression)
+    }
+
+    /// Creates a new decoder which will decompress data read from the given
+    /// stream `r`, using `buf` as backing to speed up reading,
+    /// along with `decompression` settings to configure decoder.
+    ///
+    /// Note that the specified buffer will only be used up to its current
+    /// length. The buffer's capacity will also not grow over time.
+    pub fn new_with_decompress_and_buf(
+        r: R,
+        buf: Vec<u8>,
+        decompression: Decompress,
+    ) -> ZlibDecoder<R> {
+        ZlibDecoder {
+            inner: bufread::ZlibDecoder::new_with_decompress(
+                BufReader::with_buf(buf, r),
+                decompression,
+            ),
         }
     }
 }
@@ -210,7 +230,7 @@ impl<R> ZlibDecoder<R> {
     /// Acquires a mutable reference to the underlying stream
     ///
     /// Note that mutation of the stream may result in surprising results if
-    /// this encoder is continued to be used.
+    /// this decoder is continued to be used.
     pub fn get_mut(&mut self) -> &mut R {
         self.inner.get_mut().get_mut()
     }
@@ -244,9 +264,6 @@ impl<R: Read> Read for ZlibDecoder<R> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<R: AsyncRead> AsyncRead for ZlibDecoder<R> {}
-
 impl<R: Read + Write> Write for ZlibDecoder<R> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.get_mut().write(buf)
@@ -254,12 +271,5 @@ impl<R: Read + Write> Write for ZlibDecoder<R> {
 
     fn flush(&mut self) -> io::Result<()> {
         self.get_mut().flush()
-    }
-}
-
-#[cfg(feature = "tokio")]
-impl<R: AsyncWrite + AsyncRead> AsyncWrite for ZlibDecoder<R> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.get_mut().shutdown()
     }
 }

@@ -13,6 +13,30 @@ macro_rules! feature {
     }
 }
 
+/// Enables Windows-specific code.
+/// Use this macro instead of `cfg(windows)` to generate docs properly.
+macro_rules! cfg_windows {
+    ($($item:item)*) => {
+        $(
+            #[cfg(any(all(doc, docsrs), windows))]
+            #[cfg_attr(docsrs, doc(cfg(windows)))]
+            $item
+        )*
+    }
+}
+
+/// Enables unstable Windows-specific code.
+/// Use this macro instead of `cfg(windows)` to generate docs properly.
+macro_rules! cfg_unstable_windows {
+    ($($item:item)*) => {
+        $(
+            #[cfg(all(any(all(doc, docsrs), windows), tokio_unstable))]
+            #[cfg_attr(docsrs, doc(cfg(all(windows, tokio_unstable))))]
+            $item
+        )*
+    }
+}
+
 /// Enables enter::block_on.
 macro_rules! cfg_block_on {
     ($($item:item)*) => {
@@ -61,6 +85,7 @@ macro_rules! cfg_fs {
     ($($item:item)*) => {
         $(
             #[cfg(feature = "fs")]
+            #[cfg(not(target_os = "wasi"))]
             #[cfg_attr(docsrs, doc(cfg(feature = "fs")))]
             $item
         )*
@@ -69,7 +94,11 @@ macro_rules! cfg_fs {
 
 macro_rules! cfg_io_blocking {
     ($($item:item)*) => {
-        $( #[cfg(any(feature = "io-std", feature = "fs"))] $item )*
+        $( #[cfg(any(
+                feature = "io-std",
+                feature = "fs",
+                all(windows, feature = "process"),
+        ))] $item )*
     }
 }
 
@@ -78,12 +107,12 @@ macro_rules! cfg_io_driver {
         $(
             #[cfg(any(
                 feature = "net",
-                feature = "process",
+                all(unix, feature = "process"),
                 all(unix, feature = "signal"),
             ))]
             #[cfg_attr(docsrs, doc(cfg(any(
                 feature = "net",
-                feature = "process",
+                all(unix, feature = "process"),
                 all(unix, feature = "signal"),
             ))))]
             $item
@@ -96,7 +125,7 @@ macro_rules! cfg_io_driver_impl {
         $(
             #[cfg(any(
                 feature = "net",
-                feature = "process",
+                all(unix, feature = "process"),
                 all(unix, feature = "signal"),
             ))]
             $item
@@ -109,7 +138,7 @@ macro_rules! cfg_not_io_driver {
         $(
             #[cfg(not(any(
                 feature = "net",
-                feature = "process",
+                all(unix, feature = "process"),
                 all(unix, feature = "signal"),
             )))]
             $item
@@ -247,6 +276,7 @@ macro_rules! cfg_process {
             #[cfg(feature = "process")]
             #[cfg_attr(docsrs, doc(cfg(feature = "process")))]
             #[cfg(not(loom))]
+            #[cfg(not(target_os = "wasi"))]
             $item
         )*
     }
@@ -275,6 +305,7 @@ macro_rules! cfg_signal {
             #[cfg(feature = "signal")]
             #[cfg_attr(docsrs, doc(cfg(feature = "signal")))]
             #[cfg(not(loom))]
+            #[cfg(not(target_os = "wasi"))]
             $item
         )*
     }
@@ -287,6 +318,13 @@ macro_rules! cfg_signal_internal {
             #[cfg(not(loom))]
             $item
         )*
+    }
+}
+
+macro_rules! cfg_signal_internal_and_unix {
+    ($($item:item)*) => {
+        #[cfg(unix)]
+        cfg_signal_internal! { $($item)* }
     }
 }
 
@@ -334,7 +372,7 @@ macro_rules! cfg_not_rt {
 macro_rules! cfg_rt_multi_thread {
     ($($item:item)*) => {
         $(
-            #[cfg(feature = "rt-multi-thread")]
+            #[cfg(all(feature = "rt-multi-thread", not(target_os = "wasi")))]
             #[cfg_attr(docsrs, doc(cfg(feature = "rt-multi-thread")))]
             $item
         )*
@@ -345,6 +383,44 @@ macro_rules! cfg_not_rt_multi_thread {
     ($($item:item)*) => {
         $( #[cfg(not(feature = "rt-multi-thread"))] $item )*
     }
+}
+
+macro_rules! cfg_taskdump {
+    ($($item:item)*) => {
+        $(
+            #[cfg(all(
+                tokio_unstable,
+                tokio_taskdump,
+                feature = "rt",
+                target_os = "linux",
+                any(
+                    target_arch = "aarch64",
+                    target_arch = "x86",
+                    target_arch = "x86_64"
+                )
+            ))]
+            $item
+        )*
+    };
+}
+
+macro_rules! cfg_not_taskdump {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(all(
+                tokio_unstable,
+                tokio_taskdump,
+                feature = "rt",
+                target_os = "linux",
+                any(
+                    target_arch = "aarch64",
+                    target_arch = "x86",
+                    target_arch = "x86_64"
+                )
+            )))]
+            $item
+        )*
+    };
 }
 
 macro_rules! cfg_test_util {
@@ -447,12 +523,7 @@ macro_rules! cfg_not_coop {
 macro_rules! cfg_has_atomic_u64 {
     ($($item:item)*) => {
         $(
-            #[cfg(not(any(
-                    target_arch = "arm",
-                    target_arch = "mips",
-                    target_arch = "powerpc",
-                    target_arch = "riscv32"
-                    )))]
+            #[cfg(target_has_atomic = "64")]
             $item
         )*
     }
@@ -461,12 +532,43 @@ macro_rules! cfg_has_atomic_u64 {
 macro_rules! cfg_not_has_atomic_u64 {
     ($($item:item)*) => {
         $(
-            #[cfg(any(
-                    target_arch = "arm",
-                    target_arch = "mips",
-                    target_arch = "powerpc",
-                    target_arch = "riscv32"
-                    ))]
+            #[cfg(not(target_has_atomic = "64"))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_has_const_mutex_new {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(all(loom, test)))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_not_has_const_mutex_new {
+    ($($item:item)*) => {
+        $(
+            #[cfg(all(loom, test))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_not_wasi {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(target_os = "wasi"))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_is_wasm_not_wasi {
+    ($($item:item)*) => {
+        $(
+            #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
             $item
         )*
     }

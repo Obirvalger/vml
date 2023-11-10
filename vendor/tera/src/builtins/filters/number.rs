@@ -2,10 +2,23 @@
 use std::collections::HashMap;
 
 #[cfg(feature = "builtins")]
-use humansize::{file_size_opts, FileSize};
+use humansize::format_size;
 use serde_json::value::{to_value, Value};
 
 use crate::errors::{Error, Result};
+
+/// Returns the absolute value of the argument.
+pub fn abs(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    if value.as_u64().is_some() {
+        Ok(value.clone())
+    } else if let Some(num) = value.as_i64() {
+        Ok(to_value(num.abs()).unwrap())
+    } else if let Some(num) = value.as_f64() {
+        Ok(to_value(num.abs()).unwrap())
+    } else {
+        Err(Error::msg("Filter `abs` was used on a value that isn't a number."))
+    }
+}
 
 /// Returns a plural suffix if the value is not equal to ±1, or a singular
 /// suffix otherwise. The plural suffix defaults to `s` and the singular suffix
@@ -25,9 +38,9 @@ pub fn pluralize(value: &Value, args: &HashMap<String, Value>) -> Result<Value> 
 
     // English uses plural when it isn't one
     if (num.abs() - 1.).abs() > ::std::f64::EPSILON {
-        Ok(to_value(&plural).unwrap())
+        Ok(to_value(plural).unwrap())
     } else {
-        Ok(to_value(&singular).unwrap())
+        Ok(to_value(singular).unwrap())
     }
 }
 
@@ -61,14 +74,15 @@ pub fn round(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
 
 /// Returns a human-readable file size (i.e. '110 MB') from an integer
 #[cfg(feature = "builtins")]
-pub fn filesizeformat(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+pub fn filesizeformat(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
     let num = try_get_value!("filesizeformat", "value", usize, value);
-    num.file_size(file_size_opts::CONVENTIONAL)
-        .map_err(|_| {
-            Error::msg(format!("Filter `filesizeformat` was called on a negative number: {}", num))
-        })
-        .map(to_value)
-        .map(std::result::Result::unwrap)
+    let binary = match args.get("binary") {
+        Some(binary) => try_get_value!("filesizeformat", "binary", bool, binary),
+        None => false,
+    };
+    let format = if binary { humansize::BINARY } else { humansize::WINDOWS };
+    Ok(to_value(format_size(num, format))
+        .expect("json serializing should always be possible for a string"))
 }
 
 #[cfg(test)]
@@ -76,6 +90,37 @@ mod tests {
     use super::*;
     use serde_json::value::to_value;
     use std::collections::HashMap;
+
+    #[test]
+    fn test_abs_unsigend() {
+        let result = abs(&to_value(1).unwrap(), &HashMap::new());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), to_value(1).unwrap());
+    }
+
+    #[test]
+    fn test_abs_negative_integer() {
+        let result = abs(&to_value(-1).unwrap(), &HashMap::new());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), to_value(1).unwrap());
+    }
+
+    #[test]
+    fn test_abs_negative_float() {
+        let result = abs(&to_value(-1.0).unwrap(), &HashMap::new());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), to_value(1.0).unwrap());
+    }
+
+    #[test]
+    fn test_abs_non_number() {
+        let result = abs(&to_value("nan").unwrap(), &HashMap::new());
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Filter `abs` was used on a value that isn't a number."
+        );
+    }
 
     #[test]
     fn test_pluralize_single() {
@@ -177,5 +222,15 @@ mod tests {
         let result = filesizeformat(&to_value(123456789).unwrap(), &args);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), to_value("117.74 MB").unwrap());
+    }
+
+    #[cfg(feature = "builtins")]
+    #[test]
+    fn test_filesizeformat_binary() {
+        let mut args = HashMap::new();
+        args.insert("binary".to_string(), to_value(true).unwrap());
+        let result = filesizeformat(&to_value(123456789).unwrap(), &args);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), to_value("117.74 MiB").unwrap());
     }
 }

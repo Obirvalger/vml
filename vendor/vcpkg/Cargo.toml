@@ -12,11 +12,11 @@
 
 [package]
 name = "vcpkg"
-version = "0.2.11"
+version = "0.2.15"
 authors = ["Jim McGrath <jimmc2@gmail.com>"]
 description = "A library to find native dependencies in a vcpkg tree at build\ntime in order to be used in Cargo build scripts.\n"
 documentation = "https://docs.rs/vcpkg"
-readme = "../README.md"
+readme = "README.md"
 keywords = ["build-dependencies", "windows", "macos", "linux"]
 categories = ["development-tools::build-utils"]
 license = "MIT/Apache-2.0"

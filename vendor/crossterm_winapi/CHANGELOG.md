@@ -1,3 +1,7 @@
+# Version 0.9.1
+- Add `scroll_right` and `scroll_left` functions.
+- Add `font_size` to fetch font size.
+
 # Version 0.9.0
 - Fix panic on certain event flags. 
 

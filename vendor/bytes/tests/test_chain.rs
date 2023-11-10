@@ -132,3 +132,46 @@ fn vectored_read() {
         assert_eq!(iovecs[3][..], b""[..]);
     }
 }
+
+#[test]
+fn chain_growing_buffer() {
+    let mut buff = [' ' as u8; 10];
+    let mut vec = b"wassup".to_vec();
+
+    let mut chained = (&mut buff[..]).chain_mut(&mut vec).chain_mut(Vec::new()); // Required for potential overflow because remaining_mut for Vec is isize::MAX - vec.len(), but for chain_mut is usize::MAX
+
+    chained.put_slice(b"hey there123123");
+
+    assert_eq!(&buff, b"hey there1");
+    assert_eq!(&vec, b"wassup23123");
+}
+
+#[test]
+fn chain_overflow_remaining_mut() {
+    let mut chained = Vec::<u8>::new().chain_mut(Vec::new()).chain_mut(Vec::new());
+
+    assert_eq!(chained.remaining_mut(), usize::MAX);
+    chained.put_slice(&[0; 256]);
+    assert_eq!(chained.remaining_mut(), usize::MAX);
+}
+
+#[test]
+fn chain_get_bytes() {
+    let mut ab = Bytes::copy_from_slice(b"ab");
+    let mut cd = Bytes::copy_from_slice(b"cd");
+    let ab_ptr = ab.as_ptr();
+    let cd_ptr = cd.as_ptr();
+    let mut chain = (&mut ab).chain(&mut cd);
+    let a = chain.copy_to_bytes(1);
+    let bc = chain.copy_to_bytes(2);
+    let d = chain.copy_to_bytes(1);
+
+    assert_eq!(Bytes::copy_from_slice(b"a"), a);
+    assert_eq!(Bytes::copy_from_slice(b"bc"), bc);
+    assert_eq!(Bytes::copy_from_slice(b"d"), d);
+
+    // assert `get_bytes` did not allocate
+    assert_eq!(ab_ptr, a.as_ptr());
+    // assert `get_bytes` did not allocate
+    assert_eq!(cd_ptr.wrapping_offset(1), d.as_ptr());
+}

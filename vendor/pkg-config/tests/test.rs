@@ -24,10 +24,7 @@ fn reset() {
     }
     env::remove_var("TARGET");
     env::remove_var("HOST");
-    env::set_var(
-        "PKG_CONFIG_PATH",
-        &env::current_dir().unwrap().join("tests"),
-    );
+    env::set_var("PKG_CONFIG_PATH", env::current_dir().unwrap().join("tests"));
 }
 
 fn find(name: &str) -> Result<pkg_config::Library, Error> {
@@ -310,4 +307,14 @@ fn range_version_full() {
         .range_version(..)
         .probe("escape")
         .unwrap();
+}
+
+#[test]
+fn rpath() {
+    let _g = LOCK.lock();
+    reset();
+    let lib = find("rpath").unwrap();
+    assert!(lib
+        .ld_args
+        .contains(&vec!["-rpath".to_string(), "/usr/local/lib".to_string(),]));
 }

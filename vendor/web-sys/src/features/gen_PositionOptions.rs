@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -69,5 +70,10 @@ impl PositionOptions {
         );
         let _ = r;
         self
+    }
+}
+impl Default for PositionOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

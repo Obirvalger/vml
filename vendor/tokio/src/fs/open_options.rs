@@ -10,6 +10,11 @@ use mock_open_options::MockOpenOptions as StdOpenOptions;
 #[cfg(not(test))]
 use std::fs::OpenOptions as StdOpenOptions;
 
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt;
+
 /// Options and flags which can be used to configure how a file is opened.
 ///
 /// This builder exposes the ability to configure how a [`File`] is opened and
@@ -20,7 +25,7 @@ use std::fs::OpenOptions as StdOpenOptions;
 /// Generally speaking, when using `OpenOptions`, you'll first call [`new`],
 /// then chain calls to methods to set each option, then call [`open`], passing
 /// the path of the file you're trying to open. This will give you a
-/// [`io::Result`][result] with a [`File`] inside that you can further operate
+/// [`io::Result`] with a [`File`] inside that you can further operate
 /// on.
 ///
 /// This is a specialized version of [`std::fs::OpenOptions`] for usage from
@@ -31,11 +36,9 @@ use std::fs::OpenOptions as StdOpenOptions;
 ///
 /// [`new`]: OpenOptions::new
 /// [`open`]: OpenOptions::open
-/// [result]: std::io::Result
 /// [`File`]: File
 /// [`File::open`]: File::open
 /// [`File::create`]: File::create
-/// [`std::fs::OpenOptions`]: std::fs::OpenOptions
 ///
 /// # Examples
 ///
@@ -399,8 +402,6 @@ impl OpenOptions {
 feature! {
     #![unix]
 
-    use std::os::unix::fs::OpenOptionsExt;
-
     impl OpenOptions {
         /// Sets the mode bits that a new file will be created with.
         ///
@@ -464,11 +465,7 @@ feature! {
     }
 }
 
-feature! {
-    #![windows]
-
-    use std::os::windows::fs::OpenOptionsExt;
-
+cfg_windows! {
     impl OpenOptions {
         /// Overrides the `dwDesiredAccess` argument to the call to [`CreateFile`]
         /// with the specified value.
@@ -542,7 +539,7 @@ feature! {
         /// # Examples
         ///
         /// ```no_run
-        /// use winapi::um::winbase::FILE_FLAG_DELETE_ON_CLOSE;
+        /// use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_DELETE_ON_CLOSE;
         /// use tokio::fs::OpenOptions;
         ///
         /// # #[tokio::main]
@@ -581,7 +578,7 @@ feature! {
         /// # Examples
         ///
         /// ```no_run
-        /// use winapi::um::winnt::FILE_ATTRIBUTE_HIDDEN;
+        /// use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN;
         /// use tokio::fs::OpenOptions;
         ///
         /// # #[tokio::main]
@@ -624,7 +621,7 @@ feature! {
         /// # Examples
         ///
         /// ```no_run
-        /// use winapi::um::winbase::SECURITY_IDENTIFICATION;
+        /// use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
         /// use tokio::fs::OpenOptions;
         ///
         /// # #[tokio::main]

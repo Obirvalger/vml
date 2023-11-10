@@ -50,7 +50,7 @@ impl UnstableLayoutMethods for Layout {
         //    valid.
         //
         // 2. `len + align - 1` can overflow by at most `align - 1`,
-        //    so the &-mask wth `!(align - 1)` will ensure that in the
+        //    so the &-mask with `!(align - 1)` will ensure that in the
         //    case of overflow, `len_rounded_up` will itself be 0.
         //    Thus the returned padding, when added to `len`, yields 0,
         //    which trivially satisfies the alignment `align`.
@@ -752,7 +752,7 @@ pub unsafe trait Alloc {
         match (Layout::array::<T>(n_old), Layout::array::<T>(n_new)) {
             (Ok(ref k_old), Ok(ref k_new)) if k_old.size() > 0 && k_new.size() > 0 => {
                 debug_assert!(k_old.align() == k_new.align());
-                self.realloc(ptr.cast(), k_old.clone(), k_new.size())
+                self.realloc(ptr.cast(), *k_old, k_new.size())
                     .map(NonNull::cast)
             }
             _ => Err(AllocErr),

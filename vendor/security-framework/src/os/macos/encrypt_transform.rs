@@ -20,30 +20,35 @@ pub struct Padding(CFStringRef);
 impl Padding {
     /// Do not pad.
     #[inline(always)]
+    #[must_use]
     pub fn none() -> Self {
         unsafe { Self(kSecPaddingNoneKey) }
     }
 
     /// Use PKCS#1 padding.
     #[inline(always)]
+    #[must_use]
     pub fn pkcs1() -> Self {
         unsafe { Self(kSecPaddingPKCS1Key) }
     }
 
     /// Use PKCS#5 padding.
     #[inline(always)]
+    #[must_use]
     pub fn pkcs5() -> Self {
         unsafe { Self(kSecPaddingPKCS5Key) }
     }
 
     /// Use PKCS#7 padding.
     #[inline(always)]
+    #[must_use]
     pub fn pkcs7() -> Self {
         unsafe { Self(kSecPaddingPKCS7Key) }
     }
 
     /// Use OAEP padding.
     #[inline(always)]
+    #[must_use]
     pub fn oaep() -> Self {
         unsafe { Self(kSecPaddingOAEPKey) }
     }
@@ -63,26 +68,31 @@ pub struct Mode(CFStringRef);
 #[allow(missing_docs)]
 impl Mode {
     #[inline(always)]
+    #[must_use]
     pub fn none() -> Self {
         unsafe { Self(kSecModeNoneKey) }
     }
 
     #[inline(always)]
+    #[must_use]
     pub fn ecb() -> Self {
         unsafe { Self(kSecModeECBKey) }
     }
 
     #[inline(always)]
+    #[must_use]
     pub fn cbc() -> Self {
         unsafe { Self(kSecModeCBCKey) }
     }
 
     #[inline(always)]
+    #[must_use]
     pub fn cfb() -> Self {
         unsafe { Self(kSecModeCFBKey) }
     }
 
     #[inline(always)]
+    #[must_use]
     pub fn ofb() -> Self {
         unsafe { Self(kSecModeOFBKey) }
     }
@@ -103,6 +113,7 @@ pub struct Builder {
 impl Builder {
     /// Creates a new `Builder` with a default configuration.
     #[inline(always)]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

@@ -1,3 +1,4 @@
+use std::fmt;
 use std::future::Future;
 use std::panic;
 use std::pin::Pin;
@@ -63,6 +64,7 @@ enum CombiAbortSource {
     AbortHandle,
 }
 
+#[cfg(panic = "unwind")]
 #[test]
 fn test_combinations() {
     let mut rt = &[
@@ -149,6 +151,8 @@ fn test_combinations() {
     }
 }
 
+fn is_debug<T: fmt::Debug>(_: &T) {}
+
 #[allow(clippy::too_many_arguments)]
 fn test_combination(
     rt: CombiRuntime,
@@ -184,7 +188,15 @@ fn test_combination(
         return;
     }
 
-    println!("Runtime {:?}, LocalSet {:?}, Task {:?}, Output {:?}, JoinInterest {:?}, JoinHandle {:?}, AbortHandle {:?}, Abort {:?} ({:?})", rt, ls, task, output, ji, jh, ah, abort, abort_src);
+    is_debug(&rt);
+    is_debug(&ls);
+    is_debug(&task);
+    is_debug(&output);
+    is_debug(&ji);
+    is_debug(&jh);
+    is_debug(&ah);
+    is_debug(&abort);
+    is_debug(&abort_src);
 
     // A runtime optionally with a LocalSet
     struct Rt {

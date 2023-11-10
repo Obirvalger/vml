@@ -1,13 +1,17 @@
+use cfg_if::cfg_if;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-use dh::Dh;
-use error::ErrorStack;
-use ssl::{
+use crate::dh::Dh;
+use crate::error::ErrorStack;
+#[cfg(any(ossl111, libressl340))]
+use crate::ssl::SslVersion;
+use crate::ssl::{
     HandshakeError, Ssl, SslContext, SslContextBuilder, SslContextRef, SslMethod, SslMode,
     SslOptions, SslRef, SslStream, SslVerifyMode,
 };
-use version;
+use crate::version;
+use std::net::IpAddr;
 
 const FFDHE_2048: &str = "
 -----BEGIN DH PARAMETERS-----
@@ -20,19 +24,23 @@ ssbzSibBsu/6iGtCOGEoXJf//////////wIBAg==
 -----END DH PARAMETERS-----
 ";
 
-#[allow(clippy::inconsistent_digit_grouping)]
+#[allow(clippy::inconsistent_digit_grouping, clippy::unusual_byte_groupings)]
 fn ctx(method: SslMethod) -> Result<SslContextBuilder, ErrorStack> {
     let mut ctx = SslContextBuilder::new(method)?;
 
-    let mut opts = SslOptions::ALL
-        | SslOptions::NO_COMPRESSION
-        | SslOptions::NO_SSLV2
-        | SslOptions::NO_SSLV3
-        | SslOptions::SINGLE_DH_USE
-        | SslOptions::SINGLE_ECDH_USE;
-    opts &= !SslOptions::DONT_INSERT_EMPTY_FRAGMENTS;
+    cfg_if! {
+        if #[cfg(not(boringssl))] {
+            let mut opts = SslOptions::ALL
+                | SslOptions::NO_COMPRESSION
+                | SslOptions::NO_SSLV2
+                | SslOptions::NO_SSLV3
+                | SslOptions::SINGLE_DH_USE
+                | SslOptions::SINGLE_ECDH_USE;
+            opts &= !SslOptions::DONT_INSERT_EMPTY_FRAGMENTS;
 
-    ctx.set_options(opts);
+            ctx.set_options(opts);
+        }
+    }
 
     let mut mode =
         SslMode::AUTO_RETRY | SslMode::ACCEPT_MOVING_WRITE_BUFFER | SslMode::ENABLE_PARTIAL_WRITE;
@@ -54,7 +62,7 @@ fn ctx(method: SslMethod) -> Result<SslContextBuilder, ErrorStack> {
 /// OpenSSL's default configuration is highly insecure. This connector manages the OpenSSL
 /// structures, configuring cipher suites, session options, hostname verification, and more.
 ///
-/// OpenSSL's built in hostname verification is used when linking against OpenSSL 1.0.2 or 1.1.0,
+/// OpenSSL's built-in hostname verification is used when linking against OpenSSL 1.0.2 or 1.1.0,
 /// and a custom implementation is used when linking against OpenSSL 1.0.1.
 #[derive(Clone, Debug)]
 pub struct SslConnector(SslContext);
@@ -100,7 +108,7 @@ impl SslConnector {
 
     /// Returns a shared reference to the inner raw `SslContext`.
     pub fn context(&self) -> &SslContextRef {
-        &*self.0
+        &self.0
     }
 }
 
@@ -170,9 +178,9 @@ impl ConnectConfiguration {
 
     /// Returns an `Ssl` configured to connect to the provided domain.
     ///
-    /// The domain is used for SNI and hostname verification if enabled.
+    /// The domain is used for SNI (if it is not an IP address) and hostname verification if enabled.
     pub fn into_ssl(mut self, domain: &str) -> Result<Ssl, ErrorStack> {
-        if self.sni {
+        if self.sni && domain.parse::<IpAddr>().is_err() {
             self.ssl.set_hostname(domain)?;
         }
 
@@ -234,7 +242,7 @@ impl SslAcceptor {
              ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
              DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
         )?;
-        #[cfg(ossl111)]
+        #[cfg(any(ossl111, libressl340))]
         ctx.set_ciphersuites(
             "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
         )?;
@@ -246,13 +254,13 @@ impl SslAcceptor {
     /// This corresponds to the modern configuration of version 5 of Mozilla's server side TLS recommendations.
     /// See its [documentation][docs] for more details on specifics.
     ///
-    /// Requires OpenSSL 1.1.1 or newer.
+    /// Requires OpenSSL 1.1.1 or LibreSSL 3.4.0 or newer.
     ///
     /// [docs]: https://wiki.mozilla.org/Security/Server_Side_TLS
-    #[cfg(ossl111)]
+    #[cfg(any(ossl111, libressl340))]
     pub fn mozilla_modern_v5(method: SslMethod) -> Result<SslAcceptorBuilder, ErrorStack> {
         let mut ctx = ctx(method)?;
-        ctx.set_options(SslOptions::NO_SSL_MASK & !SslOptions::NO_TLSV1_3);
+        ctx.set_min_proto_version(Some(SslVersion::TLS1_3))?;
         ctx.set_ciphersuites(
             "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
         )?;
@@ -270,7 +278,7 @@ impl SslAcceptor {
     pub fn mozilla_intermediate(method: SslMethod) -> Result<SslAcceptorBuilder, ErrorStack> {
         let mut ctx = ctx(method)?;
         ctx.set_options(SslOptions::CIPHER_SERVER_PREFERENCE);
-        #[cfg(ossl111)]
+        #[cfg(any(ossl111, libressl340))]
         ctx.set_options(SslOptions::NO_TLSV1_3);
         let dh = Dh::params_from_pem(FFDHE_2048.as_bytes())?;
         ctx.set_tmp_dh(&dh)?;
@@ -300,7 +308,7 @@ impl SslAcceptor {
         ctx.set_options(
             SslOptions::CIPHER_SERVER_PREFERENCE | SslOptions::NO_TLSV1 | SslOptions::NO_TLSV1_1,
         );
-        #[cfg(ossl111)]
+        #[cfg(any(ossl111, libressl340))]
         ctx.set_options(SslOptions::NO_TLSV1_3);
         setup_curves(&mut ctx)?;
         ctx.set_cipher_list(
@@ -327,7 +335,7 @@ impl SslAcceptor {
 
     /// Returns a shared reference to the inner raw `SslContext`.
     pub fn context(&self) -> &SslContextRef {
-        &*self.0
+        &self.0
     }
 }
 
@@ -357,6 +365,7 @@ impl DerefMut for SslAcceptorBuilder {
 
 cfg_if! {
     if #[cfg(ossl110)] {
+        #[allow(clippy::unnecessary_wraps)]
         fn setup_curves(_: &mut SslContextBuilder) -> Result<(), ErrorStack> {
             Ok(())
         }
@@ -366,8 +375,8 @@ cfg_if! {
         }
     } else {
         fn setup_curves(ctx: &mut SslContextBuilder) -> Result<(), ErrorStack> {
-            use ec::EcKey;
-            use nid::Nid;
+            use crate::ec::EcKey;
+            use crate::nid::Nid;
 
             let curve = EcKey::from_curve_name(Nid::X9_62_PRIME256V1)?;
             ctx.set_tmp_ecdh(&curve)
@@ -382,7 +391,7 @@ cfg_if! {
         }
 
         fn setup_verify_hostname(ssl: &mut SslRef, domain: &str) -> Result<(), ErrorStack> {
-            use x509::verify::X509CheckFlags;
+            use crate::x509::verify::X509CheckFlags;
 
             let param = ssl.param_mut();
             param.set_hostflags(X509CheckFlags::NO_PARTIAL_WILDCARDS);
@@ -398,25 +407,30 @@ cfg_if! {
 
         fn setup_verify_hostname(ssl: &mut Ssl, domain: &str) -> Result<(), ErrorStack> {
             let domain = domain.to_string();
-            ssl.set_ex_data(*verify::HOSTNAME_IDX, domain);
+            let hostname_idx = verify::try_get_hostname_idx()?;
+            ssl.set_ex_data(*hostname_idx, domain);
             Ok(())
         }
 
         mod verify {
             use std::net::IpAddr;
             use std::str;
+            use once_cell::sync::OnceCell;
 
-            use ex_data::Index;
-            use nid::Nid;
-            use ssl::Ssl;
-            use stack::Stack;
-            use x509::{
+            use crate::error::ErrorStack;
+            use crate::ex_data::Index;
+            use crate::nid::Nid;
+            use crate::ssl::Ssl;
+            use crate::stack::Stack;
+            use crate::x509::{
                 GeneralName, X509NameRef, X509Ref, X509StoreContext, X509StoreContextRef,
                 X509VerifyResult,
             };
 
-            lazy_static! {
-                pub static ref HOSTNAME_IDX: Index<Ssl, String> = Ssl::new_ex_index().unwrap();
+            static HOSTNAME_IDX: OnceCell<Index<Ssl, String>> = OnceCell::new();
+
+            pub fn try_get_hostname_idx() -> Result<&'static Index<Ssl, String>, ErrorStack> {
+                HOSTNAME_IDX.get_or_try_init(Ssl::new_ex_index)
             }
 
             pub fn verify_callback(preverify_ok: bool, x509_ctx: &mut X509StoreContextRef) -> bool {
@@ -424,12 +438,14 @@ cfg_if! {
                     return preverify_ok;
                 }
 
+                let hostname_idx =
+                    try_get_hostname_idx().expect("failed to initialize hostname index");
                 let ok = match (
                     x509_ctx.current_cert(),
                     X509StoreContext::ssl_idx()
                         .ok()
                         .and_then(|idx| x509_ctx.ex_data(idx))
-                        .and_then(|ssl| ssl.ex_data(*HOSTNAME_IDX)),
+                        .and_then(|ssl| ssl.ex_data(*hostname_idx)),
                 ) {
                     (Some(x509), Some(domain)) => verify_hostname(domain, &x509),
                     _ => true,
@@ -558,7 +574,7 @@ cfg_if! {
 
             #[test]
             fn test_dns_match() {
-                use ssl::connector::verify::matches_dns;
+                use crate::ssl::connector::verify::matches_dns;
                 assert!(matches_dns("website.tld", "website.tld")); // A name should match itself.
                 assert!(matches_dns("website.tld", "wEbSiTe.tLd")); // DNS name matching ignores case of hostname.
                 assert!(matches_dns("wEbSiTe.TlD", "website.tld")); // DNS name matching ignores case of subject.

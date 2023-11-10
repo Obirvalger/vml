@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -147,5 +148,10 @@ impl RtcIceComponentStats {
         );
         let _ = r;
         self
+    }
+}
+impl Default for RtcIceComponentStats {
+    fn default() -> Self {
+        Self::new()
     }
 }

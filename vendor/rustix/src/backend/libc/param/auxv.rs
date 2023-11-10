@@ -1,4 +1,4 @@
-use super::super::c;
+use crate::backend::c;
 #[cfg(any(
     all(target_os = "android", target_pointer_width = "64"),
     target_os = "linux",
@@ -17,7 +17,7 @@ pub(crate) fn page_size() -> usize {
     unsafe { c::sysconf(c::_SC_PAGESIZE) as usize }
 }
 
-#[cfg(not(target_os = "wasi"))]
+#[cfg(not(any(target_os = "vita", target_os = "wasi")))]
 #[inline]
 pub(crate) fn clock_ticks_per_second() -> u64 {
     unsafe { c::sysconf(c::_SC_CLK_TCK) as u64 }

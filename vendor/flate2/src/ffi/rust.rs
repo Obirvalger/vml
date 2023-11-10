@@ -1,4 +1,4 @@
-//! Implementation for miniz_oxide rust backend.
+//! Implementation for `miniz_oxide` rust backend.
 
 use std::convert::TryInto;
 use std::fmt;
@@ -15,6 +15,16 @@ pub const MZ_FINISH: isize = MZFlush::Finish as isize;
 
 use super::*;
 use crate::mem;
+
+// miniz_oxide doesn't provide any error messages (yet?)
+#[derive(Default)]
+pub struct ErrorMessage;
+
+impl ErrorMessage {
+    pub fn get(&self) -> Option<&str> {
+        None
+    }
+}
 
 fn format_from_bool(zlib_header: bool) -> DataFormat {
     if zlib_header {
@@ -41,12 +51,7 @@ impl fmt::Debug for Inflate {
 }
 
 impl InflateBackend for Inflate {
-    fn make(zlib_header: bool, window_bits: u8) -> Self {
-        assert!(
-            window_bits > 8 && window_bits < 16,
-            "window_bits must be within 9 ..= 15"
-        );
-
+    fn make(zlib_header: bool, _window_bits: u8) -> Self {
         let format = format_from_bool(zlib_header);
 
         Inflate {
@@ -78,7 +83,7 @@ impl InflateBackend for Inflate {
             },
             Err(status) => match status {
                 MZError::Buf => Ok(Status::BufError),
-                _ => mem::decompress_failed(),
+                _ => mem::decompress_failed(ErrorMessage),
             },
         }
     }
@@ -119,12 +124,7 @@ impl fmt::Debug for Deflate {
 }
 
 impl DeflateBackend for Deflate {
-    fn make(level: Compression, zlib_header: bool, window_bits: u8) -> Self {
-        assert!(
-            window_bits > 8 && window_bits < 16,
-            "window_bits must be within 9 ..= 15"
-        );
-
+    fn make(level: Compression, zlib_header: bool, _window_bits: u8) -> Self {
         // Check in case the integer value changes at some point.
         debug_assert!(level.level() <= 10);
 
@@ -154,11 +154,11 @@ impl DeflateBackend for Deflate {
             Ok(status) => match status {
                 MZStatus::Ok => Ok(Status::Ok),
                 MZStatus::StreamEnd => Ok(Status::StreamEnd),
-                MZStatus::NeedDict => Err(CompressError(())),
+                MZStatus::NeedDict => mem::compress_failed(ErrorMessage),
             },
             Err(status) => match status {
                 MZError::Buf => Ok(Status::BufError),
-                _ => Err(CompressError(())),
+                _ => mem::compress_failed(ErrorMessage),
             },
         }
     }

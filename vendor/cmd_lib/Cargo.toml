@@ -12,35 +12,49 @@
 [package]
 edition = "2018"
 name = "cmd_lib"
-version = "1.3.0"
+version = "1.8.0"
 authors = ["rust-shell-script <rust-shell-script@gmail.com>"]
 description = "Common rust commandline macros and utils, to write shell script like tasks easily"
 homepage = "https://github.com/rust-shell-script/rust_cmd_lib"
 documentation = "https://docs.rs/cmd_lib"
 readme = "README.md"
-keywords = ["shell", "script", "cli", "process", "pipe"]
-categories = ["command-line-interface", "command-line-utilities"]
+keywords = [
+    "shell",
+    "script",
+    "cli",
+    "process",
+    "pipe",
+]
+categories = [
+    "command-line-interface",
+    "command-line-utilities",
+]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rust-shell-script/rust_cmd_lib"
+
 [dependencies.cmd_lib_macros]
-version = "1.3.0"
+version = "1.4.0"
+
+[dependencies.env_logger]
+version = "0.10.0"
 
 [dependencies.faccess]
-version = "0.2"
+version = "0.2.4"
 
 [dependencies.lazy_static]
 version = "1.4.0"
 
 [dependencies.log]
-version = "0.4"
+version = "0.4.20"
 
 [dependencies.os_pipe]
-version = "0.9"
+version = "1.1.4"
+
 [dev-dependencies.byte-unit]
-version = "4.0"
+version = "4.0.19"
 
 [dev-dependencies.rayon]
-version = "1.5"
+version = "1.8.0"
 
 [dev-dependencies.structopt]
-version = "0.3"
+version = "0.3.26"

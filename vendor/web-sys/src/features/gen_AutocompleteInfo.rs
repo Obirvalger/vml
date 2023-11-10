@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -86,5 +87,10 @@ impl AutocompleteInfo {
         );
         let _ = r;
         self
+    }
+}
+impl Default for AutocompleteInfo {
+    fn default() -> Self {
+        Self::new()
     }
 }

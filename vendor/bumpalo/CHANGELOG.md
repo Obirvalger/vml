@@ -28,6 +28,212 @@ Released YYYY-MM-DD.
 
 --------------------------------------------------------------------------------
 
+## 3.14.0
+
+Released 2023-09-14.
+
+### Added
+
+* Added the `std` cargo feature, which enables implementations of `std` traits
+  for various things. Right now that is just `std::io::Write` for
+  `bumpalo::collections::Vec`, but could be more in the future.
+
+--------------------------------------------------------------------------------
+
+## 3.13.0
+
+Released 2023-05-22.
+
+### Added
+
+* New `"allocator-api2"` feature enables the use of the allocator API on
+  stable. This feature uses a crate that mirrors the API of the unstable Rust
+  `allocator_api` feature. If the feature is enabled, references to `Bump` will
+  implement `allocator_api2::Allocator`. This allows `Bump` to be used as an
+  allocator for collection types from `allocator-api2` and any other crates that
+  support `allocator-api2`.
+
+### Changed
+
+* The minimum supported Rust version (MSRV) is now 1.63.0.
+
+--------------------------------------------------------------------------------
+
+## 3.12.2
+
+Released 2023-05-09.
+
+### Changed
+
+* Added `rust-version` metadata to `Cargo.toml` which helps `cargo` with version
+  resolution.
+
+--------------------------------------------------------------------------------
+
+## 3.12.1
+
+Released 2023-04-21.
+
+### Fixed
+
+* Fixed a bug where `Bump::try_with_capacity(n)` where `n > isize::MAX` could
+  lead to attempts to create invalid `Layout`s.
+
+--------------------------------------------------------------------------------
+
+## 3.12.0
+
+Released 2023-01-17.
+
+### Added
+
+* Added the `bumpalo::boxed::Box::bump` and `bumpalo::collections::String::bump`
+  getters to get the underlying `Bump` that a string or box was allocated into.
+
+### Changed
+
+* Some uses of `Box` that MIRI did not previously consider as UB are now
+  reported as UB, and `bumpalo`'s internals have been adjusted to avoid the new
+  UB.
+
+--------------------------------------------------------------------------------
+
+## 3.11.1
+
+Released 2022-10-18.
+
+### Security
+
+* Fixed a bug where when `std::vec::IntoIter` was ported to
+  `bumpalo::collections::vec::IntoIter`, it didn't get its underlying `Bump`'s
+  lifetime threaded through. This meant that `rustc` was not checking the
+  borrows for `bumpalo::collections::IntoIter` and this could result in
+  use-after-free bugs.
+
+--------------------------------------------------------------------------------
+
+## 3.11.0
+
+Released 2022-08-17.
+
+### Added
+
+* Added support for per-`Bump` allocation limits. These are enforced only in the
+  slow path when allocating new chunks in the `Bump`, not in the bump allocation
+  hot path, and therefore impose near zero overhead.
+* Added the `bumpalo::boxed::Box::into_inner` method.
+
+### Changed
+
+* Updated to Rust 2021 edition.
+* The minimum supported Rust version (MSRV) is now 1.56.0.
+
+--------------------------------------------------------------------------------
+
+## 3.10.0
+
+Released 2022-06-01.
+
+### Added
+
+* Implement `bumpalo::collections::FromIteratorIn` for `Option` and `Result`,
+  just like `core` does for `FromIterator`.
+* Implement `bumpalo::collections::FromIteratorIn` for `bumpalo::boxed::Box<'a,
+  [T]>`.
+* Added running tests under MIRI in CI for additional confidence in unsafe code.
+* Publicly exposed `bumpalo::collections::Vec::drain_filter` since the
+  corresponding `std::vec::Vec` method has stabilized.
+
+### Changed
+
+* `Bump::new` will not allocate a backing chunk until the first allocation
+  inside the bump arena now.
+
+### Fixed
+
+* Properly account for alignment changes when growing or shrinking an existing
+  allocation.
+* Removed all internal integer-to-pointer casts, to play better with UB checkers
+  like MIRI.
+
+--------------------------------------------------------------------------------
+
+## 3.9.1
+
+Released 2022-01-06.
+
+### Fixed
+
+* Fixed link to logo in docs and README.md
+
+--------------------------------------------------------------------------------
+
+## 3.9.0
+
+Released 2022-01-05.
+
+### Changed
+
+* The minimum supported Rust version (MSRV) has been raised to Rust 1.54.0.
+
+* `bumpalo::collections::Vec<T>` implements relevant traits for all arrays of
+  any size `N` via const generics. Previously, it was just arrays up to length
+  32. Similar for `bumpalo::boxed::Box<[T; N]>`.
+
+--------------------------------------------------------------------------------
+
+## 3.8.0
+
+Released 2021-10-19.
+
+### Added
+
+* Added the `CollectIn` and `FromIteratorIn` traits to make building a
+  collection from an iterator easier. These new traits live in the
+  `bumpalo::collections` module and are implemented by
+  `bumpalo::collections::{String,Vec}`.
+
+* Added the `Bump::iter_allocated_chunks_raw` method, which is an `unsafe`, raw
+  version of `Bump::iter_allocated_chunks`. The new method does not take an
+  exclusive borrow of the `Bump` and yields raw pointer-and-length pairs for
+  each chunk in the bump. It is the caller's responsibility to ensure that no
+  allocation happens in the `Bump` while iterating over chunks and that there
+  are no active borrows of allocated data if they want to turn any
+  pointer-and-length pairs into slices.
+
+--------------------------------------------------------------------------------
+
+## 3.7.1
+
+Released 2021-09-17.
+
+### Changed
+
+* The packaged crate uploaded to crates.io when `bumpalo` is published is now
+  smaller, thanks to excluding unnecessary files.
+
+--------------------------------------------------------------------------------
+
+## 3.7.0
+
+Released 2020-05-28.
+
+### Added
+
+* Added `Borrow` and `BorrowMut` trait implementations for
+  `bumpalo::collections::Vec` and
+  `bumpalo::collections::String`. [#108](https://github.com/fitzgen/bumpalo/pull/108)
+
+### Changed
+
+* When allocating a new chunk fails, don't immediately give up. Instead, try
+  allocating a chunk that is half that size, and if that fails, then try half of
+  *that* size, etc until either we successfully allocate a chunk or we fail to
+  allocate the minimum chunk size and then finally give
+  up. [#111](https://github.com/fitzgen/bumpalo/pull/111)
+
+--------------------------------------------------------------------------------
+
 ## 3.6.1
 
 Released 2020-02-18.
@@ -85,7 +291,7 @@ Released 2020-01-22.
 
   ```toml
   [dependencies]
-  bumpalo = { version = "3.4.0", features = ["allocator_api"] }
+  bumpalo = { version = "3.5", features = ["allocator_api"] }
   ```
 
   Next, enable the `allocator_api` nightly Rust feature in your `src/lib.rs` or `src/main.rs`:
@@ -183,7 +389,7 @@ Released 2020-03-24.
   2. I've written a quickcheck test to exercise `realloc`. Without the bug fix
      in this patch, this quickcheck immediately triggers invalid reads when run
      under `valgrind`. We didn't previously have quickchecks that exercised
-     `realloc` beacuse `realloc` isn't publicly exposed directly, and instead
+     `realloc` because `realloc` isn't publicly exposed directly, and instead
      can only be indirectly called. This new quickcheck test exercises `realloc`
      via `bumpalo::collections::Vec::resize` and
      `bumpalo::collections::Vec::shrink_to_fit` calls.
@@ -254,7 +460,7 @@ Released 2019-12-20.
 
 * Added `Bump::alloc_slice_fill_copy` and `Bump::alloc_slice_fill_clone` for
   creating slices of length `n` that are filled with copies or clones of an
-  inital element.
+  initial element.
 
 * Added `Bump::alloc_slice_fill_default` for creating slices of length `n` with
   the element type's default instance.
@@ -336,7 +542,7 @@ Released 2019-12-20.
   from the allocated chunks are slightly different from the old
   `each_allocated_chunk`: only up to 16-byte alignment is supported now. If you
   allocate anything with greater alignment than that into the bump arena, there
-  might be uninitilized padding inserted in the chunks, and therefore it is no
+  might be uninitialized padding inserted in the chunks, and therefore it is no
   longer safe to read them via `MaybeUninit::assume_init`. See also the note
   about bump direction in the "changed" section; if you're iterating chunks,
   you're likely affected by that change!
@@ -375,7 +581,7 @@ Released 2019-05-20.
 
 * Fixed a bug where chunks were always deallocated with the default chunk
   layout, not the layout that the chunk was actually allocated with (i.e. if we
-  started growing largers chunks with larger layouts, we would deallocate those
+  started growing larger chunks with larger layouts, we would deallocate those
   chunks with an incorrect layout).
 
 --------------------------------------------------------------------------------

@@ -88,10 +88,6 @@ enum List {
 /// move it out from this entry to prevent it from getting leaked. (Since the
 /// two linked lists are emptied in the destructor of `IdleNotifiedSet`, the
 /// value should not be leaked.)
-///
-/// This type is `#[repr(C)]` because its `linked_list::Link` implementation
-/// requires that `pointers` is the first field.
-#[repr(C)]
 struct ListEntry<T> {
     /// The linked list pointers of the list this entry is in.
     pointers: linked_list::Pointers<ListEntry<T>>,
@@ -103,6 +99,14 @@ struct ListEntry<T> {
     my_list: UnsafeCell<List>,
     /// Required by the `linked_list::Pointers` field.
     _pin: PhantomPinned,
+}
+
+generate_addr_of_methods! {
+    impl<T> ListEntry<T> {
+        unsafe fn addr_of_pointers(self: NonNull<Self>) -> NonNull<linked_list::Pointers<ListEntry<T>>> {
+            &self.pointers
+        }
+    }
 }
 
 // With mutable access to the `IdleNotifiedSet`, you can get mutable access to
@@ -120,7 +124,7 @@ unsafe impl<T> Send for ListEntry<T> {}
 unsafe impl<T> Sync for ListEntry<T> {}
 
 impl<T> IdleNotifiedSet<T> {
-    /// Create a new IdleNotifiedSet.
+    /// Create a new `IdleNotifiedSet`.
     pub(crate) fn new() -> Self {
         let lists = Mutex::new(ListsInner {
             notified: LinkedList::new(),
@@ -417,7 +421,7 @@ impl<T: 'static> Wake for ListEntry<T> {
             // We move ourself to the notified list.
             let me = unsafe {
                 // Safety: We just checked that we are in this particular list.
-                lock.idle.remove(NonNull::from(&**me)).unwrap()
+                lock.idle.remove(ListEntry::as_raw(me)).unwrap()
             };
             lock.notified.push_front(me);
 
@@ -429,7 +433,7 @@ impl<T: 'static> Wake for ListEntry<T> {
     }
 
     fn wake(me: Arc<Self>) {
-        Self::wake_by_ref(&me)
+        Self::wake_by_ref(&me);
     }
 }
 
@@ -453,11 +457,25 @@ unsafe impl<T> linked_list::Link for ListEntry<T> {
     unsafe fn pointers(
         target: NonNull<ListEntry<T>>,
     ) -> NonNull<linked_list::Pointers<ListEntry<T>>> {
-        // Safety: The pointers struct is the first field and ListEntry is
-        // `#[repr(C)]` so this cast is safe.
-        //
-        // We do this rather than doing a field access since `std::ptr::addr_of`
-        // is too new for our MSRV.
-        target.cast()
+        ListEntry::addr_of_pointers(target)
+    }
+}
+
+#[cfg(all(test, not(loom)))]
+mod tests {
+    use crate::runtime::Builder;
+    use crate::task::JoinSet;
+
+    // A test that runs under miri.
+    //
+    // https://github.com/tokio-rs/tokio/pull/5693
+    #[test]
+    fn join_set_test() {
+        let rt = Builder::new_current_thread().build().unwrap();
+
+        let mut set = JoinSet::new();
+        set.spawn_on(futures::future::ready(()), rt.handle());
+
+        rt.block_on(set.join_next()).unwrap().unwrap();
     }
 }

@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -164,5 +165,10 @@ impl MediaTrackSettings {
         );
         let _ = r;
         self
+    }
+}
+impl Default for MediaTrackSettings {
+    fn default() -> Self {
+        Self::new()
     }
 }

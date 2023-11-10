@@ -1,13 +1,13 @@
 use crate::builder::{ConfigBuilder, WantsVerifier};
 use crate::error::Error;
 use crate::key;
-use crate::keylog::NoKeyLog;
 use crate::kx::SupportedKxGroup;
 use crate::server::handy;
 use crate::server::{ResolvesServerCert, ServerConfig};
 use crate::suites::SupportedCipherSuite;
 use crate::verify;
 use crate::versions;
+use crate::NoKeyLog;
 
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -25,13 +25,13 @@ impl ConfigBuilder<ServerConfig, WantsVerifier> {
                 versions: self.state.versions,
                 verifier: client_cert_verifier,
             },
-            side: PhantomData::default(),
+            side: PhantomData,
         }
     }
 
     /// Disable client authentication.
     pub fn with_no_client_auth(self) -> ConfigBuilder<ServerConfig, WantsServerCert> {
-        self.with_client_cert_verifier(verify::NoClientAuth::new())
+        self.with_client_cert_verifier(verify::NoClientAuth::boxed())
     }
 }
 
@@ -39,6 +39,7 @@ impl ConfigBuilder<ServerConfig, WantsVerifier> {
 /// the connecting peer.
 ///
 /// For more information, see the [`ConfigBuilder`] documentation.
+#[derive(Clone, Debug)]
 pub struct WantsServerCert {
     cipher_suites: Vec<SupportedCipherSuite>,
     kx_groups: Vec<&'static SupportedKxGroup>,
@@ -106,8 +107,11 @@ impl ConfigBuilder<ServerConfig, WantsServerCert> {
             alpn_protocols: Vec::new(),
             versions: self.state.versions,
             key_log: Arc::new(NoKeyLog {}),
-            #[cfg(feature = "quic")]
+            #[cfg(feature = "secret_extraction")]
+            enable_secret_extraction: false,
             max_early_data_size: 0,
+            send_half_rtt_data: false,
+            send_tls13_tickets: 4,
         }
     }
 }

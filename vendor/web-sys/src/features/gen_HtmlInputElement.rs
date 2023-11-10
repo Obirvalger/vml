@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -675,6 +676,20 @@ extern "C" {
         start: u32,
         end: u32,
     ) -> Result<(), JsValue>;
+    #[cfg(feature = "SelectionMode")]
+    # [wasm_bindgen (catch , method , structural , js_class = "HTMLInputElement" , js_name = setRangeText)]
+    #[doc = "The `setRangeText()` method."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/setRangeText)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `HtmlInputElement`, `SelectionMode`*"]
+    pub fn set_range_text_with_start_and_end_and_selection_mode(
+        this: &HtmlInputElement,
+        replacement: &str,
+        start: u32,
+        end: u32,
+        selection_mode: SelectionMode,
+    ) -> Result<(), JsValue>;
     # [wasm_bindgen (catch , method , structural , js_class = "HTMLInputElement" , js_name = setSelectionRange)]
     #[doc = "The `setSelectionRange()` method."]
     #[doc = ""]
@@ -698,4 +713,11 @@ extern "C" {
         end: u32,
         direction: &str,
     ) -> Result<(), JsValue>;
+    # [wasm_bindgen (catch , method , structural , js_class = "HTMLInputElement" , js_name = showPicker)]
+    #[doc = "The `showPicker()` method."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/showPicker)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `HtmlInputElement`*"]
+    pub fn show_picker(this: &HtmlInputElement) -> Result<(), JsValue>;
 }

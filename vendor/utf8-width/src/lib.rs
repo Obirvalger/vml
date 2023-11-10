@@ -8,8 +8,6 @@ References: https://tools.ietf.org/html/rfc3629
 ## Examples
 
 ```rust
-extern crate utf8_width;
-
 assert_eq!(1, utf8_width::get_width(b'1'));
 assert_eq!(3, utf8_width::get_width("中".as_bytes()[0]));
 ```
@@ -44,22 +42,22 @@ pub fn is_width_1(byte: u8) -> bool {
 
 #[inline]
 pub fn is_width_2(byte: u8) -> bool {
-    MIN_2 <= byte && byte <= MAX_2
+    (MIN_2..=MAX_2).contains(&byte)
 }
 
 #[inline]
 pub fn is_width_3(byte: u8) -> bool {
-    MIN_3 <= byte && byte <= MAX_3
+    (MIN_3..=MAX_3).contains(&byte)
 }
 
 #[inline]
 pub fn is_width_4(byte: u8) -> bool {
-    MIN_4 <= byte && byte <= MAX_4
+    (MIN_4..=MAX_4).contains(&byte)
 }
 
 #[inline]
 pub fn is_width_0(byte: u8) -> bool {
-    MIN_0_1 <= byte && byte <= MAX_0_1 || MIN_0_2 <= byte // no need to check `byte <= MAX_0_2`
+    (MIN_0_1..=MAX_0_1).contains(&byte) || MIN_0_2 <= byte // no need to check `byte <= MAX_0_2`
 }
 
 /// Given a first byte, determines how many bytes are in this UTF-8 character. If the UTF-8 character is invalid, returns `0`, otherwise returns `1` ~ `4`,
@@ -69,9 +67,11 @@ pub fn get_width(byte: u8) -> usize {
         1
     } else if is_width_2(byte) {
         2
-    } else if byte <= MAX_3 { // no need to check `MIN_3 <= byte`
+    } else if byte <= MAX_3 {
+        // no need to check `MIN_3 <= byte`
         3
-    } else if byte <= MAX_4 { // no need to check `MIN_4 <= byte`
+    } else if byte <= MAX_4 {
+        // no need to check `MIN_4 <= byte`
         4
     } else {
         0

@@ -3,8 +3,8 @@
     no_crate_inject,
     attr(deny(warnings, rust_2018_idioms), allow(dead_code, unused_variables))
 ))]
-#![doc(html_root_url = "https://docs.rs/bytes/1.0.1")]
 #![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! Provides abstractions for working with bytes.
 //!

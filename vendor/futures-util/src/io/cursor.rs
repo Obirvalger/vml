@@ -1,6 +1,4 @@
 use futures_core::task::{Context, Poll};
-#[cfg(feature = "read_initializer")]
-use futures_io::Initializer;
 use futures_io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite, IoSlice, IoSliceMut, SeekFrom};
 use std::io;
 use std::pin::Pin;
@@ -43,9 +41,7 @@ impl<T> Cursor<T> {
     /// # force_inference(&buff);
     /// ```
     pub fn new(inner: T) -> Self {
-        Self {
-            inner: io::Cursor::new(inner),
-        }
+        Self { inner: io::Cursor::new(inner) }
     }
 
     /// Consumes this cursor, returning the underlying value.
@@ -161,12 +157,6 @@ where
 }
 
 impl<T: AsRef<[u8]> + Unpin> AsyncRead for Cursor<T> {
-    #[cfg(feature = "read_initializer")]
-    #[inline]
-    unsafe fn initializer(&self) -> Initializer {
-        io::Read::initializer(&self.inner)
-    }
-
     fn poll_read(
         mut self: Pin<&mut Self>,
         _cx: &mut Context<'_>,
@@ -199,15 +189,19 @@ where
 
 macro_rules! delegate_async_write_to_stdio {
     () => {
-        fn poll_write(mut self: Pin<&mut Self>, _: &mut Context<'_>, buf: &[u8])
-            -> Poll<io::Result<usize>>
-        {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
             Poll::Ready(io::Write::write(&mut self.inner, buf))
         }
 
-        fn poll_write_vectored(mut self: Pin<&mut Self>, _: &mut Context<'_>, bufs: &[IoSlice<'_>])
-            -> Poll<io::Result<usize>>
-        {
+        fn poll_write_vectored(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            bufs: &[IoSlice<'_>],
+        ) -> Poll<io::Result<usize>> {
             Poll::Ready(io::Write::write_vectored(&mut self.inner, bufs))
         }
 
@@ -218,7 +212,7 @@ macro_rules! delegate_async_write_to_stdio {
         fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
             self.poll_flush(cx)
         }
-    }
+    };
 }
 
 impl AsyncWrite for Cursor<&mut [u8]> {

@@ -6,8 +6,8 @@ line tools.
 
 use std::path::Path;
 
-use gitignore::{self, Gitignore, GitignoreBuilder};
-use {Error, Match};
+use crate::gitignore::{self, Gitignore, GitignoreBuilder};
+use crate::{Error, Match};
 
 /// Glob represents a single glob in an override matcher.
 ///
@@ -106,6 +106,7 @@ impl Override {
 }
 
 /// Builds a matcher for a set of glob overrides.
+#[derive(Clone, Debug)]
 pub struct OverrideBuilder {
     builder: GitignoreBuilder,
 }

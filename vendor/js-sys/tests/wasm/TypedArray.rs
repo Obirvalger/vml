@@ -1,6 +1,5 @@
 use js_sys::*;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
 
 macro_rules! each {
@@ -17,7 +16,7 @@ macro_rules! each {
     };
 }
 
-macro_rules! test_inheritence {
+macro_rules! test_inheritance {
     ($arr:ident) => {{
         let arr = $arr::new(&JsValue::undefined());
         assert!(arr.is_instance_of::<$arr>());
@@ -26,8 +25,8 @@ macro_rules! test_inheritence {
     }};
 }
 #[wasm_bindgen_test]
-fn inheritence() {
-    each!(test_inheritence);
+fn inheritance() {
+    each!(test_inheritance);
 }
 
 macro_rules! test_undefined {
@@ -89,6 +88,18 @@ fn new_fill() {
     each!(test_fill);
 }
 
+macro_rules! test_at {
+    ($arr:ident) => {{
+        let arr = $arr::new(&2.into());
+        arr.set_index(1, 1 as _);
+        assert_eq!(arr.at(-1).unwrap() as f64, 1 as f64);
+    }};
+}
+#[wasm_bindgen_test]
+fn new_at() {
+    each!(test_at);
+}
+
 macro_rules! test_get_set {
     ($arr:ident) => {{
         let arr = $arr::new(&1.into());
@@ -143,6 +154,16 @@ fn copy_to() {
     for i in x.iter() {
         assert_eq!(*i, 5);
     }
+}
+
+#[wasm_bindgen_test]
+fn copy_from() {
+    let x = [1, 2, 3];
+    let array = Int32Array::new(&3.into());
+    array.copy_from(&x);
+    array.for_each(&mut |x, i, _| {
+        assert_eq!(x, (i + 1) as i32);
+    });
 }
 
 #[wasm_bindgen_test]

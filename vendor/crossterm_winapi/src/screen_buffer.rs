@@ -9,14 +9,15 @@ use winapi::{
     um::{
         minwinbase::SECURITY_ATTRIBUTES,
         wincon::{
-            CreateConsoleScreenBuffer, GetConsoleScreenBufferInfo, SetConsoleActiveScreenBuffer,
-            SetConsoleScreenBufferSize, CONSOLE_TEXTMODE_BUFFER, COORD,
+            CreateConsoleScreenBuffer, GetConsoleScreenBufferInfo, GetCurrentConsoleFont,
+            SetConsoleActiveScreenBuffer, SetConsoleScreenBufferSize, CONSOLE_TEXTMODE_BUFFER,
+            COORD,
         },
         winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE},
     },
 };
 
-use super::{handle_result, result, Handle, HandleType, ScreenBufferInfo};
+use super::{handle_result, result, FontInfo, Handle, HandleType, ScreenBufferInfo};
 
 /// A wrapper around a screen buffer.
 #[derive(Clone, Debug)]
@@ -79,6 +80,16 @@ impl ScreenBuffer {
         let mut csbi = ScreenBufferInfo::new();
         result(unsafe { GetConsoleScreenBufferInfo(*self.handle, &mut csbi.0) })?;
         Ok(csbi)
+    }
+
+    /// Get the current font information like size and font index.
+    ///
+    /// This wraps
+    /// [`GetConsoleFontSize`](https://learn.microsoft.com/en-us/windows/console/getconsolefontsize).
+    pub fn font_info(&self) -> Result<FontInfo> {
+        let mut fi = FontInfo::new();
+        result(unsafe { GetCurrentConsoleFont(*self.handle, 0, &mut fi.0) })?;
+        Ok(fi)
     }
 
     /// Set the console screen buffer size to the given size.

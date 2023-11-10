@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -66,5 +67,10 @@ impl IntersectionObserverInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for IntersectionObserverInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

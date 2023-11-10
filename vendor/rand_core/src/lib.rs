@@ -76,12 +76,17 @@ pub mod le;
 /// [`next_u32`] or [`next_u64`] since the latter methods are almost always used
 /// with algorithmic generators (PRNGs), which are normally infallible.
 ///
+/// Implementers should produce bits uniformly. Pathological RNGs (e.g. always
+/// returning the same value, or never setting certain bits) can break rejection
+/// sampling used by random distributions, and also break other RNGs when
+/// seeding them via [`SeedableRng::from_rng`].
+///
 /// Algorithmic generators implementing [`SeedableRng`] should normally have
 /// *portable, reproducible* output, i.e. fix Endianness when converting values
 /// to avoid platform differences, and avoid making any changes which affect
 /// output (except by communicating that the release has breaking changes).
 ///
-/// Typically implementators will implement only one of the methods available
+/// Typically an RNG will implement only one of the methods available
 /// in this trait directly, then use the helper functions from the
 /// [`impls`] module to implement the other methods.
 ///
@@ -191,7 +196,7 @@ pub trait RngCore {
 /// Some generators may satisfy an additional property, however this is not
 /// required by this trait: if the CSPRNG's state is revealed, it should not be
 /// computationally-feasible to reconstruct output prior to this. Some other
-/// generators allow backwards-computation and are consided *reversible*.
+/// generators allow backwards-computation and are considered *reversible*.
 ///
 /// Note that this trait is provided for guidance only and cannot guarantee
 /// suitability for cryptographic applications. In general it should only be
@@ -203,6 +208,35 @@ pub trait RngCore {
 /// [`BlockRngCore`]: block::BlockRngCore
 pub trait CryptoRng {}
 
+/// An extension trait that is automatically implemented for any type
+/// implementing [`RngCore`] and [`CryptoRng`].
+///
+/// It may be used as a trait object, and supports upcasting to [`RngCore`] via
+/// the [`CryptoRngCore::as_rngcore`] method.
+///
+/// # Example
+///
+/// ```
+/// use rand_core::CryptoRngCore;
+///
+/// #[allow(unused)]
+/// fn make_token(rng: &mut dyn CryptoRngCore) -> [u8; 32] {
+///     let mut buf = [0u8; 32];
+///     rng.fill_bytes(&mut buf);
+///     buf
+/// }
+/// ```
+pub trait CryptoRngCore: CryptoRng + RngCore {
+    /// Upcast to an [`RngCore`] trait object.
+    fn as_rngcore(&mut self) -> &mut dyn RngCore;
+}
+
+impl<T: CryptoRng + RngCore> CryptoRngCore for T {
+    fn as_rngcore(&mut self) -> &mut dyn RngCore {
+        self
+    }
+}
+
 /// A random number generator that can be explicitly seeded.
 ///
 /// This trait encapsulates the low-level functionality common to all
@@ -210,7 +244,7 @@ pub trait CryptoRng {}
 ///
 /// [`rand`]: https://docs.rs/rand
 pub trait SeedableRng: Sized {
-    /// Seed type, which is restricted to types mutably-dereferencable as `u8`
+    /// Seed type, which is restricted to types mutably-dereferenceable as `u8`
     /// arrays (we recommend `[u8; N]` for some `N`).
     ///
     /// It is recommended to seed PRNGs with a seed of at least circa 100 bits,
@@ -443,10 +477,10 @@ impl std::io::Read for dyn RngCore {
     }
 }
 
-// Implement `CryptoRng` for references to an `CryptoRng`.
+// Implement `CryptoRng` for references to a `CryptoRng`.
 impl<'a, R: CryptoRng + ?Sized> CryptoRng for &'a mut R {}
 
-// Implement `CryptoRng` for boxed references to an `CryptoRng`.
+// Implement `CryptoRng` for boxed references to a `CryptoRng`.
 #[cfg(feature = "alloc")]
 impl<R: CryptoRng + ?Sized> CryptoRng for Box<R> {}
 
@@ -480,7 +514,7 @@ mod test {
             // This is the binomial distribution B(64, 0.5), so chance of
             // weight < 20 is binocdf(19, 64, 0.5) = 7.8e-4, and same for
             // weight > 44.
-            assert!(weight >= 20 && weight <= 44);
+            assert!((20..=44).contains(&weight));
 
             for (i2, r2) in results.iter().enumerate() {
                 if i1 == i2 {

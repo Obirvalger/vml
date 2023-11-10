@@ -1,4 +1,6 @@
-.TH ZIC 8
+.\" This file is in the public domain, so clarified as of
+.\" 2009-05-17 by Arthur David Olson.
+.TH zic 8 "" "Time Zone Database"
 .SH NAME
 zic \- timezone compiler
 .SH SYNOPSIS
@@ -22,16 +24,29 @@ zic \- timezone compiler
 .el .ds > \(ra
 .ie \n(.g \{\
 .  ds : \:
-.  ds - \f(CW-\fP
+.  ds - \f(CR-\fP
 .\}
 .el \{\
 .  ds :
 .  ds - \-
 .\}
+.ds d " degrees
+.ds m " minutes
+.ds s " seconds
+.ds _ " \&
+.if t \{\
+. if \n(.g .if c \(de .if c \(fm .if c \(sd \{\
+.  ds d \(de
+.  ds m \(fm
+.  ds s \(sd
+.  ds _ \|
+. \}
+.\}
 The
 .B zic
 program reads text from the file(s) named on the command line
-and creates the time conversion information files specified in this input.
+and creates the timezone information format (TZif) files
+specified in this input.
 If a
 .I filename
 is
@@ -106,7 +121,10 @@ will act as if the input contained a link line of the form
 .ti +.5i
 Link	\fItimezone\fP		posixrules
 .sp
-This feature is obsolete and poorly supported.
+Unless
+.I timezone is
+.q "\*-" ,
+this option is obsolete and poorly supported.
 Among other things it should not be used for timestamps after the year 2037,
 and it should not be combined with
 .B "\*-b slim"
@@ -121,7 +139,7 @@ is
 any already-existing link is removed.
 .TP
 .BR "\*-r " "[\fB@\fP\fIlo\fP][\fB/@\fP\fIhi\fP]"
-Reduce the size of output files by limiting their applicability
+Limit the applicability of output files
 to timestamps in the range from
 .I lo
 (inclusive) to
@@ -130,9 +148,12 @@ to timestamps in the range from
 .I lo
 and
 .I hi
-are possibly-signed decimal counts of seconds since the Epoch
+are possibly signed decimal counts of seconds since the Epoch
 (1970-01-01 00:00:00 UTC).
 Omitted counts default to extreme values.
+The output files use UT offset 0 and abbreviation
+.q "\*-00"
+in place of the omitted timestamp data.
 For example,
 .q "zic \*-r @0"
 omits data intended for negative timestamps (i.e., before the Epoch), and
@@ -141,11 +162,30 @@ outputs data intended only for nonnegative timestamps that fit into
 31-bit signed integers.
 On platforms with GNU
 .BR date ,
-.q "zic \-r @$(date +%s)"
+.q "zic \*-r @$(date +%s)"
 omits data intended for past timestamps.
+Although this option typically reduces the output file's size,
+the size can increase due to the need to represent the timestamp range
+boundaries, particularly if
+.I hi
+causes a TZif file to contain explicit entries for
+.RI pre- hi
+transitions rather than concisely representing them
+with an extended POSIX TZ string.
 Also see the
 .B "\*-b slim"
 option for another way to shrink output size.
+.TP
+.BI "\*-R @" hi
+Generate redundant trailing explicit transitions for timestamps
+that occur less than
+.I hi
+seconds since the Epoch, even though the transitions could be
+more concisely represented via the extended POSIX TZ string.
+This option does not affect the represented timestamps.
+Although it accommodates nonstandard TZif readers
+that ignore the extended POSIX TZ string,
+it increases the size of the altered output files.
 .TP
 .BI "\*-t " file
 When creating local time information, put the configuration link in
@@ -155,7 +195,10 @@ the named file rather than in the standard location.
 Be more verbose, and complain about the following situations:
 .RS
 .PP
-The input specifies a link to a link.
+The input specifies a link to a link,
+something not supported by some older parsers, including
+.B zic
+itself through release 2022e.
 .PP
 A year that appears in a data file is outside the range
 of representable years.
@@ -202,16 +245,25 @@ for
 .PP
 The output file does not contain all the information about the
 long-term future of a timezone, because the future cannot be summarized as
-an extended POSIX TZ string.  For example, as of 2019 this problem
-occurs for Iran's daylight-saving rules for the predicted future, as
-these rules are based on the Iranian calendar, which cannot be
-represented.
+an extended POSIX TZ string.  For example, as of 2023 this problem
+occurs for Morocco's daylight-saving rules, as these rules are based
+on predictions for when Ramadan will be observed, something that
+an extended POSIX TZ string cannot represent.
 .PP
 The output contains data that may not be handled properly by client
 code designed for older
 .B zic
 output formats.  These compatibility issues affect only timestamps
 before 1970 or after the start of 2038.
+.PP
+The output contains a truncated leap second table,
+which can cause some older TZif readers to misbehave.
+This can occur if the
+.B "\*-L"
+option is used, and either an Expires line is present or
+the
+.B "\*-r"
+option is also used.
 .PP
 The output file contains more than 1200 transitions,
 which may be mishandled by some clients.
@@ -239,10 +291,11 @@ format.
 .PP
 Input files should be text files, that is, they should be a series of
 zero or more lines, each ending in a newline byte and containing at
-most 511 bytes, and without any NUL bytes.  The input text's encoding
+most 2048 bytes counting the newline, and without any NUL bytes.
+The input text's encoding
 is typically UTF-8 or ASCII; it should have a unibyte representation
 for the POSIX Portable Character Set (PPCS)
-\*<http://pubs\*:.opengroup\*:.org/\*:onlinepubs/\*:9699919799/\*:basedefs/\*:V1_chap06\*:.html\*>
+\*<https://pubs\*:.opengroup\*:.org/\*:onlinepubs/\*:9699919799/\*:basedefs/\*:V1_chap06\*:.html\*>
 and the encoding's non-unibyte characters should consist entirely of
 non-PPCS bytes.  Non-PPCS characters typically occur only in comments:
 although output file names and time zone abbreviations can contain
@@ -299,7 +352,9 @@ nor
 .q + .
 To allow for future extensions,
 an unquoted name should not contain characters from the set
-.q !$%&'()*,/:;<=>?@[\e]^`{|}~ .
+.ie \n(.g .q \f(CR!$%&\(aq()*,/:;<=>?@[\e]\(ha\(ga{|}\(ti\fP .
+.el .ie t .q \f(CW!$%&'()*,/:;<=>?@[\e]^\(ga{|}~\fP .
+.el .q !$%&'()*,/:;<=>?@[\e]^`{|}~ .
 .TP
 .B FROM
 Gives the first year in which the rule applies.
@@ -507,14 +562,14 @@ This field has the same format as the
 .B AT
 and
 .B SAVE
-fields of rule lines;
+fields of rule lines, except without suffix letters;
 begin the field with a minus sign if time must be subtracted from UT.
 .TP
 .B RULES
 The name of the rules that apply in the timezone or,
 alternatively, a field in the same format as a rule-line SAVE column,
-giving of the amount of time to be added to local standard time
-effect, and whether the resulting time is standard or daylight saving.
+giving the amount of time to be added to local standard time
+and whether the resulting time is standard or daylight saving.
 If this field is
 .B \*-
 then standard time always applies.
@@ -540,7 +595,7 @@ using the shortest form that does not lose information, where
 .IR mm ,
 and
 .I ss
-are the hours, minutes, and seconds east (+) or west (\(mi) of UT.
+are the hours, minutes, and seconds east (+) or west (\-) of UT.
 Alternatively,
 a slash (/)
 separates standard and daylight abbreviations.
@@ -549,6 +604,9 @@ alphanumeric ASCII characters,
 .q "+"
 and
 .q "\*-".
+By convention, the time zone abbreviation
+.q "\*-00"
+is a placeholder that means local time is unspecified.
 .TP
 .B UNTIL
 The time at which the UT offset or the rule(s) change for a location.
@@ -643,19 +701,37 @@ The
 .B TARGET
 field should appear as the
 .B NAME
-field in some zone line.
+field in some zone line or as the
+.B LINK-NAME
+field in some link line.
 The
 .B LINK-NAME
 field is used as an alternative name for that zone;
 it has the same syntax as a zone line's
 .B NAME
 field.
+Links can chain together, although the behavior is unspecified if a
+chain of one or more links does not terminate in a Zone name.
+A link line can appear before the line that defines the link target.
+For example:
+.sp
+.ne 3
+.nf
+.in +2m
+.ta \w'Zone\0\0'u +\w'Greenwich\0\0'u
+Link	Greenwich	G_M_T
+Link	Etc/GMT	Greenwich
+Zone	Etc/GMT\0\00\0\0\*-\0\0GMT
+.sp
+.in
+.fi
+The two links are chained together, and G_M_T, Greenwich, and Etc/GMT
+all name the same zone.
 .PP
 Except for continuation lines,
 lines may appear in any order in the input.
 However, the behavior is unspecified if multiple zone or link lines
-define the same name, or if the source of one link line is the target
-of another.
+define the same name.
 .PP
 The file that describes leap seconds can have leap lines and an
 expiration line.
@@ -700,6 +776,19 @@ or
 if the leap second time given by the other fields should be interpreted as
 local (wall clock) time.
 .PP
+Rolling leap seconds were implemented back when it was not
+clear whether common practice was rolling or stationary,
+with concerns that one would see
+Times Square ball drops where there'd be a
+.q "3... 2... 1... leap... Happy New Year"
+countdown, placing the leap second at
+midnight New York time rather than midnight UTC.
+However, this countdown style does not seem to have caught on,
+which means rolling leap seconds are not used in practice;
+also, they are not supported if the
+.B \*-r
+option is used.
+.PP
 The expiration line, if present, has the form:
 .nf
 .ti +.5i
@@ -719,31 +808,13 @@ The
 .BR DAY ,
 and
 .B HH:MM:SS
-fields give the expiration timestamp in UTC for the leap second table;
-.B zic
-outputs this expiration timestamp by truncating the end of the output
-file to the timestamp.
-If there is no expiration line,
-.B zic
-also accepts a comment
-.q "#expires \fIE\fP ...\&"
-where
-.I E
-is the expiration timestamp as a decimal integer count of seconds
-since the Epoch, not counting leap seconds.
-However, the
-.q "#expires"
-comment is an obsolescent feature,
-and the leap second file should use an expiration line
-instead of relying on a comment.
+fields give the expiration timestamp in UTC for the leap second table.
+.br
+.ne 22
 .SH "EXTENDED EXAMPLE"
 Here is an extended example of
 .B zic
 input, intended to illustrate many of its features.
-In this example, the EU rules are for the European Union
-and for its predecessor organization, the European Communities.
-.br
-.ne 22
 .nf
 .in +2m
 .ta \w'# Rule\0\0'u +\w'NAME\0\0'u +\w'FROM\0\0'u +\w'1973\0\0'u +\w'\*-\0\0'u +\w'Apr\0\0'u +\w'lastSun\0\0'u +\w'2:00\0\0'u +\w'SAVE\0\0'u
@@ -770,13 +841,13 @@ Link	Europe/Zurich	Europe/Vaduz
 .sp
 .in
 .fi
-In this example, the timezone is named Europe/Zurich but it has an alias
-as Europe/Vaduz.  This example says that Zurich was 34 minutes and 8
+In this example, the EU rules are for the European Union
+and for its predecessor organization, the European Communities.
+The timezone is named Europe/Zurich and it has the alias Europe/Vaduz.
+This example says that Zurich was 34 minutes and 8
 seconds east of UT until 1853-07-16 at 00:00, when the legal offset
 was changed to
-.ds o 7 degrees 26 minutes 22.50 seconds
-.if \n(.g .if c \(de .if c \(fm .if c \(sd .ds o 7\(de\|26\(fm\|22.50\(sd
-\*o,
+7\*d\*_26\*m\*_22.50\*s,
 which works out to 0:29:45.50;
 .B zic
 treats this by rounding it to 0:29:46.
@@ -830,5 +901,3 @@ specifying transition instants using universal time.
 .SH SEE ALSO
 .BR tzfile (5),
 .BR zdump (8)
-.\" This file is in the public domain, so clarified as of
-.\" 2009-05-17 by Arthur David Olson.

@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -116,5 +117,10 @@ impl UdpMessageEventInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for UdpMessageEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

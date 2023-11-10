@@ -1,13 +1,18 @@
 # encoding_rs
 
 [![Build Status](https://travis-ci.org/hsivonen/encoding_rs.svg?branch=master)](https://travis-ci.org/hsivonen/encoding_rs)
-[![crates.io](https://meritbadge.herokuapp.com/encoding_rs)](https://crates.io/crates/encoding_rs)
+[![crates.io](https://img.shields.io/crates/v/encoding_rs.svg)](https://crates.io/crates/encoding_rs)
 [![docs.rs](https://docs.rs/encoding_rs/badge.svg)](https://docs.rs/encoding_rs/)
-[![Apache 2 / MIT dual-licensed](https://img.shields.io/badge/license-Apache%202%20%2F%20MIT-blue.svg)](https://github.com/hsivonen/encoding_rs/blob/master/COPYRIGHT)
 
 encoding_rs an implementation of the (non-JavaScript parts of) the
-[Encoding Standard](https://encoding.spec.whatwg.org/) written in Rust and
-used in Gecko (starting with Firefox 56).
+[Encoding Standard](https://encoding.spec.whatwg.org/) written in Rust.
+
+The Encoding Standard defines the Web-compatible set of character encodings,
+which means this crate can be used to decode Web content. encoding_rs is
+used in Gecko starting with Firefox 56. Due to the notable overlap between
+the legacy encodings on the Web and the legacy encodings used on Windows,
+this crate may be of use for non-Web-related situations as well; see below
+for links to adjacent crates.
 
 Additionally, the `mem` module provides various operations for dealing with
 in-RAM text (as opposed to data that's coming from or going to an IO boundary).
@@ -77,11 +82,10 @@ crate provides that capability.
 
 ## `no_std` Environment
 
-The crate works in a `no_std` environment assuming that `alloc` is present.
-The `alloc`-using part are on the outer edge of the crate, so if there is
-interest in using the crate in environments without `alloc` it would be
-feasible to add a way to turn off those parts of the API of this crate that
-use `Vec`/`String`/`Cow`.
+The crate works in a `no_std` environment. By default, the `alloc` feature,
+which assumes that an allocator is present is enabled. For a no-allocator
+environment, the default features (i.e. `alloc`) can be turned off. This
+makes the part of the API that returns `Vec`/`String`/`Cow` unavailable.
 
 ## Decoding Email
 
@@ -113,8 +117,19 @@ characters. Vietnamese tone marks can be decomposed using the
 
 ## Licensing
 
+TL;DR: `(Apache-2.0 OR MIT) AND BSD-3-Clause` for the code and data combination.
+
 Please see the file named
 [COPYRIGHT](https://github.com/hsivonen/encoding_rs/blob/master/COPYRIGHT).
+
+The non-test code that isn't generated from the WHATWG data in this crate is
+under Apache-2.0 OR MIT. Test code is under CC0.
+
+This crate contains code/data generated from WHATWG-supplied data. The WHATWG
+upstream changed its license for portions of specs incorporated into source code
+from CC0 to BSD-3-Clause between the initial release of this crate and the present
+version of this crate. The in-source licensing legends have been updated for the
+parts of the generated code that have changed since the upstream license change.
 
 ## Documentation
 
@@ -152,7 +167,7 @@ There are currently these optional cargo features:
 
 ### `simd-accel`
 
-Enables SIMD acceleration using the nightly-dependent `packed_simd_2` crate.
+Enables SIMD acceleration using the nightly-dependent `packed_simd` crate.
 
 This is an opt-in feature, because enabling this feature _opts out_ of Rust's
 guarantees of future compilers compiling old code (aka. "stability story").
@@ -173,7 +188,7 @@ feature.
 _Note!_ If you are compiling for a target that does not have 128-bit SIMD
 enabled as part of the target definition and you are enabling 128-bit SIMD
 using `-C target_feature`, you need to enable the `core_arch` Cargo feature
-for `packed_simd_2` to compile a crates.io snapshot of `core_arch` instead of
+for `packed_simd` to compile a crates.io snapshot of `core_arch` instead of
 using the standard-library copy of `core::arch`, because the `core::arch`
 module of the pre-compiled standard library has been compiled with the
 assumption that the CPU doesn't have 128-bit SIMD. At present this applies
@@ -389,7 +404,10 @@ To regenerate the generated code:
    next to the `encoding_rs` directory.
  * Clone [`https://github.com/whatwg/encoding`](https://github.com/whatwg/encoding)
    next to the `encoding_rs` directory.
- * Checkout revision `f381389` of the `encoding` repo.
+ * Checkout revision `be3337450e7df1c49dca7872153c4c4670dd8256` of the `encoding` repo.
+   (Note: `f381389` was the revision of `encoding` used from before the `encoding` repo
+   license change. So far, only output changed since then has been updated to
+   the new license legend.)
  * With the `encoding_rs` directory as the working directory, run
    `python generate-encoding-data.py`.
 
@@ -427,10 +445,32 @@ To regenerate the generated code:
       adapted to Rust in rust-encoding.~
 - [x] Add actually fast CJK encode options.
 - [ ] ~Investigate [Bob Steagall's lookup table acceleration for UTF-8](https://github.com/BobSteagall/CppNow2018/blob/master/FastConversionFromUTF-8/Fast%20Conversion%20From%20UTF-8%20with%20C%2B%2B%2C%20DFAs%2C%20and%20SSE%20Intrinsics%20-%20Bob%20Steagall%20-%20C%2B%2BNow%202018.pdf).~
-- [ ] Provide a build mode that works without `alloc` (with lesser API surface).
+- [x] Provide a build mode that works without `alloc` (with lesser API surface).
 - [ ] Migrate to `std::simd` once it is stable and declare 1.0.
 
 ## Release Notes
+
+### 0.8.33
+
+* Use `packed_simd` instead of `packed_simd_2` again now that updates are back under the `packed_simd` name. Only affects the `simd-accel` optional nightly feature.
+
+### 0.8.32
+
+* Removed `build.rs`. (This removal should resolve false positives reported by some antivirus products. This may break some build configurations that have opted out of Rust's guarantees against future build breakage.)
+* Internal change to what API is used for reinterpreting the lane configuration of SIMD vectors.
+* Documentation improvements.
+
+### 0.8.31
+
+* Use SPDX with parentheses now that crates.io supports parentheses.
+
+### 0.8.30
+
+* Update the licensing information to take into account the WHATWG data license change.
+
+### 0.8.29
+
+* Make the parts that use an allocator optional.
 
 ### 0.8.28
 

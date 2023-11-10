@@ -3,11 +3,8 @@
 //! This module is only available when the `std` or `alloc` feature of this
 //! library is activated, and it is activated by default.
 
-use futures_core::future::Future;
-use futures_core::stream::{FusedStream, Stream};
-use futures_core::task::{Context, Poll};
-use futures_task::{FutureObj, LocalFutureObj, Spawn, LocalSpawn, SpawnError};
 use crate::task::AtomicWaker;
+use alloc::sync::{Arc, Weak};
 use core::cell::UnsafeCell;
 use core::fmt::{self, Debug};
 use core::iter::FromIterator;
@@ -16,22 +13,28 @@ use core::mem;
 use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
-use core::sync::atomic::{AtomicPtr, AtomicBool};
-use alloc::sync::{Arc, Weak};
+use core::sync::atomic::{AtomicBool, AtomicPtr};
+use futures_core::future::Future;
+use futures_core::stream::{FusedStream, Stream};
+use futures_core::task::{Context, Poll};
+use futures_task::{FutureObj, LocalFutureObj, LocalSpawn, Spawn, SpawnError};
 
 mod abort;
 
 mod iter;
-pub use self::iter::{Iter, IterMut, IterPinMut, IterPinRef};
+#[allow(unreachable_pub)] // https://github.com/rust-lang/rust/issues/102352
+pub use self::iter::{IntoIter, Iter, IterMut, IterPinMut, IterPinRef};
 
 mod task;
 use self::task::Task;
 
 mod ready_to_run_queue;
-use self::ready_to_run_queue::{ReadyToRunQueue, Dequeue};
-
+use self::ready_to_run_queue::{Dequeue, ReadyToRunQueue};
 
 /// A set of futures which may complete in any order.
+///
+/// See [`FuturesOrdered`](crate::stream::FuturesOrdered) for a version of this
+/// type that preserves a FIFO order.
 ///
 /// This structure is optimized to manage a large number of futures.
 /// Futures managed by [`FuturesUnordered`] will only be polled when they
@@ -59,22 +62,18 @@ pub struct FuturesUnordered<Fut> {
 }
 
 unsafe impl<Fut: Send> Send for FuturesUnordered<Fut> {}
-unsafe impl<Fut: Sync> Sync for FuturesUnordered<Fut> {}
+unsafe impl<Fut: Send + Sync> Sync for FuturesUnordered<Fut> {}
 impl<Fut> Unpin for FuturesUnordered<Fut> {}
 
 impl Spawn for FuturesUnordered<FutureObj<'_, ()>> {
-    fn spawn_obj(&self, future_obj: FutureObj<'static, ()>)
-        -> Result<(), SpawnError>
-    {
+    fn spawn_obj(&self, future_obj: FutureObj<'static, ()>) -> Result<(), SpawnError> {
         self.push(future_obj);
         Ok(())
     }
 }
 
 impl LocalSpawn for FuturesUnordered<LocalFutureObj<'_, ()>> {
-    fn spawn_local_obj(&self, future_obj: LocalFutureObj<'static, ()>)
-        -> Result<(), SpawnError>
-    {
+    fn spawn_local_obj(&self, future_obj: LocalFutureObj<'static, ()>) -> Result<(), SpawnError> {
         self.push(future_obj);
         Ok(())
     }
@@ -102,7 +101,7 @@ impl LocalSpawn for FuturesUnordered<LocalFutureObj<'_, ()>> {
 // Each task is wrapped in an `Arc` and thereby atomically reference counted.
 // Also, each task contains an `AtomicBool` which acts as a flag that indicates
 // whether the task is currently inserted in the atomic queue. When a wake-up
-// notifiaction is received, the task will only be inserted into the ready to
+// notification is received, the task will only be inserted into the ready to
 // run queue if it isn't inserted already.
 
 impl<Fut> Default for FuturesUnordered<Fut> {
@@ -126,8 +125,9 @@ impl<Fut> FuturesUnordered<Fut> {
             next_ready_to_run: AtomicPtr::new(ptr::null_mut()),
             queued: AtomicBool::new(true),
             ready_to_run_queue: Weak::new(),
+            woken: AtomicBool::new(false),
         });
-        let stub_ptr = &*stub as *const Task<Fut>;
+        let stub_ptr = Arc::as_ptr(&stub);
         let ready_to_run_queue = Arc::new(ReadyToRunQueue {
             waker: AtomicWaker::new(),
             head: AtomicPtr::new(stub_ptr as *mut _),
@@ -172,6 +172,7 @@ impl<Fut> FuturesUnordered<Fut> {
             next_ready_to_run: AtomicPtr::new(ptr::null_mut()),
             queued: AtomicBool::new(true),
             ready_to_run_queue: Arc::downgrade(&self.ready_to_run_queue),
+            woken: AtomicBool::new(false),
         });
 
         // Reset the `is_terminated` flag if we've previously marked ourselves
@@ -191,24 +192,26 @@ impl<Fut> FuturesUnordered<Fut> {
     }
 
     /// Returns an iterator that allows inspecting each future in the set.
-    pub fn iter(&self) -> Iter<'_, Fut> where Fut: Unpin {
+    pub fn iter(&self) -> Iter<'_, Fut>
+    where
+        Fut: Unpin,
+    {
         Iter(Pin::new(self).iter_pin_ref())
     }
 
     /// Returns an iterator that allows inspecting each future in the set.
-    fn iter_pin_ref(self: Pin<&Self>) -> IterPinRef<'_, Fut> {
+    pub fn iter_pin_ref(self: Pin<&Self>) -> IterPinRef<'_, Fut> {
         let (task, len) = self.atomic_load_head_and_len_all();
+        let pending_next_all = self.pending_next_all();
 
-        IterPinRef {
-            task,
-            len,
-            pending_next_all: self.pending_next_all(),
-            _marker: PhantomData,
-        }
+        IterPinRef { task, len, pending_next_all, _marker: PhantomData }
     }
 
     /// Returns an iterator that allows modifying each future in the set.
-    pub fn iter_mut(&mut self) -> IterMut<'_, Fut> where Fut: Unpin {
+    pub fn iter_mut(&mut self) -> IterMut<'_, Fut>
+    where
+        Fut: Unpin,
+    {
         IterMut(Pin::new(self).iter_pin_mut())
     }
 
@@ -217,19 +220,9 @@ impl<Fut> FuturesUnordered<Fut> {
         // `head_all` can be accessed directly and we don't need to spin on
         // `Task::next_all` since we have exclusive access to the set.
         let task = *self.head_all.get_mut();
-        let len = if task.is_null() {
-            0
-        } else {
-            unsafe {
-                *(*task).len_all.get()
-            }
-        };
+        let len = if task.is_null() { 0 } else { unsafe { *(*task).len_all.get() } };
 
-        IterPinMut {
-            task,
-            len,
-            _marker: PhantomData
-        }
+        IterPinMut { task, len, _marker: PhantomData }
     }
 
     /// Returns the current head node and number of futures in the list of all
@@ -249,7 +242,7 @@ impl<Fut> FuturesUnordered<Fut> {
         (task, len)
     }
 
-    /// Releases the task. It destorys the future inside and either drops
+    /// Releases the task. It destroys the future inside and either drops
     /// the `Arc<Task>` or transfers ownership to the ready to run queue.
     /// The task this method is called on must have been unlinked before.
     fn release_task(&mut self, task: Arc<Task<Fut>>) {
@@ -388,35 +381,20 @@ impl<Fut> FuturesUnordered<Fut> {
         // The `ReadyToRunQueue` stub is never inserted into the `head_all`
         // list, and its pointer value will remain valid for the lifetime of
         // this `FuturesUnordered`, so we can make use of its value here.
-        &*self.ready_to_run_queue.stub as *const _ as *mut _
+        Arc::as_ptr(&self.ready_to_run_queue.stub) as *mut _
     }
 }
 
 impl<Fut: Future> Stream for FuturesUnordered<Fut> {
     type Item = Fut::Output;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>)
-        -> Poll<Option<Self::Item>>
-    {
-        // Variable to determine how many times it is allowed to poll underlying
-        // futures without yielding.
-        //
-        // A single call to `poll_next` may potentially do a lot of work before
-        // yielding. This happens in particular if the underlying futures are awoken
-        // frequently but continue to return `Pending`. This is problematic if other
-        // tasks are waiting on the executor, since they do not get to run. This value
-        // caps the number of calls to `poll` on underlying futures a single call to
-        // `poll_next` is allowed to make.
-        //
-        // The value is the length of FuturesUnordered. This ensures that each
-        // future is polled only once at most per iteration.
-        //
-        // See also https://github.com/rust-lang/futures-rs/issues/2047.
-        let yield_every = self.len();
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let len = self.len();
 
         // Keep track of how many child futures we have polled,
         // in case we want to forcibly yield.
         let mut polled = 0;
+        let mut yielded = 0;
 
         // Ensure `parent` is correctly set.
         self.ready_to_run_queue.waker.register(cx.waker());
@@ -469,14 +447,11 @@ impl<Fut: Future> Stream for FuturesUnordered<Fut> {
 
                     // Double check that the call to `release_task` really
                     // happened. Calling it required the task to be unlinked.
-                    debug_assert_eq!(
-                        task.next_all.load(Relaxed),
-                        self.pending_next_all()
-                    );
+                    debug_assert_eq!(task.next_all.load(Relaxed), self.pending_next_all());
                     unsafe {
                         debug_assert!((*task.prev_all.get()).is_null());
                     }
-                    continue
+                    continue;
                 }
             };
 
@@ -516,10 +491,7 @@ impl<Fut: Future> Stream for FuturesUnordered<Fut> {
                 }
             }
 
-            let mut bomb = Bomb {
-                task: Some(task),
-                queue: &mut *self,
-            };
+            let mut bomb = Bomb { task: Some(task), queue: &mut *self };
 
             // Poll the underlying future with the appropriate waker
             // implementation. This is where a large bit of the unsafety
@@ -533,7 +505,11 @@ impl<Fut: Future> Stream for FuturesUnordered<Fut> {
             // the internal allocation, appropriately accessing fields and
             // deallocating the task if need be.
             let res = {
-                let waker = Task::waker_ref(bomb.task.as_ref().unwrap());
+                let task = bomb.task.as_ref().unwrap();
+                // We are only interested in whether the future is awoken before it
+                // finishes polling, so reset the flag here.
+                task.woken.store(false, Relaxed);
+                let waker = Task::waker_ref(task);
                 let mut cx = Context::from_waker(&waker);
 
                 // Safety: We won't move the future ever again
@@ -546,20 +522,23 @@ impl<Fut: Future> Stream for FuturesUnordered<Fut> {
             match res {
                 Poll::Pending => {
                     let task = bomb.task.take().unwrap();
+                    // If the future was awoken during polling, we assume
+                    // the future wanted to explicitly yield.
+                    yielded += task.woken.load(Relaxed) as usize;
                     bomb.queue.link(task);
 
-                    if polled == yield_every {
-                        // We have polled a large number of futures in a row without yielding.
-                        // To ensure we do not starve other tasks waiting on the executor,
-                        // we yield here, but immediately wake ourselves up to continue.
+                    // If a future yields, we respect it and yield here.
+                    // If all futures have been polled, we also yield here to
+                    // avoid starving other tasks waiting on the executor.
+                    // (polling the same future twice per iteration may cause
+                    // the problem: https://github.com/rust-lang/futures-rs/pull/2333)
+                    if yielded >= 2 || polled == len {
                         cx.waker().wake_by_ref();
                         return Poll::Pending;
                     }
-                    continue
+                    continue;
                 }
-                Poll::Ready(output) => {
-                    return Poll::Ready(Some(output))
-                }
+                Poll::Ready(output) => return Poll::Ready(Some(output)),
             }
         }
     }
@@ -576,19 +555,33 @@ impl<Fut> Debug for FuturesUnordered<Fut> {
     }
 }
 
+impl<Fut> FuturesUnordered<Fut> {
+    /// Clears the set, removing all futures.
+    pub fn clear(&mut self) {
+        self.clear_head_all();
+
+        // we just cleared all the tasks, and we have &mut self, so this is safe.
+        unsafe { self.ready_to_run_queue.clear() };
+
+        self.is_terminated.store(false, Relaxed);
+    }
+
+    fn clear_head_all(&mut self) {
+        while !self.head_all.get_mut().is_null() {
+            let head = *self.head_all.get_mut();
+            let task = unsafe { self.unlink(head) };
+            self.release_task(task);
+        }
+    }
+}
+
 impl<Fut> Drop for FuturesUnordered<Fut> {
     fn drop(&mut self) {
         // When a `FuturesUnordered` is dropped we want to drop all futures
         // associated with it. At the same time though there may be tons of
         // wakers flying around which contain `Task<Fut>` references
         // inside them. We'll let those naturally get deallocated.
-        unsafe {
-            while !self.head_all.get_mut().is_null() {
-                let head = *self.head_all.get_mut();
-                let task = self.unlink(head);
-                self.release_task(task);
-            }
-        }
+        self.clear_head_all();
 
         // Note that at this point we could still have a bunch of tasks in the
         // ready to run queue. None of those tasks, however, have futures
@@ -605,13 +598,48 @@ impl<Fut> Drop for FuturesUnordered<Fut> {
     }
 }
 
+impl<'a, Fut: Unpin> IntoIterator for &'a FuturesUnordered<Fut> {
+    type Item = &'a Fut;
+    type IntoIter = Iter<'a, Fut>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, Fut: Unpin> IntoIterator for &'a mut FuturesUnordered<Fut> {
+    type Item = &'a mut Fut;
+    type IntoIter = IterMut<'a, Fut>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+impl<Fut: Unpin> IntoIterator for FuturesUnordered<Fut> {
+    type Item = Fut;
+    type IntoIter = IntoIter<Fut>;
+
+    fn into_iter(mut self) -> Self::IntoIter {
+        // `head_all` can be accessed directly and we don't need to spin on
+        // `Task::next_all` since we have exclusive access to the set.
+        let task = *self.head_all.get_mut();
+        let len = if task.is_null() { 0 } else { unsafe { *(*task).len_all.get() } };
+
+        IntoIter { len, inner: self }
+    }
+}
+
 impl<Fut> FromIterator<Fut> for FuturesUnordered<Fut> {
     fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = Fut>,
     {
         let acc = Self::new();
-        iter.into_iter().fold(acc, |acc, item| { acc.push(item); acc })
+        iter.into_iter().fold(acc, |acc, item| {
+            acc.push(item);
+            acc
+        })
     }
 }
 

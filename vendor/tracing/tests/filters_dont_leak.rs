@@ -1,7 +1,6 @@
 #![cfg(feature = "std")]
 
-mod support;
-use self::support::*;
+use tracing_mock::*;
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
 #[test]
@@ -14,14 +13,14 @@ fn spans_dont_leak() {
     let (subscriber, handle) = subscriber::mock()
         .named("spans/subscriber1")
         .with_filter(|_| false)
-        .done()
+        .only()
         .run_with_handle();
 
     let _guard = tracing::subscriber::set_default(subscriber);
 
     do_span();
 
-    let alice = span::mock().named("alice");
+    let alice = expect::span().named("alice");
     let (subscriber2, handle2) = subscriber::mock()
         .named("spans/subscriber2")
         .with_filter(|_| true)
@@ -29,7 +28,7 @@ fn spans_dont_leak() {
         .enter(alice.clone())
         .exit(alice.clone())
         .drop_span(alice)
-        .done()
+        .only()
         .run_with_handle();
 
     tracing::subscriber::with_default(subscriber2, || {
@@ -54,7 +53,7 @@ fn events_dont_leak() {
     let (subscriber, handle) = subscriber::mock()
         .named("events/subscriber1")
         .with_filter(|_| false)
-        .done()
+        .only()
         .run_with_handle();
 
     let _guard = tracing::subscriber::set_default(subscriber);
@@ -64,8 +63,8 @@ fn events_dont_leak() {
     let (subscriber2, handle2) = subscriber::mock()
         .named("events/subscriber2")
         .with_filter(|_| true)
-        .event(event::mock())
-        .done()
+        .event(expect::event())
+        .only()
         .run_with_handle();
 
     tracing::subscriber::with_default(subscriber2, || {

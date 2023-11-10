@@ -1,7 +1,5 @@
-mod support;
-
-use self::support::*;
 use tracing::Level;
+use tracing_mock::*;
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
 #[test]
@@ -22,10 +20,10 @@ fn max_level_hints() {
             );
             true
         })
-        .event(event::mock().at_level(Level::INFO))
-        .event(event::mock().at_level(Level::WARN))
-        .event(event::mock().at_level(Level::ERROR))
-        .done()
+        .event(expect::event().at_level(Level::INFO))
+        .event(expect::event().at_level(Level::WARN))
+        .event(expect::event().at_level(Level::ERROR))
+        .only()
         .run_with_handle();
 
     tracing::subscriber::set_global_default(subscriber).unwrap();

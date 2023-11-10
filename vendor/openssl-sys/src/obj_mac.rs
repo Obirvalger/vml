@@ -94,6 +94,12 @@ pub const NID_sect409k1: c_int = 731;
 pub const NID_sect409r1: c_int = 732;
 pub const NID_sect571k1: c_int = 733;
 pub const NID_sect571r1: c_int = 734;
+#[cfg(ossl110)]
+pub const NID_brainpoolP256r1: c_int = 927;
+#[cfg(ossl110)]
+pub const NID_brainpoolP384r1: c_int = 931;
+#[cfg(ossl110)]
+pub const NID_brainpoolP512r1: c_int = 933;
 pub const NID_wap_wsg_idm_ecid_wtls1: c_int = 735;
 pub const NID_wap_wsg_idm_ecid_wtls3: c_int = 736;
 pub const NID_wap_wsg_idm_ecid_wtls4: c_int = 737;
@@ -129,6 +135,8 @@ pub const NID_sha512WithRSAEncryption: c_int = 670;
 pub const NID_sha224WithRSAEncryption: c_int = 671;
 pub const NID_pkcs3: c_int = 27;
 pub const NID_dhKeyAgreement: c_int = 28;
+#[cfg(ossl110)]
+pub const NID_dhpublicnumber: c_int = 920;
 pub const NID_pkcs5: c_int = 187;
 pub const NID_pbeWithMD2AndDES_CBC: c_int = 9;
 pub const NID_pbeWithMD5AndDES_CBC: c_int = 10;
@@ -914,9 +922,81 @@ pub const NID_aes_192_cbc_hmac_sha1: c_int = 917;
 pub const NID_aes_256_cbc_hmac_sha1: c_int = 918;
 #[cfg(ossl111)]
 pub const NID_X25519: c_int = 1034;
+#[cfg(libressl370)]
+pub const NID_X25519: c_int = 950;
 #[cfg(ossl111)]
 pub const NID_X448: c_int = 1035;
+#[cfg(ossl110)]
+pub const NID_hkdf: c_int = 1036;
+#[cfg(libressl360)]
+pub const NID_hkdf: c_int = 1022;
+#[cfg(ossl111)]
+pub const NID_poly1305: c_int = 1061;
 #[cfg(ossl111)]
 pub const NID_ED25519: c_int = 1087;
+#[cfg(libressl370)]
+pub const NID_ED25519: c_int = 952;
 #[cfg(ossl111)]
 pub const NID_ED448: c_int = 1088;
+#[cfg(ossl111)]
+pub const NID_sm2: c_int = 1172;
+#[cfg(ossl111)]
+pub const NID_sm3: c_int = 1143;
+#[cfg(libressl291)]
+pub const NID_sm3: c_int = 968;
+#[cfg(ossl111)]
+pub const NID_sm3WithRSAEncryption: c_int = 1144;
+#[cfg(libressl291)]
+pub const NID_sm3WithRSAEncryption: c_int = 969;
+#[cfg(ossl111)]
+pub const NID_sm4_ecb: c_int = 1133;
+#[cfg(libressl291)]
+pub const NID_sm4_ecb: c_int = 973;
+#[cfg(ossl111)]
+pub const NID_sm4_cbc: c_int = 1134;
+#[cfg(libressl291)]
+pub const NID_sm4_cbc: c_int = 974;
+#[cfg(ossl111)]
+pub const NID_sm4_ofb128: c_int = 1135;
+#[cfg(libressl291)]
+pub const NID_sm4_ofb128: c_int = 975;
+#[cfg(ossl111)]
+pub const NID_sm4_cfb128: c_int = 1137;
+#[cfg(libressl291)]
+pub const NID_sm4_cfb128: c_int = 976;
+#[cfg(ossl111)]
+pub const NID_sm4_cfb1: c_int = 1136;
+#[cfg(libressl291)]
+pub const NID_sm4_cfb1: c_int = 977;
+#[cfg(ossl111)]
+pub const NID_sm4_cfb8: c_int = 1138;
+#[cfg(libressl291)]
+pub const NID_sm4_cfb8: c_int = 978;
+#[cfg(ossl111)]
+pub const NID_sm4_ctr: c_int = 1139;
+#[cfg(libressl291)]
+pub const NID_sm4_ctr: c_int = 979;
+#[cfg(ossl111)]
+pub const NID_sha3_224: c_int = 1096;
+#[cfg(libressl380)]
+pub const NID_sha3_224: c_int = 1031;
+#[cfg(ossl111)]
+pub const NID_sha3_256: c_int = 1097;
+#[cfg(libressl380)]
+pub const NID_sha3_256: c_int = 1032;
+#[cfg(ossl111)]
+pub const NID_sha3_384: c_int = 1098;
+#[cfg(libressl380)]
+pub const NID_sha3_384: c_int = 1033;
+#[cfg(ossl111)]
+pub const NID_sha3_512: c_int = 1099;
+#[cfg(libressl380)]
+pub const NID_sha3_512: c_int = 1034;
+#[cfg(ossl111)]
+pub const NID_shake128: c_int = 1100;
+#[cfg(ossl111)]
+pub const NID_shake256: c_int = 1101;
+#[cfg(ossl110)]
+pub const NID_chacha20_poly1305: c_int = 1018;
+#[cfg(libressl271)]
+pub const NID_chacha20_poly1305: c_int = 967;

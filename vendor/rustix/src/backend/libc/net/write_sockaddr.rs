@@ -1,11 +1,11 @@
-//! The BSD sockets API requires us to read the `ss_family` field before
-//! we can interpret the rest of a `sockaddr` produced by the kernel.
+//! The BSD sockets API requires us to read the `ss_family` field before we can
+//! interpret the rest of a `sockaddr` produced by the kernel.
 
-use super::super::c;
 use super::addr::SocketAddrStorage;
 #[cfg(unix)]
 use super::addr::SocketAddrUnix;
 use super::ext::{in6_addr_new, in_addr_new, sockaddr_in6_new};
+use crate::backend::c;
 use crate::net::{SocketAddrAny, SocketAddrV4, SocketAddrV6};
 use core::mem::size_of;
 
@@ -21,25 +21,28 @@ pub(crate) unsafe fn write_sockaddr(
     }
 }
 
-pub(crate) unsafe fn encode_sockaddr_v4(v4: &SocketAddrV4) -> c::sockaddr_in {
+pub(crate) fn encode_sockaddr_v4(v4: &SocketAddrV4) -> c::sockaddr_in {
     c::sockaddr_in {
         #[cfg(any(
-            target_os = "dragonfly",
-            target_os = "freebsd",
+            bsd,
+            target_os = "aix",
+            target_os = "espidf",
             target_os = "haiku",
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
+            target_os = "nto",
+            target_os = "vita",
         ))]
         sin_len: size_of::<c::sockaddr_in>() as _,
         sin_family: c::AF_INET as _,
         sin_port: u16::to_be(v4.port()),
         sin_addr: in_addr_new(u32::from_ne_bytes(v4.ip().octets())),
-        #[cfg(not(target_os = "haiku"))]
+        #[cfg(not(any(target_os = "haiku", target_os = "vita")))]
         sin_zero: [0; 8_usize],
         #[cfg(target_os = "haiku")]
         sin_zero: [0; 24_usize],
+        #[cfg(target_os = "vita")]
+        sin_zero: [0; 6_usize],
+        #[cfg(target_os = "vita")]
+        sin_vport: 0,
     }
 }
 
@@ -49,15 +52,14 @@ unsafe fn write_sockaddr_v4(v4: &SocketAddrV4, storage: *mut SocketAddrStorage) 
     size_of::<c::sockaddr_in>()
 }
 
-pub(crate) unsafe fn encode_sockaddr_v6(v6: &SocketAddrV6) -> c::sockaddr_in6 {
+pub(crate) fn encode_sockaddr_v6(v6: &SocketAddrV6) -> c::sockaddr_in6 {
     #[cfg(any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
+        bsd,
+        target_os = "aix",
+        target_os = "espidf",
         target_os = "haiku",
-        target_os = "ios",
-        target_os = "macos",
-        target_os = "netbsd",
-        target_os = "openbsd",
+        target_os = "nto",
+        target_os = "vita"
     ))]
     {
         sockaddr_in6_new(
@@ -70,13 +72,12 @@ pub(crate) unsafe fn encode_sockaddr_v6(v6: &SocketAddrV6) -> c::sockaddr_in6 {
         )
     }
     #[cfg(not(any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
+        bsd,
+        target_os = "aix",
+        target_os = "espidf",
         target_os = "haiku",
-        target_os = "ios",
-        target_os = "macos",
-        target_os = "netbsd",
-        target_os = "openbsd",
+        target_os = "nto",
+        target_os = "vita"
     )))]
     {
         sockaddr_in6_new(

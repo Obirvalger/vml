@@ -3,7 +3,11 @@
 use super::*;
 
 use alloc::vec::{self, Vec};
+use core::convert::TryFrom;
 use tinyvec_macros::impl_mirrored;
+
+#[cfg(feature = "rustc_1_57")]
+use alloc::collections::TryReserveError;
 
 #[cfg(feature = "serde")]
 use core::marker::PhantomData;
@@ -90,13 +94,40 @@ pub enum TinyVecConstructor<A: Array> {
 /// let empty_tv = tiny_vec!([u8; 16]);
 /// let some_ints = tiny_vec!([i32; 4] => 1, 2, 3);
 /// ```
-#[derive(Clone)]
 #[cfg_attr(docs_rs, doc(cfg(feature = "alloc")))]
 pub enum TinyVec<A: Array> {
   #[allow(missing_docs)]
   Inline(ArrayVec<A>),
   #[allow(missing_docs)]
   Heap(Vec<A::Item>),
+}
+
+impl<A> Clone for TinyVec<A>
+where
+  A: Array + Clone,
+  A::Item: Clone,
+{
+  #[inline]
+  fn clone(&self) -> Self {
+    match self {
+      TinyVec::Heap(v) => TinyVec::Heap(v.clone()),
+      TinyVec::Inline(v) => TinyVec::Inline(v.clone()),
+    }
+  }
+
+  #[inline]
+  fn clone_from(&mut self, o: &Self) {
+    if o.len() > self.len() {
+      self.reserve(o.len() - self.len());
+    } else {
+      self.truncate(o.len());
+    }
+    let (start, end) = o.split_at(self.len());
+    for (dst, src) in self.iter_mut().zip(start) {
+      dst.clone_from(src);
+    }
+    self.extend_from_slice(end);
+  }
 }
 
 impl<A: Array> Default for TinyVec<A> {
@@ -144,6 +175,21 @@ impl<A: Array, I: SliceIndex<[A::Item]>> IndexMut<I> for TinyVec<A> {
   }
 }
 
+#[cfg(feature = "std")]
+#[cfg_attr(docs_rs, doc(cfg(feature = "std")))]
+impl<A: Array<Item = u8>> std::io::Write for TinyVec<A> {
+  #[inline(always)]
+  fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    self.extend_from_slice(buf);
+    Ok(buf.len())
+  }
+
+  #[inline(always)]
+  fn flush(&mut self) -> std::io::Result<()> {
+    Ok(())
+  }
+}
+
 #[cfg(feature = "serde")]
 #[cfg_attr(docs_rs, doc(cfg(feature = "serde")))]
 impl<A: Array> Serialize for TinyVec<A>
@@ -174,6 +220,21 @@ where
     D: Deserializer<'de>,
   {
     deserializer.deserialize_seq(TinyVecVisitor(PhantomData))
+  }
+}
+
+#[cfg(feature = "arbitrary")]
+#[cfg_attr(docs_rs, doc(cfg(feature = "arbitrary")))]
+impl<'a, A> arbitrary::Arbitrary<'a> for TinyVec<A>
+where
+  A: Array,
+  A::Item: arbitrary::Arbitrary<'a>,
+{
+  fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+    let v = Vec::arbitrary(u)?;
+    let mut tv = TinyVec::Heap(v);
+    tv.shrink_to_fit();
+    Ok(tv)
   }
 }
 
@@ -242,6 +303,32 @@ impl<A: Array> TinyVec<A> {
     *self = TinyVec::Heap(v);
   }
 
+  /// Tries to move the content of the TinyVec to the heap, if it's inline.
+  ///
+  /// # Errors
+  ///
+  /// If the allocator reports a failure, then an error is returned and the
+  /// content is kept on the stack.
+  ///
+  /// ```rust
+  /// use tinyvec::*;
+  /// let mut tv = tiny_vec!([i32; 4] => 1, 2, 3);
+  /// assert!(tv.is_inline());
+  /// assert_eq!(Ok(()), tv.try_move_to_the_heap());
+  /// assert!(tv.is_heap());
+  /// ```
+  #[cfg(feature = "rustc_1_57")]
+  pub fn try_move_to_the_heap(&mut self) -> Result<(), TryReserveError> {
+    let arr = match self {
+      TinyVec::Heap(_) => return Ok(()),
+      TinyVec::Inline(a) => a,
+    };
+
+    let v = arr.try_drain_to_vec()?;
+    *self = TinyVec::Heap(v);
+    return Ok(());
+  }
+
   /// If TinyVec is inline, moves the content of it to the heap.
   /// Also reserves additional space.
   /// ```rust
@@ -260,6 +347,35 @@ impl<A: Array> TinyVec<A> {
 
     let v = arr.drain_to_vec_and_reserve(n);
     *self = TinyVec::Heap(v);
+  }
+
+  /// If TinyVec is inline, try to move the content of it to the heap.
+  /// Also reserves additional space.
+  ///
+  /// # Errors
+  ///
+  /// If the allocator reports a failure, then an error is returned.
+  ///
+  /// ```rust
+  /// use tinyvec::*;
+  /// let mut tv = tiny_vec!([i32; 4] => 1, 2, 3);
+  /// assert!(tv.is_inline());
+  /// assert_eq!(Ok(()), tv.try_move_to_the_heap_and_reserve(32));
+  /// assert!(tv.is_heap());
+  /// assert!(tv.capacity() >= 35);
+  /// ```
+  #[cfg(feature = "rustc_1_57")]
+  pub fn try_move_to_the_heap_and_reserve(
+    &mut self, n: usize,
+  ) -> Result<(), TryReserveError> {
+    let arr = match self {
+      TinyVec::Heap(h) => return h.try_reserve(n),
+      TinyVec::Inline(a) => a,
+    };
+
+    let v = arr.try_drain_to_vec_and_reserve(n)?;
+    *self = TinyVec::Heap(v);
+    return Ok(());
   }
 
   /// Reserves additional space.
@@ -285,6 +401,37 @@ impl<A: Array> TinyVec<A> {
 
     /* In this place array has enough place, so no work is needed more */
     return;
+  }
+
+  /// Tries to reserve additional space.
+  /// Moves to the heap if array can't hold `n` more items.
+  ///
+  /// # Errors
+  ///
+  /// If the allocator reports a failure, then an error is returned.
+  ///
+  /// ```rust
+  /// use tinyvec::*;
+  /// let mut tv = tiny_vec!([i32; 4] => 1, 2, 3, 4);
+  /// assert!(tv.is_inline());
+  /// assert_eq!(Ok(()), tv.try_reserve(1));
+  /// assert!(tv.is_heap());
+  /// assert!(tv.capacity() >= 5);
+  /// ```
+  #[cfg(feature = "rustc_1_57")]
+  pub fn try_reserve(&mut self, n: usize) -> Result<(), TryReserveError> {
+    let arr = match self {
+      TinyVec::Heap(h) => return h.try_reserve(n),
+      TinyVec::Inline(a) => a,
+    };
+
+    if n > arr.capacity() - arr.len() {
+      let v = arr.try_drain_to_vec_and_reserve(n)?;
+      *self = TinyVec::Heap(v);
+    }
+
+    /* In this place array has enough place, so no work is needed more */
+    return Ok(());
   }
 
   /// Reserves additional space.
@@ -317,6 +464,43 @@ impl<A: Array> TinyVec<A> {
 
     /* In this place array has enough place, so no work is needed more */
     return;
+  }
+
+  /// Tries to reserve additional space.
+  /// Moves to the heap if array can't hold `n` more items
+  ///
+  /// # Errors
+  ///
+  /// If the allocator reports a failure, then an error is returned.
+  ///
+  /// From [Vec::try_reserve_exact](https://doc.rust-lang.org/std/vec/struct.Vec.html#method.try_reserve_exact)
+  /// ```text
+  /// Note that the allocator may give the collection more space than it requests.
+  /// Therefore, capacity can not be relied upon to be precisely minimal.
+  /// Prefer `reserve` if future insertions are expected.
+  /// ```
+  /// ```rust
+  /// use tinyvec::*;
+  /// let mut tv = tiny_vec!([i32; 4] => 1, 2, 3, 4);
+  /// assert!(tv.is_inline());
+  /// assert_eq!(Ok(()), tv.try_reserve_exact(1));
+  /// assert!(tv.is_heap());
+  /// assert!(tv.capacity() >= 5);
+  /// ```
+  #[cfg(feature = "rustc_1_57")]
+  pub fn try_reserve_exact(&mut self, n: usize) -> Result<(), TryReserveError> {
+    let arr = match self {
+      TinyVec::Heap(h) => return h.try_reserve_exact(n),
+      TinyVec::Inline(a) => a,
+    };
+
+    if n > arr.capacity() - arr.len() {
+      let v = arr.try_drain_to_vec_and_reserve(n)?;
+      *self = TinyVec::Heap(v);
+    }
+
+    /* In this place array has enough place, so no work is needed more */
+    return Ok(());
   }
 
   /// Makes a new TinyVec with _at least_ the given capacity.
@@ -1114,20 +1298,10 @@ where
   #[inline]
   #[must_use]
   fn from(slice: &[T]) -> Self {
-    if slice.len() > A::CAPACITY {
-      TinyVec::Heap(slice.into())
-    } else {
-      let mut arr = ArrayVec::new();
-      // We do not use ArrayVec::extend_from_slice, because it looks like LLVM
-      // fails to deduplicate all the length-checking logic between the
-      // above if and the contents of that method, thus producing much
-      // slower code. Unlike many of the other optimizations in this
-      // crate, this one is worth keeping an eye on. I see no reason, for
-      // any element type, that these should produce different code. But
-      // they do. (rustc 1.51.0)
-      arr.set_len(slice.len());
-      arr.as_mut_slice().clone_from_slice(slice);
+    if let Ok(arr) = ArrayVec::try_from(slice) {
       TinyVec::Inline(arr)
+    } else {
+      TinyVec::Heap(slice.into())
     }
   }
 }
@@ -1196,6 +1370,19 @@ impl<A: Array> Iterator for TinyVecIterator<A> {
 
     #[inline]
     fn nth(self: &mut Self, n: usize) -> Option<A::Item>;
+  }
+}
+
+impl<A: Array> DoubleEndedIterator for TinyVecIterator<A> {
+  impl_mirrored! {
+    type Mirror = TinyVecIterator;
+
+    #[inline]
+    fn next_back(self: &mut Self) -> Option<Self::Item>;
+
+    #[cfg(feature = "rustc_1_40")]
+    #[inline]
+    fn nth_back(self: &mut Self, n: usize) -> Option<Self::Item>;
   }
 }
 
@@ -1318,11 +1505,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       Binary::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }
@@ -1335,11 +1528,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       Debug::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }
@@ -1352,11 +1551,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       Display::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }
@@ -1369,11 +1574,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       LowerExp::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }
@@ -1386,11 +1597,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       LowerHex::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }
@@ -1403,11 +1620,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       Octal::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }
@@ -1420,11 +1643,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       Pointer::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }
@@ -1437,11 +1666,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       UpperExp::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }
@@ -1454,11 +1689,17 @@ where
   #[allow(clippy::missing_inline_in_public_items)]
   fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
     write!(f, "[")?;
+    if f.alternate() {
+      write!(f, "\n    ")?;
+    }
     for (i, elem) in self.iter().enumerate() {
       if i > 0 {
-        write!(f, ", ")?;
+        write!(f, ",{}", if f.alternate() { "\n    " } else { " " })?;
       }
       UpperHex::fmt(elem, f)?;
+    }
+    if f.alternate() {
+      write!(f, ",\n")?;
     }
     write!(f, "]")
   }

@@ -1,21 +1,12 @@
-use super::super::c;
+use crate::backend::c;
 use bitflags::bitflags;
-
-bitflags! {
-    /// `FD_*` constants for use with [`fcntl_getfd`] and [`fcntl_setfd`].
-    ///
-    /// [`fcntl_getfd`]: crate::fs::fcntl_getfd
-    /// [`fcntl_setfd`]: crate::fs::fcntl_setfd
-    pub struct FdFlags: c::c_uint {
-        /// `FD_CLOEXEC`
-        const CLOEXEC = linux_raw_sys::general::FD_CLOEXEC;
-    }
-}
 
 bitflags! {
     /// `*_OK` constants for use with [`accessat`].
     ///
     /// [`accessat`]: fn.accessat.html
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct Access: c::c_uint {
         /// `R_OK`
         const READ_OK = linux_raw_sys::general::R_OK;
@@ -28,6 +19,9 @@ bitflags! {
 
         /// `F_OK`
         const EXISTS = linux_raw_sys::general::F_OK;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -37,21 +31,26 @@ bitflags! {
     ///
     /// [`openat`]: crate::fs::openat
     /// [`statat`]: crate::fs::statat
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct AtFlags: c::c_uint {
+        /// `AT_SYMLINK_NOFOLLOW`
+        const SYMLINK_NOFOLLOW = linux_raw_sys::general::AT_SYMLINK_NOFOLLOW;
+
+        /// `AT_EACCESS`
+        const EACCESS = linux_raw_sys::general::AT_EACCESS;
+
         /// `AT_REMOVEDIR`
         const REMOVEDIR = linux_raw_sys::general::AT_REMOVEDIR;
 
         /// `AT_SYMLINK_FOLLOW`
         const SYMLINK_FOLLOW = linux_raw_sys::general::AT_SYMLINK_FOLLOW;
 
-        /// `AT_SYMLINK_NOFOLLOW`
-        const SYMLINK_NOFOLLOW = linux_raw_sys::general::AT_SYMLINK_NOFOLLOW;
+        /// `AT_NO_AUTOMOUNT`
+        const NO_AUTOMOUNT = linux_raw_sys::general::AT_NO_AUTOMOUNT;
 
         /// `AT_EMPTY_PATH`
         const EMPTY_PATH = linux_raw_sys::general::AT_EMPTY_PATH;
-
-        /// `AT_EACCESS`
-        const EACCESS = linux_raw_sys::general::AT_EACCESS;
 
         /// `AT_STATX_SYNC_AS_STAT`
         const STATX_SYNC_AS_STAT = linux_raw_sys::general::AT_STATX_SYNC_AS_STAT;
@@ -61,6 +60,9 @@ bitflags! {
 
         /// `AT_STATX_DONT_SYNC`
         const STATX_DONT_SYNC = linux_raw_sys::general::AT_STATX_DONT_SYNC;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -70,6 +72,8 @@ bitflags! {
     /// [`openat`]: crate::fs::openat
     /// [`chmodat`]: crate::fs::chmodat
     /// [`fchmod`]: crate::fs::fchmod
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct Mode: RawMode {
         /// `S_IRWXU`
         const RWXU = linux_raw_sys::general::S_IRWXU;
@@ -115,6 +119,9 @@ bitflags! {
 
         /// `S_ISVTX`
         const SVTX = linux_raw_sys::general::S_ISVTX;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -133,10 +140,38 @@ impl Mode {
     }
 }
 
+impl From<RawMode> for Mode {
+    /// Support conversions from raw mode values to `Mode`.
+    ///
+    /// ```
+    /// use rustix::fs::{Mode, RawMode};
+    /// assert_eq!(Mode::from(0o700), Mode::RWXU);
+    /// ```
+    #[inline]
+    fn from(st_mode: RawMode) -> Self {
+        Self::from_raw_mode(st_mode)
+    }
+}
+
+impl From<Mode> for RawMode {
+    /// Support conversions from `Mode` to raw mode values.
+    ///
+    /// ```
+    /// use rustix::fs::{Mode, RawMode};
+    /// assert_eq!(RawMode::from(Mode::RWXU), 0o700);
+    /// ```
+    #[inline]
+    fn from(mode: Mode) -> Self {
+        mode.as_raw_mode()
+    }
+}
+
 bitflags! {
     /// `O_*` constants for use with [`openat`].
     ///
     /// [`openat`]: crate::fs::openat
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct OFlags: c::c_uint {
         /// `O_ACCMODE`
         const ACCMODE = linux_raw_sys::general::O_ACCMODE;
@@ -144,9 +179,9 @@ bitflags! {
         /// Similar to `ACCMODE`, but just includes the read/write flags, and
         /// no other flags.
         ///
-        /// Some implementations include `O_PATH` in `O_ACCMODE`, when
+        /// On some platforms, `PATH` may be included in `ACCMODE`, when
         /// sometimes we really just want the read/write bits. Caution is
-        /// indicated, as the presence of `O_PATH` may mean that the read/write
+        /// indicated, as the presence of `PATH` may mean that the read/write
         /// bits don't have their usual meaning.
         const RWMODE = linux_raw_sys::general::O_RDONLY |
                        linux_raw_sys::general::O_WRONLY |
@@ -184,6 +219,8 @@ bitflags! {
         const WRONLY = linux_raw_sys::general::O_WRONLY;
 
         /// `O_RDWR`
+        ///
+        /// This is not equal to `RDONLY | WRONLY`. It's a distinct flag.
         const RDWR = linux_raw_sys::general::O_RDWR;
 
         /// `O_NOCTTY`
@@ -209,6 +246,12 @@ bitflags! {
 
         /// `O_NOATIME`
         const NOATIME = linux_raw_sys::general::O_NOATIME;
+
+        /// `O_DIRECT`
+        const DIRECT = linux_raw_sys::general::O_DIRECT;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -216,7 +259,8 @@ bitflags! {
     /// `RESOLVE_*` constants for use with [`openat2`].
     ///
     /// [`openat2`]: crate::fs::openat2
-    #[derive(Default)]
+    #[repr(transparent)]
+    #[derive(Default, Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct ResolveFlags: u64 {
         /// `RESOLVE_NO_XDEV`
         const NO_XDEV = linux_raw_sys::general::RESOLVE_NO_XDEV as u64;
@@ -235,6 +279,9 @@ bitflags! {
 
         /// `RESOLVE_CACHED` (since Linux 5.12)
         const CACHED = linux_raw_sys::general::RESOLVE_CACHED as u64;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -242,6 +289,8 @@ bitflags! {
     /// `RENAME_*` constants for use with [`renameat_with`].
     ///
     /// [`renameat_with`]: crate::fs::renameat_with
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct RenameFlags: c::c_uint {
         /// `RENAME_EXCHANGE`
         const EXCHANGE = linux_raw_sys::general::RENAME_EXCHANGE;
@@ -251,6 +300,9 @@ bitflags! {
 
         /// `RENAME_WHITEOUT`
         const WHITEOUT = linux_raw_sys::general::RENAME_WHITEOUT;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -270,6 +322,7 @@ pub enum FileType {
     Symlink = linux_raw_sys::general::S_IFLNK as isize,
 
     /// `S_IFIFO`
+    #[doc(alias = "IFO")]
     Fifo = linux_raw_sys::general::S_IFIFO as isize,
 
     /// `S_IFSOCK`
@@ -317,7 +370,7 @@ impl FileType {
         }
     }
 
-    /// Construct a `FileType` from the `d_type` field of a `dirent`.
+    /// Construct a `FileType` from the `d_type` field of a `c::dirent`.
     #[inline]
     pub(crate) const fn from_dirent_d_type(d_type: u8) -> Self {
         match d_type as u32 {
@@ -363,6 +416,8 @@ bitflags! {
     /// `MFD_*` constants for use with [`memfd_create`].
     ///
     /// [`memfd_create`]: crate::fs::memfd_create
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct MemfdFlags: c::c_uint {
         /// `MFD_CLOEXEC`
         const CLOEXEC = linux_raw_sys::general::MFD_CLOEXEC;
@@ -397,6 +452,9 @@ bitflags! {
         const HUGE_2GB = linux_raw_sys::general::MFD_HUGE_2GB;
         /// `MFD_HUGE_16GB`
         const HUGE_16GB = linux_raw_sys::general::MFD_HUGE_16GB;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -406,17 +464,22 @@ bitflags! {
     ///
     /// [`fcntl_add_seals`]: crate::fs::fcntl_add_seals
     /// [`fcntl_get_seals`]: crate::fs::fcntl_get_seals
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct SealFlags: u32 {
-       /// `F_SEAL_SEAL`.
-       const SEAL = linux_raw_sys::general::F_SEAL_SEAL;
-       /// `F_SEAL_SHRINK`.
-       const SHRINK = linux_raw_sys::general::F_SEAL_SHRINK;
-       /// `F_SEAL_GROW`.
-       const GROW = linux_raw_sys::general::F_SEAL_GROW;
-       /// `F_SEAL_WRITE`.
-       const WRITE = linux_raw_sys::general::F_SEAL_WRITE;
-       /// `F_SEAL_FUTURE_WRITE` (since Linux 5.1)
-       const FUTURE_WRITE = linux_raw_sys::general::F_SEAL_FUTURE_WRITE;
+        /// `F_SEAL_SEAL`.
+        const SEAL = linux_raw_sys::general::F_SEAL_SEAL;
+        /// `F_SEAL_SHRINK`.
+        const SHRINK = linux_raw_sys::general::F_SEAL_SHRINK;
+        /// `F_SEAL_GROW`.
+        const GROW = linux_raw_sys::general::F_SEAL_GROW;
+        /// `F_SEAL_WRITE`.
+        const WRITE = linux_raw_sys::general::F_SEAL_WRITE;
+        /// `F_SEAL_FUTURE_WRITE` (since Linux 5.1)
+        const FUTURE_WRITE = linux_raw_sys::general::F_SEAL_FUTURE_WRITE;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -424,6 +487,8 @@ bitflags! {
     /// `STATX_*` constants for use with [`statx`].
     ///
     /// [`statx`]: crate::fs::statx
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct StatxFlags: u32 {
         /// `STATX_TYPE`
         const TYPE = linux_raw_sys::general::STATX_TYPE;
@@ -467,8 +532,14 @@ bitflags! {
         /// `STATX_MNT_ID` (since Linux 5.8)
         const MNT_ID = linux_raw_sys::general::STATX_MNT_ID;
 
+        /// `STATX_DIOALIGN` (since Linux 6.1)
+        const DIOALIGN = linux_raw_sys::general::STATX_DIOALIGN;
+
         /// `STATX_ALL`
         const ALL = linux_raw_sys::general::STATX_ALL;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -476,6 +547,8 @@ bitflags! {
     /// `FALLOC_FL_*` constants for use with [`fallocate`].
     ///
     /// [`fallocate`]: crate::fs::fallocate
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct FallocateFlags: u32 {
         /// `FALLOC_FL_KEEP_SIZE`
         const KEEP_SIZE = linux_raw_sys::general::FALLOC_FL_KEEP_SIZE;
@@ -491,11 +564,16 @@ bitflags! {
         const INSERT_RANGE = linux_raw_sys::general::FALLOC_FL_INSERT_RANGE;
         /// `FALLOC_FL_UNSHARE_RANGE`
         const UNSHARE_RANGE = linux_raw_sys::general::FALLOC_FL_UNSHARE_RANGE;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
 bitflags! {
     /// `ST_*` constants for use with [`StatVfs`].
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct StatVfsMountFlags: u64 {
         /// `ST_MANDLOCK`
         const MANDLOCK = linux_raw_sys::general::MS_MANDLOCK as u64;
@@ -523,12 +601,16 @@ bitflags! {
 
         /// `ST_SYNCHRONOUS`
         const SYNCHRONOUS = linux_raw_sys::general::MS_SYNCHRONOUS as u64;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
-/// `LOCK_*` constants for use with [`flock`]
+/// `LOCK_*` constants for use with [`flock`] and [`fcntl_lock`].
 ///
 /// [`flock`]: crate::fs::flock
+/// [`fcntl_lock`]: crate::fs::fcntl_lock
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum FlockOperation {
@@ -553,7 +635,11 @@ pub enum FlockOperation {
 // On 32-bit, and mips64, Linux's `struct stat64` has a 32-bit `st_mtime` and
 // friends, so we use our own struct, populated from `statx` where possible, to
 // avoid the y2038 bug.
-#[cfg(any(target_pointer_width = "32", target_arch = "mips64"))]
+#[cfg(any(
+    target_pointer_width = "32",
+    target_arch = "mips64",
+    target_arch = "mips64r6"
+))]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 #[allow(missing_docs)]
@@ -580,7 +666,11 @@ pub struct Stat {
 ///
 /// [`statat`]: crate::fs::statat
 /// [`fstat`]: crate::fs::fstat
-#[cfg(all(target_pointer_width = "64", not(target_arch = "mips64")))]
+#[cfg(all(
+    target_pointer_width = "64",
+    not(target_arch = "mips64"),
+    not(target_arch = "mips64r6")
+))]
 pub type Stat = linux_raw_sys::general::stat;
 
 /// `struct statfs` for use with [`statfs`] and [`fstatfs`].
@@ -626,7 +716,7 @@ pub type StatxTimestamp = linux_raw_sys::general::statx_timestamp;
 )))]
 pub type RawMode = linux_raw_sys::general::__kernel_mode_t;
 
-/// `mode_t
+/// `mode_t`
 #[cfg(any(
     target_arch = "x86",
     target_arch = "sparc",
@@ -641,17 +731,9 @@ pub type RawMode = c::c_uint;
 pub type Dev = u64;
 
 /// `__fsword_t`
-#[cfg(not(target_arch = "mips64"))]
+#[cfg(not(any(target_arch = "mips64", target_arch = "mips64r6")))]
 pub type FsWord = linux_raw_sys::general::__fsword_t;
 
 /// `__fsword_t`
-#[cfg(target_arch = "mips64")]
+#[cfg(any(target_arch = "mips64", target_arch = "mips64r6"))]
 pub type FsWord = i64;
-
-pub use linux_raw_sys::general::{UTIME_NOW, UTIME_OMIT};
-
-/// `PROC_SUPER_MAGIC`—The magic number for the procfs filesystem.
-pub const PROC_SUPER_MAGIC: FsWord = linux_raw_sys::general::PROC_SUPER_MAGIC as FsWord;
-
-/// `NFS_SUPER_MAGIC`—The magic number for the NFS filesystem.
-pub const NFS_SUPER_MAGIC: FsWord = linux_raw_sys::general::NFS_SUPER_MAGIC as FsWord;

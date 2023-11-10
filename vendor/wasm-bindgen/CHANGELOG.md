@@ -1,4 +1,311 @@
 # `wasm-bindgen` Change Log
+--------------------------------------------------------------------------------
+
+## [0.2.88](https://github.com/rustwasm/wasm-bindgen/compare/0.2.87...0.2.88)
+
+Released 2023-11-01
+
+### Added
+
+* Add bindings for `RTCRtpTransceiverInit.sendEncodings`.
+  [#3642](https://github.com/rustwasm/wasm-bindgen/pull/3642)
+
+* Add bindings for the Web Locks API to `web-sys`.
+  [#3604](https://github.com/rustwasm/wasm-bindgen/pull/3604)
+
+* Add bindings for `ViewTransition` to `web-sys`.
+  [#3598](https://github.com/rustwasm/wasm-bindgen/pull/3598)
+
+* Extend `AudioContext` with unstable features supporting audio sink configuration.
+  [#3433](https://github.com/rustwasm/wasm-bindgen/pull/3433)
+
+* Add bindings for `WebAssembly.Tag` and `WebAssembly.Exception`.
+  [#3484](https://github.com/rustwasm/wasm-bindgen/pull/3484)
+
+* Re-export `wasm-bindgen` from `js-sys`, `web-sys` and `wasm-bindgen-futures`.
+  [#3466](https://github.com/rustwasm/wasm-bindgen/pull/3466)
+  [#3601](https://github.com/rustwasm/wasm-bindgen/pull/3601)
+
+* Re-export `js-sys` from `web-sys` and `wasm-bindgen-futures`.
+  [#3466](https://github.com/rustwasm/wasm-bindgen/pull/3466)
+  [#3601](https://github.com/rustwasm/wasm-bindgen/pull/3601)
+
+* Add bindings for async variants of `Atomics.wait`.
+  [#3504](https://github.com/rustwasm/wasm-bindgen/pull/3504)
+
+* Add bindings for `WorkerGlobalScope.performance`.
+  [#3506](https://github.com/rustwasm/wasm-bindgen/pull/3506)
+
+* Add support for installing pre-built artifacts of `wasm-bindgen-cli`
+  via `cargo binstall wasm-bindgen-cli`.
+  [#3544](https://github.com/rustwasm/wasm-bindgen/pull/3544)
+
+* Add bindings for `RTCDataChannel.id`.
+  [#3547](https://github.com/rustwasm/wasm-bindgen/pull/3547)
+
+* Add bindings for `HTMLElement.inert`.
+  [#3557](https://github.com/rustwasm/wasm-bindgen/pull/3557)
+
+* Add unstable bindings for the Prioritized Task Scheduling API.
+  [#3566](https://github.com/rustwasm/wasm-bindgen/pull/3566)
+
+* Add bindings for `CssStyleSheet` constructor and `replace(_sync)` methods.
+  [#3573](https://github.com/rustwasm/wasm-bindgen/pull/3573)
+
+* Add bindings for `CanvasTransform.setTransform(DOMMatrix2DInit)`.
+  [#3580](https://github.com/rustwasm/wasm-bindgen/pull/3580)
+
+* Add a `crate` attribute to the `wasm_bindgen_test` proc-macro to specify a
+  non-default path to the `wasm-bindgen-test` crate.
+  [#3593](https://github.com/rustwasm/wasm-bindgen/pull/3593)
+
+* Add support for passing `Vec`s of exported Rust types and strings to/from JS.
+  [#3554](https://github.com/rustwasm/wasm-bindgen/pull/3554)
+
+* Implement `TryFrom<JsValue>` for exported Rust types and strings.
+  [#3554](https://github.com/rustwasm/wasm-bindgen/pull/3554)
+
+* Handle the `#[ignore = "reason"]` attribute with the `wasm_bindgen_test`
+  proc-macro and accept the `--include-ignored` flag with `wasm-bindgen-test-runner`.
+  [#3644](https://github.com/rustwasm/wasm-bindgen/pull/3644)
+
+* Added missing additions to the Notification API.
+  [#3667](https://github.com/rustwasm/wasm-bindgen/pull/3667)
+
+### Changed
+
+* Updated the WebGPU WebIDL.
+  The optional `message` argument of [`GPUPipelineError`](https://www.w3.org/TR/webgpu/#gpupipelineerror)'s constructor has been manually specified as a required argument,
+  because required arguments occurring after optional arguments are currently not supported by the generator.
+  [#3480](https://github.com/rustwasm/wasm-bindgen/pull/3480)
+
+* Replaced `curl` with `ureq`. By default we now use Rustls instead of OpenSSL.
+  [#3511](https://github.com/rustwasm/wasm-bindgen/pull/3511)
+
+* Changed mutability of the argument `buffer` in `write` functions to immutable for `FileSystemSyncAccessHandle` and `FileSystemWritableFileStream`.
+  It was also automatically changed for `IdbFileHandle`, which is deprecated.
+  [#3537](https://github.com/rustwasm/wasm-bindgen/pull/3537)
+
+* Changed behavior when compiling to `wasm32-wasi` to match `wasm32-emscripten` and 
+  non-WASM targets, generating a stub that panics when called rather than a wasm-
+  bindgen placeholder.
+  [#3233](https://github.com/rustwasm/wasm-bindgen/pull/3233)
+
+* Changed constructor implementation in generated JS bindings, it is now
+  possible to override methods from generated JS classes using inheritance.
+  When exported constructors return `Self`.
+  [#3562](https://github.com/rustwasm/wasm-bindgen/pull/3562)
+
+* Made `wasm-bindgen` forwards-compatible with the standard C ABI.
+  [#3595](https://github.com/rustwasm/wasm-bindgen/pull/3595)
+
+* Changed the design of the internal `WasmAbi` trait. Rather than marking a type
+  which can be passed directly as a parameter/result to/from JS, it now lets
+  types specify how they can be split into / recreated from multiple primitive
+  types which are then passed to/from JS.
+  `WasmPrimitive` now serves the old function of `WasmAbi`, minus allowing
+  `#[repr(C)]` types.
+  [#3595](https://github.com/rustwasm/wasm-bindgen/pull/3595)
+
+* Use `queueMicrotask` in `wasm-bindgen-futures` for scheduling tasks on the next tick.
+  If that is not available, use the previous `Promise.then` mechanism as a fallback.
+  This should avoid quirks, like exceptions thrown get now properly reported
+  as normal exceptions rather than as rejected promises.
+  [#3611](https://github.com/rustwasm/wasm-bindgen/pull/3611)
+
+* Improved TypeScript bindings to accurately reference Rust enum types in function signatures,
+  enhancing type safety and compatibility.
+  [#3647](https://github.com/rustwasm/wasm-bindgen/pull/3647)
+
+* Throw an error on enum name collisions, previously only one enum would be emitted.
+  [#3669](https://github.com/rustwasm/wasm-bindgen/pull/3669)
+
+### Fixed
+
+* Fixed `wasm_bindgen` macro to handle raw identifiers in field names.
+  [#3621](https://github.com/rustwasm/wasm-bindgen/pull/3621)
+
+* Fixed bindings and comments for `Atomics.wait`.
+  [#3509](https://github.com/rustwasm/wasm-bindgen/pull/3509)
+
+* Fixed `wasm_bindgen_test` macro to handle raw identifiers in test names.
+  [#3541](https://github.com/rustwasm/wasm-bindgen/pull/3541)
+
+* Fixed Cargo license field to follow the SPDX 2.1 license expression standard.
+  [#3529](https://github.com/rustwasm/wasm-bindgen/pull/3529)
+
+* Use fully qualified paths in the `wasm_bindgen_test` macro.
+  [#3549](https://github.com/rustwasm/wasm-bindgen/pull/3549)
+
+* Fixed bug allowing JS primitives to be returned from exported constructors.
+  [#3562](https://github.com/rustwasm/wasm-bindgen/pull/3562)
+
+* Fixed optional parameters in JSDoc.
+  [#3577](https://github.com/rustwasm/wasm-bindgen/pull/3577)
+
+* Use re-exported `js-sys` from `wasm-bindgen-futures` to account for
+  non-default path specified by the `crate` attribute in `wasm_bindgen_futures`
+  proc-macro.
+  [#3601](https://github.com/rustwasm/wasm-bindgen/pull/3601)
+
+* Fix bug with function arguments coming from `macro_rules!`.
+  [#3625](https://github.com/rustwasm/wasm-bindgen/pull/3625)
+
+* Fix some calls to `free()` missing alignment.
+  [#3639](https://github.com/rustwasm/wasm-bindgen/pull/3639)
+
+* Fix wrong ABI for raw pointers.
+  [#3655](https://github.com/rustwasm/wasm-bindgen/pull/3655)
+
+### Removed
+
+* Removed `ReadableStreamByobReader::read_with_u8_array()` because it doesn't work with Wasm.
+  [#3582](https://github.com/rustwasm/wasm-bindgen/pull/3582)
+
+* Removed `GetNotificationOptions`, `NotificationBehavior` and `Notification.get()` because
+  they don't exist anymore.
+
+## [0.2.87](https://github.com/rustwasm/wasm-bindgen/compare/0.2.86...0.2.87)
+
+Released 2023-06-12.
+
+### Added
+
+* Implemented `IntoIterator` for `Array`.
+  [#3477](https://github.com/rustwasm/wasm-bindgen/pull/3477)
+
+### Changed
+
+* Deprecate `HtmlMenuItemElement` and parts of `HtmlMenuElement`.
+  [#3448](https://github.com/rustwasm/wasm-bindgen/pull/3448)
+
+* Stabilize `ResizeObserver`.
+  [#3459](https://github.com/rustwasm/wasm-bindgen/pull/3459)
+
+### Fixed
+
+* Take alignment into consideration during (de/re)allocation.
+  [#3463](https://github.com/rustwasm/wasm-bindgen/pull/3463)
+
+--------------------------------------------------------------------------------
+
+## 0.2.86
+
+Released 2023-05-16.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.85...0.2.86)
+
+--------------------------------------------------------------------------------
+
+## 0.2.85
+
+Released 2023-05-09.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.84...0.2.85)
+
+--------------------------------------------------------------------------------
+
+## 0.2.84
+
+Released 2023-02-01.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.83...0.2.84)
+
+--------------------------------------------------------------------------------
+
+## 0.2.83
+
+Released 2022-09-12.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.82...0.2.83)
+
+--------------------------------------------------------------------------------
+
+## 0.2.82
+
+Released 2022-07-25.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.81...0.2.82)
+
+--------------------------------------------------------------------------------
+
+## 0.2.81
+
+Released 2022-06-14.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.80...0.2.81)
+
+--------------------------------------------------------------------------------
+
+## 0.2.80
+
+Released 2022-04-04.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.79...0.2.80)
+
+--------------------------------------------------------------------------------
+
+## 0.2.79
+
+Released 2022-01-19.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.78...0.2.79)
+
+--------------------------------------------------------------------------------
+
+## 0.2.78
+
+Released 2021-09-15.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.77...0.2.78)
+
+--------------------------------------------------------------------------------
+
+## 0.2.77
+
+Released 2021-09-08.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.76...0.2.77)
+
+--------------------------------------------------------------------------------
+
+## 0.2.76
+
+Released 2021-08-19.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.75...0.2.76)
+
+--------------------------------------------------------------------------------
+
+## 0.2.75
+
+Released 2021-08-02.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.74...0.2.75)
+
+--------------------------------------------------------------------------------
+
+## 0.2.74
+
+Released 2021-05-10.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.73...0.2.74)
+
+--------------------------------------------------------------------------------
+
+## 0.2.73
+
+Released 2021-03-29.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.72...0.2.73)
+
+--------------------------------------------------------------------------------
+
+## 0.2.72
+
+Released 2021-03-18.
+
+[changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.71...0.2.72)
 
 --------------------------------------------------------------------------------
 
@@ -7,7 +314,6 @@
 Released 2021-02-26.
 
 [changes](https://github.com/rustwasm/wasm-bindgen/compare/0.2.70...0.2.71)
-
 
 --------------------------------------------------------------------------------
 
@@ -341,7 +647,7 @@ Released 2020-03-03.
   tightended up a bit.
   [#1987](https://github.com/rustwasm/wasm-bindgen/pull/1987)
 
-* The `self` identifier is no longe used on the `no-modules` target, making it a
+* The `self` identifier is no longer used on the `no-modules` target, making it a
   bit more flexible in more environments.
   [#1995](https://github.com/rustwasm/wasm-bindgen/pull/1995)
 
@@ -584,7 +890,7 @@ Released 2019-08-14.
 * Add binding for `Element.getElementsByClassName`.
   [#1665](https://github.com/rustwasm/wasm-bindgen/pull/1665)
 
-* `PartialEq` and `Eq` are now implementd for all `web-sys` types.
+* `PartialEq` and `Eq` are now implemented for all `web-sys` types.
   [#1673](https://github.com/rustwasm/wasm-bindgen/pull/1673)
 
 * The `wasm-bindgen-futures` crate now has support for futures when the
@@ -715,7 +1021,7 @@ Released 2019-06-14.
 * Bindings for `Array#flat` and `Array#flatMap` have been added.
   [#1573](https://github.com/rustwasm/wasm-bindgen/pull/1573)
 
-* All `#[wasm_bindgen]` types now `AsRef` to themslves.
+* All `#[wasm_bindgen]` types now `AsRef` to themselves.
   [#1583](https://github.com/rustwasm/wasm-bindgen/pull/1583)
 
 * When using `--target web` the path passed to `init` is no longer required.
@@ -900,8 +1206,7 @@ Released 2019-04-10.
 
 ### Added
 
-* Initial support for transitive NPM dependencies has been added, although
-  support has not fully landed in `wasm-pack` yet so it's not 100% integrated.
+* Initial support for transitive NPM dependencies has been added.
   [#1305](https://github.com/rustwasm/wasm-bindgen/pull/1305)
 
 * The `constructor` property of `Object` is now bound in `js-sys`.
@@ -1040,7 +1345,7 @@ Released 2019-03-04.
   landed and is enabled with `WASM_BINDGEN_ANYREF=1`.
   [#1002](https://github.com/rustwasm/wasm-bindgen/pull/1002)
 
-* Support fot the new browser `TextEncode#encodeInto` API has been added.
+* Support for the new browser `TextEncode#encodeInto` API has been added.
   [#1279](https://github.com/rustwasm/wasm-bindgen/pull/1279)
 
 * JS doc comments are now added to TypeScript bindings in addition to the JS

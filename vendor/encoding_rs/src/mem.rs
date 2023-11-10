@@ -24,8 +24,11 @@
 //! The FFI binding for this module are in the
 //! [encoding_c_mem crate](https://github.com/hsivonen/encoding_c_mem).
 
+#[cfg(feature = "alloc")]
 use alloc::borrow::Cow;
+#[cfg(feature = "alloc")]
 use alloc::string::String;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 use super::in_inclusive_range16;
@@ -47,13 +50,11 @@ cfg_if! {
         use ::core::intrinsics::unlikely;
     } else {
         #[inline(always)]
-        // Unsafe to match the intrinsic, which is needlessly unsafe.
-        unsafe fn likely(b: bool) -> bool {
+        fn likely(b: bool) -> bool {
             b
         }
         #[inline(always)]
-        // Unsafe to match the intrinsic, which is needlessly unsafe.
-        unsafe fn unlikely(b: bool) -> bool {
+        fn unlikely(b: bool) -> bool {
             b
         }
     }
@@ -912,7 +913,7 @@ pub fn is_utf8_bidi(buffer: &[u8]) -> bool {
                             {
                                 return true;
                             }
-                            if unsafe { unlikely(second == 0x90 || second == 0x9E) } {
+                            if unlikely(second == 0x90 || second == 0x9E) {
                                 let third = src[read + 2];
                                 if third >= 0xA0 {
                                     return true;
@@ -1170,7 +1171,7 @@ pub fn is_str_bidi(buffer: &str) -> bool {
                         // Two-byte
                         // Adding `unlikely` here improved throughput on
                         // Russian plain text by 33%!
-                        if unsafe { unlikely(byte >= 0xD6) } {
+                        if unlikely(byte >= 0xD6) {
                             if byte == 0xD6 {
                                 let second = bytes[read + 1];
                                 if second > 0x8F {
@@ -1194,7 +1195,7 @@ pub fn is_str_bidi(buffer: &str) -> bool {
                     }
                 } else if byte < 0xF0 {
                     // Three-byte
-                    if unsafe { unlikely(!in_inclusive_range8(byte, 0xE3, 0xEE) && byte != 0xE1) } {
+                    if unlikely(!in_inclusive_range8(byte, 0xE3, 0xEE) && byte != 0xE1) {
                         let second = bytes[read + 1];
                         if byte == 0xE0 {
                             if second < 0xA4 {
@@ -1243,7 +1244,7 @@ pub fn is_str_bidi(buffer: &str) -> bool {
                 } else {
                     // Four-byte
                     let second = bytes[read + 1];
-                    if unsafe { unlikely(byte == 0xF0 && (second == 0x90 || second == 0x9E)) } {
+                    if unlikely(byte == 0xF0 && (second == 0x90 || second == 0x9E)) {
                         let third = bytes[read + 2];
                         if third >= 0xA0 {
                             return true;
@@ -1657,7 +1658,7 @@ pub fn convert_utf16_to_utf8_partial(src: &[u16], dst: &mut [u8]) -> (usize, usi
     // basic blocks out-of-lined to the end of the function would wipe
     // away a quarter of Arabic encode performance on Haswell!
     let (read, written) = convert_utf16_to_utf8_partial_inner(src, dst);
-    if unsafe { likely(read == src.len()) } {
+    if likely(read == src.len()) {
         return (read, written);
     }
     let (tail_read, tail_written) =
@@ -1988,6 +1989,9 @@ pub fn convert_utf16_to_latin1_lossy(src: &[u16], dst: &mut [u8]) {
 ///
 /// Borrows if input is ASCII-only. Performs a single heap allocation
 /// otherwise.
+///
+/// Only available if the `alloc` feature is enabled (enabled by default).
+#[cfg(feature = "alloc")]
 pub fn decode_latin1<'a>(bytes: &'a [u8]) -> Cow<'a, str> {
     let up_to = ascii_valid_up_to(bytes);
     // >= makes later things optimize better than ==
@@ -2022,6 +2026,9 @@ pub fn decode_latin1<'a>(bytes: &'a [u8]) -> Cow<'a, str> {
 ///
 /// Borrows if input is ASCII-only. Performs a single heap allocation
 /// otherwise.
+///
+/// Only available if the `alloc` feature is enabled (enabled by default).
+#[cfg(feature = "alloc")]
 pub fn encode_latin1_lossy<'a>(string: &'a str) -> Cow<'a, [u8]> {
     let bytes = string.as_bytes();
     let up_to = ascii_valid_up_to(bytes);
@@ -2058,7 +2065,7 @@ pub fn utf8_latin1_up_to(buffer: &[u8]) -> usize {
 /// Returns the index of first byte that starts a non-Latin1 byte
 /// sequence, or the length of the string if there are none.
 pub fn str_latin1_up_to(buffer: &str) -> usize {
-    is_str_latin1_impl(buffer).unwrap_or(buffer.len())
+    is_str_latin1_impl(buffer).unwrap_or_else(|| buffer.len())
 }
 
 /// Replaces unpaired surrogates in the input with the REPLACEMENT CHARACTER.
@@ -2155,7 +2162,7 @@ pub fn copy_basic_latin_to_ascii(src: &[u16], dst: &mut [u8]) -> usize {
 // Any copyright to the test code below this comment is dedicated to the
 // Public Domain. http://creativecommons.org/publicdomain/zero/1.0/
 
-#[cfg(test)]
+#[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::*;
 

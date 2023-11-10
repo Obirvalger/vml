@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -28,17 +29,17 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `MediaCapabilities`, `WorkerNavigator`*"]
     pub fn media_capabilities(this: &WorkerNavigator) -> MediaCapabilities;
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "Gpu")]
-    # [wasm_bindgen (structural , method , getter , js_class = "WorkerNavigator" , js_name = gpu)]
-    #[doc = "Getter for the `gpu` field of this object."]
+    #[cfg(feature = "Serial")]
+    # [wasm_bindgen (structural , method , getter , js_class = "WorkerNavigator" , js_name = serial)]
+    #[doc = "Getter for the `serial` field of this object."]
     #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/WorkerNavigator/gpu)"]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/WorkerNavigator/serial)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `Gpu`, `WorkerNavigator`*"]
+    #[doc = "*This API requires the following crate features to be activated: `Serial`, `WorkerNavigator`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn gpu(this: &WorkerNavigator) -> Gpu;
+    pub fn serial(this: &WorkerNavigator) -> Serial;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "Usb")]
     # [wasm_bindgen (structural , method , getter , js_class = "WorkerNavigator" , js_name = usb)]
@@ -58,6 +59,18 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `WorkerNavigator`*"]
     pub fn hardware_concurrency(this: &WorkerNavigator) -> f64;
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "Gpu")]
+    # [wasm_bindgen (structural , method , getter , js_class = "WorkerNavigator" , js_name = gpu)]
+    #[doc = "Getter for the `gpu` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/WorkerNavigator/gpu)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Gpu`, `WorkerNavigator`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn gpu(this: &WorkerNavigator) -> Gpu;
     # [wasm_bindgen (structural , catch , method , getter , js_class = "WorkerNavigator" , js_name = appCodeName)]
     #[doc = "Getter for the `appCodeName` field of this object."]
     #[doc = ""]
@@ -114,6 +127,18 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `WorkerNavigator`*"]
     pub fn languages(this: &WorkerNavigator) -> ::js_sys::Array;
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "LockManager")]
+    # [wasm_bindgen (structural , method , getter , js_class = "WorkerNavigator" , js_name = locks)]
+    #[doc = "Getter for the `locks` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/WorkerNavigator/locks)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `LockManager`, `WorkerNavigator`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn locks(this: &WorkerNavigator) -> LockManager;
     # [wasm_bindgen (structural , method , getter , js_class = "WorkerNavigator" , js_name = onLine)]
     #[doc = "Getter for the `onLine` field of this object."]
     #[doc = ""]

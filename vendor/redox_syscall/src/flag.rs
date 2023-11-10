@@ -32,18 +32,6 @@ macro_rules! bitflags {
     }
 }
 
-bitflags! {
-    pub struct CloneFlags: usize {
-        const CLONE_VM = 0x100;
-        const CLONE_FS = 0x200;
-        const CLONE_FILES = 0x400;
-        const CLONE_SIGHAND = 0x800;
-        const CLONE_VFORK = 0x4000;
-        const CLONE_THREAD = 0x10000;
-        const CLONE_STACK = 0x1000_0000;
-    }
-}
-
 pub const CLOCK_REALTIME: usize = 1;
 pub const CLOCK_MONOTONIC: usize = 4;
 
@@ -66,9 +54,18 @@ pub const FUTEX_WAKE: usize = 1;
 pub const FUTEX_REQUEUE: usize = 2;
 pub const FUTEX_WAIT64: usize = 3;
 
+// packet.c = fd
+pub const SKMSG_FRETURNFD: usize = 0;
+
+// packet.uid:packet.gid = offset, packet.c = base address, packet.d = page count
+pub const SKMSG_PROVIDE_MMAP: usize = 1;
+
 bitflags! {
     pub struct MapFlags: usize {
+        // TODO: Downgrade PROT_NONE to global constant? (bitflags specifically states zero flags
+        // can cause buggy behavior).
         const PROT_NONE = 0x0000_0000;
+
         const PROT_EXEC = 0x0001_0000;
         const PROT_WRITE = 0x0002_0000;
         const PROT_READ = 0x0004_0000;
@@ -76,9 +73,30 @@ bitflags! {
         const MAP_SHARED = 0x0001;
         const MAP_PRIVATE = 0x0002;
 
-        /// Only accepted for mmap2(2).
         const MAP_FIXED = 0x0004;
         const MAP_FIXED_NOREPLACE = 0x000C;
+
+        /// For *userspace-backed mmaps*, return from the mmap call before all pages have been
+        /// provided by the scheme. This requires the scheme to be trusted, as the current context
+        /// can block indefinitely, if the scheme does not respond to the page fault handler's
+        /// request, as it tries to map the page by requesting it from the scheme.
+        ///
+        /// In some cases however, such as the program loader, the data needs to be trusted as much
+        /// with or without MAP_LAZY, and if so, mapping lazily will not cause insecureness by
+        /// itself.
+        ///
+        /// For kernel-backed mmaps, this flag has no effect at all. It is unspecified whether
+        /// kernel mmaps are lazy or not.
+        const MAP_LAZY = 0x0010;
+    }
+}
+bitflags! {
+    pub struct MunmapFlags: usize {
+        /// Indicates whether the funmap call must implicitly do an msync, for the changes to
+        /// become visible later.
+        ///
+        /// This flag will currently be set if and only if MAP_SHARED | PROT_WRITE are set.
+        const NEEDS_SYNC = 1;
     }
 }
 
@@ -213,8 +231,10 @@ bitflags! {
         /// If you don't catch this, the child is started as normal.
         const PTRACE_EVENT_CLONE = 0x0000_0000_0000_0100;
 
-        const PTRACE_EVENT_MASK = 0x0000_0000_0000_0F00;
+        /// Sent when current-addrspace is changed, allowing the tracer to reopen the memory file.
+        const PTRACE_EVENT_ADDRSPACE_SWITCH = 0x0000_0000_0000_0200;
 
+        const PTRACE_EVENT_MASK = 0x0000_0000_0000_0F00;
 
         /// Special meaning, depending on the event. Usually, when fired before
         /// an action, it will skip performing that action.
@@ -292,13 +312,6 @@ bitflags! {
     }
 }
 
-// Auxiliery vector types
-pub const AT_NULL: usize = 0;
-pub const AT_PHDR: usize = 3;
-pub const AT_PHENT: usize = 4;
-pub const AT_PHNUM: usize = 5;
-pub const AT_ENTRY: usize = 9;
-
 bitflags! {
     pub struct WaitFlags: usize {
         const WNOHANG =    0x01;
@@ -306,6 +319,11 @@ bitflags! {
         const WCONTINUED = 0x08;
     }
 }
+
+pub const ADDRSPACE_OP_MMAP: usize = 0;
+pub const ADDRSPACE_OP_MUNMAP: usize = 1;
+pub const ADDRSPACE_OP_MPROTECT: usize = 2;
+pub const ADDRSPACE_OP_TRANSFER: usize = 3;
 
 /// True if status indicates the child is stopped.
 pub fn wifstopped(status: usize) -> bool {
@@ -345,4 +363,12 @@ pub fn wexitstatus(status: usize) -> usize {
 /// True if status indicates a core dump was created.
 pub fn wcoredump(status: usize) -> bool {
     (status & 0x80) != 0
+}
+
+bitflags! {
+    pub struct MremapFlags: usize {
+        const FIXED = 1;
+        const FIXED_REPLACE = 3;
+        // TODO: MAYMOVE, DONTUNMAP
+    }
 }

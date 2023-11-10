@@ -6,8 +6,105 @@ use std::ops::Drop;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::runtime;
-use tokio::sync::{OnceCell, SetError};
+use tokio::sync::OnceCell;
+use tokio::sync::SetError;
 use tokio::time;
+
+#[test]
+fn drop_cell() {
+    static NUM_DROPS: AtomicU32 = AtomicU32::new(0);
+
+    struct Foo {}
+
+    let fooer = Foo {};
+
+    impl Drop for Foo {
+        fn drop(&mut self) {
+            NUM_DROPS.fetch_add(1, Ordering::Release);
+        }
+    }
+
+    {
+        let once_cell = OnceCell::new();
+        let prev = once_cell.set(fooer);
+        assert!(prev.is_ok())
+    }
+    assert!(NUM_DROPS.load(Ordering::Acquire) == 1);
+}
+
+#[test]
+fn drop_cell_new_with() {
+    static NUM_DROPS: AtomicU32 = AtomicU32::new(0);
+
+    struct Foo {}
+
+    let fooer = Foo {};
+
+    impl Drop for Foo {
+        fn drop(&mut self) {
+            NUM_DROPS.fetch_add(1, Ordering::Release);
+        }
+    }
+
+    {
+        let once_cell = OnceCell::new_with(Some(fooer));
+        assert!(once_cell.initialized());
+    }
+    assert!(NUM_DROPS.load(Ordering::Acquire) == 1);
+}
+
+#[test]
+fn drop_into_inner() {
+    static NUM_DROPS: AtomicU32 = AtomicU32::new(0);
+
+    struct Foo {}
+
+    let fooer = Foo {};
+
+    impl Drop for Foo {
+        fn drop(&mut self) {
+            NUM_DROPS.fetch_add(1, Ordering::Release);
+        }
+    }
+
+    let once_cell = OnceCell::new();
+    assert!(once_cell.set(fooer).is_ok());
+    let fooer = once_cell.into_inner();
+    let count = NUM_DROPS.load(Ordering::Acquire);
+    assert!(count == 0);
+    drop(fooer);
+    let count = NUM_DROPS.load(Ordering::Acquire);
+    assert!(count == 1);
+}
+
+#[test]
+fn drop_into_inner_new_with() {
+    static NUM_DROPS: AtomicU32 = AtomicU32::new(0);
+
+    struct Foo {}
+
+    let fooer = Foo {};
+
+    impl Drop for Foo {
+        fn drop(&mut self) {
+            NUM_DROPS.fetch_add(1, Ordering::Release);
+        }
+    }
+
+    let once_cell = OnceCell::new_with(Some(fooer));
+    let fooer = once_cell.into_inner();
+    let count = NUM_DROPS.load(Ordering::Acquire);
+    assert!(count == 0);
+    mem::drop(fooer);
+    let count = NUM_DROPS.load(Ordering::Acquire);
+    assert!(count == 1);
+}
+
+#[test]
+fn from() {
+    let cell = OnceCell::from(2);
+    assert_eq!(*cell.get().unwrap(), 2);
+}
 
 async fn func1() -> u32 {
     5
@@ -175,100 +272,4 @@ fn get_or_try_init() {
         let result2 = handle2.await.unwrap();
         assert_eq!(*result2.unwrap(), 10);
     });
-}
-
-#[test]
-fn drop_cell() {
-    static NUM_DROPS: AtomicU32 = AtomicU32::new(0);
-
-    struct Foo {}
-
-    let fooer = Foo {};
-
-    impl Drop for Foo {
-        fn drop(&mut self) {
-            NUM_DROPS.fetch_add(1, Ordering::Release);
-        }
-    }
-
-    {
-        let once_cell = OnceCell::new();
-        let prev = once_cell.set(fooer);
-        assert!(prev.is_ok())
-    }
-    assert!(NUM_DROPS.load(Ordering::Acquire) == 1);
-}
-
-#[test]
-fn drop_cell_new_with() {
-    static NUM_DROPS: AtomicU32 = AtomicU32::new(0);
-
-    struct Foo {}
-
-    let fooer = Foo {};
-
-    impl Drop for Foo {
-        fn drop(&mut self) {
-            NUM_DROPS.fetch_add(1, Ordering::Release);
-        }
-    }
-
-    {
-        let once_cell = OnceCell::new_with(Some(fooer));
-        assert!(once_cell.initialized());
-    }
-    assert!(NUM_DROPS.load(Ordering::Acquire) == 1);
-}
-
-#[test]
-fn drop_into_inner() {
-    static NUM_DROPS: AtomicU32 = AtomicU32::new(0);
-
-    struct Foo {}
-
-    let fooer = Foo {};
-
-    impl Drop for Foo {
-        fn drop(&mut self) {
-            NUM_DROPS.fetch_add(1, Ordering::Release);
-        }
-    }
-
-    let once_cell = OnceCell::new();
-    assert!(once_cell.set(fooer).is_ok());
-    let fooer = once_cell.into_inner();
-    let count = NUM_DROPS.load(Ordering::Acquire);
-    assert!(count == 0);
-    drop(fooer);
-    let count = NUM_DROPS.load(Ordering::Acquire);
-    assert!(count == 1);
-}
-
-#[test]
-fn drop_into_inner_new_with() {
-    static NUM_DROPS: AtomicU32 = AtomicU32::new(0);
-
-    struct Foo {}
-
-    let fooer = Foo {};
-
-    impl Drop for Foo {
-        fn drop(&mut self) {
-            NUM_DROPS.fetch_add(1, Ordering::Release);
-        }
-    }
-
-    let once_cell = OnceCell::new_with(Some(fooer));
-    let fooer = once_cell.into_inner();
-    let count = NUM_DROPS.load(Ordering::Acquire);
-    assert!(count == 0);
-    mem::drop(fooer);
-    let count = NUM_DROPS.load(Ordering::Acquire);
-    assert!(count == 1);
-}
-
-#[test]
-fn from() {
-    let cell = OnceCell::from(2);
-    assert_eq!(*cell.get().unwrap(), 2);
 }

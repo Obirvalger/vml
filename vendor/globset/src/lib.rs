@@ -103,16 +103,6 @@ or to enable case insensitive matching.
 
 #![deny(missing_docs)]
 
-extern crate aho_corasick;
-extern crate bstr;
-extern crate fnv;
-#[macro_use]
-extern crate log;
-extern crate regex;
-
-#[cfg(feature = "serde1")]
-extern crate serde;
-
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as StdError;
@@ -125,15 +115,25 @@ use aho_corasick::AhoCorasick;
 use bstr::{ByteSlice, ByteVec, B};
 use regex::bytes::{Regex, RegexBuilder, RegexSet};
 
-use glob::MatchStrategy;
-pub use glob::{Glob, GlobBuilder, GlobMatcher};
-use pathutil::{file_name, file_name_ext, normalize_path};
+use crate::glob::MatchStrategy;
+pub use crate::glob::{Glob, GlobBuilder, GlobMatcher};
+use crate::pathutil::{file_name, file_name_ext, normalize_path};
 
 mod glob;
 mod pathutil;
 
 #[cfg(feature = "serde1")]
 mod serde_impl;
+
+#[cfg(feature = "log")]
+macro_rules! debug {
+    ($($token:tt)*) => (::log::debug!($($token)*);)
+}
+
+#[cfg(not(feature = "log"))]
+macro_rules! debug {
+    ($($token:tt)*) => {};
+}
 
 /// Represents an error that can occur when parsing a glob pattern.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -228,7 +228,7 @@ impl ErrorKind {
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.glob {
             None => self.kind.fmt(f),
             Some(ref glob) => {
@@ -239,7 +239,7 @@ impl fmt::Display for Error {
 }
 
 impl fmt::Display for ErrorKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             ErrorKind::InvalidRecursive
             | ErrorKind::UnclosedClass
@@ -317,7 +317,7 @@ impl GlobSet {
     ///
     /// This takes a Candidate as input, which can be used to amortize the
     /// cost of preparing a path for matching.
-    pub fn is_match_candidate(&self, path: &Candidate) -> bool {
+    pub fn is_match_candidate(&self, path: &Candidate<'_>) -> bool {
         if self.is_empty() {
             return false;
         }
@@ -340,7 +340,7 @@ impl GlobSet {
     ///
     /// This takes a Candidate as input, which can be used to amortize the
     /// cost of preparing a path for matching.
-    pub fn matches_candidate(&self, path: &Candidate) -> Vec<usize> {
+    pub fn matches_candidate(&self, path: &Candidate<'_>) -> Vec<usize> {
         let mut into = vec![];
         if self.is_empty() {
             return into;
@@ -374,7 +374,7 @@ impl GlobSet {
     /// cost of preparing a path for matching.
     pub fn matches_candidate_into(
         &self,
-        path: &Candidate,
+        path: &Candidate<'_>,
         into: &mut Vec<usize>,
     ) {
         into.clear();
@@ -456,6 +456,13 @@ impl GlobSet {
     }
 }
 
+impl Default for GlobSet {
+    /// Create a default empty GlobSet.
+    fn default() -> Self {
+        GlobSet::empty()
+    }
+}
+
 /// GlobSetBuilder builds a group of patterns that can be used to
 /// simultaneously match a file path.
 #[derive(Clone, Debug)]
@@ -491,11 +498,21 @@ impl GlobSetBuilder {
 /// Constructing candidates has a very small cost associated with it, so
 /// callers may find it beneficial to amortize that cost when matching a single
 /// path against multiple globs or sets of globs.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Candidate<'a> {
     path: Cow<'a, [u8]>,
     basename: Cow<'a, [u8]>,
     ext: Cow<'a, [u8]>,
+}
+
+impl<'a> std::fmt::Debug for Candidate<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Candidate")
+            .field("path", &self.path.as_bstr())
+            .field("basename", &self.basename.as_bstr())
+            .field("ext", &self.ext.as_bstr())
+            .finish()
+    }
 }
 
 impl<'a> Candidate<'a> {
@@ -536,7 +553,7 @@ enum GlobSetMatchStrategy {
 }
 
 impl GlobSetMatchStrategy {
-    fn is_match(&self, candidate: &Candidate) -> bool {
+    fn is_match(&self, candidate: &Candidate<'_>) -> bool {
         use self::GlobSetMatchStrategy::*;
         match *self {
             Literal(ref s) => s.is_match(candidate),
@@ -549,7 +566,11 @@ impl GlobSetMatchStrategy {
         }
     }
 
-    fn matches_into(&self, candidate: &Candidate, matches: &mut Vec<usize>) {
+    fn matches_into(
+        &self,
+        candidate: &Candidate<'_>,
+        matches: &mut Vec<usize>,
+    ) {
         use self::GlobSetMatchStrategy::*;
         match *self {
             Literal(ref s) => s.matches_into(candidate, matches),
@@ -575,12 +596,16 @@ impl LiteralStrategy {
         self.0.entry(lit.into_bytes()).or_insert(vec![]).push(global_index);
     }
 
-    fn is_match(&self, candidate: &Candidate) -> bool {
+    fn is_match(&self, candidate: &Candidate<'_>) -> bool {
         self.0.contains_key(candidate.path.as_bytes())
     }
 
     #[inline(never)]
-    fn matches_into(&self, candidate: &Candidate, matches: &mut Vec<usize>) {
+    fn matches_into(
+        &self,
+        candidate: &Candidate<'_>,
+        matches: &mut Vec<usize>,
+    ) {
         if let Some(hits) = self.0.get(candidate.path.as_bytes()) {
             matches.extend(hits);
         }
@@ -599,7 +624,7 @@ impl BasenameLiteralStrategy {
         self.0.entry(lit.into_bytes()).or_insert(vec![]).push(global_index);
     }
 
-    fn is_match(&self, candidate: &Candidate) -> bool {
+    fn is_match(&self, candidate: &Candidate<'_>) -> bool {
         if candidate.basename.is_empty() {
             return false;
         }
@@ -607,7 +632,11 @@ impl BasenameLiteralStrategy {
     }
 
     #[inline(never)]
-    fn matches_into(&self, candidate: &Candidate, matches: &mut Vec<usize>) {
+    fn matches_into(
+        &self,
+        candidate: &Candidate<'_>,
+        matches: &mut Vec<usize>,
+    ) {
         if candidate.basename.is_empty() {
             return;
         }
@@ -629,7 +658,7 @@ impl ExtensionStrategy {
         self.0.entry(ext.into_bytes()).or_insert(vec![]).push(global_index);
     }
 
-    fn is_match(&self, candidate: &Candidate) -> bool {
+    fn is_match(&self, candidate: &Candidate<'_>) -> bool {
         if candidate.ext.is_empty() {
             return false;
         }
@@ -637,7 +666,11 @@ impl ExtensionStrategy {
     }
 
     #[inline(never)]
-    fn matches_into(&self, candidate: &Candidate, matches: &mut Vec<usize>) {
+    fn matches_into(
+        &self,
+        candidate: &Candidate<'_>,
+        matches: &mut Vec<usize>,
+    ) {
         if candidate.ext.is_empty() {
             return;
         }
@@ -655,7 +688,7 @@ struct PrefixStrategy {
 }
 
 impl PrefixStrategy {
-    fn is_match(&self, candidate: &Candidate) -> bool {
+    fn is_match(&self, candidate: &Candidate<'_>) -> bool {
         let path = candidate.path_prefix(self.longest);
         for m in self.matcher.find_overlapping_iter(path) {
             if m.start() == 0 {
@@ -665,7 +698,11 @@ impl PrefixStrategy {
         false
     }
 
-    fn matches_into(&self, candidate: &Candidate, matches: &mut Vec<usize>) {
+    fn matches_into(
+        &self,
+        candidate: &Candidate<'_>,
+        matches: &mut Vec<usize>,
+    ) {
         let path = candidate.path_prefix(self.longest);
         for m in self.matcher.find_overlapping_iter(path) {
             if m.start() == 0 {
@@ -683,7 +720,7 @@ struct SuffixStrategy {
 }
 
 impl SuffixStrategy {
-    fn is_match(&self, candidate: &Candidate) -> bool {
+    fn is_match(&self, candidate: &Candidate<'_>) -> bool {
         let path = candidate.path_suffix(self.longest);
         for m in self.matcher.find_overlapping_iter(path) {
             if m.end() == path.len() {
@@ -693,7 +730,11 @@ impl SuffixStrategy {
         false
     }
 
-    fn matches_into(&self, candidate: &Candidate, matches: &mut Vec<usize>) {
+    fn matches_into(
+        &self,
+        candidate: &Candidate<'_>,
+        matches: &mut Vec<usize>,
+    ) {
         let path = candidate.path_suffix(self.longest);
         for m in self.matcher.find_overlapping_iter(path) {
             if m.end() == path.len() {
@@ -707,7 +748,7 @@ impl SuffixStrategy {
 struct RequiredExtensionStrategy(HashMap<Vec<u8>, Vec<(usize, Regex)>, Fnv>);
 
 impl RequiredExtensionStrategy {
-    fn is_match(&self, candidate: &Candidate) -> bool {
+    fn is_match(&self, candidate: &Candidate<'_>) -> bool {
         if candidate.ext.is_empty() {
             return false;
         }
@@ -725,7 +766,11 @@ impl RequiredExtensionStrategy {
     }
 
     #[inline(never)]
-    fn matches_into(&self, candidate: &Candidate, matches: &mut Vec<usize>) {
+    fn matches_into(
+        &self,
+        candidate: &Candidate<'_>,
+        matches: &mut Vec<usize>,
+    ) {
         if candidate.ext.is_empty() {
             return;
         }
@@ -746,11 +791,15 @@ struct RegexSetStrategy {
 }
 
 impl RegexSetStrategy {
-    fn is_match(&self, candidate: &Candidate) -> bool {
+    fn is_match(&self, candidate: &Candidate<'_>) -> bool {
         self.matcher.is_match(candidate.path.as_bytes())
     }
 
-    fn matches_into(&self, candidate: &Candidate, matches: &mut Vec<usize>) {
+    fn matches_into(
+        &self,
+        candidate: &Candidate<'_>,
+        matches: &mut Vec<usize>,
+    ) {
         for i in self.matcher.matches(candidate.path.as_bytes()) {
             matches.push(self.map[i]);
         }
@@ -779,7 +828,7 @@ impl MultiStrategyBuilder {
 
     fn prefix(self) -> PrefixStrategy {
         PrefixStrategy {
-            matcher: AhoCorasick::new_auto_configured(&self.literals),
+            matcher: AhoCorasick::new(&self.literals).unwrap(),
             map: self.map,
             longest: self.longest,
         }
@@ -787,7 +836,7 @@ impl MultiStrategyBuilder {
 
     fn suffix(self) -> SuffixStrategy {
         SuffixStrategy {
-            matcher: AhoCorasick::new_auto_configured(&self.literals),
+            matcher: AhoCorasick::new(&self.literals).unwrap(),
             map: self.map,
             longest: self.longest,
         }
@@ -831,10 +880,33 @@ impl RequiredExtensionStrategyBuilder {
     }
 }
 
+/// Escape meta-characters within the given glob pattern.
+///
+/// The escaping works by surrounding meta-characters with brackets. For
+/// example, `*` becomes `[*]`.
+pub fn escape(s: &str) -> String {
+    let mut escaped = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            // note that ! does not need escaping because it is only special
+            // inside brackets
+            '?' | '*' | '[' | ']' => {
+                escaped.push('[');
+                escaped.push(c);
+                escaped.push(']');
+            }
+            c => {
+                escaped.push(c);
+            }
+        }
+    }
+    escaped
+}
+
 #[cfg(test)]
 mod tests {
-    use super::GlobSetBuilder;
-    use glob::Glob;
+    use super::{GlobSet, GlobSetBuilder};
+    use crate::glob::Glob;
 
     #[test]
     fn set_works() {
@@ -862,5 +934,24 @@ mod tests {
         let set = GlobSetBuilder::new().build().unwrap();
         assert!(!set.is_match(""));
         assert!(!set.is_match("a"));
+    }
+
+    #[test]
+    fn default_set_is_empty_works() {
+        let set: GlobSet = Default::default();
+        assert!(!set.is_match(""));
+        assert!(!set.is_match("a"));
+    }
+
+    #[test]
+    fn escape() {
+        use super::escape;
+        assert_eq!("foo", escape("foo"));
+        assert_eq!("foo[*]", escape("foo*"));
+        assert_eq!("[[][]]", escape("[]"));
+        assert_eq!("[*][?]", escape("*?"));
+        assert_eq!("src/[*][*]/[*].rs", escape("src/**/*.rs"));
+        assert_eq!("bar[[]ab[]]baz", escape("bar[ab]baz"));
+        assert_eq!("bar[[]!![]]!baz", escape("bar[!!]!baz"));
     }
 }

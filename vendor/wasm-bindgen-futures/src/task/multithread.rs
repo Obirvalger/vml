@@ -8,7 +8,6 @@ use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 
 const SLEEPING: i32 = 0;
 const AWAKE: i32 = 1;
@@ -97,12 +96,12 @@ impl Task {
 
         let closure = {
             let this = Rc::clone(&this);
-            Closure::wrap(Box::new(move |_| this.run()) as Box<dyn FnMut(JsValue)>)
+            Closure::new(move |_| this.run())
         };
         *this.inner.borrow_mut() = Some(Inner { future, closure });
 
         // Queue up the Future's work to happen on the next microtask tick.
-        crate::queue::QUEUE.with(move |queue| queue.push_task(this));
+        crate::queue::QUEUE.with(move |queue| queue.schedule_task(this));
     }
 
     pub(crate) fn run(&self) {

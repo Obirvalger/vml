@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -108,5 +109,10 @@ impl DeviceProximityEventInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for DeviceProximityEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

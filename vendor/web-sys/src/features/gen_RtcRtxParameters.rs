@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -31,5 +32,10 @@ impl RtcRtxParameters {
         );
         let _ = r;
         self
+    }
+}
+impl Default for RtcRtxParameters {
+    fn default() -> Self {
+        Self::new()
     }
 }

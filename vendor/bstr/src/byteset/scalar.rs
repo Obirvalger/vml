@@ -1,15 +1,10 @@
 // This is adapted from `fallback.rs` from rust-memchr. It's modified to return
-// the 'inverse' query of memchr, e.g. finding the first byte not in the provided
-// set. This is simple for the 1-byte case.
+// the 'inverse' query of memchr, e.g. finding the first byte not in the
+// provided set. This is simple for the 1-byte case.
 
-use core::cmp;
-use core::usize;
+use core::{cmp, usize};
 
-#[cfg(target_pointer_width = "32")]
-const USIZE_BYTES: usize = 4;
-
-#[cfg(target_pointer_width = "64")]
-const USIZE_BYTES: usize = 8;
+const USIZE_BYTES: usize = core::mem::size_of::<usize>();
 
 // The number of bytes to loop at in one iteration of memchr/memrchr.
 const LOOP_SIZE: usize = 2 * USIZE_BYTES;
@@ -29,10 +24,11 @@ pub fn inv_memchr(n1: u8, haystack: &[u8]) -> Option<usize> {
     let loop_size = cmp::min(LOOP_SIZE, haystack.len());
     let align = USIZE_BYTES - 1;
     let start_ptr = haystack.as_ptr();
-    let end_ptr = haystack[haystack.len()..].as_ptr();
-    let mut ptr = start_ptr;
 
     unsafe {
+        let end_ptr = haystack.as_ptr().add(haystack.len());
+        let mut ptr = start_ptr;
+
         if haystack.len() < USIZE_BYTES {
             return forward_search(start_ptr, end_ptr, ptr, confirm);
         }
@@ -68,10 +64,11 @@ pub fn inv_memrchr(n1: u8, haystack: &[u8]) -> Option<usize> {
     let loop_size = cmp::min(LOOP_SIZE, haystack.len());
     let align = USIZE_BYTES - 1;
     let start_ptr = haystack.as_ptr();
-    let end_ptr = haystack[haystack.len()..].as_ptr();
-    let mut ptr = end_ptr;
 
     unsafe {
+        let end_ptr = haystack.as_ptr().add(haystack.len());
+        let mut ptr = end_ptr;
+
         if haystack.len() < USIZE_BYTES {
             return reverse_search(start_ptr, end_ptr, ptr, confirm);
         }
@@ -81,7 +78,7 @@ pub fn inv_memrchr(n1: u8, haystack: &[u8]) -> Option<usize> {
             return reverse_search(start_ptr, end_ptr, ptr, confirm);
         }
 
-        ptr = (end_ptr as usize & !align) as *const u8;
+        ptr = ptr.sub(end_ptr as usize & align);
         debug_assert!(start_ptr <= ptr && ptr <= end_ptr);
         while loop_size == LOOP_SIZE && ptr >= start_ptr.add(loop_size) {
             debug_assert_eq!(0, (ptr as usize) % USIZE_BYTES);
@@ -174,9 +171,10 @@ pub(crate) fn reverse_search_bytes<F: Fn(u8) -> bool>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::{inv_memchr, inv_memrchr};
+
     // search string, search byte, inv_memchr result, inv_memrchr result.
     // these are expanded into a much larger set of tests in build_tests
     const TESTS: &[(&[u8], u8, usize, usize)] = &[
@@ -192,10 +190,15 @@ mod tests {
     type TestCase = (Vec<u8>, u8, Option<(usize, usize)>);
 
     fn build_tests() -> Vec<TestCase> {
+        #[cfg(not(miri))]
+        const MAX_PER: usize = 515;
+        #[cfg(miri)]
+        const MAX_PER: usize = 10;
+
         let mut result = vec![];
         for &(search, byte, fwd_pos, rev_pos) in TESTS {
             result.push((search.to_vec(), byte, Some((fwd_pos, rev_pos))));
-            for i in 1..515 {
+            for i in 1..MAX_PER {
                 // add a bunch of copies of the search byte to the end.
                 let mut suffixed: Vec<u8> = search.into();
                 suffixed.extend(std::iter::repeat(byte).take(i));
@@ -225,7 +228,7 @@ mod tests {
         }
 
         // build non-matching tests for several sizes
-        for i in 0..515 {
+        for i in 0..MAX_PER {
             result.push((
                 std::iter::repeat(b'\0').take(i).collect(),
                 b'\0',
@@ -238,7 +241,13 @@ mod tests {
 
     #[test]
     fn test_inv_memchr() {
-        use {ByteSlice, B};
+        use crate::{ByteSlice, B};
+
+        #[cfg(not(miri))]
+        const MAX_OFFSET: usize = 130;
+        #[cfg(miri)]
+        const MAX_OFFSET: usize = 13;
+
         for (search, byte, matching) in build_tests() {
             assert_eq!(
                 inv_memchr(byte, &search),
@@ -256,13 +265,14 @@ mod tests {
                 // better printing
                 B(&search).as_bstr(),
             );
-            // Test a rather large number off offsets for potential alignment issues
-            for offset in 1..130 {
+            // Test a rather large number off offsets for potential alignment
+            // issues.
+            for offset in 1..MAX_OFFSET {
                 if offset >= search.len() {
                     break;
                 }
-                // If this would cause us to shift the results off the end, skip
-                // it so that we don't have to recompute them.
+                // If this would cause us to shift the results off the end,
+                // skip it so that we don't have to recompute them.
                 if let Some((f, r)) = matching {
                     if offset > f || offset > r {
                         break;

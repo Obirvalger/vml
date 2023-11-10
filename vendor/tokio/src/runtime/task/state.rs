@@ -88,7 +88,7 @@ pub(super) enum TransitionToNotifiedByVal {
 }
 
 #[must_use]
-pub(super) enum TransitionToNotifiedByRef {
+pub(crate) enum TransitionToNotifiedByRef {
     DoNothing,
     Submit,
 }
@@ -270,6 +270,22 @@ impl State {
         })
     }
 
+    /// Transitions the state to `NOTIFIED`, unconditionally increasing the ref count.
+    #[cfg(all(
+        tokio_unstable,
+        tokio_taskdump,
+        feature = "rt",
+        target_os = "linux",
+        any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
+    ))]
+    pub(super) fn transition_to_notified_for_tracing(&self) {
+        self.fetch_update_action(|mut snapshot| {
+            snapshot.set_notified();
+            snapshot.ref_inc();
+            ((), Some(snapshot))
+        });
+    }
+
     /// Sets the cancelled bit and transitions the state to `NOTIFIED` if idle.
     ///
     /// Returns `true` if the task needs to be submitted to the pool for
@@ -352,7 +368,7 @@ impl State {
             .map_err(|_| ())
     }
 
-    /// Tries to unset the JOIN_INTEREST flag.
+    /// Tries to unset the `JOIN_INTEREST` flag.
     ///
     /// Returns `Ok` if the operation happens before the task transitions to a
     /// completed state, `Err` otherwise.
@@ -378,7 +394,7 @@ impl State {
     pub(super) fn set_join_waker(&self) -> UpdateResult {
         self.fetch_update(|curr| {
             assert!(curr.is_join_interested());
-            assert!(!curr.has_join_waker());
+            assert!(!curr.is_join_waker_set());
 
             if curr.is_complete() {
                 return None;
@@ -398,7 +414,7 @@ impl State {
     pub(super) fn unset_waker(&self) -> UpdateResult {
         self.fetch_update(|curr| {
             assert!(curr.is_join_interested());
-            assert!(curr.has_join_waker());
+            assert!(curr.is_join_waker_set());
 
             if curr.is_complete() {
                 return None;
@@ -506,11 +522,11 @@ impl Snapshot {
     }
 
     fn unset_notified(&mut self) {
-        self.0 &= !NOTIFIED
+        self.0 &= !NOTIFIED;
     }
 
     fn set_notified(&mut self) {
-        self.0 |= NOTIFIED
+        self.0 |= NOTIFIED;
     }
 
     pub(super) fn is_running(self) -> bool {
@@ -543,10 +559,10 @@ impl Snapshot {
     }
 
     fn unset_join_interested(&mut self) {
-        self.0 &= !JOIN_INTEREST
+        self.0 &= !JOIN_INTEREST;
     }
 
-    pub(super) fn has_join_waker(self) -> bool {
+    pub(super) fn is_join_waker_set(self) -> bool {
         self.0 & JOIN_WAKER == JOIN_WAKER
     }
 
@@ -555,7 +571,7 @@ impl Snapshot {
     }
 
     fn unset_join_waker(&mut self) {
-        self.0 &= !JOIN_WAKER
+        self.0 &= !JOIN_WAKER;
     }
 
     pub(super) fn ref_count(self) -> usize {
@@ -569,7 +585,7 @@ impl Snapshot {
 
     pub(super) fn ref_dec(&mut self) {
         assert!(self.ref_count() > 0);
-        self.0 -= REF_ONE
+        self.0 -= REF_ONE;
     }
 }
 
@@ -588,7 +604,7 @@ impl fmt::Debug for Snapshot {
             .field("is_notified", &self.is_notified())
             .field("is_cancelled", &self.is_cancelled())
             .field("is_join_interested", &self.is_join_interested())
-            .field("has_join_waker", &self.has_join_waker())
+            .field("is_join_waker_set", &self.is_join_waker_set())
             .field("ref_count", &self.ref_count())
             .finish()
     }

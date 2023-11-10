@@ -51,7 +51,10 @@ where
         // Compute the product of the power, if it overflows,
         // prematurely return early, otherwise, if we didn't overshoot,
         // we can get an exact value.
-        let value = mantissa.checked_mul(power)?;
+        let value = match mantissa.checked_mul(power) {
+            None => return None,
+            Some(value) => value,
+        };
         if value >> mantissa_size != 0 {
             None
         } else {
@@ -133,7 +136,7 @@ where
         let shift = fp.normalize();
         errors <<= shift;
 
-        u64::error_is_accurate::<F>(errors, &fp)
+        u64::error_is_accurate::<F>(errors, fp)
     }
 }
 

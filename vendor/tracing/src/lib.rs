@@ -19,7 +19,7 @@
 //! The `tracing` crate provides the APIs necessary for instrumenting libraries
 //! and applications to emit trace data.
 //!
-//! *Compiler support: [requires `rustc` 1.42+][msrv]*
+//! *Compiler support: [requires `rustc` 1.56+][msrv]*
 //!
 //! [msrv]: #supported-rust-versions
 //! # Core Concepts
@@ -52,14 +52,13 @@
 //! The [`span` module][span]'s documentation provides further details on how to
 //! use spans.
 //!
-//! <div class="information">
-//!     <div class="tooltip compile_fail" style="">&#x26a0; &#xfe0f;<span class="tooltiptext">Warning</span></div>
-//! </div><div class="example-wrap" style="display:inline-block"><pre class="compile_fail" style="white-space:normal;font:inherit;">
-//!     <strong>Warning</strong>: In asynchronous code that uses async/await syntax,
-//!     <code>Span::enter</code> may produce incorrect traces if the returned drop
-//!     guard is held across an await point. See
-//!     <a href="span/struct.Span.html#in-asynchronous-code">the method documentation</a>
-//!     for details.
+//! <div class="example-wrap" style="display:inline-block"><pre class="compile_fail" style="white-space:normal;font:inherit;">
+//!
+//!  **Warning**: In asynchronous code that uses async/await syntax,
+//!  `Span::enter` may produce incorrect traces if the returned drop
+//!  guard is held across an await point. See
+//!  [the method documentation][Span#in-asynchronous-code] for details.
+//!
 //! </pre></div>
 //!
 //! ## Events
@@ -120,8 +119,6 @@
 //! tracing = "0.1"
 //! ```
 //!
-//! *Compiler support: requires rustc 1.39+*
-//!
 //! ## Recording Spans and Events
 //!
 //! Spans and events are recorded using macros.
@@ -173,10 +170,29 @@
 //! # fn main() {}
 //! ```
 //!
+//! For functions which don't have built-in tracing support and can't have
+//! the `#[instrument]` attribute applied (such as from an external crate),
+//! the [`Span` struct][`Span`] has a [`in_scope()` method][`in_scope`]
+//! which can be used to easily wrap synchonous code in a span.
+//!
+//! For example:
+//! ```rust
+//! use tracing::info_span;
+//!
+//! # fn doc() -> Result<(), ()> {
+//! # mod serde_json {
+//! #    pub(crate) fn from_slice(buf: &[u8]) -> Result<(), ()> { Ok(()) }
+//! # }
+//! # let buf: [u8; 0] = [];
+//! let json = info_span!("json.parse").in_scope(|| serde_json::from_slice(&buf))?;
+//! # let _ = json; // suppress unused variable warning
+//! # Ok(())
+//! # }
+//! ```
 //!
 //! You can find more examples showing how to use this crate [here][examples].
 //!
-//! [RAII]: https://github.com/rust-unofficial/patterns/blob/master/patterns/RAII.md
+//! [RAII]: https://github.com/rust-unofficial/patterns/blob/main/src/patterns/behavioural/RAII.md
 //! [examples]: https://github.com/tokio-rs/tracing/tree/master/examples
 //!
 //! ### Events
@@ -198,7 +214,7 @@
 //! ### Configuring Attributes
 //!
 //! Both macros require a [`Level`] specifying the verbosity of the span or
-//! event. Optionally, the [target] and [parent span] may be overridden. If the
+//! event. Optionally, the, [target] and [parent span] may be overridden. If the
 //! target and parent span are not overridden, they will default to the
 //! module path where the macro was invoked and the current span (as determined
 //! by the subscriber), respectively.
@@ -221,7 +237,16 @@
 //! ```
 //!
 //! The span macros also take a string literal after the level, to set the name
-//! of the span.
+//! of the span (as above).  In the case of the event macros, the name of the event can
+//! be overridden (the default is `event file:line`) using the `name:` specifier.
+//!
+//! ```
+//! # use tracing::{span, event, Level};
+//! # fn main() {
+//! span!(Level::TRACE, "my span");
+//! event!(name: "some_info", Level::INFO, "something has happened!");
+//! # }
+//! ```
 //!
 //! ### Recording Fields
 //!
@@ -291,6 +316,19 @@
 //! //  - "guid:x-request-id", containing a `:`, with the value "abcdef"
 //! //  - "type", which is a reserved word, with the value "request"
 //! span!(Level::TRACE, "api", "guid:x-request-id" = "abcdef", "type" = "request");
+//! # }
+//!```
+//!
+//! Constant expressions can also be used as field names. Constants
+//! must be enclosed in curly braces (`{}`) to indicate that the *value*
+//! of the constant is to be used as the field name, rather than the
+//! constant's name. For example:
+//! ```
+//! # use tracing::{span, Level};
+//! # fn main() {
+//! const RESOURCE_NAME: &str = "foo";
+//! // this span will have the field `foo = "some_id"`
+//! span!(Level::TRACE, "get", { RESOURCE_NAME } = "some_id");
 //! # }
 //!```
 //!
@@ -370,22 +408,6 @@
 //! span.record("parting", &"goodbye world!");
 //! ```
 //!
-//! Note that a span may have up to 32 fields. The following will not compile:
-//!
-//! ```rust,compile_fail
-//! # use tracing::Level;
-//! # fn main() {
-//! let bad_span = span!(
-//!     Level::TRACE,
-//!     "too many fields!",
-//!     a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8, i = 9,
-//!     j = 10, k = 11, l = 12, m = 13, n = 14, o = 15, p = 16, q = 17,
-//!     r = 18, s = 19, t = 20, u = 21, v = 22, w = 23, x = 24, y = 25,
-//!     z = 26, aa = 27, bb = 28, cc = 29, dd = 30, ee = 31, ff = 32, gg = 33
-//! );
-//! # }
-//! ```
-//!
 //! Finally, events may also include human-readable messages, in the form of a
 //! [format string][fmt] and (optional) arguments, **after** the event's
 //! key-value fields. If a format string and arguments are provided,
@@ -397,7 +419,7 @@
 //! ```
 //! # use tracing::{event, Level};
 //! # fn main() {
-//! let question = "the answer to the ultimate question of life, the universe, and everything";
+//! let question = "the ultimate question of life, the universe, and everything";
 //! let answer = 42;
 //! // records an event with the following fields:
 //! // - `question.answer` with the value 42,
@@ -416,13 +438,13 @@
 //! Specifying a formatted message in this manner does not allocate by default.
 //!
 //! [struct initializers]: https://doc.rust-lang.org/book/ch05-01-defining-structs.html#using-the-field-init-shorthand-when-variables-and-fields-have-the-same-name
-//! [target]: struct.Metadata.html#method.target
-//! [parent span]: span/struct.Attributes.html#method.parent
-//! [determined contextually]: span/struct.Attributes.html#method.is_contextual
-//! [`fmt::Debug`]: https://doc.rust-lang.org/std/fmt/trait.Debug.html
-//! [`fmt::Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
-//! [fmt]: https://doc.rust-lang.org/std/fmt/#usage
-//! [`Empty`]: field/struct.Empty.html
+//! [target]: Metadata::target
+//! [parent span]: span::Attributes::parent
+//! [determined contextually]: span::Attributes::is_contextual
+//! [`fmt::Debug`]: std::fmt::Debug
+//! [`fmt::Display`]: std::fmt::Display
+//! [fmt]: std::fmt#usage
+//! [`Empty`]: field::Empty
 //!
 //! ### Shorthand Macros
 //!
@@ -436,19 +458,18 @@
 //! These are intended both as a shorthand, and for compatibility with the [`log`]
 //! crate (see the next section).
 //!
-//! [`span!`]: macro.span.html
-//! [`event!`]: macro.event.html
-//! [`trace!`]: macro.trace.html
-//! [`debug!`]: macro.debug.html
-//! [`info!`]: macro.info.html
-//! [`warn!`]: macro.warn.html
-//! [`error!`]: macro.error.html
-//! [`trace_span!`]: macro.trace_span.html
-//! [`debug_span!`]: macro.debug_span.html
-//! [`info_span!`]: macro.info_span.html
-//! [`warn_span!`]: macro.warn_span.html
-//! [`error_span!`]: macro.error_span.html
-//! [`Level`]: struct.Level.html
+//! [`span!`]: span!
+//! [`event!`]: event!
+//! [`trace!`]: trace!
+//! [`debug!`]: debug!
+//! [`info!`]: info!
+//! [`warn!`]: warn!
+//! [`error!`]: error!
+//! [`trace_span!`]: trace_span!
+//! [`debug_span!`]: debug_span!
+//! [`info_span!`]: info_span!
+//! [`warn_span!`]: warn_span!
+//! [`error_span!`]: error_span!
 //!
 //! ### For `log` Users
 //!
@@ -560,13 +581,11 @@
 //! # }
 //! ```
 //!
-//! <div class="information">
-//!     <div class="tooltip compile_fail" style="">&#x26a0; &#xfe0f;<span class="tooltiptext">Warning</span></div>
-//! </div><div class="example-wrap" style="display:inline-block"><pre class="compile_fail" style="white-space:normal;font:inherit;">
-//! <strong>Warning</strong>: In general, libraries should <em>not</em> call
-//! <code>set_global_default()</code>! Doing so will cause conflicts when
-//! executables that depend on the library try to set the default later.
-//! </pre></div>
+//! <pre class="compile_fail" style="white-space:normal;font:inherit;">
+//!     <strong>Warning</strong>: In general, libraries should <em>not</em> call
+//!     <code>set_global_default()</code>! Doing so will cause conflicts when
+//!     executables that depend on the library try to set the default later.
+//! </pre>
 //!
 //! This subscriber will be used as the default in all threads for the
 //! remainder of the duration of the program, similar to setting the logger
@@ -703,8 +722,10 @@
 //!    [OpenTelemetry]-compatible distributed tracing systems.
 //!  - [`tracing-honeycomb`] Provides a layer that reports traces spanning multiple machines to [honeycomb.io]. Backed by [`tracing-distributed`].
 //!  - [`tracing-distributed`] Provides a generic implementation of a layer that reports traces spanning multiple machines to some backend.
+//!  - [`tracing-actix-web`] provides `tracing` integration for the `actix-web` web framework.
 //!  - [`tracing-actix`] provides `tracing` integration for the `actix` actor
 //!    framework.
+//!  - [`axum-insights`] provides `tracing` integration and Application insights export for the `axum` web framework.
 //!  - [`tracing-gelf`] implements a subscriber for exporting traces in Greylog
 //!    GELF format.
 //!  - [`tracing-coz`] provides integration with the [coz] causal profiler
@@ -713,8 +734,10 @@
 //!    in [bunyan] format, enriched with timing information.
 //!  - [`tracing-wasm`] provides a `Subscriber`/`Layer` implementation that reports
 //!    events and spans via browser `console.log` and [User Timing API (`window.performance`)].
+//!  - [`tracing-web`] provides a layer implementation of level-aware logging of events
+//!    to web browsers' `console.*` and span events to the [User Timing API (`window.performance`)].
 //!  - [`tide-tracing`] provides a [tide] middleware to trace all incoming requests and responses.
-//!  - [`test-env-log`] takes care of initializing `tracing` for tests, based on
+//!  - [`test-log`] takes care of initializing `tracing` for tests, based on
 //!    environment variables with an `env_logger` compatible syntax.
 //!  - [`tracing-unwrap`] provides convenience methods to report failed unwraps
 //!    on `Result` or `Option` types to a `Subscriber`.
@@ -722,6 +745,17 @@
 //!  - [`tracing-tracy`] provides a way to collect [Tracy] profiles in instrumented
 //!    applications.
 //!  - [`tracing-elastic-apm`] provides a layer for reporting traces to [Elastic APM].
+//!  - [`tracing-etw`] provides a layer for emitting Windows [ETW] events.
+//!  - [`tracing-fluent-assertions`] provides a fluent assertions-style testing
+//!    framework for validating the behavior of `tracing` spans.
+//!  - [`sentry-tracing`] provides a layer for reporting events and traces to [Sentry].
+//!  - [`tracing-forest`] provides a subscriber that preserves contextual coherence by
+//!    grouping together logs from the same spans during writing.
+//!  - [`tracing-loki`] provides a layer for shipping logs to [Grafana Loki].
+//!  - [`tracing-logfmt`] provides a layer that formats events and spans into the logfmt format.
+//!  - [`reqwest-tracing`] provides a middleware to trace [`reqwest`] HTTP requests.
+//!  - [`tracing-cloudwatch`] provides a layer that sends events to AWS CloudWatch Logs.
+//!  - [`clippy-tracing`] provides a tool to add, remove and check for `tracing::instrument`.
 //!
 //! If you're the maintainer of a `tracing` ecosystem crate not listed above,
 //! please let us know! We'd love to add your project to the list!
@@ -731,17 +765,20 @@
 //! [`tracing-honeycomb`]: https://crates.io/crates/tracing-honeycomb
 //! [`tracing-distributed`]: https://crates.io/crates/tracing-distributed
 //! [honeycomb.io]: https://www.honeycomb.io/
+//! [`tracing-actix-web`]: https://crates.io/crates/tracing-actix-web
 //! [`tracing-actix`]: https://crates.io/crates/tracing-actix
+//! [`axum-insights`]: https://crates.io/crates/axum-insights
 //! [`tracing-gelf`]: https://crates.io/crates/tracing-gelf
 //! [`tracing-coz`]: https://crates.io/crates/tracing-coz
 //! [coz]: https://github.com/plasma-umass/coz
 //! [`tracing-bunyan-formatter`]: https://crates.io/crates/tracing-bunyan-formatter
 //! [bunyan]: https://github.com/trentm/node-bunyan
 //! [`tracing-wasm`]: https://docs.rs/tracing-wasm
+//! [`tracing-web`]: https://docs.rs/tracing-web
 //! [User Timing API (`window.performance`)]: https://developer.mozilla.org/en-US/docs/Web/API/User_Timing_API
 //! [`tide-tracing`]: https://crates.io/crates/tide-tracing
 //! [tide]: https://crates.io/crates/tide
-//! [`test-env-log`]: https://crates.io/crates/test-env-log
+//! [`test-log`]: https://crates.io/crates/test-log
 //! [`tracing-unwrap`]: https://docs.rs/tracing-unwrap
 //! [`diesel`]: https://crates.io/crates/diesel
 //! [`diesel-tracing`]: https://crates.io/crates/diesel-tracing
@@ -749,20 +786,29 @@
 //! [Tracy]: https://github.com/wolfpld/tracy
 //! [`tracing-elastic-apm`]: https://crates.io/crates/tracing-elastic-apm
 //! [Elastic APM]: https://www.elastic.co/apm
+//! [`tracing-etw`]: https://github.com/microsoft/rust_win_etw/tree/main/win_etw_tracing
+//! [ETW]: https://docs.microsoft.com/en-us/windows/win32/etw/about-event-tracing
+//! [`tracing-fluent-assertions`]: https://crates.io/crates/tracing-fluent-assertions
+//! [`sentry-tracing`]: https://crates.io/crates/sentry-tracing
+//! [Sentry]: https://sentry.io/welcome/
+//! [`tracing-forest`]: https://crates.io/crates/tracing-forest
+//! [`tracing-loki`]: https://crates.io/crates/tracing-loki
+//! [Grafana Loki]: https://grafana.com/oss/loki/
+//! [`tracing-logfmt`]: https://crates.io/crates/tracing-logfmt
+//! [`reqwest-tracing`]: https://crates.io/crates/reqwest-tracing
+//! [`reqwest`]: https://crates.io/crates/reqwest
+//! [`tracing-cloudwatch`]: https://crates.io/crates/tracing-cloudwatch
+//! [`clippy-tracing`]: https://crates.io/crates/clippy-tracing
 //!
-//! <div class="information">
-//!     <div class="tooltip ignore" style="">ⓘ<span class="tooltiptext">Note</span></div>
-//! </div>
-//! <div class="example-wrap" style="display:inline-block">
 //! <pre class="ignore" style="white-space:normal;font:inherit;">
-//! <strong>Note</strong>: Some of these ecosystem crates are currently
-//! unreleased and/or in earlier stages of development. They may be less stable
-//! than <code>tracing</code> and <code>tracing-core</code>.
-//! </pre></div>
+//!     <strong>Note</strong>: Some of these ecosystem crates are currently
+//!     unreleased and/or in earlier stages of development. They may be less stable
+//!     than <code>tracing</code> and <code>tracing-core</code>.
+//! </pre>
 //!
 //! ## Crate Feature Flags
 //!
-//! The following crate feature flags are available:
+//! The following crate [feature flags] are available:
 //!
 //! * A set of features controlling the [static verbosity level].
 //! * `log`: causes trace instrumentation points to emit [`log`] records as well
@@ -783,29 +829,56 @@
 //!
 //!   ```toml
 //!   [dependencies]
-//!   tracing = { version = "0.1.25", default-features = false }
+//!   tracing = { version = "0.1.38", default-features = false }
 //!   ```
 //!
-//! <div class="information">
-//!     <div class="tooltip ignore" style="">ⓘ<span class="tooltiptext">Note</span></div>
-//! </div>
-//! <div class="example-wrap" style="display:inline-block">
 //! <pre class="ignore" style="white-space:normal;font:inherit;">
-//! <strong>Note</strong>: <code>tracing</code>'s <code>no_std</code> support
-//! requires <code>liballoc</code>.
-//! </pre></div>
+//!     <strong>Note</strong>: <code>tracing</code>'s <code>no_std</code> support
+//!     requires <code>liballoc</code>.
+//! </pre>
+//!
+//! ### Unstable Features
+//!
+//! These feature flags enable **unstable** features. The public API may break in 0.1.x
+//! releases. To enable these features, the `--cfg tracing_unstable` must be passed to
+//! `rustc` when compiling.
+//!
+//! The following unstable feature flags are currently available:
+//!
+//! * `valuable`: Enables support for recording [field values] using the
+//!   [`valuable`] crate.
+//!
+//! #### Enabling Unstable Features
+//!
+//! The easiest way to set the `tracing_unstable` cfg is to use the `RUSTFLAGS`
+//! env variable when running `cargo` commands:
+//!
+//! ```shell
+//! RUSTFLAGS="--cfg tracing_unstable" cargo build
+//! ```
+//! Alternatively, the following can be added to the `.cargo/config` file in a
+//! project to automatically enable the cfg flag for that project:
+//!
+//! ```toml
+//! [build]
+//! rustflags = ["--cfg", "tracing_unstable"]
+//! ```
+//!
+//! [feature flags]: https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section
+//! [field values]: crate::field
+//! [`valuable`]: https://crates.io/crates/valuable
 //!
 //! ## Supported Rust Versions
 //!
 //! Tracing is built against the latest stable release. The minimum supported
-//! version is 1.42. The current Tracing version is not guaranteed to build on
+//! version is 1.56. The current Tracing version is not guaranteed to build on
 //! Rust versions earlier than the minimum supported version.
 //!
 //! Tracing follows the same compiler support policies as the rest of the Tokio
 //! project. The current stable Rust compiler and the three most recent minor
 //! versions before it will always be supported. For example, if the current
-//! stable compiler version is 1.45, the minimum supported version will not be
-//! increased past 1.42, three minor versions prior. Increasing the minimum
+//! stable compiler version is 1.69, the minimum supported version will not be
+//! increased past 1.66, three minor versions prior. Increasing the minimum
 //! supported compiler version is not considered a semver breaking change as
 //! long as doing so complies with this policy.
 //!
@@ -834,12 +907,11 @@
 //! [`tracing-appender`]: https://crates.io/crates/tracing-appender
 //! [`env_logger`]: https://crates.io/crates/env_logger
 //! [`FmtSubscriber`]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/struct.Subscriber.html
-//! [static verbosity level]: level_filters/index.html#compile-time-filters
+//! [static verbosity level]: level_filters#compile-time-filters
 //! [instrument]: https://docs.rs/tracing-attributes/latest/tracing_attributes/attr.instrument.html
 //! [flags]: #crate-feature-flags
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(docsrs, feature(doc_cfg), deny(broken_intra_doc_links))]
-#![doc(html_root_url = "https://docs.rs/tracing/0.1.25")]
+#![cfg_attr(docsrs, feature(doc_cfg), deny(rustdoc::broken_intra_doc_links))]
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/tokio-rs/tracing/master/assets/logo-type.png",
     issue_tracker_base_url = "https://github.com/tokio-rs/tracing/issues/"
@@ -850,7 +922,6 @@
     rust_2018_idioms,
     unreachable_pub,
     bad_style,
-    const_err,
     dead_code,
     improper_ctypes,
     non_shorthand_field_patterns,
@@ -869,13 +940,6 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
-
-#[macro_use]
-extern crate cfg_if;
-
-#[cfg(feature = "log")]
-#[doc(hidden)]
-pub use log;
 
 // Somehow this `use` statement is necessary for us to re-export the `core`
 // macros on Rust 1.26.0. I'm not sure how this makes it work, but it does.
@@ -919,9 +983,8 @@ pub mod subscriber;
 #[doc(hidden)]
 pub mod __macro_support {
     pub use crate::callsite::Callsite;
-    use crate::stdlib::sync::atomic::{AtomicUsize, Ordering};
     use crate::{subscriber::Interest, Metadata};
-    use tracing_core::Once;
+    pub use core::concat;
 
     /// Callsite implementation used by macro-generated code.
     ///
@@ -931,103 +994,128 @@ pub mod __macro_support {
     /// by the `tracing` macros, but it is not part of the stable versioned API.
     /// Breaking changes to this module may occur in small-numbered versions
     /// without warning.
-    #[derive(Debug)]
-    pub struct MacroCallsite {
-        interest: AtomicUsize,
-        meta: &'static Metadata<'static>,
-        registration: Once,
+    pub use tracing_core::callsite::DefaultCallsite as MacroCallsite;
+
+    /// /!\ WARNING: This is *not* a stable API! /!\
+    /// This function, and all code contained in the `__macro_support` module, is
+    /// a *private* API of `tracing`. It is exposed publicly because it is used
+    /// by the `tracing` macros, but it is not part of the stable versioned API.
+    /// Breaking changes to this module may occur in small-numbered versions
+    /// without warning.
+    pub fn __is_enabled(meta: &Metadata<'static>, interest: Interest) -> bool {
+        interest.is_always() || crate::dispatcher::get_default(|default| default.enabled(meta))
     }
 
-    impl MacroCallsite {
-        /// Returns a new `MacroCallsite` with the specified `Metadata`.
-        ///
-        /// /!\ WARNING: This is *not* a stable API! /!\
-        /// This method, and all code contained in the `__macro_support` module, is
-        /// a *private* API of `tracing`. It is exposed publicly because it is used
-        /// by the `tracing` macros, but it is not part of the stable versioned API.
-        /// Breaking changes to this module may occur in small-numbered versions
-        /// without warning.
-        pub const fn new(meta: &'static Metadata<'static>) -> Self {
-            Self {
-                interest: AtomicUsize::new(0xDEADFACED),
-                meta,
-                registration: Once::new(),
-            }
-        }
-
-        /// Registers this callsite with the global callsite registry.
-        ///
-        /// If the callsite is already registered, this does nothing.
-        ///
-        /// /!\ WARNING: This is *not* a stable API! /!\
-        /// This method, and all code contained in the `__macro_support` module, is
-        /// a *private* API of `tracing`. It is exposed publicly because it is used
-        /// by the `tracing` macros, but it is not part of the stable versioned API.
-        /// Breaking changes to this module may occur in small-numbered versions
-        /// without warning.
-        #[inline(never)]
-        // This only happens once (or if the cached interest value was corrupted).
-        #[cold]
-        pub fn register(&'static self) -> Interest {
-            self.registration
-                .call_once(|| crate::callsite::register(self));
-            match self.interest.load(Ordering::Relaxed) {
-                0 => Interest::never(),
-                2 => Interest::always(),
-                _ => Interest::sometimes(),
-            }
-        }
-
-        /// Returns the callsite's cached Interest, or registers it for the
-        /// first time if it has not yet been registered.
-        ///
-        /// /!\ WARNING: This is *not* a stable API! /!\
-        /// This method, and all code contained in the `__macro_support` module, is
-        /// a *private* API of `tracing`. It is exposed publicly because it is used
-        /// by the `tracing` macros, but it is not part of the stable versioned API.
-        /// Breaking changes to this module may occur in small-numbered versions
-        /// without warning.
-        #[inline]
-        pub fn interest(&'static self) -> Interest {
-            match self.interest.load(Ordering::Relaxed) {
-                0 => Interest::never(),
-                1 => Interest::sometimes(),
-                2 => Interest::always(),
-                _ => self.register(),
-            }
-        }
-
-        pub fn is_enabled(&self, interest: Interest) -> bool {
-            interest.is_always()
-                || crate::dispatcher::get_default(|default| default.enabled(self.meta))
-        }
-
-        #[inline]
-        #[cfg(feature = "log")]
-        pub fn disabled_span(&self) -> crate::Span {
-            crate::Span::new_disabled(self.meta)
-        }
-
-        #[inline]
-        #[cfg(not(feature = "log"))]
-        pub fn disabled_span(&self) -> crate::Span {
-            crate::Span::none()
-        }
+    /// /!\ WARNING: This is *not* a stable API! /!\
+    /// This function, and all code contained in the `__macro_support` module, is
+    /// a *private* API of `tracing`. It is exposed publicly because it is used
+    /// by the `tracing` macros, but it is not part of the stable versioned API.
+    /// Breaking changes to this module may occur in small-numbered versions
+    /// without warning.
+    #[inline]
+    #[cfg(feature = "log")]
+    pub fn __disabled_span(meta: &'static Metadata<'static>) -> crate::Span {
+        crate::Span::new_disabled(meta)
     }
 
-    impl Callsite for MacroCallsite {
-        fn set_interest(&self, interest: Interest) {
-            let interest = match () {
-                _ if interest.is_never() => 0,
-                _ if interest.is_always() => 2,
-                _ => 1,
+    /// /!\ WARNING: This is *not* a stable API! /!\
+    /// This function, and all code contained in the `__macro_support` module, is
+    /// a *private* API of `tracing`. It is exposed publicly because it is used
+    /// by the `tracing` macros, but it is not part of the stable versioned API.
+    /// Breaking changes to this module may occur in small-numbered versions
+    /// without warning.
+    #[inline]
+    #[cfg(not(feature = "log"))]
+    pub fn __disabled_span(_: &'static Metadata<'static>) -> crate::Span {
+        crate::Span::none()
+    }
+
+    /// /!\ WARNING: This is *not* a stable API! /!\
+    /// This function, and all code contained in the `__macro_support` module, is
+    /// a *private* API of `tracing`. It is exposed publicly because it is used
+    /// by the `tracing` macros, but it is not part of the stable versioned API.
+    /// Breaking changes to this module may occur in small-numbered versions
+    /// without warning.
+    #[cfg(feature = "log")]
+    pub fn __tracing_log(
+        meta: &Metadata<'static>,
+        logger: &'static dyn log::Log,
+        log_meta: log::Metadata<'_>,
+        values: &tracing_core::field::ValueSet<'_>,
+    ) {
+        logger.log(
+            &crate::log::Record::builder()
+                .file(meta.file())
+                .module_path(meta.module_path())
+                .line(meta.line())
+                .metadata(log_meta)
+                .args(format_args!(
+                    "{}",
+                    crate::log::LogValueSet {
+                        values,
+                        is_first: true
+                    }
+                ))
+                .build(),
+        );
+    }
+}
+
+#[cfg(feature = "log")]
+#[doc(hidden)]
+pub mod log {
+    use core::fmt;
+    pub use log::*;
+    use tracing_core::field::{Field, ValueSet, Visit};
+
+    /// Utility to format [`ValueSet`]s for logging.
+    pub(crate) struct LogValueSet<'a> {
+        pub(crate) values: &'a ValueSet<'a>,
+        pub(crate) is_first: bool,
+    }
+
+    impl<'a> fmt::Display for LogValueSet<'a> {
+        #[inline]
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            struct LogVisitor<'a, 'b> {
+                f: &'a mut fmt::Formatter<'b>,
+                is_first: bool,
+                result: fmt::Result,
+            }
+
+            impl Visit for LogVisitor<'_, '_> {
+                fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+                    let res = if self.is_first {
+                        self.is_first = false;
+                        if field.name() == "message" {
+                            write!(self.f, "{:?}", value)
+                        } else {
+                            write!(self.f, "{}={:?}", field.name(), value)
+                        }
+                    } else {
+                        write!(self.f, " {}={:?}", field.name(), value)
+                    };
+                    if let Err(err) = res {
+                        self.result = self.result.and(Err(err));
+                    }
+                }
+
+                fn record_str(&mut self, field: &Field, value: &str) {
+                    if field.name() == "message" {
+                        self.record_debug(field, &format_args!("{}", value))
+                    } else {
+                        self.record_debug(field, &value)
+                    }
+                }
+            }
+
+            let mut visit = LogVisitor {
+                f,
+                is_first: self.is_first,
+                result: Ok(()),
             };
-            self.interest.store(interest, Ordering::SeqCst);
-        }
-
-        #[inline(always)]
-        fn metadata(&self) -> &Metadata<'static> {
-            &self.meta
+            self.values.record(&mut visit);
+            visit.result
         }
     }
 }

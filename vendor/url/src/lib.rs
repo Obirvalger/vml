@@ -118,12 +118,28 @@ See [serde documentation](https://serde.rs) for more information.
 ```toml
 url = { version = "2", features = ["serde"] }
 ```
+
+# Feature: `debugger_visualizer`
+
+If you enable the `debugger_visualizer` feature, the `url` crate will include
+a [natvis file](https://docs.microsoft.com/en-us/visualstudio/debugger/create-custom-views-of-native-objects)
+for [Visual Studio](https://www.visualstudio.com/) that allows you to view
+[`Url`](struct.Url.html) objects in the debugger.
+
+This feature requires Rust 1.71 or later.
+
+```toml
+url = { version = "2", features = ["debugger_visualizer"] }
+```
+
 */
 
-#![doc(html_root_url = "https://docs.rs/url/2.2.1")]
+#![doc(html_root_url = "https://docs.rs/url/2.4.1")]
+#![cfg_attr(
+    feature = "debugger_visualizer",
+    debugger_visualizer(natvis_file = "../../debug_metadata/url.natvis")
+)]
 
-#[macro_use]
-extern crate matches;
 pub use form_urlencoded;
 
 #[cfg(feature = "serde")]
@@ -318,7 +334,35 @@ impl Url {
         url
     }
 
+    /// https://url.spec.whatwg.org/#potentially-strip-trailing-spaces-from-an-opaque-path
+    fn strip_trailing_spaces_from_opaque_path(&mut self) {
+        if !self.cannot_be_a_base() {
+            return;
+        }
+
+        if self.fragment_start.is_some() {
+            return;
+        }
+
+        if self.query_start.is_some() {
+            return;
+        }
+
+        let trailing_space_count = self
+            .serialization
+            .chars()
+            .rev()
+            .take_while(|c| *c == ' ')
+            .count();
+
+        let start = self.serialization.len() - trailing_space_count;
+
+        self.serialization.truncate(start);
+    }
+
     /// Parse a string as an URL, with this URL as the base URL.
+    ///
+    /// The inverse of this is [`make_relative`].
     ///
     /// Note: a trailing slash is significant.
     /// Without it, the last path component is considered to be a “file” name
@@ -349,9 +393,142 @@ impl Url {
     /// with this URL as the base URL, a [`ParseError`] variant will be returned.
     ///
     /// [`ParseError`]: enum.ParseError.html
+    /// [`make_relative`]: #method.make_relative
     #[inline]
     pub fn join(&self, input: &str) -> Result<Url, crate::ParseError> {
         Url::options().base_url(Some(self)).parse(input)
+    }
+
+    /// Creates a relative URL if possible, with this URL as the base URL.
+    ///
+    /// This is the inverse of [`join`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use url::Url;
+    /// # use url::ParseError;
+    ///
+    /// # fn run() -> Result<(), ParseError> {
+    /// let base = Url::parse("https://example.net/a/b.html")?;
+    /// let url = Url::parse("https://example.net/a/c.png")?;
+    /// let relative = base.make_relative(&url);
+    /// assert_eq!(relative.as_ref().map(|s| s.as_str()), Some("c.png"));
+    ///
+    /// let base = Url::parse("https://example.net/a/b/")?;
+    /// let url = Url::parse("https://example.net/a/b/c.png")?;
+    /// let relative = base.make_relative(&url);
+    /// assert_eq!(relative.as_ref().map(|s| s.as_str()), Some("c.png"));
+    ///
+    /// let base = Url::parse("https://example.net/a/b/")?;
+    /// let url = Url::parse("https://example.net/a/d/c.png")?;
+    /// let relative = base.make_relative(&url);
+    /// assert_eq!(relative.as_ref().map(|s| s.as_str()), Some("../d/c.png"));
+    ///
+    /// let base = Url::parse("https://example.net/a/b.html?c=d")?;
+    /// let url = Url::parse("https://example.net/a/b.html?e=f")?;
+    /// let relative = base.make_relative(&url);
+    /// assert_eq!(relative.as_ref().map(|s| s.as_str()), Some("?e=f"));
+    /// # Ok(())
+    /// # }
+    /// # run().unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// If this URL can't be a base for the given URL, `None` is returned.
+    /// This is for example the case if the scheme, host or port are not the same.
+    ///
+    /// [`join`]: #method.join
+    pub fn make_relative(&self, url: &Url) -> Option<String> {
+        if self.cannot_be_a_base() {
+            return None;
+        }
+
+        // Scheme, host and port need to be the same
+        if self.scheme() != url.scheme() || self.host() != url.host() || self.port() != url.port() {
+            return None;
+        }
+
+        // We ignore username/password at this point
+
+        // The path has to be transformed
+        let mut relative = String::new();
+
+        // Extract the filename of both URIs, these need to be handled separately
+        fn extract_path_filename(s: &str) -> (&str, &str) {
+            let last_slash_idx = s.rfind('/').unwrap_or(0);
+            let (path, filename) = s.split_at(last_slash_idx);
+            if filename.is_empty() {
+                (path, "")
+            } else {
+                (path, &filename[1..])
+            }
+        }
+
+        let (base_path, base_filename) = extract_path_filename(self.path());
+        let (url_path, url_filename) = extract_path_filename(url.path());
+
+        let mut base_path = base_path.split('/').peekable();
+        let mut url_path = url_path.split('/').peekable();
+
+        // Skip over the common prefix
+        while base_path.peek().is_some() && base_path.peek() == url_path.peek() {
+            base_path.next();
+            url_path.next();
+        }
+
+        // Add `..` segments for the remainder of the base path
+        for base_path_segment in base_path {
+            // Skip empty last segments
+            if base_path_segment.is_empty() {
+                break;
+            }
+
+            if !relative.is_empty() {
+                relative.push('/');
+            }
+
+            relative.push_str("..");
+        }
+
+        // Append the remainder of the other URI
+        for url_path_segment in url_path {
+            if !relative.is_empty() {
+                relative.push('/');
+            }
+
+            relative.push_str(url_path_segment);
+        }
+
+        // Add the filename if they are not the same
+        if !relative.is_empty() || base_filename != url_filename {
+            // If the URIs filename is empty this means that it was a directory
+            // so we'll have to append a '/'.
+            //
+            // Otherwise append it directly as the new filename.
+            if url_filename.is_empty() {
+                relative.push('/');
+            } else {
+                if !relative.is_empty() {
+                    relative.push('/');
+                }
+                relative.push_str(url_filename);
+            }
+        }
+
+        // Query and fragment are only taken from the other URI
+        if let Some(query) = url.query() {
+            relative.push('?');
+            relative.push_str(query);
+        }
+
+        if let Some(fragment) = url.fragment() {
+            relative.push('#');
+            relative.push_str(fragment);
+        }
+
+        Some(relative)
     }
 
     /// Return a default `ParseOptions` that can fully configure the URL parser.
@@ -417,14 +594,15 @@ impl Url {
     /// # fn run() -> Result<(), ParseError> {
     /// let url_str = "https://example.net/";
     /// let url = Url::parse(url_str)?;
-    /// assert_eq!(url.into_string(), url_str);
+    /// assert_eq!(String::from(url), url_str);
     /// # Ok(())
     /// # }
     /// # run().unwrap();
     /// ```
     #[inline]
+    #[deprecated(since = "2.3.0", note = "use Into<String>")]
     pub fn into_string(self) -> String {
-        self.serialization
+        self.into()
     }
 
     /// For internal testing, not part of the public API.
@@ -461,7 +639,7 @@ impl Url {
         }
 
         assert!(self.scheme_end >= 1);
-        assert!(matches!(self.byte_at(0), b'a'..=b'z' | b'A'..=b'Z'));
+        assert!(self.byte_at(0).is_ascii_alphabetic());
         assert!(self
             .slice(1..self.scheme_end)
             .chars()
@@ -517,7 +695,14 @@ impl Url {
             assert_eq!(self.host_end, self.scheme_end + 1);
             assert_eq!(self.host, HostInternal::None);
             assert_eq!(self.port, None);
-            assert_eq!(self.path_start, self.scheme_end + 1);
+            if self.path().starts_with("//") {
+                // special case when first path segment is empty
+                assert_eq!(self.byte_at(self.scheme_end + 1), b'/');
+                assert_eq!(self.byte_at(self.scheme_end + 2), b'.');
+                assert_eq!(self.path_start, self.scheme_end + 3);
+            } else {
+                assert_eq!(self.path_start, self.scheme_end + 1);
+            }
         }
         if let Some(start) = self.query_start {
             assert!(start >= self.path_start);
@@ -646,11 +831,34 @@ impl Url {
         self.slice(..self.scheme_end)
     }
 
+    /// Return whether the URL is special (has a special scheme)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use url::Url;
+    /// # use url::ParseError;
+    ///
+    /// # fn run() -> Result<(), ParseError> {
+    /// assert!(Url::parse("http:///tmp/foo")?.is_special());
+    /// assert!(Url::parse("file:///tmp/foo")?.is_special());
+    /// assert!(!Url::parse("moz:///tmp/foo")?.is_special());
+    /// # Ok(())
+    /// # }
+    /// # run().unwrap();
+    /// ```
+    pub fn is_special(&self) -> bool {
+        let scheme_type = SchemeType::from(self.scheme());
+        scheme_type.is_special()
+    }
+
     /// Return whether the URL has an 'authority',
     /// which can contain a username, password, host, and port number.
     ///
     /// URLs that do *not* are either path-only like `unix:/run/foo.socket`
     /// or cannot-be-a-base like `data:text/plain,Stuff`.
+    ///
+    /// See also the `authority` method.
     ///
     /// # Examples
     ///
@@ -675,6 +883,47 @@ impl Url {
     pub fn has_authority(&self) -> bool {
         debug_assert!(self.byte_at(self.scheme_end) == b':');
         self.slice(self.scheme_end..).starts_with("://")
+    }
+
+    /// Return the authority of this URL as an ASCII string.
+    ///
+    /// Non-ASCII domains are punycode-encoded per IDNA if this is the host
+    /// of a special URL, or percent encoded for non-special URLs.
+    /// IPv6 addresses are given between `[` and `]` brackets.
+    /// Ports are omitted if they match the well known port of a special URL.
+    ///
+    /// Username and password are percent-encoded.
+    ///
+    /// See also the `has_authority` method.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use url::Url;
+    /// # use url::ParseError;
+    ///
+    /// # fn run() -> Result<(), ParseError> {
+    /// let url = Url::parse("unix:/run/foo.socket")?;
+    /// assert_eq!(url.authority(), "");
+    /// let url = Url::parse("file:///tmp/foo")?;
+    /// assert_eq!(url.authority(), "");
+    /// let url = Url::parse("https://user:password@example.com/tmp/foo")?;
+    /// assert_eq!(url.authority(), "user:password@example.com");
+    /// let url = Url::parse("irc://àlex.рф.example.com:6667/foo")?;
+    /// assert_eq!(url.authority(), "%C3%A0lex.%D1%80%D1%84.example.com:6667");
+    /// let url = Url::parse("http://àlex.рф.example.com:80/foo")?;
+    /// assert_eq!(url.authority(), "xn--lex-8ka.xn--p1ai.example.com");
+    /// # Ok(())
+    /// # }
+    /// # run().unwrap();
+    /// ```
+    pub fn authority(&self) -> &str {
+        let scheme_separator_len = "://".len() as u32;
+        if self.has_authority() && self.path_start > self.scheme_end + scheme_separator_len {
+            self.slice(self.scheme_end + scheme_separator_len..self.path_start)
+        } else {
+            ""
+        }
     }
 
     /// Return whether this URL is a cannot-be-a-base URL,
@@ -1098,14 +1347,9 @@ impl Url {
     /// # }
     /// # run().unwrap();
     /// ```
-    #[allow(clippy::manual_strip)] // introduced in 1.45, MSRV is 1.36
     pub fn path_segments(&self) -> Option<str::Split<'_, char>> {
         let path = self.path();
-        if path.starts_with('/') {
-            Some(path[1..].split('/'))
-        } else {
-            None
-        }
+        path.strip_prefix('/').map(|remainder| remainder.split('/'))
     }
 
     /// Return this URL’s query string, if any, as a percent-encoded ASCII string.
@@ -1168,7 +1412,7 @@ impl Url {
     /// # Ok(())
     /// # }
     /// # run().unwrap();
-    ///
+    /// ```
 
     #[inline]
     pub fn query_pairs(&self) -> form_urlencoded::Parse<'_> {
@@ -1215,7 +1459,7 @@ impl Url {
     }
 
     fn mutate<F: FnOnce(&mut Parser<'_>) -> R, R>(&mut self, f: F) -> R {
-        let mut parser = Parser::for_setter(mem::replace(&mut self.serialization, String::new()));
+        let mut parser = Parser::for_setter(mem::take(&mut self.serialization));
         let result = f(&mut parser);
         self.serialization = parser.serialization;
         result
@@ -1254,9 +1498,10 @@ impl Url {
         if let Some(input) = fragment {
             self.fragment_start = Some(to_u32(self.serialization.len()).unwrap());
             self.serialization.push('#');
-            self.mutate(|parser| parser.parse_fragment(parser::Input::no_trim(input)))
+            self.mutate(|parser| parser.parse_fragment(parser::Input::new_no_trim(input)))
         } else {
-            self.fragment_start = None
+            self.fragment_start = None;
+            self.strip_trailing_spaces_from_opaque_path();
         }
     }
 
@@ -1316,9 +1561,12 @@ impl Url {
                 parser.parse_query(
                     scheme_type,
                     scheme_end,
-                    parser::Input::trim_tab_and_newlines(input, vfn),
+                    parser::Input::new_trim_tab_and_newlines(input, vfn),
                 )
             });
+        } else {
+            self.query_start = None;
+            self.strip_trailing_spaces_from_opaque_path();
         }
 
         self.restore_already_parsed_fragment(fragment);
@@ -1405,6 +1653,19 @@ impl Url {
     /// url.set_path("data/report.csv");
     /// assert_eq!(url.as_str(), "https://example.com/data/report.csv");
     /// assert_eq!(url.path(), "/data/report.csv");
+    ///
+    /// // `set_path` percent-encodes the given string if it's not already percent-encoded.
+    /// let mut url = Url::parse("https://example.com")?;
+    /// url.set_path("api/some comments");
+    /// assert_eq!(url.as_str(), "https://example.com/api/some%20comments");
+    /// assert_eq!(url.path(), "/api/some%20comments");
+    ///
+    /// // `set_path` will not double percent-encode the string if it's already percent-encoded.
+    /// let mut url = Url::parse("https://example.com")?;
+    /// url.set_path("api/some%20comments");
+    /// assert_eq!(url.as_str(), "https://example.com/api/some%20comments");
+    /// assert_eq!(url.path(), "/api/some%20comments");
+    ///
     /// # Ok(())
     /// # }
     /// # run().unwrap();
@@ -1421,10 +1682,14 @@ impl Url {
                     parser.serialization.push_str("%2F");
                     path = &path[1..];
                 }
-                parser.parse_cannot_be_a_base_path(parser::Input::new(path));
+                parser.parse_cannot_be_a_base_path(parser::Input::new_no_trim(path));
             } else {
                 let mut has_host = true; // FIXME
-                parser.parse_path_start(scheme_type, &mut has_host, parser::Input::new(path));
+                parser.parse_path_start(
+                    scheme_type,
+                    &mut has_host,
+                    parser::Input::new_no_trim(path),
+                );
             }
         });
         self.restore_after_path(old_after_path_pos, &after_path);
@@ -1433,7 +1698,7 @@ impl Url {
     /// Return an object with methods to manipulate this URL’s path segments.
     ///
     /// Return `Err(())` if this URL is cannot-be-a-base.
-    #[allow(clippy::clippy::result_unit_err)]
+    #[allow(clippy::result_unit_err)]
     pub fn path_segments_mut(&mut self) -> Result<PathSegmentsMut<'_>, ()> {
         if self.cannot_be_a_base() {
             Err(())
@@ -1517,7 +1782,7 @@ impl Url {
     /// # }
     /// # run().unwrap();
     /// ```
-    #[allow(clippy::clippy::result_unit_err)]
+    #[allow(clippy::result_unit_err)]
     pub fn set_port(&mut self, mut port: Option<u16>) -> Result<(), ()> {
         // has_host implies !cannot_be_a_base
         if !self.has_host() || self.host() == Some(Host::Domain("")) || self.scheme() == "file" {
@@ -1656,8 +1921,10 @@ impl Url {
             return Err(ParseError::SetHostOnCannotBeABaseUrl);
         }
 
+        let scheme_type = SchemeType::from(self.scheme());
+
         if let Some(host) = host {
-            if host.is_empty() && SchemeType::from(self.scheme()).is_special() {
+            if host.is_empty() && scheme_type.is_special() && !scheme_type.is_file() {
                 return Err(ParseError::EmptyHost);
             }
             let mut host_substr = host;
@@ -1681,15 +1948,20 @@ impl Url {
                 self.set_host_internal(Host::parse_opaque(host_substr)?, None);
             }
         } else if self.has_host() {
-            let scheme_type = SchemeType::from(self.scheme());
-            if scheme_type.is_special() {
+            if scheme_type.is_special() && !scheme_type.is_file() {
                 return Err(ParseError::EmptyHost);
             } else if self.serialization.len() == self.path_start as usize {
                 self.serialization.push('/');
             }
             debug_assert!(self.byte_at(self.scheme_end) == b':');
             debug_assert!(self.byte_at(self.path_start) == b'/');
-            let new_path_start = self.scheme_end + 1;
+
+            let new_path_start = if scheme_type.is_file() {
+                self.scheme_end + 3
+            } else {
+                self.scheme_end + 1
+            };
+
             self.serialization
                 .drain(new_path_start as usize..self.path_start as usize);
             let offset = self.path_start - new_path_start;
@@ -1788,7 +2060,7 @@ impl Url {
     /// # run().unwrap();
     /// ```
     ///
-    #[allow(clippy::clippy::result_unit_err)]
+    #[allow(clippy::result_unit_err)]
     pub fn set_ip_host(&mut self, address: IpAddr) -> Result<(), ()> {
         if self.cannot_be_a_base() {
             return Err(());
@@ -1828,13 +2100,14 @@ impl Url {
     /// # }
     /// # run().unwrap();
     /// ```
-    #[allow(clippy::clippy::result_unit_err)]
+    #[allow(clippy::result_unit_err)]
     pub fn set_password(&mut self, password: Option<&str>) -> Result<(), ()> {
         // has_host implies !cannot_be_a_base
         if !self.has_host() || self.host() == Some(Host::Domain("")) || self.scheme() == "file" {
             return Err(());
         }
-        if let Some(password) = password {
+        let password = password.unwrap_or_default();
+        if !password.is_empty() {
             let host_and_after = self.slice(self.host_start..).to_owned();
             self.serialization.truncate(self.username_end as usize);
             self.serialization.push(':');
@@ -1921,7 +2194,7 @@ impl Url {
     /// # }
     /// # run().unwrap();
     /// ```
-    #[allow(clippy::clippy::result_unit_err)]
+    #[allow(clippy::result_unit_err)]
     pub fn set_username(&mut self, username: &str) -> Result<(), ()> {
         // has_host implies !cannot_be_a_base
         if !self.has_host() || self.host() == Some(Host::Domain("")) || self.scheme() == "file" {
@@ -1991,7 +2264,7 @@ impl Url {
     ///
     /// # Examples
     ///
-    /// Change the URL’s scheme from `https` to `foo`:
+    /// Change the URL’s scheme from `https` to `http`:
     ///
     /// ```
     /// use url::Url;
@@ -2086,7 +2359,7 @@ impl Url {
     #[allow(clippy::result_unit_err, clippy::suspicious_operation_groupings)]
     pub fn set_scheme(&mut self, scheme: &str) -> Result<(), ()> {
         let mut parser = Parser::for_setter(String::new());
-        let remaining = parser.parse_scheme(parser::Input::new(scheme))?;
+        let remaining = parser.parse_scheme(parser::Input::new_no_trim(scheme))?;
         let new_scheme_type = SchemeType::from(&parser.serialization);
         let old_scheme_type = SchemeType::from(self.scheme());
         // If url’s scheme is a special scheme and buffer is not a special scheme, then return.
@@ -2162,8 +2435,8 @@ impl Url {
     /// # run().unwrap();
     /// # }
     /// ```
-    #[cfg(any(unix, windows, target_os = "redox"))]
-    #[allow(clippy::clippy::result_unit_err)]
+    #[cfg(any(unix, windows, target_os = "redox", target_os = "wasi"))]
+    #[allow(clippy::result_unit_err)]
     pub fn from_file_path<P: AsRef<Path>>(path: P) -> Result<Url, ()> {
         let mut serialization = "file://".to_owned();
         let host_start = serialization.len() as u32;
@@ -2199,8 +2472,8 @@ impl Url {
     ///
     /// Note that `std::path` does not consider trailing slashes significant
     /// and usually does not include them (e.g. in `Path::parent()`).
-    #[cfg(any(unix, windows, target_os = "redox"))]
-    #[allow(clippy::clippy::result_unit_err)]
+    #[cfg(any(unix, windows, target_os = "redox", target_os = "wasi"))]
+    #[allow(clippy::result_unit_err)]
     pub fn from_directory_path<P: AsRef<Path>>(path: P) -> Result<Url, ()> {
         let mut url = Url::from_file_path(path)?;
         if !url.serialization.ends_with('/') {
@@ -2316,8 +2589,8 @@ impl Url {
     /// (That is, if the percent-decoded path contains a NUL byte or,
     /// for a Windows path, is not UTF-8.)
     #[inline]
-    #[cfg(any(unix, windows, target_os = "redox"))]
-    #[allow(clippy::clippy::result_unit_err)]
+    #[cfg(any(unix, windows, target_os = "redox", target_os = "wasi"))]
+    #[allow(clippy::result_unit_err)]
     pub fn to_file_path(&self) -> Result<PathBuf, ()> {
         if let Some(segments) = self.path_segments() {
             let host = match self.host() {
@@ -2375,6 +2648,13 @@ impl fmt::Display for Url {
     }
 }
 
+/// String conversion.
+impl From<Url> for String {
+    fn from(value: Url) -> String {
+        value.serialization
+    }
+}
+
 /// Debug the serialization of this URL.
 impl fmt::Debug for Url {
     #[inline]
@@ -2382,6 +2662,7 @@ impl fmt::Debug for Url {
         formatter
             .debug_struct("Url")
             .field("scheme", &self.scheme())
+            .field("cannot_be_a_base", &self.cannot_be_a_base())
             .field("username", &self.username())
             .field("password", &self.password())
             .field("host", &self.host())
@@ -2512,12 +2793,15 @@ impl<'de> serde::Deserialize<'de> for Url {
     }
 }
 
-#[cfg(any(unix, target_os = "redox"))]
+#[cfg(any(unix, target_os = "redox", target_os = "wasi"))]
 fn path_to_file_url_segments(
     path: &Path,
     serialization: &mut String,
 ) -> Result<(u32, HostInternal), ()> {
+    #[cfg(any(unix, target_os = "redox"))]
     use std::os::unix::prelude::OsStrExt;
+    #[cfg(target_os = "wasi")]
+    use std::os::wasi::prelude::OsStrExt;
     if !path.is_absolute() {
         return Err(());
     }
@@ -2562,6 +2846,7 @@ fn path_to_file_url_segments_windows(
     let host_start = serialization.len() + 1;
     let host_end;
     let host_internal;
+
     match components.next() {
         Some(Component::Prefix(ref p)) => match p.kind() {
             Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
@@ -2582,7 +2867,6 @@ fn path_to_file_url_segments_windows(
             }
             _ => return Err(()),
         },
-
         _ => return Err(()),
     }
 
@@ -2591,12 +2875,15 @@ fn path_to_file_url_segments_windows(
         if component == Component::RootDir {
             continue;
         }
+
         path_only_has_prefix = false;
         // FIXME: somehow work with non-unicode?
         let component = component.as_os_str().to_str().ok_or(())?;
+
         serialization.push('/');
         serialization.extend(percent_encode(component.as_bytes(), PATH_SEGMENT));
     }
+
     // A windows drive letter must end with a slash.
     if serialization.len() > host_start
         && parser::is_windows_drive_letter(&serialization[host_start..])
@@ -2604,16 +2891,20 @@ fn path_to_file_url_segments_windows(
     {
         serialization.push('/');
     }
+
     Ok((host_end, host_internal))
 }
 
-#[cfg(any(unix, target_os = "redox"))]
+#[cfg(any(unix, target_os = "redox", target_os = "wasi"))]
 fn file_url_segments_to_pathbuf(
     host: Option<&str>,
     segments: str::Split<'_, char>,
 ) -> Result<PathBuf, ()> {
     use std::ffi::OsStr;
+    #[cfg(any(unix, target_os = "redox"))]
     use std::os::unix::prelude::OsStrExt;
+    #[cfg(target_os = "wasi")]
+    use std::os::wasi::prelude::OsStrExt;
 
     if host.is_some() {
         return Err(());
@@ -2624,23 +2915,28 @@ fn file_url_segments_to_pathbuf(
     } else {
         Vec::new()
     };
+
     for segment in segments {
         bytes.push(b'/');
         bytes.extend(percent_decode(segment.as_bytes()));
     }
+
     // A windows drive letter must end with a slash.
     if bytes.len() > 2
-        && matches!(bytes[bytes.len() - 2], b'a'..=b'z' | b'A'..=b'Z')
+        && bytes[bytes.len() - 2].is_ascii_alphabetic()
         && matches!(bytes[bytes.len() - 1], b':' | b'|')
     {
         bytes.push(b'/');
     }
+
     let os_str = OsStr::from_bytes(&bytes);
     let path = PathBuf::from(os_str);
+
     debug_assert!(
         path.is_absolute(),
         "to_file_path() failed to produce an absolute Path"
     );
+
     Ok(path)
 }
 

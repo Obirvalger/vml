@@ -1,5 +1,3 @@
-extern crate flate2;
-
 use flate2::read::DeflateEncoder;
 use flate2::Compression;
 use std::io;
@@ -10,11 +8,11 @@ fn main() {
     println!("{:?}", deflateencoder_read_hello_world().unwrap());
 }
 
-// Return a vector containing the Defalte compressed version of hello world
+// Return a vector containing the Deflate compressed version of hello world
 fn deflateencoder_read_hello_world() -> io::Result<Vec<u8>> {
-    let mut ret_vec = [0; 100];
+    let mut result = Vec::new();
     let c = b"hello world";
     let mut deflater = DeflateEncoder::new(&c[..], Compression::fast());
-    let count = deflater.read(&mut ret_vec)?;
-    Ok(ret_vec[0..count].to_vec())
+    deflater.read_to_end(&mut result)?;
+    Ok(result)
 }

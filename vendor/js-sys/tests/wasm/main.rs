@@ -4,6 +4,7 @@
 pub mod Array;
 pub mod ArrayBuffer;
 pub mod ArrayIterator;
+pub mod BigInt;
 pub mod Boolean;
 pub mod DataView;
 pub mod Date;
@@ -31,6 +32,8 @@ pub mod SetIterator;
 pub mod SharedArrayBuffer;
 pub mod Symbol;
 pub mod SyntaxError;
+#[cfg(js_sys_unstable_apis)]
+pub mod Temporal;
 pub mod TypeError;
 pub mod TypedArray;
 pub mod UriError;

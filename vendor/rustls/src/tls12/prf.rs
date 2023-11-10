@@ -12,7 +12,7 @@ fn p(out: &mut [u8], alg: hmac::Algorithm, secret: &[u8], seed: &[u8]) {
 
     // A(1)
     let mut current_a = hmac::sign(&hmac_key, seed);
-    let chunk_size = alg.digest_algorithm().output_len;
+    let chunk_size = alg.digest_algorithm().output_len();
     for chunk in out.chunks_mut(chunk_size) {
         // P_hash[i] = HMAC_hash(secret, A(i) + seed)
         let p_term = concat_sign(&hmac_key, current_a.as_ref(), seed);
@@ -63,5 +63,21 @@ mod tests {
         super::prf(&mut output, HMAC_SHA512, secret, label, seed);
         assert_eq!(expect.len(), output.len());
         assert_eq!(expect.to_vec(), output.to_vec());
+    }
+}
+
+#[cfg(bench)]
+mod benchmarks {
+    #[bench]
+    fn bench_sha256(b: &mut test::Bencher) {
+        let label = &b"extended master secret"[..];
+        let seed = [0u8; 32];
+        let key = &b"secret"[..];
+
+        b.iter(|| {
+            let mut out = [0u8; 48];
+            super::prf(&mut out, ring::hmac::HMAC_SHA256, key, &label, &seed);
+            test::black_box(out);
+        });
     }
 }

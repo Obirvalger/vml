@@ -1,21 +1,22 @@
 //! libc syscalls supporting `rustix::mm`.
 
-use super::super::c;
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use super::super::conv::syscall_ret_owned_fd;
-use super::super::conv::{borrowed_fd, no_fd, ret};
-use super::super::offset::libc_mmap;
 #[cfg(not(target_os = "redox"))]
 use super::types::Advice;
-#[cfg(target_os = "linux")]
+#[cfg(any(linux_kernel, freebsdlike, netbsdlike))]
+use super::types::MlockAllFlags;
+#[cfg(any(target_os = "emscripten", target_os = "linux"))]
 use super::types::MremapFlags;
 use super::types::{MapFlags, MprotectFlags, MsyncFlags, ProtFlags};
-#[cfg(any(target_os = "android", target_os = "linux"))]
+#[cfg(linux_kernel)]
 use super::types::{MlockFlags, UserfaultfdFlags};
+use crate::backend::c;
+#[cfg(linux_kernel)]
+use crate::backend::conv::ret_owned_fd;
+use crate::backend::conv::{borrowed_fd, no_fd, ret};
 use crate::fd::BorrowedFd;
+#[cfg(linux_kernel)]
+use crate::fd::OwnedFd;
 use crate::io;
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::io::OwnedFd;
 
 #[cfg(not(target_os = "redox"))]
 pub(crate) fn madvise(addr: *mut c::c_void, len: usize, advice: Advice) -> io::Result<()> {
@@ -52,7 +53,7 @@ pub(crate) fn madvise(addr: *mut c::c_void, len: usize, advice: Advice) -> io::R
 }
 
 pub(crate) unsafe fn msync(addr: *mut c::c_void, len: usize, flags: MsyncFlags) -> io::Result<()> {
-    let err = c::msync(addr, len, flags.bits());
+    let err = c::msync(addr, len, bitflags_bits!(flags));
 
     // `msync` returns its error status rather than using `errno`.
     if err == 0 {
@@ -74,11 +75,11 @@ pub(crate) unsafe fn mmap(
     fd: BorrowedFd<'_>,
     offset: u64,
 ) -> io::Result<*mut c::c_void> {
-    let res = libc_mmap(
+    let res = c::mmap(
         ptr,
         len,
-        prot.bits(),
-        flags.bits(),
+        bitflags_bits!(prot),
+        bitflags_bits!(flags),
         borrowed_fd(fd),
         offset as i64,
     );
@@ -99,11 +100,11 @@ pub(crate) unsafe fn mmap_anonymous(
     prot: ProtFlags,
     flags: MapFlags,
 ) -> io::Result<*mut c::c_void> {
-    let res = libc_mmap(
+    let res = c::mmap(
         ptr,
         len,
-        prot.bits(),
-        flags.bits() | c::MAP_ANONYMOUS,
+        bitflags_bits!(prot),
+        bitflags_bits!(flags | MapFlags::from_bits_retain(bitcast!(c::MAP_ANONYMOUS))),
         no_fd(),
         0,
     );
@@ -119,7 +120,7 @@ pub(crate) unsafe fn mprotect(
     len: usize,
     flags: MprotectFlags,
 ) -> io::Result<()> {
-    ret(c::mprotect(ptr, len, flags.bits()))
+    ret(c::mprotect(ptr, len, bitflags_bits!(flags)))
 }
 
 pub(crate) unsafe fn munmap(ptr: *mut c::c_void, len: usize) -> io::Result<()> {
@@ -130,14 +131,14 @@ pub(crate) unsafe fn munmap(ptr: *mut c::c_void, len: usize) -> io::Result<()> {
 ///
 /// `mremap` is primarily unsafe due to the `old_address` parameter, as
 /// anything working with memory pointed to by raw pointers is unsafe.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "emscripten", target_os = "linux"))]
 pub(crate) unsafe fn mremap(
     old_address: *mut c::c_void,
     old_size: usize,
     new_size: usize,
     flags: MremapFlags,
 ) -> io::Result<*mut c::c_void> {
-    let res = c::mremap(old_address, old_size, new_size, flags.bits());
+    let res = c::mremap(old_address, old_size, new_size, bitflags_bits!(flags));
     if res == c::MAP_FAILED {
         Err(io::Errno::last_os_error())
     } else {
@@ -150,7 +151,7 @@ pub(crate) unsafe fn mremap(
 /// `mremap_fixed` is primarily unsafe due to the `old_address` and
 /// `new_address` parameters, as anything working with memory pointed to by raw
 /// pointers is unsafe.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "emscripten", target_os = "linux"))]
 pub(crate) unsafe fn mremap_fixed(
     old_address: *mut c::c_void,
     old_size: usize,
@@ -162,7 +163,7 @@ pub(crate) unsafe fn mremap_fixed(
         old_address,
         old_size,
         new_size,
-        flags.bits() | c::MAP_FIXED,
+        bitflags_bits!(flags | MremapFlags::from_bits_retain(bitcast!(c::MAP_FIXED))),
         new_address,
     );
     if res == c::MAP_FAILED {
@@ -185,7 +186,7 @@ pub(crate) unsafe fn mlock(addr: *mut c::c_void, length: usize) -> io::Result<()
 ///
 /// `mlock_with` operates on raw pointers and may round out to the nearest page
 /// boundaries.
-#[cfg(any(target_os = "android", target_os = "linux"))]
+#[cfg(linux_kernel)]
 #[inline]
 pub(crate) unsafe fn mlock_with(
     addr: *mut c::c_void,
@@ -200,7 +201,7 @@ pub(crate) unsafe fn mlock_with(
         ) via SYS_mlock2 -> c::c_int
     }
 
-    ret(mlock2(addr, length, flags.bits()))
+    ret(mlock2(addr, length, bitflags_bits!(flags)))
 }
 
 /// # Safety
@@ -212,7 +213,32 @@ pub(crate) unsafe fn munlock(addr: *mut c::c_void, length: usize) -> io::Result<
     ret(c::munlock(addr, length))
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
+#[cfg(linux_kernel)]
 pub(crate) unsafe fn userfaultfd(flags: UserfaultfdFlags) -> io::Result<OwnedFd> {
-    syscall_ret_owned_fd(c::syscall(c::SYS_userfaultfd, flags.bits()))
+    syscall! {
+        fn userfaultfd(
+            flags: c::c_int
+        ) via SYS_userfaultfd -> c::c_int
+    }
+    ret_owned_fd(userfaultfd(bitflags_bits!(flags)))
+}
+
+/// Locks all pages mapped into the address space of the calling process.
+///
+/// This includes the pages of the code, data, and stack segment, as well as
+/// shared libraries, user space kernel data, shared memory, and memory-mapped
+/// files. All mapped pages are guaranteed to be resident in RAM when the call
+/// returns successfully; the pages are guaranteed to stay in RAM until later
+/// unlocked.
+#[inline]
+#[cfg(any(linux_kernel, freebsdlike, netbsdlike))]
+pub(crate) fn mlockall(flags: MlockAllFlags) -> io::Result<()> {
+    unsafe { ret(c::mlockall(bitflags_bits!(flags))) }
+}
+
+/// Unlocks all pages mapped into the address space of the calling process.
+#[inline]
+#[cfg(any(linux_kernel, freebsdlike, netbsdlike))]
+pub(crate) fn munlockall() -> io::Result<()> {
+    unsafe { ret(c::munlockall()) }
 }

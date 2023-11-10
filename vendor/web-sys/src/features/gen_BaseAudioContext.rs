@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -10,9 +11,7 @@ extern "C" {
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`*"]
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     pub type BaseAudioContext;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "AudioDestinationNode")]
     # [wasm_bindgen (structural , method , getter , js_class = "BaseAudioContext" , js_name = destination)]
     #[doc = "Getter for the `destination` field of this object."]
@@ -21,7 +20,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `AudioDestinationNode`, `BaseAudioContext`*"]
     pub fn destination(this: &BaseAudioContext) -> AudioDestinationNode;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     # [wasm_bindgen (structural , method , getter , js_class = "BaseAudioContext" , js_name = sampleRate)]
     #[doc = "Getter for the `sampleRate` field of this object."]
     #[doc = ""]
@@ -29,7 +27,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`*"]
     pub fn sample_rate(this: &BaseAudioContext) -> f32;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     # [wasm_bindgen (structural , method , getter , js_class = "BaseAudioContext" , js_name = currentTime)]
     #[doc = "Getter for the `currentTime` field of this object."]
     #[doc = ""]
@@ -37,7 +34,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`*"]
     pub fn current_time(this: &BaseAudioContext) -> f64;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "AudioListener")]
     # [wasm_bindgen (structural , method , getter , js_class = "BaseAudioContext" , js_name = listener)]
     #[doc = "Getter for the `listener` field of this object."]
@@ -46,7 +42,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `AudioListener`, `BaseAudioContext`*"]
     pub fn listener(this: &BaseAudioContext) -> AudioListener;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "AudioContextState")]
     # [wasm_bindgen (structural , method , getter , js_class = "BaseAudioContext" , js_name = state)]
     #[doc = "Getter for the `state` field of this object."]
@@ -55,7 +50,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `AudioContextState`, `BaseAudioContext`*"]
     pub fn state(this: &BaseAudioContext) -> AudioContextState;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "AudioWorklet")]
     # [wasm_bindgen (structural , catch , method , getter , js_class = "BaseAudioContext" , js_name = audioWorklet)]
     #[doc = "Getter for the `audioWorklet` field of this object."]
@@ -64,7 +58,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `AudioWorklet`, `BaseAudioContext`*"]
     pub fn audio_worklet(this: &BaseAudioContext) -> Result<AudioWorklet, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     # [wasm_bindgen (structural , method , getter , js_class = "BaseAudioContext" , js_name = onstatechange)]
     #[doc = "Getter for the `onstatechange` field of this object."]
     #[doc = ""]
@@ -72,7 +65,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`*"]
     pub fn onstatechange(this: &BaseAudioContext) -> Option<::js_sys::Function>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     # [wasm_bindgen (structural , method , setter , js_class = "BaseAudioContext" , js_name = onstatechange)]
     #[doc = "Setter for the `onstatechange` field of this object."]
     #[doc = ""]
@@ -80,7 +72,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`*"]
     pub fn set_onstatechange(this: &BaseAudioContext, value: Option<&::js_sys::Function>);
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "AnalyserNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createAnalyser)]
     #[doc = "The `createAnalyser()` method."]
@@ -89,7 +80,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `AnalyserNode`, `BaseAudioContext`*"]
     pub fn create_analyser(this: &BaseAudioContext) -> Result<AnalyserNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "BiquadFilterNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createBiquadFilter)]
     #[doc = "The `createBiquadFilter()` method."]
@@ -98,7 +88,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `BiquadFilterNode`*"]
     pub fn create_biquad_filter(this: &BaseAudioContext) -> Result<BiquadFilterNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "AudioBuffer")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createBuffer)]
     #[doc = "The `createBuffer()` method."]
@@ -112,7 +101,6 @@ extern "C" {
         length: u32,
         sample_rate: f32,
     ) -> Result<AudioBuffer, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "AudioBufferSourceNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createBufferSource)]
     #[doc = "The `createBufferSource()` method."]
@@ -121,7 +109,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `AudioBufferSourceNode`, `BaseAudioContext`*"]
     pub fn create_buffer_source(this: &BaseAudioContext) -> Result<AudioBufferSourceNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ChannelMergerNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createChannelMerger)]
     #[doc = "The `createChannelMerger()` method."]
@@ -130,7 +117,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `ChannelMergerNode`*"]
     pub fn create_channel_merger(this: &BaseAudioContext) -> Result<ChannelMergerNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ChannelMergerNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createChannelMerger)]
     #[doc = "The `createChannelMerger()` method."]
@@ -142,7 +128,6 @@ extern "C" {
         this: &BaseAudioContext,
         number_of_inputs: u32,
     ) -> Result<ChannelMergerNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ChannelSplitterNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createChannelSplitter)]
     #[doc = "The `createChannelSplitter()` method."]
@@ -152,7 +137,6 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `ChannelSplitterNode`*"]
     pub fn create_channel_splitter(this: &BaseAudioContext)
         -> Result<ChannelSplitterNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ChannelSplitterNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createChannelSplitter)]
     #[doc = "The `createChannelSplitter()` method."]
@@ -164,7 +148,6 @@ extern "C" {
         this: &BaseAudioContext,
         number_of_outputs: u32,
     ) -> Result<ChannelSplitterNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ConstantSourceNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createConstantSource)]
     #[doc = "The `createConstantSource()` method."]
@@ -173,7 +156,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `ConstantSourceNode`*"]
     pub fn create_constant_source(this: &BaseAudioContext) -> Result<ConstantSourceNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ConvolverNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createConvolver)]
     #[doc = "The `createConvolver()` method."]
@@ -182,7 +164,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `ConvolverNode`*"]
     pub fn create_convolver(this: &BaseAudioContext) -> Result<ConvolverNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "DelayNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createDelay)]
     #[doc = "The `createDelay()` method."]
@@ -191,7 +172,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `DelayNode`*"]
     pub fn create_delay(this: &BaseAudioContext) -> Result<DelayNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "DelayNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createDelay)]
     #[doc = "The `createDelay()` method."]
@@ -203,7 +183,6 @@ extern "C" {
         this: &BaseAudioContext,
         max_delay_time: f64,
     ) -> Result<DelayNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "DynamicsCompressorNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createDynamicsCompressor)]
     #[doc = "The `createDynamicsCompressor()` method."]
@@ -214,7 +193,6 @@ extern "C" {
     pub fn create_dynamics_compressor(
         this: &BaseAudioContext,
     ) -> Result<DynamicsCompressorNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "GainNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createGain)]
     #[doc = "The `createGain()` method."]
@@ -223,7 +201,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `GainNode`*"]
     pub fn create_gain(this: &BaseAudioContext) -> Result<GainNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "IirFilterNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createIIRFilter)]
     #[doc = "The `createIIRFilter()` method."]
@@ -236,7 +213,6 @@ extern "C" {
         feedforward: &::wasm_bindgen::JsValue,
         feedback: &::wasm_bindgen::JsValue,
     ) -> Result<IirFilterNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "OscillatorNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createOscillator)]
     #[doc = "The `createOscillator()` method."]
@@ -245,7 +221,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `OscillatorNode`*"]
     pub fn create_oscillator(this: &BaseAudioContext) -> Result<OscillatorNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "PannerNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createPanner)]
     #[doc = "The `createPanner()` method."]
@@ -254,7 +229,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `PannerNode`*"]
     pub fn create_panner(this: &BaseAudioContext) -> Result<PannerNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "PeriodicWave")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createPeriodicWave)]
     #[doc = "The `createPeriodicWave()` method."]
@@ -267,7 +241,6 @@ extern "C" {
         real: &mut [f32],
         imag: &mut [f32],
     ) -> Result<PeriodicWave, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(all(feature = "PeriodicWave", feature = "PeriodicWaveConstraints",))]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createPeriodicWave)]
     #[doc = "The `createPeriodicWave()` method."]
@@ -281,7 +254,6 @@ extern "C" {
         imag: &mut [f32],
         constraints: &PeriodicWaveConstraints,
     ) -> Result<PeriodicWave, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ScriptProcessorNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createScriptProcessor)]
     #[doc = "The `createScriptProcessor()` method."]
@@ -291,7 +263,6 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `ScriptProcessorNode`*"]
     pub fn create_script_processor(this: &BaseAudioContext)
         -> Result<ScriptProcessorNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ScriptProcessorNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createScriptProcessor)]
     #[doc = "The `createScriptProcessor()` method."]
@@ -303,7 +274,6 @@ extern "C" {
         this: &BaseAudioContext,
         buffer_size: u32,
     ) -> Result<ScriptProcessorNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ScriptProcessorNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createScriptProcessor)]
     #[doc = "The `createScriptProcessor()` method."]
@@ -316,7 +286,6 @@ extern "C" {
         buffer_size: u32,
         number_of_input_channels: u32,
     ) -> Result<ScriptProcessorNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "ScriptProcessorNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createScriptProcessor)]
     #[doc = "The `createScriptProcessor()` method."]
@@ -330,7 +299,6 @@ extern "C" {
         number_of_input_channels: u32,
         number_of_output_channels: u32,
     ) -> Result<ScriptProcessorNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "StereoPannerNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createStereoPanner)]
     #[doc = "The `createStereoPanner()` method."]
@@ -339,7 +307,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `StereoPannerNode`*"]
     pub fn create_stereo_panner(this: &BaseAudioContext) -> Result<StereoPannerNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     #[cfg(feature = "WaveShaperNode")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = createWaveShaper)]
     #[doc = "The `createWaveShaper()` method."]
@@ -348,7 +315,6 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BaseAudioContext`, `WaveShaperNode`*"]
     pub fn create_wave_shaper(this: &BaseAudioContext) -> Result<WaveShaperNode, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = decodeAudioData)]
     #[doc = "The `decodeAudioData()` method."]
     #[doc = ""]
@@ -359,7 +325,6 @@ extern "C" {
         this: &BaseAudioContext,
         audio_data: &::js_sys::ArrayBuffer,
     ) -> Result<::js_sys::Promise, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = decodeAudioData)]
     #[doc = "The `decodeAudioData()` method."]
     #[doc = ""]
@@ -371,7 +336,6 @@ extern "C" {
         audio_data: &::js_sys::ArrayBuffer,
         success_callback: &::js_sys::Function,
     ) -> Result<::js_sys::Promise, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = decodeAudioData)]
     #[doc = "The `decodeAudioData()` method."]
     #[doc = ""]
@@ -384,7 +348,6 @@ extern "C" {
         success_callback: &::js_sys::Function,
         error_callback: &::js_sys::Function,
     ) -> Result<::js_sys::Promise, JsValue>;
-    #[deprecated(note = "doesn't exist in Safari, use `AudioContext` instead now")]
     # [wasm_bindgen (catch , method , structural , js_class = "BaseAudioContext" , js_name = resume)]
     #[doc = "The `resume()` method."]
     #[doc = ""]

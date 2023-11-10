@@ -1,3 +1,4 @@
+use crate::loom::sync::Arc;
 use crate::sync::batch_semaphore::{self as semaphore, TryAcquireError};
 use crate::sync::mpsc::chan;
 use crate::sync::mpsc::error::{SendError, TryRecvError, TrySendError};
@@ -12,14 +13,48 @@ use std::task::{Context, Poll};
 
 /// Sends values to the associated `Receiver`.
 ///
-/// Instances are created by the [`channel`](channel) function.
+/// Instances are created by the [`channel`] function.
 ///
 /// To convert the `Sender` into a `Sink` or use it in a poll function, you can
 /// use the [`PollSender`] utility.
 ///
-/// [`PollSender`]: https://docs.rs/tokio-util/0.6/tokio_util/sync/struct.PollSender.html
+/// [`PollSender`]: https://docs.rs/tokio-util/latest/tokio_util/sync/struct.PollSender.html
 pub struct Sender<T> {
     chan: chan::Tx<T, Semaphore>,
+}
+
+/// A sender that does not prevent the channel from being closed.
+///
+/// If all [`Sender`] instances of a channel were dropped and only `WeakSender`
+/// instances remain, the channel is closed.
+///
+/// In order to send messages, the `WeakSender` needs to be upgraded using
+/// [`WeakSender::upgrade`], which returns `Option<Sender>`. It returns `None`
+/// if all `Sender`s have been dropped, and otherwise it returns a `Sender`.
+///
+/// [`Sender`]: Sender
+/// [`WeakSender::upgrade`]: WeakSender::upgrade
+///
+/// # Examples
+///
+/// ```
+/// use tokio::sync::mpsc::channel;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let (tx, _rx) = channel::<i32>(15);
+///     let tx_weak = tx.downgrade();
+///
+///     // Upgrading will succeed because `tx` still exists.
+///     assert!(tx_weak.upgrade().is_some());
+///
+///     // If we drop `tx`, then it will fail.
+///     drop(tx);
+///     assert!(tx_weak.clone().upgrade().is_none());
+/// }
+/// ```
+pub struct WeakSender<T> {
+    chan: Arc<chan::Chan<T, Semaphore>>,
 }
 
 /// Permits to send one value into the channel.
@@ -51,7 +86,7 @@ pub struct OwnedPermit<T> {
 
 /// Receives values from the associated `Sender`.
 ///
-/// Instances are created by the [`channel`](channel) function.
+/// Instances are created by the [`channel`] function.
 ///
 /// This receiver can be turned into a `Stream` using [`ReceiverStream`].
 ///
@@ -105,9 +140,13 @@ pub struct Receiver<T> {
 ///     }
 /// }
 /// ```
+#[track_caller]
 pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
     assert!(buffer > 0, "mpsc bounded channel requires buffer > 0");
-    let semaphore = (semaphore::Semaphore::new(buffer), buffer);
+    let semaphore = Semaphore {
+        semaphore: semaphore::Semaphore::new(buffer),
+        bound: buffer,
+    };
     let (tx, rx) = chan::channel(semaphore);
 
     let tx = Sender::new(tx);
@@ -118,7 +157,11 @@ pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
 
 /// Channel semaphore is a tuple of the semaphore implementation and a `usize`
 /// representing the channel bound.
-type Semaphore = (semaphore::Semaphore, usize);
+#[derive(Debug)]
+pub(crate) struct Semaphore {
+    pub(crate) semaphore: semaphore::Semaphore,
+    pub(crate) bound: usize,
+}
 
 impl<T> Receiver<T> {
     pub(crate) fn new(chan: chan::Rx<T, Semaphore>) -> Receiver<T> {
@@ -185,6 +228,82 @@ impl<T> Receiver<T> {
     pub async fn recv(&mut self) -> Option<T> {
         use crate::future::poll_fn;
         poll_fn(|cx| self.chan.recv(cx)).await
+    }
+
+    /// Receives the next values for this receiver and extends `buffer`.
+    ///
+    /// This method extends `buffer` by no more than a fixed number of values
+    /// as specified by `limit`. If `limit` is zero, the function immediately
+    /// returns `0`. The return value is the number of values added to `buffer`.
+    ///
+    /// For `limit > 0`, if there are no messages in the channel's queue, but
+    /// the channel has not yet been closed, this method will sleep until a
+    /// message is sent or the channel is closed. Note that if [`close`] is
+    /// called, but there are still outstanding [`Permits`] from before it was
+    /// closed, the channel is not considered closed by `recv_many` until the
+    /// permits are released.
+    ///
+    /// For non-zero values of `limit`, this method will never return `0` unless
+    /// the channel has been closed and there are no remaining messages in the
+    /// channel's queue. This indicates that no further values can ever be
+    /// received from this `Receiver`. The channel is closed when all senders
+    /// have been dropped, or when [`close`] is called.
+    ///
+    /// The capacity of `buffer` is increased as needed.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe. If `recv_many` is used as the event in a
+    /// [`tokio::select!`](crate::select) statement and some other branch
+    /// completes first, it is guaranteed that no messages were received on this
+    /// channel.
+    ///
+    /// [`close`]: Self::close
+    /// [`Permits`]: struct@crate::sync::mpsc::Permit
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::mpsc;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut buffer: Vec<&str> = Vec::with_capacity(2);
+    ///     let limit = 2;
+    ///     let (tx, mut rx) = mpsc::channel(100);
+    ///     let tx2 = tx.clone();
+    ///     tx2.send("first").await.unwrap();
+    ///     tx2.send("second").await.unwrap();
+    ///     tx2.send("third").await.unwrap();
+    ///
+    ///     // Call `recv_many` to receive up to `limit` (2) values.
+    ///     assert_eq!(2, rx.recv_many(&mut buffer, limit).await);
+    ///     assert_eq!(vec!["first", "second"], buffer);
+    ///
+    ///     // If the buffer is full, the next call to `recv_many`
+    ///     // reserves additional capacity.
+    ///     assert_eq!(1, rx.recv_many(&mut buffer, 1).await);
+    ///
+    ///     tokio::spawn(async move {
+    ///         tx.send("fourth").await.unwrap();
+    ///     });
+    ///
+    ///     // 'tx' is dropped, but `recv_many`
+    ///     // is guaranteed not to return 0 as the channel
+    ///     // is not yet closed.
+    ///     assert_eq!(1, rx.recv_many(&mut buffer, 1).await);
+    ///     assert_eq!(vec!["first", "second", "third", "fourth"], buffer);
+    ///
+    ///     // Once the last sender is dropped, the channel is
+    ///     // closed and `recv_many` returns 0, capacity unchanged.
+    ///     drop(tx2);
+    ///     assert_eq!(0, rx.recv_many(&mut buffer, limit).await);
+    ///     assert_eq!(vec!["first", "second", "third", "fourth"], buffer);
+    /// }
+    /// ```
+    pub async fn recv_many(&mut self, buffer: &mut Vec<T>, limit: usize) -> usize {
+        use crate::future::poll_fn;
+        poll_fn(|cx| self.chan.recv_many(cx, buffer, limit)).await
     }
 
     /// Tries to receive the next value for this receiver.
@@ -281,7 +400,9 @@ impl<T> Receiver<T> {
     ///     sync_code.join().unwrap()
     /// }
     /// ```
+    #[track_caller]
     #[cfg(feature = "sync")]
+    #[cfg_attr(docsrs, doc(alias = "recv_blocking"))]
     pub fn blocking_recv(&mut self) -> Option<T> {
         crate::future::block_on(self.recv())
     }
@@ -394,7 +515,11 @@ impl<T> Sender<T> {
     ///
     /// If `send` is used as the event in a [`tokio::select!`](crate::select)
     /// statement and some other branch completes first, then it is guaranteed
-    /// that the message was not sent.
+    /// that the message was not sent. **However, in that case, the message
+    /// is dropped and will be lost.**
+    ///
+    /// To avoid losing messages, use [`reserve`](Self::reserve) to reserve
+    /// capacity, then use the returned [`Permit`] to send the message.
     ///
     /// This channel uses a queue to ensure that calls to `send` and `reserve`
     /// complete in the order they were requested.  Cancelling a call to
@@ -473,7 +598,7 @@ impl<T> Sender<T> {
     /// }
     /// ```
     pub async fn closed(&self) {
-        self.chan.closed().await
+        self.chan.closed().await;
     }
 
     /// Attempts to immediately send a message on this `Sender`
@@ -535,8 +660,8 @@ impl<T> Sender<T> {
     /// }
     /// ```
     pub fn try_send(&self, message: T) -> Result<(), TrySendError<T>> {
-        match self.chan.semaphore().0.try_acquire(1) {
-            Ok(_) => {}
+        match self.chan.semaphore().semaphore.try_acquire(1) {
+            Ok(()) => {}
             Err(TryAcquireError::Closed) => return Err(TrySendError::Closed(message)),
             Err(TryAcquireError::NoPermits) => return Err(TrySendError::Full(message)),
         }
@@ -650,7 +775,9 @@ impl<T> Sender<T> {
     ///     sync_code.join().unwrap()
     /// }
     /// ```
+    #[track_caller]
     #[cfg(feature = "sync")]
+    #[cfg_attr(docsrs, doc(alias = "send_blocking"))]
     pub fn blocking_send(&self, value: T) -> Result<(), SendError<T>> {
         crate::future::block_on(self.send(value))
     }
@@ -814,8 +941,10 @@ impl<T> Sender<T> {
     }
 
     async fn reserve_inner(&self) -> Result<(), SendError<()>> {
-        match self.chan.semaphore().0.acquire(1).await {
-            Ok(_) => Ok(()),
+        crate::trace::async_trace_leaf().await;
+
+        match self.chan.semaphore().semaphore.acquire(1).await {
+            Ok(()) => Ok(()),
             Err(_) => Err(SendError(())),
         }
     }
@@ -864,8 +993,8 @@ impl<T> Sender<T> {
     /// }
     /// ```
     pub fn try_reserve(&self) -> Result<Permit<'_, T>, TrySendError<()>> {
-        match self.chan.semaphore().0.try_acquire(1) {
-            Ok(_) => {}
+        match self.chan.semaphore().semaphore.try_acquire(1) {
+            Ok(()) => {}
             Err(TryAcquireError::Closed) => return Err(TrySendError::Closed(())),
             Err(TryAcquireError::NoPermits) => return Err(TrySendError::Full(())),
         }
@@ -929,8 +1058,8 @@ impl<T> Sender<T> {
     /// }
     /// ```
     pub fn try_reserve_owned(self) -> Result<OwnedPermit<T>, TrySendError<Self>> {
-        match self.chan.semaphore().0.try_acquire(1) {
-            Ok(_) => {}
+        match self.chan.semaphore().semaphore.try_acquire(1) {
+            Ok(()) => {}
             Err(TryAcquireError::Closed) => return Err(TrySendError::Closed(self)),
             Err(TryAcquireError::NoPermits) => return Err(TrySendError::Full(self)),
         }
@@ -960,6 +1089,8 @@ impl<T> Sender<T> {
     ///
     /// The capacity goes down when sending a value by calling [`send`] or by reserving capacity
     /// with [`reserve`]. The capacity goes up when values are received by the [`Receiver`].
+    /// This is distinct from [`max_capacity`], which always returns buffer capacity initially
+    /// specified when calling [`channel`]
     ///
     /// # Examples
     ///
@@ -985,8 +1116,56 @@ impl<T> Sender<T> {
     ///
     /// [`send`]: Sender::send
     /// [`reserve`]: Sender::reserve
+    /// [`channel`]: channel
+    /// [`max_capacity`]: Sender::max_capacity
     pub fn capacity(&self) -> usize {
-        self.chan.semaphore().0.available_permits()
+        self.chan.semaphore().semaphore.available_permits()
+    }
+
+    /// Converts the `Sender` to a [`WeakSender`] that does not count
+    /// towards RAII semantics, i.e. if all `Sender` instances of the
+    /// channel were dropped and only `WeakSender` instances remain,
+    /// the channel is closed.
+    pub fn downgrade(&self) -> WeakSender<T> {
+        WeakSender {
+            chan: self.chan.downgrade(),
+        }
+    }
+
+    /// Returns the maximum buffer capacity of the channel.
+    ///
+    /// The maximum capacity is the buffer capacity initially specified when calling
+    /// [`channel`]. This is distinct from [`capacity`], which returns the *current*
+    /// available buffer capacity: as messages are sent and received, the
+    /// value returned by [`capacity`] will go up or down, whereas the value
+    /// returned by `max_capacity` will remain constant.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::mpsc;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, _rx) = mpsc::channel::<()>(5);
+    ///
+    ///     // both max capacity and capacity are the same at first
+    ///     assert_eq!(tx.max_capacity(), 5);
+    ///     assert_eq!(tx.capacity(), 5);
+    ///
+    ///     // Making a reservation doesn't change the max capacity.
+    ///     let permit = tx.reserve().await.unwrap();
+    ///     assert_eq!(tx.max_capacity(), 5);
+    ///     // but drops the capacity by one
+    ///     assert_eq!(tx.capacity(), 4);
+    /// }
+    /// ```
+    ///
+    /// [`channel`]: channel
+    /// [`max_capacity`]: Sender::max_capacity
+    /// [`capacity`]: Sender::capacity
+    pub fn max_capacity(&self) -> usize {
+        self.chan.semaphore().bound
     }
 }
 
@@ -1003,6 +1182,29 @@ impl<T> fmt::Debug for Sender<T> {
         fmt.debug_struct("Sender")
             .field("chan", &self.chan)
             .finish()
+    }
+}
+
+impl<T> Clone for WeakSender<T> {
+    fn clone(&self) -> Self {
+        WeakSender {
+            chan: self.chan.clone(),
+        }
+    }
+}
+
+impl<T> WeakSender<T> {
+    /// Tries to convert a `WeakSender` into a [`Sender`]. This will return `Some`
+    /// if there are other `Sender` instances alive and the channel wasn't
+    /// previously dropped, otherwise `None` is returned.
+    pub fn upgrade(&self) -> Option<Sender<T>> {
+        chan::Tx::upgrade(self.chan.clone()).map(Sender::new)
+    }
+}
+
+impl<T> fmt::Debug for WeakSender<T> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("WeakSender").finish()
     }
 }
 

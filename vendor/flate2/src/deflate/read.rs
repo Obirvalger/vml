@@ -1,18 +1,13 @@
 use std::io;
 use std::io::prelude::*;
 
-#[cfg(feature = "tokio")]
-use futures::Poll;
-#[cfg(feature = "tokio")]
-use tokio_io::{AsyncRead, AsyncWrite};
-
 use super::bufread;
 use crate::bufreader::BufReader;
 
 /// A DEFLATE encoder, or compressor.
 ///
-/// This structure implements a [`Read`] interface and will read uncompressed
-/// data from an underlying stream and emit a stream of compressed data.
+/// This structure implements a [`Read`] interface. When read from, it reads
+/// uncompressed data from the underlying [`Read`] and provides the compressed data.
 ///
 /// [`Read`]: https://doc.rust-lang.org/std/io/trait.Read.html
 ///
@@ -30,11 +25,11 @@ use crate::bufreader::BufReader;
 /// #
 /// // Return a vector containing the Deflate compressed version of hello world
 /// fn deflateencoder_read_hello_world() -> io::Result<Vec<u8>> {
-///    let mut ret_vec = [0;100];
+///    let mut ret_vec = Vec::new();
 ///    let c = b"hello world";
 ///    let mut deflater = DeflateEncoder::new(&c[..], Compression::fast());
-///    let count = deflater.read(&mut ret_vec)?;
-///    Ok(ret_vec[0..count].to_vec())
+///    deflater.read_to_end(&mut ret_vec)?;
+///    Ok(ret_vec)
 /// }
 /// ```
 #[derive(Debug)]
@@ -113,9 +108,6 @@ impl<R: Read> Read for DeflateEncoder<R> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<R: AsyncRead> AsyncRead for DeflateEncoder<R> {}
-
 impl<W: Read + Write> Write for DeflateEncoder<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.get_mut().write(buf)
@@ -126,17 +118,10 @@ impl<W: Read + Write> Write for DeflateEncoder<W> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<R: AsyncRead + AsyncWrite> AsyncWrite for DeflateEncoder<R> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.get_mut().shutdown()
-    }
-}
-
 /// A DEFLATE decoder, or decompressor.
 ///
-/// This structure implements a [`Read`] interface and takes a stream of
-/// compressed data as input, providing the decompressed data when read from.
+/// This structure implements a [`Read`] interface. When read from, it reads
+/// compressed data from the underlying [`Read`] and provides the uncompressed data.
 ///
 /// [`Read`]: https://doc.rust-lang.org/std/io/trait.Read.html
 ///
@@ -211,7 +196,7 @@ impl<R> DeflateDecoder<R> {
     /// Acquires a mutable reference to the underlying stream
     ///
     /// Note that mutation of the stream may result in surprising results if
-    /// this encoder is continued to be used.
+    /// this decoder is continued to be used.
     pub fn get_mut(&mut self) -> &mut R {
         self.inner.get_mut().get_mut()
     }
@@ -245,9 +230,6 @@ impl<R: Read> Read for DeflateDecoder<R> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<R: AsyncRead> AsyncRead for DeflateDecoder<R> {}
-
 impl<W: Read + Write> Write for DeflateDecoder<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.get_mut().write(buf)
@@ -255,12 +237,5 @@ impl<W: Read + Write> Write for DeflateDecoder<W> {
 
     fn flush(&mut self) -> io::Result<()> {
         self.get_mut().flush()
-    }
-}
-
-#[cfg(feature = "tokio")]
-impl<R: AsyncWrite + AsyncRead> AsyncWrite for DeflateDecoder<R> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.get_mut().shutdown()
     }
 }

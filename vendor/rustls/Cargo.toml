@@ -10,29 +10,36 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
+rust-version = "1.61"
 name = "rustls"
-version = "0.20.2"
-authors = ["Joseph Birr-Pixton <jpixton@gmail.com>"]
+version = "0.21.8"
+build = "build.rs"
 autobenches = false
 description = "Rustls is a modern TLS library written in Rust."
 homepage = "https://github.com/rustls/rustls"
-readme = "../README.md"
-categories = ["network-programming", "cryptography"]
-license = "Apache-2.0/ISC/MIT"
+readme = "README.md"
+categories = [
+    "network-programming",
+    "cryptography",
+]
+license = "Apache-2.0 OR ISC OR MIT"
 repository = "https://github.com/rustls/rustls"
+
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+]
 
 [[example]]
 name = "bogo_shim"
 path = "examples/internal/bogo_shim.rs"
-required-features = ["dangerous_configuration", "quic"]
-
-[[example]]
-name = "trytls_shim"
-path = "examples/internal/trytls_shim.rs"
+required-features = [
+    "dangerous_configuration",
+    "quic",
+]
 
 [[example]]
 name = "bench"
@@ -40,42 +47,57 @@ path = "examples/internal/bench.rs"
 
 [[bench]]
 name = "benchmarks"
-path = "tests/benchmarks.rs"
+path = "benches/benchmarks.rs"
 harness = false
+
 [dependencies.log]
 version = "0.4.4"
 optional = true
 
 [dependencies.ring]
-version = "0.16.20"
+version = "0.17"
 
 [dependencies.sct]
 version = "0.7.0"
 
 [dependencies.webpki]
-version = "0.22.0"
-features = ["alloc", "std"]
-[dev-dependencies.base64]
-version = "0.13.0"
+version = "0.101.7"
+features = [
+    "alloc",
+    "std",
+]
+package = "rustls-webpki"
 
-[dev-dependencies.criterion]
-version = "0.3.0"
+[dev-dependencies.base64]
+version = "0.21"
+
+[dev-dependencies.bencher]
+version = "0.1.5"
 
 [dev-dependencies.env_logger]
-version = "0.9.0"
+version = "0.10"
 
 [dev-dependencies.log]
 version = "0.4.4"
 
 [dev-dependencies.rustls-pemfile]
-version = "0.2.0"
+version = "1.0.3"
 
 [dev-dependencies.webpki-roots]
-version = "0.22.0"
+version = "0.25.0"
+
+[build-dependencies.rustversion]
+version = "1.0.6"
+optional = true
 
 [features]
 dangerous_configuration = []
-default = ["logging", "tls12"]
+default = [
+    "logging",
+    "tls12",
+]
 logging = ["log"]
 quic = []
+read_buf = ["rustversion"]
+secret_extraction = []
 tls12 = []

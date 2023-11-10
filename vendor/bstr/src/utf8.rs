@@ -1,13 +1,9 @@
-use core::char;
-use core::cmp;
-use core::fmt;
-use core::str;
+use core::{char, cmp, fmt, str};
+
 #[cfg(feature = "std")]
 use std::error;
 
-use ascii;
-use bstr::BStr;
-use ext_slice::ByteSlice;
+use crate::{ascii, bstr::BStr, ext_slice::ByteSlice};
 
 // The UTF-8 decoder provided here is based on the one presented here:
 // https://bjoern.hoehrmann.de/utf-8/decoder/dfa/
@@ -75,7 +71,7 @@ const STATES_FORWARD: &'static [u8] = &[
 ///
 /// When invalid UTF-8 byte sequences are found, they are substituted with the
 /// Unicode replacement codepoint (`U+FFFD`) using the
-/// ["maximal subpart" strategy](http://www.unicode.org/review/pr-121.html).
+/// ["maximal subpart" strategy](https://www.unicode.org/review/pr-121.html).
 ///
 /// This iterator is created by the
 /// [`chars`](trait.ByteSlice.html#method.chars) method provided by the
@@ -146,7 +142,7 @@ impl<'a> DoubleEndedIterator for Chars<'a> {
 ///
 /// When invalid UTF-8 byte sequences are found, they are substituted with the
 /// Unicode replacement codepoint (`U+FFFD`) using the
-/// ["maximal subpart" strategy](http://www.unicode.org/review/pr-121.html).
+/// ["maximal subpart" strategy](https://www.unicode.org/review/pr-121.html).
 ///
 /// Note that this is slightly different from the `CharIndices` iterator
 /// provided by the standard library. Aside from working on possibly invalid
@@ -168,7 +164,7 @@ pub struct CharIndices<'a> {
 
 impl<'a> CharIndices<'a> {
     pub(crate) fn new(bs: &'a [u8]) -> CharIndices<'a> {
-        CharIndices { bs: bs, forward_index: 0, reverse_index: bs.len() }
+        CharIndices { bs, forward_index: 0, reverse_index: bs.len() }
     }
 
     /// View the underlying data as a subslice of the original data.
@@ -392,7 +388,7 @@ impl<'a> ::core::iter::FusedIterator for Utf8Chunks<'a> {}
 /// assert_eq!(err.error_len(), Some(3));
 ///
 /// // In contrast to the above which contains a single invalid prefix,
-/// // consider the case of multiple individal bytes that are never valid
+/// // consider the case of multiple individual bytes that are never valid
 /// // prefixes. Note how the value of error_len changes!
 /// let s = b"foobar\xFF\xFFquux";
 /// let err = s.to_str().unwrap_err();
@@ -406,7 +402,7 @@ impl<'a> ::core::iter::FusedIterator for Utf8Chunks<'a> {}
 /// assert_eq!(err.valid_up_to(), 6);
 /// assert_eq!(err.error_len(), Some(1));
 /// ```
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Utf8Error {
     valid_up_to: usize,
     error_len: Option<usize>,
@@ -459,7 +455,7 @@ impl error::Error for Utf8Error {
 }
 
 impl fmt::Display for Utf8Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "invalid UTF-8 found at byte offset {}", self.valid_up_to)
     }
 }
@@ -854,13 +850,15 @@ fn is_leading_or_invalid_utf8_byte(b: u8) -> bool {
     (b & 0b1100_0000) != 0b1000_0000
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use std::char;
 
-    use ext_slice::{ByteSlice, B};
-    use tests::LOSSY_TESTS;
-    use utf8::{self, Utf8Error};
+    use crate::{
+        ext_slice::{ByteSlice, B},
+        tests::LOSSY_TESTS,
+        utf8::{self, Utf8Error},
+    };
 
     fn utf8e(valid_up_to: usize) -> Utf8Error {
         Utf8Error { valid_up_to, error_len: None }
@@ -871,6 +869,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(miri))]
     fn validate_all_codepoints() {
         for i in 0..(0x10FFFF + 1) {
             let cp = match char::from_u32(i) {

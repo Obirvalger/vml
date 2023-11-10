@@ -1,93 +1,99 @@
-#[link(name = "windows")]
-extern "system" {
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmAttachMilContent(hwnd: super::super::Foundation::HWND) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmDefWindowProc(hwnd: super::super::Foundation::HWND, msg: u32, wparam: super::super::Foundation::WPARAM, lparam: super::super::Foundation::LPARAM, plresult: *mut super::super::Foundation::LRESULT) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmDetachMilContent(hwnd: super::super::Foundation::HWND) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_Graphics_Gdi\"`*"]
-    #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Graphics_Gdi"))]
-    pub fn DwmEnableBlurBehindWindow(hwnd: super::super::Foundation::HWND, pblurbehind: *const DWM_BLURBEHIND) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-    pub fn DwmEnableComposition(ucompositionaction: u32) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmEnableMMCSS(fenablemmcss: super::super::Foundation::BOOL) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_UI_Controls\"`*"]
-    #[cfg(all(feature = "Win32_Foundation", feature = "Win32_UI_Controls"))]
-    pub fn DwmExtendFrameIntoClientArea(hwnd: super::super::Foundation::HWND, pmarinset: *const super::super::UI::Controls::MARGINS) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-    pub fn DwmFlush() -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmGetColorizationColor(pcrcolorization: *mut u32, pfopaqueblend: *mut super::super::Foundation::BOOL) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmGetCompositionTimingInfo(hwnd: super::super::Foundation::HWND, ptiminginfo: *mut DWM_TIMING_INFO) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-    pub fn DwmGetGraphicsStreamClient(uindex: u32, pclientuuid: *mut ::windows_sys::core::GUID) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-    pub fn DwmGetGraphicsStreamTransformHint(uindex: u32, ptransform: *mut MilMatrix3x2D) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmGetTransportAttributes(pfisremoting: *mut super::super::Foundation::BOOL, pfisconnected: *mut super::super::Foundation::BOOL, pdwgeneration: *mut u32) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmGetUnmetTabRequirements(appwindow: super::super::Foundation::HWND, value: *mut DWM_TAB_WINDOW_REQUIREMENTS) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmGetWindowAttribute(hwnd: super::super::Foundation::HWND, dwattribute: DWMWINDOWATTRIBUTE, pvattribute: *mut ::core::ffi::c_void, cbattribute: u32) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmInvalidateIconicBitmaps(hwnd: super::super::Foundation::HWND) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmIsCompositionEnabled(pfenabled: *mut super::super::Foundation::BOOL) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmModifyPreviousDxFrameDuration(hwnd: super::super::Foundation::HWND, crefreshes: i32, frelative: super::super::Foundation::BOOL) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmQueryThumbnailSourceSize(hthumbnail: isize, psize: *mut super::super::Foundation::SIZE) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmRegisterThumbnail(hwnddestination: super::super::Foundation::HWND, hwndsource: super::super::Foundation::HWND, phthumbnailid: *mut isize) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmRenderGesture(gt: GESTURE_TYPE, ccontacts: u32, pdwpointerid: *const u32, ppoints: *const super::super::Foundation::POINT) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmSetDxFrameDuration(hwnd: super::super::Foundation::HWND, crefreshes: i32) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_Graphics_Gdi\"`*"]
-    #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Graphics_Gdi"))]
-    pub fn DwmSetIconicLivePreviewBitmap(hwnd: super::super::Foundation::HWND, hbmp: super::Gdi::HBITMAP, pptclient: *const super::super::Foundation::POINT, dwsitflags: u32) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_Graphics_Gdi\"`*"]
-    #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Graphics_Gdi"))]
-    pub fn DwmSetIconicThumbnail(hwnd: super::super::Foundation::HWND, hbmp: super::Gdi::HBITMAP, dwsitflags: u32) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmSetPresentParameters(hwnd: super::super::Foundation::HWND, ppresentparams: *mut DWM_PRESENT_PARAMETERS) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmSetWindowAttribute(hwnd: super::super::Foundation::HWND, dwattribute: DWMWINDOWATTRIBUTE, pvattribute: *const ::core::ffi::c_void, cbattribute: u32) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-    pub fn DwmShowContact(dwpointerid: u32, eshowcontact: DWM_SHOWCONTACT) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmTetherContact(dwpointerid: u32, fenable: super::super::Foundation::BOOL, pttether: super::super::Foundation::POINT) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmTransitionOwnedWindow(hwnd: super::super::Foundation::HWND, target: DWMTRANSITION_OWNEDWINDOW_TARGET) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-    pub fn DwmUnregisterThumbnail(hthumbnailid: isize) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn DwmUpdateThumbnailProperties(hthumbnailid: isize, ptnproperties: *const DWM_THUMBNAIL_PROPERTIES) -> ::windows_sys::core::HRESULT;
-}
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmAttachMilContent ( hwnd : super::super::Foundation:: HWND ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmDefWindowProc ( hwnd : super::super::Foundation:: HWND , msg : u32 , wparam : super::super::Foundation:: WPARAM , lparam : super::super::Foundation:: LPARAM , plresult : *mut super::super::Foundation:: LRESULT ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmDetachMilContent ( hwnd : super::super::Foundation:: HWND ) -> ::windows_sys::core::HRESULT );
+#[cfg(all(feature = "Win32_Foundation", feature = "Win32_Graphics_Gdi"))]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_Graphics_Gdi\"`*"] fn DwmEnableBlurBehindWindow ( hwnd : super::super::Foundation:: HWND , pblurbehind : *const DWM_BLURBEHIND ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"] fn DwmEnableComposition ( ucompositionaction : u32 ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmEnableMMCSS ( fenablemmcss : super::super::Foundation:: BOOL ) -> ::windows_sys::core::HRESULT );
+#[cfg(all(feature = "Win32_Foundation", feature = "Win32_UI_Controls"))]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_UI_Controls\"`*"] fn DwmExtendFrameIntoClientArea ( hwnd : super::super::Foundation:: HWND , pmarinset : *const super::super::UI::Controls:: MARGINS ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"] fn DwmFlush ( ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmGetColorizationColor ( pcrcolorization : *mut u32 , pfopaqueblend : *mut super::super::Foundation:: BOOL ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmGetCompositionTimingInfo ( hwnd : super::super::Foundation:: HWND , ptiminginfo : *mut DWM_TIMING_INFO ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"] fn DwmGetGraphicsStreamClient ( uindex : u32 , pclientuuid : *mut ::windows_sys::core::GUID ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"] fn DwmGetGraphicsStreamTransformHint ( uindex : u32 , ptransform : *mut MilMatrix3x2D ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmGetTransportAttributes ( pfisremoting : *mut super::super::Foundation:: BOOL , pfisconnected : *mut super::super::Foundation:: BOOL , pdwgeneration : *mut u32 ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmGetUnmetTabRequirements ( appwindow : super::super::Foundation:: HWND , value : *mut DWM_TAB_WINDOW_REQUIREMENTS ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmGetWindowAttribute ( hwnd : super::super::Foundation:: HWND , dwattribute : DWMWINDOWATTRIBUTE , pvattribute : *mut ::core::ffi::c_void , cbattribute : u32 ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmInvalidateIconicBitmaps ( hwnd : super::super::Foundation:: HWND ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmIsCompositionEnabled ( pfenabled : *mut super::super::Foundation:: BOOL ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmModifyPreviousDxFrameDuration ( hwnd : super::super::Foundation:: HWND , crefreshes : i32 , frelative : super::super::Foundation:: BOOL ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmQueryThumbnailSourceSize ( hthumbnail : isize , psize : *mut super::super::Foundation:: SIZE ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmRegisterThumbnail ( hwnddestination : super::super::Foundation:: HWND , hwndsource : super::super::Foundation:: HWND , phthumbnailid : *mut isize ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmRenderGesture ( gt : GESTURE_TYPE , ccontacts : u32 , pdwpointerid : *const u32 , ppoints : *const super::super::Foundation:: POINT ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmSetDxFrameDuration ( hwnd : super::super::Foundation:: HWND , crefreshes : i32 ) -> ::windows_sys::core::HRESULT );
+#[cfg(all(feature = "Win32_Foundation", feature = "Win32_Graphics_Gdi"))]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_Graphics_Gdi\"`*"] fn DwmSetIconicLivePreviewBitmap ( hwnd : super::super::Foundation:: HWND , hbmp : super::Gdi:: HBITMAP , pptclient : *const super::super::Foundation:: POINT , dwsitflags : u32 ) -> ::windows_sys::core::HRESULT );
+#[cfg(all(feature = "Win32_Foundation", feature = "Win32_Graphics_Gdi"))]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_Graphics_Gdi\"`*"] fn DwmSetIconicThumbnail ( hwnd : super::super::Foundation:: HWND , hbmp : super::Gdi:: HBITMAP , dwsitflags : u32 ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmSetPresentParameters ( hwnd : super::super::Foundation:: HWND , ppresentparams : *mut DWM_PRESENT_PARAMETERS ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmSetWindowAttribute ( hwnd : super::super::Foundation:: HWND , dwattribute : DWMWINDOWATTRIBUTE , pvattribute : *const ::core::ffi::c_void , cbattribute : u32 ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"] fn DwmShowContact ( dwpointerid : u32 , eshowcontact : DWM_SHOWCONTACT ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmTetherContact ( dwpointerid : u32 , fenable : super::super::Foundation:: BOOL , pttether : super::super::Foundation:: POINT ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmTransitionOwnedWindow ( hwnd : super::super::Foundation:: HWND , target : DWMTRANSITION_OWNEDWINDOW_TARGET ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"] fn DwmUnregisterThumbnail ( hthumbnailid : isize ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "dwmapi.dll""system" #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"] fn DwmUpdateThumbnailProperties ( hthumbnailid : isize , ptnproperties : *const DWM_THUMBNAIL_PROPERTIES ) -> ::windows_sys::core::HRESULT );
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMWA_COLOR_DEFAULT: u32 = 4294967295u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMWA_COLOR_NONE: u32 = 4294967294u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_BB_BLURREGION: u32 = 2u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_BB_ENABLE: u32 = 1u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_BB_TRANSITIONONMAXIMIZED: u32 = 4u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_CLOAKED_APP: u32 = 1u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_CLOAKED_INHERITED: u32 = 4u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_CLOAKED_SHELL: u32 = 2u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_EC_DISABLECOMPOSITION: u32 = 0u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_EC_ENABLECOMPOSITION: u32 = 1u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_FRAME_DURATION_DEFAULT: i32 = -1i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_SIT_DISPLAYFRAME: u32 = 1u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_TNP_OPACITY: u32 = 4u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_TNP_RECTDESTINATION: u32 = 1u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_TNP_RECTSOURCE: u32 = 2u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_TNP_SOURCECLIENTAREAONLY: u32 = 16u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_TNP_VISIBLE: u32 = 8u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const c_DwmMaxAdapters: u32 = 16u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const c_DwmMaxMonitors: u32 = 16u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const c_DwmMaxQueuedBuffers: u32 = 8u32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
 pub type DWMFLIP3DWINDOWPOLICY = i32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
@@ -114,10 +120,6 @@ pub type DWMTRANSITION_OWNEDWINDOW_TARGET = i32;
 pub const DWMTRANSITION_OWNEDWINDOW_NULL: DWMTRANSITION_OWNEDWINDOW_TARGET = -1i32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
 pub const DWMTRANSITION_OWNEDWINDOW_REPOSITION: DWMTRANSITION_OWNEDWINDOW_TARGET = 0i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMWA_COLOR_DEFAULT: u32 = 4294967295u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMWA_COLOR_NONE: u32 = 4294967294u32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
 pub type DWMWINDOWATTRIBUTE = i32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
@@ -167,13 +169,103 @@ pub const DWMWA_TEXT_COLOR: DWMWINDOWATTRIBUTE = 36i32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
 pub const DWMWA_VISIBLE_FRAME_BORDER_THICKNESS: DWMWINDOWATTRIBUTE = 37i32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMWA_LAST: DWMWINDOWATTRIBUTE = 38i32;
+pub const DWMWA_SYSTEMBACKDROP_TYPE: DWMWINDOWATTRIBUTE = 38i32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_BB_BLURREGION: u32 = 2u32;
+pub const DWMWA_LAST: DWMWINDOWATTRIBUTE = 39i32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_BB_ENABLE: u32 = 1u32;
+pub type DWM_SHOWCONTACT = u32;
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_BB_TRANSITIONONMAXIMIZED: u32 = 4u32;
+pub const DWMSC_DOWN: DWM_SHOWCONTACT = 1u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSC_UP: DWM_SHOWCONTACT = 2u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSC_DRAG: DWM_SHOWCONTACT = 4u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSC_HOLD: DWM_SHOWCONTACT = 8u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSC_PENBARREL: DWM_SHOWCONTACT = 16u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSC_NONE: DWM_SHOWCONTACT = 0u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSC_ALL: DWM_SHOWCONTACT = 4294967295u32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub type DWM_SOURCE_FRAME_SAMPLING = i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_SOURCE_FRAME_SAMPLING_POINT: DWM_SOURCE_FRAME_SAMPLING = 0i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_SOURCE_FRAME_SAMPLING_COVERAGE: DWM_SOURCE_FRAME_SAMPLING = 1i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWM_SOURCE_FRAME_SAMPLING_LAST: DWM_SOURCE_FRAME_SAMPLING = 2i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub type DWM_SYSTEMBACKDROP_TYPE = i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSBT_AUTO: DWM_SYSTEMBACKDROP_TYPE = 0i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSBT_NONE: DWM_SYSTEMBACKDROP_TYPE = 1i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSBT_MAINWINDOW: DWM_SYSTEMBACKDROP_TYPE = 2i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSBT_TRANSIENTWINDOW: DWM_SYSTEMBACKDROP_TYPE = 3i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMSBT_TABBEDWINDOW: DWM_SYSTEMBACKDROP_TYPE = 4i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub type DWM_TAB_WINDOW_REQUIREMENTS = i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_NONE: DWM_TAB_WINDOW_REQUIREMENTS = 0i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_IMPLEMENTED_BY_SYSTEM: DWM_TAB_WINDOW_REQUIREMENTS = 1i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_WINDOW_RELATIONSHIP: DWM_TAB_WINDOW_REQUIREMENTS = 2i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_WINDOW_STYLES: DWM_TAB_WINDOW_REQUIREMENTS = 4i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_WINDOW_REGION: DWM_TAB_WINDOW_REQUIREMENTS = 8i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_WINDOW_DWM_ATTRIBUTES: DWM_TAB_WINDOW_REQUIREMENTS = 16i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_WINDOW_MARGINS: DWM_TAB_WINDOW_REQUIREMENTS = 32i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_TABBING_ENABLED: DWM_TAB_WINDOW_REQUIREMENTS = 64i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_USER_POLICY: DWM_TAB_WINDOW_REQUIREMENTS = 128i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_GROUP_POLICY: DWM_TAB_WINDOW_REQUIREMENTS = 256i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMTWR_APP_COMPAT: DWM_TAB_WINDOW_REQUIREMENTS = 512i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub type DWM_WINDOW_CORNER_PREFERENCE = i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMWCP_DEFAULT: DWM_WINDOW_CORNER_PREFERENCE = 0i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMWCP_DONOTROUND: DWM_WINDOW_CORNER_PREFERENCE = 1i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMWCP_ROUND: DWM_WINDOW_CORNER_PREFERENCE = 2i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const DWMWCP_ROUNDSMALL: DWM_WINDOW_CORNER_PREFERENCE = 3i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub type GESTURE_TYPE = i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_PEN_TAP: GESTURE_TYPE = 0i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_PEN_DOUBLETAP: GESTURE_TYPE = 1i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_PEN_RIGHTTAP: GESTURE_TYPE = 2i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_PEN_PRESSANDHOLD: GESTURE_TYPE = 3i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_PEN_PRESSANDHOLDABORT: GESTURE_TYPE = 4i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_TOUCH_TAP: GESTURE_TYPE = 5i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_TOUCH_DOUBLETAP: GESTURE_TYPE = 6i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_TOUCH_RIGHTTAP: GESTURE_TYPE = 7i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_TOUCH_PRESSANDHOLD: GESTURE_TYPE = 8i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_TOUCH_PRESSANDHOLDABORT: GESTURE_TYPE = 9i32;
+#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
+pub const GT_TOUCH_PRESSANDTAP: GESTURE_TYPE = 10i32;
 #[repr(C, packed(1))]
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`, `\"Win32_Graphics_Gdi\"`*"]
 #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Graphics_Gdi"))]
@@ -191,18 +283,6 @@ impl ::core::clone::Clone for DWM_BLURBEHIND {
         *self
     }
 }
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_CLOAKED_APP: u32 = 1u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_CLOAKED_INHERITED: u32 = 4u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_CLOAKED_SHELL: u32 = 2u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_EC_DISABLECOMPOSITION: u32 = 0u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_EC_ENABLECOMPOSITION: u32 = 1u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_FRAME_DURATION_DEFAULT: i32 = -1i32;
 #[repr(C, packed(1))]
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
 #[cfg(feature = "Win32_Foundation")]
@@ -224,56 +304,6 @@ impl ::core::clone::Clone for DWM_PRESENT_PARAMETERS {
         *self
     }
 }
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub type DWM_SHOWCONTACT = u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMSC_DOWN: DWM_SHOWCONTACT = 1u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMSC_UP: DWM_SHOWCONTACT = 2u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMSC_DRAG: DWM_SHOWCONTACT = 4u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMSC_HOLD: DWM_SHOWCONTACT = 8u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMSC_PENBARREL: DWM_SHOWCONTACT = 16u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMSC_NONE: DWM_SHOWCONTACT = 0u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMSC_ALL: DWM_SHOWCONTACT = 4294967295u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_SIT_DISPLAYFRAME: u32 = 1u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub type DWM_SOURCE_FRAME_SAMPLING = i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_SOURCE_FRAME_SAMPLING_POINT: DWM_SOURCE_FRAME_SAMPLING = 0i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_SOURCE_FRAME_SAMPLING_COVERAGE: DWM_SOURCE_FRAME_SAMPLING = 1i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_SOURCE_FRAME_SAMPLING_LAST: DWM_SOURCE_FRAME_SAMPLING = 2i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub type DWM_TAB_WINDOW_REQUIREMENTS = u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_NONE: DWM_TAB_WINDOW_REQUIREMENTS = 0u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_IMPLEMENTED_BY_SYSTEM: DWM_TAB_WINDOW_REQUIREMENTS = 1u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_WINDOW_RELATIONSHIP: DWM_TAB_WINDOW_REQUIREMENTS = 2u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_WINDOW_STYLES: DWM_TAB_WINDOW_REQUIREMENTS = 4u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_WINDOW_REGION: DWM_TAB_WINDOW_REQUIREMENTS = 8u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_WINDOW_DWM_ATTRIBUTES: DWM_TAB_WINDOW_REQUIREMENTS = 16u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_WINDOW_MARGINS: DWM_TAB_WINDOW_REQUIREMENTS = 32u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_TABBING_ENABLED: DWM_TAB_WINDOW_REQUIREMENTS = 64u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_USER_POLICY: DWM_TAB_WINDOW_REQUIREMENTS = 128u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_GROUP_POLICY: DWM_TAB_WINDOW_REQUIREMENTS = 256u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMTWR_APP_COMPAT: DWM_TAB_WINDOW_REQUIREMENTS = 512u32;
 #[repr(C, packed(1))]
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`, `\"Win32_Foundation\"`*"]
 #[cfg(feature = "Win32_Foundation")]
@@ -343,50 +373,6 @@ impl ::core::clone::Clone for DWM_TIMING_INFO {
         *self
     }
 }
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_TNP_OPACITY: u32 = 4u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_TNP_RECTDESTINATION: u32 = 1u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_TNP_RECTSOURCE: u32 = 2u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_TNP_SOURCECLIENTAREAONLY: u32 = 16u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWM_TNP_VISIBLE: u32 = 8u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub type DWM_WINDOW_CORNER_PREFERENCE = i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMWCP_DEFAULT: DWM_WINDOW_CORNER_PREFERENCE = 0i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMWCP_DONOTROUND: DWM_WINDOW_CORNER_PREFERENCE = 1i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMWCP_ROUND: DWM_WINDOW_CORNER_PREFERENCE = 2i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const DWMWCP_ROUNDSMALL: DWM_WINDOW_CORNER_PREFERENCE = 3i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub type GESTURE_TYPE = i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_PEN_TAP: GESTURE_TYPE = 0i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_PEN_DOUBLETAP: GESTURE_TYPE = 1i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_PEN_RIGHTTAP: GESTURE_TYPE = 2i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_PEN_PRESSANDHOLD: GESTURE_TYPE = 3i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_PEN_PRESSANDHOLDABORT: GESTURE_TYPE = 4i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_TOUCH_TAP: GESTURE_TYPE = 5i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_TOUCH_DOUBLETAP: GESTURE_TYPE = 6i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_TOUCH_RIGHTTAP: GESTURE_TYPE = 7i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_TOUCH_PRESSANDHOLD: GESTURE_TYPE = 8i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_TOUCH_PRESSANDHOLDABORT: GESTURE_TYPE = 9i32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const GT_TOUCH_PRESSANDTAP: GESTURE_TYPE = 10i32;
 #[repr(C, packed(1))]
 #[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
 pub struct MilMatrix3x2D {
@@ -415,9 +401,3 @@ impl ::core::clone::Clone for UNSIGNED_RATIO {
         *self
     }
 }
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const c_DwmMaxAdapters: u32 = 16u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const c_DwmMaxMonitors: u32 = 16u32;
-#[doc = "*Required features: `\"Win32_Graphics_Dwm\"`*"]
-pub const c_DwmMaxQueuedBuffers: u32 = 8u32;

@@ -20,9 +20,6 @@ This is associated with [RFC 3128], the I/O Safety RFC, which is now merged.
 Work is now underway to move the `OwnedFd` and `BorrowedFd` types and `AsFd`
 trait developed here into `std`.
 
-Some features currently require nightly Rust, as they depend on `rustc_attrs`
-to perform niche optimizations needed for FFI use cases.
-
 For a quick taste, check out the code examples:
 
  - [hello], a basic demo of this API, doing low-level I/O manually, using the
@@ -75,7 +72,7 @@ in the Windows API.
 
 Here's the fun part. `BorrowedFd` and `OwnedFd` are `repr(transparent)` and
 hold `RawFd` values, and `Option<BorrowedFd>` and `Option<OwnedFd>` are
-FFI-safe (on nightly Rust), so they can all be used in FFI [directly]:
+FFI-safe (on Rust >= 1.63), so they can all be used in FFI [directly]:
 
 [directly]: https://github.com/sunfishcode/io-lifetimes/blob/main/src/example_ffi.rs
 
@@ -95,37 +92,16 @@ is what motivates having `BorrowedFd` instead of just using `&OwnedFd`.
 Note the use of `Option<OwnedFd>` as the return value of `open`, representing
 the fact that it can either succeed or fail.
 
-## I/O Safety in Rust Nightly
+## I/O Safety in Rust
 
-The I/O Safety
-[implementation PR](https://github.com/rust-lang/rust/pull/87329) has now
-landed and is available on Rust Nightly. It can be used directly, or through
-io-lifetimes: when `io_lifetimes_use_std` mode is enabled, io-lifetimes uses
-the std's `OwnedFd`, `BorrowedFd`, and `AsFd` instead of defining its own.
-
-To enable `io_lifetimes_use_std` mode:
-  - Set the environment variable `RUSTFLAGS=--cfg=io_lifetimes_use_std`, and
-  - add `#![cfg_attr(io_lifetimes_use_std, feature(io_safety))]` to your
-    lib.rs or main.rs.
-
-Note that, unfortunately, `io_lifetimes_use_std` mode doesn't support the
-optional impls for third-party crates.
-
-The code in `std` uses `From<OwnedFd>` and `Into<OwnedFd>` instead of `FromFd`
-and `IntoFd`. io-lifetimes is unable to provide impls for these for third-party
-types, so it continues to provide `FromFd` and `IntoFd` for now, with default
-impls that forward to `From<OwnedFd>` and `Into<OwnedFd>` in
-`io_lifetimes_use_std` mode.
+I/O Safety feature is stablized in Rust 1.63. With this version or later,
+io-lifetimes will use and re-export the standard-library types and traits. With
+older versions, io-lifetimes defines its own copy of these types and traits.
 
 io-lifetimes also includes several features which are not (yet?) in std,
 including the portability traits `AsFilelike`/`AsSocketlike`/etc., the
 `from_into_*` functions in the `From*` traits, and [views].
 
-If you test a crate with the std I/O safety types and traits, or io-lifetimes
-in `io_lifetimes_use_std` mode, please post a note about it in the
-[I/O safety tracking issue] as an example of usage.
-
-[I/O safety tracking issue]: https://github.com/rust-lang/rust/issues/87074
 [views]: https://docs.rs/io-lifetimes/*/io_lifetimes/views/index.html
 
 ## Prior Art
@@ -148,7 +124,7 @@ be added.
 
 io-lifetimes's distinguishing features are its use of `repr(transparent)`
 to support direct FFI usage, niche optimizations so `Option` can support direct
-FFI usafe as well (on nightly Rust), lifetime-aware `As*`/`Into*`/`From*`
+FFI usafe as well (on Rust >= 1.63), lifetime-aware `As*`/`Into*`/`From*`
 traits which leverage Rust's lifetime system and allow safe and checked
 `from_*` and `as_*`/`into_*` functions, and powerful convenience features
 enabled by its underlying safety.
@@ -167,7 +143,7 @@ io-lifetimes's [`OwnedFd`] type is also similar to
 [filedesc](https://crates.io/crates/filedesc)'s
 [`FileDesc`](https://docs.rs/filedesc/0.3.0/filedesc/struct.FileDesc.html)
 io-lifetimes's `OwnedFd` reserves the value -1, so it doesn't need to test for
-`-1` in its `Drop`, and `Option<OwnedFd>` (on nightly Rust) is the same size
+`-1` in its `Drop`, and `Option<OwnedFd>` (on Rust >= 1.63) is the same size
 as `FileDesc`.
 
 io-lifetimes's [`OwnedFd`] type is also similar to
@@ -191,6 +167,13 @@ they're simpler and safer to use. io-lifetimes doesn't include unsafe-io's
 `*ReadWrite*` or `*HandleOrSocket*` abstractions, and leaves these as features
 to be provided by separate layers on top.
 
-[`OwnedFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/struct.OwnedFd.html
-[`BorrowedFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/struct.BorrowedFd.html
+## Minimum Supported Rust Version (MSRV)
+
+This crate currently works on the version of [Rust on Debian stable], which is
+currently Rust 1.48. This policy may change in the future, in minor version
+releases, so users using a fixed version of Rust should pin to a specific
+version of this crate.
+
+[`OwnedFd`]: https://doc.rust-lang.org/stable/std/os/fd/struct.OwnedFd.html
+[`BorrowedFd`]: https://doc.rust-lang.org/stable/std/os/fd/struct.BorrowedFd.html
 [RFC 3128]: https://github.com/rust-lang/rfcs/blob/master/text/3128-io-safety.md

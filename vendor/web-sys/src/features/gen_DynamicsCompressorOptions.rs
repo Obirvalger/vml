@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -145,5 +146,10 @@ impl DynamicsCompressorOptions {
         );
         let _ = r;
         self
+    }
+}
+impl Default for DynamicsCompressorOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

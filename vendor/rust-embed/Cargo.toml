@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "rust-embed"
-version = "6.4.1"
+version = "6.8.1"
 authors = ["pyros2097 <pyros2097@gmail.com>"]
 description = "Rust Custom Derive Macro which loads files into the rust binary at compile time during release and loads the file from the fs during dev"
 documentation = "https://docs.rs/rust-embed"
@@ -61,6 +61,11 @@ name = "poem"
 path = "examples/poem.rs"
 required-features = ["poem-ex"]
 
+[[example]]
+name = "salvo"
+path = "examples/salvo.rs"
+required-features = ["salvo-ex"]
+
 [[test]]
 name = "interpolated_path"
 path = "tests/interpolated_path.rs"
@@ -71,13 +76,21 @@ name = "include_exclude"
 path = "tests/include_exclude.rs"
 required-features = ["include-exclude"]
 
+[[test]]
+name = "mime_guess"
+path = "tests/mime_guess.rs"
+required-features = ["mime-guess"]
+
 [dependencies.actix-web]
 version = "4"
 optional = true
 
 [dependencies.axum]
-version = "0.5"
-features = ["http1"]
+version = "0.6"
+features = [
+    "http1",
+    "tokio",
+]
 optional = true
 default-features = false
 
@@ -86,7 +99,7 @@ version = "0.4.3"
 optional = true
 
 [dependencies.include-flate]
-version = "0.1"
+version = "0.2"
 features = ["stable"]
 optional = true
 
@@ -106,10 +119,10 @@ optional = true
 default-features = false
 
 [dependencies.rust-embed-impl]
-version = "6.3.0"
+version = "6.8.1"
 
 [dependencies.rust-embed-utils]
-version = "7.3.0"
+version = "7.8.1"
 
 [dependencies.salvo]
 version = "0.16"
@@ -125,7 +138,7 @@ features = [
 optional = true
 
 [dependencies.walkdir]
-version = "2.3.1"
+version = "2.3.2"
 
 [dependencies.warp]
 version = "0.3"
@@ -158,6 +171,10 @@ include-exclude = [
     "rust-embed-utils/include-exclude",
 ]
 interpolate-folder-path = ["rust-embed-impl/interpolate-folder-path"]
+mime-guess = [
+    "rust-embed-impl/mime-guess",
+    "rust-embed-utils/mime-guess",
+]
 poem-ex = [
     "poem",
     "tokio",

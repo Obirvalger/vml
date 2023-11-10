@@ -1,5 +1,3 @@
-extern crate unicode_segmentation;
-
 use std::error::Error;
 use std::io::{self, BufRead};
 

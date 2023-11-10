@@ -201,6 +201,20 @@ fn test_smaps() {
 }
 
 #[test]
+fn test_smaps_rollup() {
+    let me = Process::myself().unwrap();
+    let smaps_rollup = match me.smaps_rollup() {
+        Ok(x) => x,
+        Err(ProcError::NotFound(_)) => {
+            // ignored because not all kernerls have smaps_rollup
+            return;
+        }
+        Err(e) => panic!("{}", e),
+    };
+    println!("{:#?}", smaps_rollup);
+}
+
+#[test]
 fn test_proc_alive() {
     let myself = Process::myself().unwrap();
     assert!(myself.is_alive());
@@ -215,7 +229,7 @@ fn test_proc_alive() {
     let child_pid = child.id() as i32;
 
     // sleep very briefly to allow the child to start and then exit
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::thread::sleep(std::time::Duration::from_millis(30));
 
     let child_proc = Process::new(child_pid).unwrap();
     assert!(!child_proc.is_alive(), "Child state is: {:?}", child_proc.stat());
@@ -478,4 +492,10 @@ fn test_fdtarget() {
     let _ = FDTarget::from_str(":");
     let _ = FDTarget::from_str("n:ǟF");
     let _ = FDTarget::from_str("pipe:");
+}
+
+#[test]
+fn test_fdtarget_memfd() {
+    let memfd = FDTarget::from_str("/memfd:test").unwrap();
+    assert!(matches!(memfd, FDTarget::MemFD(s) if s == "test"));
 }

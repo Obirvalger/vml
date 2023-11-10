@@ -4,15 +4,16 @@
 //! Certificate and private key are hardcoded to sample files.
 //! hyper will automatically use HTTP/2 if a client starts talking HTTP/2,
 //! otherwise HTTP/1.1 will be used.
-use std::{env, fs, io, sync};
 
-use async_stream::stream;
-use futures_util::future::TryFutureExt;
-use hyper::server::accept;
+#![cfg(feature = "acceptor")]
+
+use std::vec::Vec;
+use std::{env, fs, io};
+
+use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
-use tokio::net::TcpListener;
-use tokio_rustls::TlsAcceptor;
+use hyper_rustls::TlsAcceptor;
 
 fn main() {
     // Serve an echo service over HTTPS, with proper error handling.
@@ -33,42 +34,21 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some(ref p) => p.to_owned(),
         None => "1337".to_owned(),
     };
-    let addr = format!("127.0.0.1:{}", port);
+    let addr = format!("127.0.0.1:{}", port).parse()?;
 
+    // Load public certificate.
+    let certs = load_certs("examples/sample.pem")?;
+    // Load private key.
+    let key = load_private_key("examples/sample.rsa")?;
     // Build TLS configuration.
-    let tls_cfg = {
-        // Load public certificate.
-        let certs = load_certs("examples/sample.pem")?;
-        // Load private key.
-        let key = load_private_key("examples/sample.rsa")?;
-        // Do not use client certificate authentication.
-        let mut cfg = rustls::ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .map_err(|e| error(format!("{}", e)))?;
-        // Configure ALPN to accept HTTP/2, HTTP/1.1 in that order.
-        cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-        sync::Arc::new(cfg)
-    };
 
     // Create a TCP listener via tokio.
-    let tcp = TcpListener::bind(&addr).await?;
-    let tls_acceptor = TlsAcceptor::from(tls_cfg);
-    // Prepare a long-running future stream to accept and serve clients.
-    let incoming_tls_stream = stream! {
-        loop {
-            let (socket, _) = tcp.accept().await?;
-            let stream = tls_acceptor.accept(socket).map_err(|e| {
-                println!("[!] Voluntary server halt due to client-connection error...");
-                // Errors could be handled here, instead of server aborting.
-                // Ok(None)
-                error(format!("TLS Error: {:?}", e))
-            });
-            yield stream.await;
-        }
-    };
-    let acceptor = accept::from_stream(incoming_tls_stream);
+    let incoming = AddrIncoming::bind(&addr)?;
+    let acceptor = TlsAcceptor::builder()
+        .with_single_cert(certs, key)
+        .map_err(|e| error(format!("{}", e)))?
+        .with_all_versions_alpn()
+        .with_incoming(incoming);
     let service = make_service_fn(|_| async { Ok::<_, io::Error>(service_fn(echo)) });
     let server = Server::builder(acceptor).serve(service);
 

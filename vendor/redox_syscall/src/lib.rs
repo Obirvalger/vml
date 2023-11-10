@@ -1,5 +1,3 @@
-#![feature(asm)]
-#![feature(llvm_asm)]
 #![cfg_attr(not(test), no_std)]
 
 #[cfg(test)]
@@ -15,7 +13,7 @@ pub use self::number::*;
 pub use self::scheme::*;
 
 #[cfg(all(any(target_os = "none", target_os = "redox"), target_arch = "arm"))]
-#[path="arch/arm.rs"]
+#[path="arch/nonredox.rs"]
 mod arch;
 
 #[cfg(all(any(target_os = "none", target_os = "redox"), target_arch = "aarch64"))]

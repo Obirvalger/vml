@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -124,5 +125,10 @@ impl ProfileTimelineStackFrame {
         );
         let _ = r;
         self
+    }
+}
+impl Default for ProfileTimelineStackFrame {
+    fn default() -> Self {
+        Self::new()
     }
 }

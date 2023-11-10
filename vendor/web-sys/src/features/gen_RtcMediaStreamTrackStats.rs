@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -300,5 +301,10 @@ impl RtcMediaStreamTrackStats {
         );
         let _ = r;
         self
+    }
+}
+impl Default for RtcMediaStreamTrackStats {
+    fn default() -> Self {
+        Self::new()
     }
 }

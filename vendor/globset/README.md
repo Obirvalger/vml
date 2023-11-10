@@ -4,11 +4,10 @@ Cross platform single glob and glob set matching. Glob set matching is the
 process of matching one or more glob patterns against a single candidate path
 simultaneously, and returning all of the globs that matched.
 
-[![Linux build status](https://api.travis-ci.org/BurntSushi/ripgrep.svg)](https://travis-ci.org/BurntSushi/ripgrep)
-[![Windows build status](https://ci.appveyor.com/api/projects/status/github/BurntSushi/ripgrep?svg=true)](https://ci.appveyor.com/project/BurntSushi/ripgrep)
+[![Build status](https://github.com/BurntSushi/ripgrep/workflows/ci/badge.svg)](https://github.com/BurntSushi/ripgrep/actions)
 [![](https://img.shields.io/crates/v/globset.svg)](https://crates.io/crates/globset)
 
-Dual-licensed under MIT or the [UNLICENSE](http://unlicense.org).
+Dual-licensed under MIT or the [UNLICENSE](https://unlicense.org/).
 
 ### Documentation
 
@@ -20,13 +19,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-globset = "0.3"
-```
-
-and this to your crate root:
-
-```rust
-extern crate globset;
+globset = "0.4"
 ```
 
 ### Features
@@ -85,12 +78,12 @@ assert_eq!(set.matches("src/bar/baz/foo.rs"), vec![0, 2]);
 
 This crate implements globs by converting them to regular expressions, and
 executing them with the
-[`regex`](https://github.com/rust-lang-nursery/regex)
+[`regex`](https://github.com/rust-lang/regex)
 crate.
 
 For single glob matching, performance of this crate should be roughly on par
 with the performance of the
-[`glob`](https://github.com/rust-lang-nursery/glob)
+[`glob`](https://github.com/rust-lang/glob)
 crate. (`*_regex` correspond to benchmarks for this library while `*_glob`
 correspond to benchmarks for the `glob` library.)
 Optimizations in the `regex` crate may propel this library past `glob`,
@@ -115,7 +108,7 @@ test many_short_glob      ... bench:       1,063 ns/iter (+/- 47)
 test many_short_regex_set ... bench:         186 ns/iter (+/- 11)
 ```
 
-### Comparison with the [`glob`](https://github.com/rust-lang-nursery/glob) crate
+### Comparison with the [`glob`](https://github.com/rust-lang/glob) crate
 
 * Supports alternate "or" globs, e.g., `*.{foo,bar}`.
 * Can match non-UTF-8 file paths correctly.

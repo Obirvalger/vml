@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -101,5 +102,10 @@ impl GamepadButtonEventInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for GamepadButtonEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

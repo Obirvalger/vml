@@ -93,9 +93,9 @@ use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::Regex;
 use thread_local::ThreadLocal;
 
-use default_types::DEFAULT_TYPES;
-use pathutil::file_name;
-use {Error, Match};
+use crate::default_types::DEFAULT_TYPES;
+use crate::pathutil::file_name;
+use crate::{Error, Match};
 
 /// Glob represents a single glob in a set of file type definitions.
 ///
@@ -122,10 +122,6 @@ enum GlobInner<'a> {
     Matched {
         /// The file type definition which provided the glob.
         def: &'a FileTypeDef,
-        /// The index of the glob that matched inside the file type definition.
-        which: usize,
-        /// Whether the selection was negated or not.
-        negated: bool,
     },
 }
 
@@ -291,13 +287,9 @@ impl Types {
         self.set.matches_into(name, &mut *matches);
         // The highest precedent match is the last one.
         if let Some(&i) = matches.last() {
-            let (isel, iglob) = self.glob_to_selection[i];
+            let (isel, _) = self.glob_to_selection[i];
             let sel = &self.selections[isel];
-            let glob = Glob(GlobInner::Matched {
-                def: sel.inner(),
-                which: iglob,
-                negated: sel.is_negated(),
-            });
+            let glob = Glob(GlobInner::Matched { def: sel.inner() });
             return if sel.is_negated() {
                 Match::Ignore(glob)
             } else {
@@ -427,7 +419,7 @@ impl TypesBuilder {
     /// If `name` is `all` or otherwise contains any character that is not a
     /// Unicode letter or number, then an error is returned.
     pub fn add(&mut self, name: &str, glob: &str) -> Result<(), Error> {
-        lazy_static! {
+        lazy_static::lazy_static! {
             static ref RE: Regex = Regex::new(r"^[\pL\pN]+$").unwrap();
         };
         if name == "all" || !RE.is_match(name) {

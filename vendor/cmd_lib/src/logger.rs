@@ -1,34 +1,53 @@
-use log::{Level, LevelFilter, Metadata, Record};
+use env_logger::Env;
 
-static LOGGER: CmdLogger = CmdLogger;
-
-/// Initializes the builtin cmd_lib logger
-///
-/// This is to make examples in this library work, and users should usually use a real logger
-/// instead. When being used, it should be called early in the main() function. Default log level
-/// is set to `debug`.
-///
-/// # Panics
-///
-/// This function will panic if it is called more than once, or if another
-/// library has already initialized a global logger.
-pub fn init_builtin_logger() {
-    log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Debug))
-        .unwrap();
+pub fn try_init_default_logger() {
+    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format_target(false)
+        .format_timestamp(None)
+        .try_init();
 }
 
-struct CmdLogger;
-impl log::Log for CmdLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Debug
-    }
+#[doc(hidden)]
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => {{
+        $crate::try_init_default_logger();
+        $crate::inner_log::error!($($arg)*);
+    }}
+}
 
-    fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            eprintln!("{} - {}", record.level(), record.args());
-        }
-    }
+#[doc(hidden)]
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)*) => {{
+        $crate::try_init_default_logger();
+        $crate::inner_log::warn!($($arg)*);
+    }}
+}
 
-    fn flush(&self) {}
+#[doc(hidden)]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {{
+        $crate::try_init_default_logger();
+        $crate::inner_log::info!($($arg)*);
+    }}
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => {{
+        $crate::try_init_default_logger();
+        $crate::inner_log::debug!($($arg)*);
+    }}
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! trace {
+    ($($arg:tt)*) => {{
+        $crate::try_init_default_logger();
+        $crate::inner_log::trace!($($arg)*);
+    }}
 }

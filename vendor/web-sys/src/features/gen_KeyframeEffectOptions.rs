@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -181,5 +182,10 @@ impl KeyframeEffectOptions {
         );
         let _ = r;
         self
+    }
+}
+impl Default for KeyframeEffectOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

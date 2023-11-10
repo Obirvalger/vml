@@ -40,6 +40,13 @@ let i = fastrand::usize(..v.len());
 let elem = v[i];
 ```
 
+Sample values from an array with `O(n)` complexity (`n` is the length of array):
+
+```rust
+fastrand::choose_multiple(vec![1, 4, 5].iter(), 2);
+fastrand::choose_multiple(0..20, 12);
+```
+
 Shuffle an array:
 
 ```rust
@@ -75,6 +82,17 @@ use std::iter::repeat_with;
 let rng = fastrand::Rng::new();
 let mut bytes: Vec<u8> = repeat_with(|| rng.u8(..)).take(10_000).collect();
 ```
+
+This crate aims to expose a core set of useful randomness primitives. For more niche algorithms, consider using the [`fastrand-contrib`] crate alongside this one.
+
+# Features
+
+- `std` (enabled by default): Enables the `std` library. This is required for the global
+  generator and global entropy. Without this feature, [`Rng`] can only be instantiated using
+  the [`with_seed`](https://docs.rs/fastrand/latest/fastrand/struct.Rng.html#method.with_seed) method.
+- `js`: Assumes that WebAssembly targets are being run in a JavaScript environment.
+
+[`fastrand-contrib`]: https://crates.io/crates/fastrand-contrib
 
 ## License
 

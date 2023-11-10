@@ -26,11 +26,10 @@ impl TimeZone {
     ///
     /// This method in not supported on non-UNIX platforms, and returns the UTC time zone instead.
     ///
-    pub(crate) fn local() -> Result<Self, Error> {
-        if let Ok(tz) = std::env::var("TZ") {
-            Self::from_posix_tz(&tz)
-        } else {
-            Self::from_posix_tz("localtime")
+    pub(crate) fn local(env_tz: Option<&str>) -> Result<Self, Error> {
+        match env_tz {
+            Some(tz) => Self::from_posix_tz(tz),
+            None => Self::from_posix_tz("localtime"),
         }
     }
 
@@ -42,6 +41,14 @@ impl TimeZone {
 
         if tz_string == "localtime" {
             return Self::from_tz_data(&fs::read("/etc/localtime")?);
+        }
+
+        // attributes are not allowed on if blocks in Rust 1.38
+        #[cfg(target_os = "android")]
+        {
+            if let Ok(bytes) = android_tzdata::find_tz_data(tz_string) {
+                return Self::from_tz_data(&bytes);
+            }
         }
 
         let mut chars = tz_string.chars();
@@ -170,9 +177,16 @@ impl<'a> TimeZoneRef<'a> {
                     match self.extra_rule {
                         Some(extra_rule) => extra_rule,
                         None => {
-                            return Err(Error::FindLocalTimeType(
-                                "no local time type is available for the specified timestamp",
-                            ))
+                            // RFC 8536 3.2:
+                            // "Local time for timestamps on or after the last transition is
+                            // specified by the TZ string in the footer (Section 3.3) if present
+                            // and nonempty; otherwise, it is unspecified."
+                            //
+                            // Older versions of macOS (1.12 and before?) have TZif file with a
+                            // missing TZ string, and use the offset given by the last transition.
+                            return Ok(
+                                &self.local_time_types[last_transition.local_time_type_index]
+                            );
                         }
                     }
                 } else {
@@ -217,8 +231,8 @@ impl<'a> TimeZoneRef<'a> {
 
         // if we have at least one transition,
         // we must check _all_ of them, incase of any Overlapping (LocalResult::Ambiguous) or Skipping (LocalResult::None) transitions
-        if !self.transitions.is_empty() {
-            let mut prev = Some(self.local_time_types[0]);
+        let offset_after_last = if !self.transitions.is_empty() {
+            let mut prev = self.local_time_types[0];
 
             for transition in self.transitions {
                 let after_ltt = self.local_time_types[transition.local_time_type_index];
@@ -226,34 +240,33 @@ impl<'a> TimeZoneRef<'a> {
                 // the end and start here refers to where the time starts prior to the transition
                 // and where it ends up after. not the temporal relationship.
                 let transition_end = transition.unix_leap_time + i64::from(after_ltt.ut_offset);
-                let transition_start =
-                    transition.unix_leap_time + i64::from(prev.unwrap().ut_offset);
+                let transition_start = transition.unix_leap_time + i64::from(prev.ut_offset);
 
                 match transition_start.cmp(&transition_end) {
                     Ordering::Greater => {
                         // bakwards transition, eg from DST to regular
                         // this means a given local time could have one of two possible offsets
                         if local_leap_time < transition_end {
-                            return Ok(crate::LocalResult::Single(prev.unwrap()));
+                            return Ok(crate::LocalResult::Single(prev));
                         } else if local_leap_time >= transition_end
                             && local_leap_time <= transition_start
                         {
-                            if prev.unwrap().ut_offset < after_ltt.ut_offset {
-                                return Ok(crate::LocalResult::Ambiguous(prev.unwrap(), after_ltt));
+                            if prev.ut_offset < after_ltt.ut_offset {
+                                return Ok(crate::LocalResult::Ambiguous(prev, after_ltt));
                             } else {
-                                return Ok(crate::LocalResult::Ambiguous(after_ltt, prev.unwrap()));
+                                return Ok(crate::LocalResult::Ambiguous(after_ltt, prev));
                             }
                         }
                     }
                     Ordering::Equal => {
                         // should this ever happen? presumably we have to handle it anyway.
                         if local_leap_time < transition_start {
-                            return Ok(crate::LocalResult::Single(prev.unwrap()));
+                            return Ok(crate::LocalResult::Single(prev));
                         } else if local_leap_time == transition_end {
-                            if prev.unwrap().ut_offset < after_ltt.ut_offset {
-                                return Ok(crate::LocalResult::Ambiguous(prev.unwrap(), after_ltt));
+                            if prev.ut_offset < after_ltt.ut_offset {
+                                return Ok(crate::LocalResult::Ambiguous(prev, after_ltt));
                             } else {
-                                return Ok(crate::LocalResult::Ambiguous(after_ltt, prev.unwrap()));
+                                return Ok(crate::LocalResult::Ambiguous(after_ltt, prev));
                             }
                         }
                     }
@@ -261,7 +274,7 @@ impl<'a> TimeZoneRef<'a> {
                         // forwards transition, eg from regular to DST
                         // this means that times that are skipped are invalid local times
                         if local_leap_time <= transition_start {
-                            return Ok(crate::LocalResult::Single(prev.unwrap()));
+                            return Ok(crate::LocalResult::Single(prev));
                         } else if local_leap_time < transition_end {
                             return Ok(crate::LocalResult::None);
                         } else if local_leap_time == transition_end {
@@ -271,8 +284,12 @@ impl<'a> TimeZoneRef<'a> {
                 }
 
                 // try the next transition, we are fully after this one
-                prev = Some(after_ltt);
+                prev = after_ltt;
             }
+
+            prev
+        } else {
+            self.local_time_types[0]
         };
 
         if let Some(extra_rule) = self.extra_rule {
@@ -282,7 +299,7 @@ impl<'a> TimeZoneRef<'a> {
                 err => err,
             }
         } else {
-            Ok(crate::LocalResult::Single(self.local_time_types[0]))
+            Ok(crate::LocalResult::Single(offset_after_last))
         }
     }
 
@@ -314,7 +331,7 @@ impl<'a> TimeZoneRef<'a> {
         // Check leap seconds
         if !(self.leap_seconds.is_empty()
             || self.leap_seconds[0].unix_leap_time >= 0
-                && saturating_abs(self.leap_seconds[0].correction) == 1)
+                && self.leap_seconds[0].correction.saturating_abs() == 1)
         {
             return Err(Error::TimeZone("invalid leap second"));
         }
@@ -329,7 +346,7 @@ impl<'a> TimeZoneRef<'a> {
 
                 let diff_unix_leap_time = x1.unix_leap_time.saturating_sub(x0.unix_leap_time);
                 let abs_diff_correction =
-                    saturating_abs(x1.correction.saturating_sub(x0.correction));
+                    x1.correction.saturating_sub(x0.correction).saturating_abs();
 
                 if !(diff_unix_leap_time >= min_interval && abs_diff_correction == 1) {
                     return Err(Error::TimeZone("invalid leap second"));
@@ -375,7 +392,7 @@ impl<'a> TimeZoneRef<'a> {
     }
 
     /// Convert Unix time to Unix leap time, from the list of leap seconds in a time zone
-    fn unix_time_to_unix_leap_time(&self, unix_time: i64) -> Result<i64, Error> {
+    const fn unix_time_to_unix_leap_time(&self, unix_time: i64) -> Result<i64, Error> {
         let mut unix_leap_time = unix_time;
 
         let mut i = 0;
@@ -439,12 +456,12 @@ pub(super) struct Transition {
 
 impl Transition {
     /// Construct a TZif file transition
-    pub(super) fn new(unix_leap_time: i64, local_time_type_index: usize) -> Self {
+    pub(super) const fn new(unix_leap_time: i64, local_time_type_index: usize) -> Self {
         Self { unix_leap_time, local_time_type_index }
     }
 
     /// Returns Unix leap time
-    fn unix_leap_time(&self) -> i64 {
+    const fn unix_leap_time(&self) -> i64 {
         self.unix_leap_time
     }
 }
@@ -460,12 +477,12 @@ pub(super) struct LeapSecond {
 
 impl LeapSecond {
     /// Construct a TZif file leap second
-    pub(super) fn new(unix_leap_time: i64, correction: i32) -> Self {
+    pub(super) const fn new(unix_leap_time: i64, correction: i32) -> Self {
         Self { unix_leap_time, correction }
     }
 
     /// Returns Unix leap time
-    fn unix_leap_time(&self) -> i64 {
+    const fn unix_leap_time(&self) -> i64 {
         self.unix_leap_time
     }
 }
@@ -479,6 +496,11 @@ struct TimeZoneName {
 
 impl TimeZoneName {
     /// Construct a time zone name
+    ///
+    /// man tzfile(5):
+    /// Time zone designations should consist of at least three (3) and no more than six (6) ASCII
+    /// characters from the set of alphanumerics, “-”, and “+”. This is for compatibility with
+    /// POSIX requirements for time zone abbreviations.
     fn new(input: &[u8]) -> Result<Self, Error> {
         let len = input.len();
 
@@ -564,7 +586,7 @@ impl LocalTimeType {
     }
 
     /// Construct a local time type with the specified UTC offset in seconds
-    pub(super) fn with_offset(ut_offset: i32) -> Result<Self, Error> {
+    pub(super) const fn with_offset(ut_offset: i32) -> Result<Self, Error> {
         if ut_offset == i32::min_value() {
             return Err(Error::LocalTimeType("invalid UTC offset"));
         }
@@ -573,12 +595,12 @@ impl LocalTimeType {
     }
 
     /// Returns offset from UTC in seconds
-    pub(crate) fn offset(&self) -> i32 {
+    pub(crate) const fn offset(&self) -> i32 {
         self.ut_offset
     }
 
     /// Returns daylight saving time indicator
-    pub(super) fn is_dst(&self) -> bool {
+    pub(super) const fn is_dst(&self) -> bool {
         self.is_dst
     }
 
@@ -608,21 +630,10 @@ fn find_tz_file(path: impl AsRef<Path>) -> Result<File, Error> {
     }
 }
 
-#[inline]
-fn saturating_abs(v: i32) -> i32 {
-    if v.is_positive() {
-        v
-    } else if v == i32::min_value() {
-        i32::max_value()
-    } else {
-        -v
-    }
-}
-
 // Possible system timezone directories
 #[cfg(unix)]
-const ZONE_INFO_DIRECTORIES: [&str; 3] =
-    ["/usr/share/zoneinfo", "/share/zoneinfo", "/etc/zoneinfo"];
+const ZONE_INFO_DIRECTORIES: [&str; 4] =
+    ["/usr/share/zoneinfo", "/share/zoneinfo", "/etc/zoneinfo", "/usr/share/lib/zoneinfo"];
 
 /// Number of seconds in one week
 pub(crate) const SECONDS_PER_WEEK: i64 = SECONDS_PER_DAY * DAYS_PER_WEEK;
@@ -633,7 +644,6 @@ const SECONDS_PER_28_DAYS: i64 = SECONDS_PER_DAY * 28;
 mod tests {
     use super::super::Error;
     use super::{LeapSecond, LocalTimeType, TimeZone, TimeZoneName, Transition, TransitionRule};
-    use crate::matches;
 
     #[test]
     fn test_no_dst() -> Result<(), Error> {
@@ -746,20 +756,51 @@ mod tests {
     }
 
     #[test]
+    fn test_no_tz_string() -> Result<(), Error> {
+        // Guayaquil from macOS 10.11
+        let bytes = b"TZif\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x02\0\0\0\x02\0\0\0\0\0\0\0\x01\0\0\0\x02\0\0\0\x08\xb6\xa4B\x18\x01\xff\xff\xb6h\0\0\xff\xff\xb9\xb0\0\x04QMT\0ECT\0\0\0\0\0";
+
+        let time_zone = TimeZone::from_tz_data(bytes)?;
+        dbg!(&time_zone);
+
+        let time_zone_result = TimeZone::new(
+            vec![Transition::new(-1230749160, 1)],
+            vec![
+                LocalTimeType::new(-18840, false, Some(b"QMT"))?,
+                LocalTimeType::new(-18000, false, Some(b"ECT"))?,
+            ],
+            Vec::new(),
+            None,
+        )?;
+
+        assert_eq!(time_zone, time_zone_result);
+
+        assert_eq!(
+            *time_zone.find_local_time_type(-1500000000)?,
+            LocalTimeType::new(-18840, false, Some(b"QMT"))?
+        );
+        assert_eq!(
+            *time_zone.find_local_time_type(0)?,
+            LocalTimeType::new(-18000, false, Some(b"ECT"))?
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn test_tz_ascii_str() -> Result<(), Error> {
         assert!(matches!(TimeZoneName::new(b""), Err(Error::LocalTimeType(_))));
-        assert!(matches!(TimeZoneName::new(b"1"), Err(Error::LocalTimeType(_))));
-        assert!(matches!(TimeZoneName::new(b"12"), Err(Error::LocalTimeType(_))));
-        assert_eq!(TimeZoneName::new(b"123")?.as_bytes(), b"123");
-        assert_eq!(TimeZoneName::new(b"1234")?.as_bytes(), b"1234");
-        assert_eq!(TimeZoneName::new(b"12345")?.as_bytes(), b"12345");
-        assert_eq!(TimeZoneName::new(b"123456")?.as_bytes(), b"123456");
-        assert_eq!(TimeZoneName::new(b"1234567")?.as_bytes(), b"1234567");
+        assert!(matches!(TimeZoneName::new(b"A"), Err(Error::LocalTimeType(_))));
+        assert!(matches!(TimeZoneName::new(b"AB"), Err(Error::LocalTimeType(_))));
+        assert_eq!(TimeZoneName::new(b"CET")?.as_bytes(), b"CET");
+        assert_eq!(TimeZoneName::new(b"CHADT")?.as_bytes(), b"CHADT");
+        assert_eq!(TimeZoneName::new(b"abcdefg")?.as_bytes(), b"abcdefg");
+        assert_eq!(TimeZoneName::new(b"UTC+02")?.as_bytes(), b"UTC+02");
+        assert_eq!(TimeZoneName::new(b"-1230")?.as_bytes(), b"-1230");
+        assert!(matches!(TimeZoneName::new("−0330".as_bytes()), Err(Error::LocalTimeType(_)))); // MINUS SIGN (U+2212)
+        assert!(matches!(TimeZoneName::new(b"\x00123"), Err(Error::LocalTimeType(_))));
         assert!(matches!(TimeZoneName::new(b"12345678"), Err(Error::LocalTimeType(_))));
-        assert!(matches!(TimeZoneName::new(b"123456789"), Err(Error::LocalTimeType(_))));
-        assert!(matches!(TimeZoneName::new(b"1234567890"), Err(Error::LocalTimeType(_))));
-
-        assert!(matches!(TimeZoneName::new(b"123\0\0\0"), Err(Error::LocalTimeType(_))));
+        assert!(matches!(TimeZoneName::new(b"GMT\0\0\0"), Err(Error::LocalTimeType(_))));
 
         Ok(())
     }
@@ -788,7 +829,7 @@ mod tests {
         assert_eq!(*time_zone_2.find_local_time_type(0)?, cet);
 
         assert_eq!(*time_zone_3.find_local_time_type(-1)?, utc);
-        assert!(matches!(time_zone_3.find_local_time_type(0), Err(Error::FindLocalTimeType(_))));
+        assert_eq!(*time_zone_3.find_local_time_type(0)?, utc);
 
         assert_eq!(*time_zone_4.find_local_time_type(-1)?, utc);
         assert_eq!(*time_zone_4.find_local_time_type(0)?, cet);
@@ -813,13 +854,17 @@ mod tests {
             // so just ensure that ::local() acts as expected
             // in this case
             if let Ok(tz) = std::env::var("TZ") {
-                let time_zone_local = TimeZone::local()?;
+                let time_zone_local = TimeZone::local(Some(tz.as_str()))?;
                 let time_zone_local_1 = TimeZone::from_posix_tz(&tz)?;
                 assert_eq!(time_zone_local, time_zone_local_1);
             }
 
-            let time_zone_utc = TimeZone::from_posix_tz("UTC")?;
-            assert_eq!(time_zone_utc.find_local_time_type(0)?.offset(), 0);
+            // `TimeZone::from_posix_tz("UTC")` will return `Error` if the environment does not have
+            // a time zone database, like for example some docker containers.
+            // In that case skip the test.
+            if let Ok(time_zone_utc) = TimeZone::from_posix_tz("UTC") {
+                assert_eq!(time_zone_utc.find_local_time_type(0)?.offset(), 0);
+            }
         }
 
         assert!(TimeZone::from_posix_tz("EST5EDT,0/0,J365/25").is_err());

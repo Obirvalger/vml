@@ -60,7 +60,11 @@ use std::io::{BufRead, BufReader, Read};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::{path::PathBuf, str::FromStr};
 
-#[derive(Debug, Clone, PartialEq)]
+#[cfg(feature = "serde1")]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub enum TcpState {
     Established = 1,
     SynSent,
@@ -113,7 +117,8 @@ impl TcpState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub enum UdpState {
     Established = 1,
     Close = 7,
@@ -136,7 +141,8 @@ impl UdpState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub enum UnixState {
     UNCONNECTED = 1,
     CONNECTING = 2,
@@ -167,6 +173,7 @@ impl UnixState {
 
 /// An entry in the TCP socket table
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct TcpNetEntry {
     pub local_address: SocketAddr,
     pub remote_address: SocketAddr,
@@ -178,6 +185,7 @@ pub struct TcpNetEntry {
 
 /// An entry in the UDP socket table
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct UdpNetEntry {
     pub local_address: SocketAddr,
     pub remote_address: SocketAddr,
@@ -189,6 +197,7 @@ pub struct UdpNetEntry {
 
 /// An entry in the Unix socket table
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct UnixNetEntry {
     /// The number of users of the socket
     pub ref_count: u32,
@@ -218,7 +227,7 @@ fn parse_addressport_str(s: &str) -> ProcResult<SocketAddr> {
     let port = from_str!(u16, port, 16);
 
     if ip_part.len() == 8 {
-        let bytes = expect!(hex::decode(&ip_part));
+        let bytes = expect!(hex::decode(ip_part));
         let ip_u32 = NetworkEndian::read_u32(&bytes);
 
         let ip = Ipv4Addr::new(
@@ -230,7 +239,7 @@ fn parse_addressport_str(s: &str) -> ProcResult<SocketAddr> {
 
         Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
     } else if ip_part.len() == 32 {
-        let bytes = expect!(hex::decode(&ip_part));
+        let bytes = expect!(hex::decode(ip_part));
 
         let ip_a = NativeEndian::read_u32(&bytes[0..]);
         let ip_b = NativeEndian::read_u32(&bytes[4..]);
@@ -387,6 +396,7 @@ pub fn unix() -> ProcResult<Vec<UnixNetEntry>> {
 
 /// An entry in the ARP table
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct ARPEntry {
     /// IPv4 address
     pub ip_address: Ipv4Addr,
@@ -405,6 +415,7 @@ pub struct ARPEntry {
 bitflags! {
     /// Hardware type for an ARP table entry.
     // source: include/uapi/linux/if_arp.h
+    #[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
     pub struct ARPHardware: u32 {
         /// NET/ROM pseudo
         const NETROM = 0;
@@ -442,6 +453,7 @@ bitflags! {
 bitflags! {
     /// Flags for ARP entries
     // source: include/uapi/linux/if_arp.h
+    #[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
     pub struct ARPFlags: u32 {
             /// Completed entry
             const COM = 0x02;
@@ -529,6 +541,7 @@ pub fn arp() -> ProcResult<Vec<ARPEntry>> {
 /// For an example, see the [interface_stats.rs](https://github.com/eminence/procfs/tree/master/examples)
 /// example in the source repo.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct DeviceStatus {
     /// Name of the interface
     pub name: String,
@@ -568,7 +581,7 @@ pub struct DeviceStatus {
 
 impl DeviceStatus {
     fn from_str(s: &str) -> ProcResult<DeviceStatus> {
-        let mut split = s.trim().split_whitespace();
+        let mut split = s.split_whitespace();
         let name: String = expect!(from_iter(&mut split));
         let recv_bytes = expect!(from_iter(&mut split));
         let recv_packets = expect!(from_iter(&mut split));
@@ -630,6 +643,7 @@ pub fn dev_status() -> ProcResult<HashMap<String, DeviceStatus>> {
 
 /// An entry in the ipv4 route table
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct RouteEntry {
     /// Interface to which packets for this route will be sent
     pub iface: String,

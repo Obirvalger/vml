@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -484,5 +485,10 @@ impl DragEventInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for DragEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

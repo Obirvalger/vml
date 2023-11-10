@@ -1,28 +1,30 @@
 use crate::de::ParserNumber;
 use crate::error::Error;
-use crate::lib::*;
-use serde::de::{self, Unexpected, Visitor};
-use serde::{
-    forward_to_deserialize_any, serde_if_integer128, Deserialize, Deserializer, Serialize,
-    Serializer,
-};
-
 #[cfg(feature = "arbitrary_precision")]
 use crate::error::ErrorCode;
 #[cfg(feature = "arbitrary_precision")]
+use alloc::borrow::ToOwned;
+#[cfg(feature = "arbitrary_precision")]
+use alloc::string::{String, ToString};
+use core::fmt::{self, Debug, Display};
+#[cfg(not(feature = "arbitrary_precision"))]
+use core::hash::{Hash, Hasher};
+use serde::de::{self, Unexpected, Visitor};
+#[cfg(feature = "arbitrary_precision")]
 use serde::de::{IntoDeserializer, MapAccess};
+use serde::{forward_to_deserialize_any, Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(feature = "arbitrary_precision")]
 pub(crate) const TOKEN: &str = "$serde_json::private::Number";
 
 /// Represents a JSON number, whether integer or floating point.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Number {
     n: N,
 }
 
 #[cfg(not(feature = "arbitrary_precision"))]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 enum N {
     PosInt(u64),
     /// Always less than zero.
@@ -31,9 +33,41 @@ enum N {
     Float(f64),
 }
 
+#[cfg(not(feature = "arbitrary_precision"))]
+impl PartialEq for N {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (N::PosInt(a), N::PosInt(b)) => a == b,
+            (N::NegInt(a), N::NegInt(b)) => a == b,
+            (N::Float(a), N::Float(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 // Implementing Eq is fine since any float values are always finite.
 #[cfg(not(feature = "arbitrary_precision"))]
 impl Eq for N {}
+
+#[cfg(not(feature = "arbitrary_precision"))]
+impl Hash for N {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        match *self {
+            N::PosInt(i) => i.hash(h),
+            N::NegInt(i) => i.hash(h),
+            N::Float(f) => {
+                if f == 0.0f64 {
+                    // There are 2 zero representations, +0 and -0, which
+                    // compare equal but have different bits. We use the +0 hash
+                    // for both so that hash(+0) == hash(-0).
+                    0.0f64.to_bits().hash(h);
+                } else {
+                    f.to_bits().hash(h);
+                }
+            }
+        }
+    }
+}
 
 #[cfg(feature = "arbitrary_precision")]
 type N = String;
@@ -130,7 +164,7 @@ impl Number {
         {
             for c in self.n.chars() {
                 if c == '.' || c == 'e' || c == 'E' {
-                    return self.n.parse::<f64>().ok().map_or(false, |f| f.is_finite());
+                    return self.n.parse::<f64>().ok().map_or(false, f64::is_finite);
                 }
             }
             false
@@ -245,6 +279,62 @@ impl Number {
         }
     }
 
+    /// Returns the exact original JSON representation that this Number was
+    /// parsed from.
+    ///
+    /// For numbers constructed not via parsing, such as by `From<i32>`, returns
+    /// the JSON representation that serde\_json would serialize for this
+    /// number.
+    ///
+    /// ```
+    /// # use serde_json::Number;
+    /// for value in [
+    ///     "7",
+    ///     "12.34",
+    ///     "34e-56789",
+    ///     "0.0123456789000000012345678900000001234567890000123456789",
+    ///     "343412345678910111213141516171819202122232425262728293034",
+    ///     "-343412345678910111213141516171819202122232425262728293031",
+    /// ] {
+    ///     let number: Number = serde_json::from_str(value).unwrap();
+    ///     assert_eq!(number.as_str(), value);
+    /// }
+    /// ```
+    #[cfg(feature = "arbitrary_precision")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "arbitrary_precision")))]
+    pub fn as_str(&self) -> &str {
+        &self.n
+    }
+
+    pub(crate) fn as_f32(&self) -> Option<f32> {
+        #[cfg(not(feature = "arbitrary_precision"))]
+        match self.n {
+            N::PosInt(n) => Some(n as f32),
+            N::NegInt(n) => Some(n as f32),
+            N::Float(n) => Some(n as f32),
+        }
+        #[cfg(feature = "arbitrary_precision")]
+        self.n.parse::<f32>().ok().filter(|float| float.is_finite())
+    }
+
+    pub(crate) fn from_f32(f: f32) -> Option<Number> {
+        if f.is_finite() {
+            let n = {
+                #[cfg(not(feature = "arbitrary_precision"))]
+                {
+                    N::Float(f as f64)
+                }
+                #[cfg(feature = "arbitrary_precision")]
+                {
+                    ryu::Buffer::new().format_finite(f).to_owned()
+                }
+            };
+            Some(Number { n })
+        } else {
+            None
+        }
+    }
+
     #[cfg(feature = "arbitrary_precision")]
     /// Not public API. Only tests use this.
     #[doc(hidden)]
@@ -254,13 +344,13 @@ impl Number {
     }
 }
 
-impl fmt::Display for Number {
+impl Display for Number {
     #[cfg(not(feature = "arbitrary_precision"))]
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self.n {
-            N::PosInt(u) => Display::fmt(&u, formatter),
-            N::NegInt(i) => Display::fmt(&i, formatter),
-            N::Float(f) => Display::fmt(&f, formatter),
+            N::PosInt(u) => formatter.write_str(itoa::Buffer::new().format(u)),
+            N::NegInt(i) => formatter.write_str(itoa::Buffer::new().format(i)),
+            N::Float(f) => formatter.write_str(ryu::Buffer::new().format_finite(f)),
         }
     }
 
@@ -271,29 +361,8 @@ impl fmt::Display for Number {
 }
 
 impl Debug for Number {
-    #[cfg(not(feature = "arbitrary_precision"))]
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        let mut debug = formatter.debug_tuple("Number");
-        match self.n {
-            N::PosInt(i) => {
-                debug.field(&i);
-            }
-            N::NegInt(i) => {
-                debug.field(&i);
-            }
-            N::Float(f) => {
-                debug.field(&f);
-            }
-        }
-        debug.finish()
-    }
-
-    #[cfg(feature = "arbitrary_precision")]
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter
-            .debug_tuple("Number")
-            .field(&format_args!("{}", self.n))
-            .finish()
+        write!(formatter, "Number({})", self)
     }
 }
 
@@ -319,8 +388,8 @@ impl Serialize for Number {
     {
         use serde::ser::SerializeStruct;
 
-        let mut s = serializer.serialize_struct(TOKEN, 1)?;
-        s.serialize_field(TOKEN, &self.n)?;
+        let mut s = tri!(serializer.serialize_struct(TOKEN, 1));
+        tri!(s.serialize_field(TOKEN, &self.n));
         s.end()
     }
 }
@@ -364,11 +433,11 @@ impl<'de> Deserialize<'de> for Number {
             where
                 V: de::MapAccess<'de>,
             {
-                let value = visitor.next_key::<NumberKey>()?;
+                let value = tri!(visitor.next_key::<NumberKey>());
                 if value.is_none() {
                     return Err(de::Error::invalid_type(Unexpected::Map, &self));
                 }
-                let v: NumberFromString = visitor.next_value()?;
+                let v: NumberFromString = tri!(visitor.next_value());
                 Ok(v.value)
             }
         }
@@ -407,7 +476,7 @@ impl<'de> de::Deserialize<'de> for NumberKey {
             }
         }
 
-        deserializer.deserialize_identifier(FieldVisitor)?;
+        tri!(deserializer.deserialize_identifier(FieldVisitor));
         Ok(NumberKey)
     }
 }
@@ -510,7 +579,7 @@ macro_rules! deserialize_number {
         where
             V: de::Visitor<'de>,
         {
-            visitor.$visit(self.n.parse().map_err(|_| invalid_number())?)
+            visitor.$visit(tri!(self.n.parse().map_err(|_| invalid_number())))
         }
     };
 }
@@ -524,17 +593,14 @@ impl<'de> Deserializer<'de> for Number {
     deserialize_number!(deserialize_i16 => visit_i16);
     deserialize_number!(deserialize_i32 => visit_i32);
     deserialize_number!(deserialize_i64 => visit_i64);
+    deserialize_number!(deserialize_i128 => visit_i128);
     deserialize_number!(deserialize_u8 => visit_u8);
     deserialize_number!(deserialize_u16 => visit_u16);
     deserialize_number!(deserialize_u32 => visit_u32);
     deserialize_number!(deserialize_u64 => visit_u64);
+    deserialize_number!(deserialize_u128 => visit_u128);
     deserialize_number!(deserialize_f32 => visit_f32);
     deserialize_number!(deserialize_f64 => visit_f64);
-
-    serde_if_integer128! {
-        deserialize_number!(deserialize_i128 => visit_i128);
-        deserialize_number!(deserialize_u128 => visit_u128);
-    }
 
     forward_to_deserialize_any! {
         bool char str string bytes byte_buf option unit unit_struct
@@ -552,17 +618,14 @@ impl<'de, 'a> Deserializer<'de> for &'a Number {
     deserialize_number!(deserialize_i16 => visit_i16);
     deserialize_number!(deserialize_i32 => visit_i32);
     deserialize_number!(deserialize_i64 => visit_i64);
+    deserialize_number!(deserialize_i128 => visit_i128);
     deserialize_number!(deserialize_u8 => visit_u8);
     deserialize_number!(deserialize_u16 => visit_u16);
     deserialize_number!(deserialize_u32 => visit_u32);
     deserialize_number!(deserialize_u64 => visit_u64);
+    deserialize_number!(deserialize_u128 => visit_u128);
     deserialize_number!(deserialize_f32 => visit_f32);
     deserialize_number!(deserialize_f64 => visit_f64);
-
-    serde_if_integer128! {
-        deserialize_number!(deserialize_i128 => visit_i128);
-        deserialize_number!(deserialize_u128 => visit_u128);
-    }
 
     forward_to_deserialize_any! {
         bool char str string bytes byte_buf option unit unit_struct
@@ -715,19 +778,9 @@ impl_from_unsigned!(u8, u16, u32, u64, usize);
 impl_from_signed!(i8, i16, i32, i64, isize);
 
 #[cfg(feature = "arbitrary_precision")]
-serde_if_integer128! {
-    impl From<i128> for Number {
-        fn from(i: i128) -> Self {
-            Number { n: i.to_string() }
-        }
-    }
-
-    impl From<u128> for Number {
-        fn from(u: u128) -> Self {
-            Number { n: u.to_string() }
-        }
-    }
-}
+impl_from_unsigned!(u128);
+#[cfg(feature = "arbitrary_precision")]
+impl_from_signed!(i128);
 
 impl Number {
     #[cfg(not(feature = "arbitrary_precision"))]

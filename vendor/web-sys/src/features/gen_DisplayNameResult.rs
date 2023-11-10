@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -45,5 +46,10 @@ impl DisplayNameResult {
         );
         let _ = r;
         self
+    }
+}
+impl Default for DisplayNameResult {
+    fn default() -> Self {
+        Self::new()
     }
 }

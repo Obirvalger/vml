@@ -1,7 +1,5 @@
 //! The `join` macro.
 
-use proc_macro_hack::proc_macro_hack;
-
 macro_rules! document_join_macro {
     ($join:item $try_join:item) => {
         /// Polls multiple futures simultaneously, returning a tuple
@@ -81,12 +79,12 @@ macro_rules! document_join_macro {
     }
 }
 
+#[allow(unreachable_pub)]
 #[doc(hidden)]
-#[proc_macro_hack(support_nested, only_hack_old_rustc)]
 pub use futures_macro::join_internal;
 
+#[allow(unreachable_pub)]
 #[doc(hidden)]
-#[proc_macro_hack(support_nested, only_hack_old_rustc)]
 pub use futures_macro::try_join_internal;
 
 document_join_macro! {

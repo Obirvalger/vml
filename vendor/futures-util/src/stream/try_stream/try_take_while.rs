@@ -49,13 +49,7 @@ where
     Fut: TryFuture<Ok = bool, Error = St::Error>,
 {
     pub(super) fn new(stream: St, f: F) -> Self {
-        Self {
-            stream,
-            f,
-            pending_fut: None,
-            pending_item: None,
-            done_taking: false,
-        }
+        Self { stream, f, pending_fut: None, pending_item: None, done_taking: false }
     }
 
     delegate_access_inner!(stream, St, ());
@@ -102,7 +96,7 @@ where
             return (0, Some(0));
         }
 
-        let pending_len = if self.pending_item.is_some() { 1 } else { 0 };
+        let pending_len = usize::from(self.pending_item.is_some());
         let (_, upper) = self.stream.size_hint();
         let upper = match upper {
             Some(x) => x.checked_add(pending_len),

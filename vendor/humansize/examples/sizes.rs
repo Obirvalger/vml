@@ -1,21 +1,16 @@
 extern crate humansize;
-//Import the trait and the options module
-use humansize::{FileSize, file_size_opts};
+
+use humansize::{format_size, format_size_i, SizeFormatter, ISizeFormatter, BINARY, DECIMAL, WINDOWS};
 
 fn main() {
-    // Call the file_size method on any non-negative integer with the option set you require
+    println!("{}", format_size(5456usize, BINARY));
+    println!("{}", format_size(1024usize, DECIMAL));
+    println!("{}", format_size(1000usize, WINDOWS));
 
-    println!("{}", 5456.file_size(file_size_opts::BINARY).unwrap());
-    println!("{}", 1024.file_size(file_size_opts::BINARY).unwrap());
-    println!("{}", 1000.file_size(file_size_opts::DECIMAL).unwrap());
-    println!(
-        "{}",
-        1023_654_123_654u64
-            .file_size(file_size_opts::DECIMAL)
-            .unwrap()
-    );
-    println!(
-        "{}",
-        123456789.file_size(file_size_opts::CONVENTIONAL).unwrap()
-    );
+    println!("{}", format_size(1_023_654_123_654_u64, BINARY));
+    println!("{}", format_size(123456789usize, DECIMAL));
+    println!("{}", format_size_i(-123456789, WINDOWS));
+
+    println!("{}", SizeFormatter::new(1234u32, BINARY));
+    println!("{}", ISizeFormatter::new(1234, BINARY));
 }

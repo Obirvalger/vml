@@ -27,9 +27,10 @@ impl<I: Iterator<Item = ParseArg>> Parser<I> {
             let cmd = self.parse_cmd();
             if !cmd.is_empty() {
                 ret.extend(quote!(.append(#cmd)));
-                if for_spawn && self.iter.peek().is_some() {
-                    panic!("wrong spawning format: group command not allowed");
-                }
+                assert!(
+                    !(for_spawn && self.iter.peek().is_some()),
+                    "wrong spawning format: group command not allowed"
+                );
             }
         }
         ret
@@ -79,10 +80,10 @@ impl<I: Iterator<Item = ParseArg>> Parser<I> {
                     ret.extend(quote!(.add_redirect(#redirect)));
                 }
                 ParseArg::ArgStr(opt) => {
-                    ret.extend(quote!(.add_arg(#opt.into_os_string())));
+                    ret.extend(quote!(.add_arg(#opt)));
                 }
                 ParseArg::ArgVec(opts) => {
-                    ret.extend(quote! (.add_args(#opts.iter().map(|s| ::std::ffi::OsString::from(s)).collect())));
+                    ret.extend(quote! (.add_args(#opts)));
                 }
                 ParseArg::Pipe | ParseArg::Semicolon => break,
             }

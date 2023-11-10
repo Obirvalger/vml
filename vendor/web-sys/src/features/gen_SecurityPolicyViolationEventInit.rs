@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -271,5 +272,10 @@ impl SecurityPolicyViolationEventInit {
         );
         let _ = r;
         self
+    }
+}
+impl Default for SecurityPolicyViolationEventInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

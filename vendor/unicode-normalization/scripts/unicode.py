@@ -21,7 +21,7 @@
 import collections
 import urllib.request
 
-UNICODE_VERSION = "13.0.0"
+UNICODE_VERSION = "15.0.0"
 UCD_URL = "https://www.unicode.org/Public/%s/ucd/" % UNICODE_VERSION
 
 PREAMBLE = """// Copyright 2012-2018 The Rust Project Developers. See the COPYRIGHT
@@ -98,12 +98,17 @@ class UnicodeData(object):
         self.compat_decomp = {}
         self.canon_decomp = {}
         self.general_category_mark = []
+        self.general_category_public_assigned = []
+
+        assigned_start = 0;
+        prev_char_int = -1;
+        prev_name = "";
 
         for line in self._fetch("UnicodeData.txt").splitlines():
             # See ftp://ftp.unicode.org/Public/3.0-Update/UnicodeData-3.0.0.html
             pieces = line.split(';')
             assert len(pieces) == 15
-            char, category, cc, decomp = pieces[0], pieces[2], pieces[3], pieces[5]
+            char, name, category, cc, decomp = pieces[0], pieces[1], pieces[2], pieces[3], pieces[5]
             char_int = int(char, 16)
 
             name = pieces[1].strip()
@@ -119,6 +124,16 @@ class UnicodeData(object):
 
             if category == 'M' or 'M' in expanded_categories.get(category, []):
                 self.general_category_mark.append(char_int)
+
+            assert category != 'Cn', "Unexpected: Unassigned codepoint in UnicodeData.txt"
+            if category not in ['Co', 'Cs']:
+                if char_int != prev_char_int + 1 and not is_first_and_last(prev_name, name):
+                    self.general_category_public_assigned.append((assigned_start, prev_char_int))
+                    assigned_start = char_int
+                prev_char_int = char_int
+                prev_name = name;
+
+        self.general_category_public_assigned.append((assigned_start, prev_char_int))
 
     def _load_cjk_compat_ideograph_variants(self):
         for line in self._fetch("StandardizedVariants.txt").splitlines():
@@ -330,6 +345,15 @@ class UnicodeData(object):
 
 hexify = lambda c: '{:04X}'.format(c)
 
+# Test whether `first` and `last` are corresponding "<..., First>" and
+# "<..., Last>" markers.
+def is_first_and_last(first, last):
+    if not first.startswith('<') or not first.endswith(', First>'):
+        return False
+    if not last.startswith('<') or not last.endswith(', Last>'):
+        return False
+    return first[1:-8] == last[1:-7]
+
 def gen_mph_data(name, d, kv_type, kv_callback):
     (salt, keys) = minimal_perfect_hash(d)
     out.write("pub(crate) const %s_SALT: &[u16] = &[\n" % name.upper())
@@ -367,9 +391,19 @@ def gen_composition_table(canon_comp, out):
 def gen_decomposition_tables(canon_decomp, compat_decomp, cjk_compat_variants_decomp, out):
     tables = [(canon_decomp, 'canonical'), (compat_decomp, 'compatibility'), (cjk_compat_variants_decomp, 'cjk_compat_variants')]
     for table, name in tables:
-        gen_mph_data(name + '_decomposed', table, "(u32, &'static [char])",
-            lambda k: "(0x{:x}, &[{}])".format(k,
-                ", ".join("'\\u{%s}'" % hexify(c) for c in table[k])))
+        offsets = {}
+        offset = 0
+        out.write("pub(crate) const %s_DECOMPOSED_CHARS: &[char] = &[\n" % name.upper())
+        for k, v in table.items():
+            offsets[k] = offset
+            offset += len(v)
+            for c in v:
+                out.write("    '\\u{%s}',\n" % hexify(c))
+        # The largest offset must fit in a u16.
+        assert offset < 65536
+        out.write("];\n")
+        gen_mph_data(name + '_decomposed', table, "(u32, (u16, u16))",
+            lambda k: "(0x{:x}, ({}, {}))".format(k, offsets[k], len(table[k])))
 
 def gen_qc_match(prop_table, out):
     out.write("    match c {\n")
@@ -417,6 +451,30 @@ def gen_nfkd_qc(prop_tables, out):
 def gen_combining_mark(general_category_mark, out):
     gen_mph_data('combining_mark', general_category_mark, 'u32',
         lambda k: '0x{:04x}'.format(k))
+
+def gen_public_assigned(general_category_public_assigned, out):
+    # This could be done as a hash but the table is somewhat small.
+    out.write("#[inline]\n")
+    out.write("pub fn is_public_assigned(c: char) -> bool {\n")
+    out.write("    match c {\n")
+
+    start = True
+    for first, last in general_category_public_assigned:
+        if start:
+            out.write("        ")
+            start = False
+        else:
+            out.write("        | ")
+        if first == last:
+            out.write("'\\u{%s}'\n" % hexify(first))
+        else:
+            out.write("'\\u{%s}'..='\\u{%s}'\n" % (hexify(first), hexify(last)))
+    out.write("        => true,\n")
+
+    out.write("        _ => false,\n")
+    out.write("    }\n")
+    out.write("}\n")
+    out.write("\n")
 
 def gen_stream_safe(leading, trailing, out):
     # This could be done as a hash but the table is very small.
@@ -538,6 +596,9 @@ if __name__ == '__main__':
         gen_decomposition_tables(data.canon_fully_decomp, data.compat_fully_decomp, data.cjk_compat_variants_fully_decomp, out)
 
         gen_combining_mark(data.general_category_mark, out)
+        out.write("\n")
+
+        gen_public_assigned(data.general_category_public_assigned, out)
         out.write("\n")
 
         gen_nfc_qc(data.norm_props, out)

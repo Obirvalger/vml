@@ -9,6 +9,7 @@ use winapi::um::wincontypes::COORD;
 use winapi::um::winnt::HANDLE;
 
 pub use self::{
+    cfi::FontInfo,
     console::Console,
     console_mode::ConsoleMode,
     csbi::ScreenBufferInfo,
@@ -21,6 +22,7 @@ pub use self::{
     },
 };
 
+mod cfi;
 mod console;
 mod console_mode;
 mod csbi;

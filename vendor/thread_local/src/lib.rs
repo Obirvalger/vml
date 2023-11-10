@@ -65,6 +65,7 @@
 
 #![warn(missing_docs)]
 #![allow(clippy::mutex_atomic)]
+#![cfg_attr(feature = "nightly", feature(thread_local))]
 
 mod cached;
 mod thread_id;
@@ -81,7 +82,6 @@ use std::mem::MaybeUninit;
 use std::panic::UnwindSafe;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
-use std::sync::Mutex;
 use thread_id::Thread;
 use unreachable::UncheckedResultExt;
 
@@ -107,16 +107,21 @@ pub struct ThreadLocal<T: Send> {
     /// The number of values in the thread local. This can be less than the real number of values,
     /// but is never more.
     values: AtomicUsize,
-
-    /// Lock used to guard against concurrent modifications. This is taken when
-    /// there is a possibility of allocating a new bucket, which only occurs
-    /// when inserting values.
-    lock: Mutex<()>,
 }
 
 struct Entry<T> {
     present: AtomicBool,
     value: UnsafeCell<MaybeUninit<T>>,
+}
+
+impl<T> Drop for Entry<T> {
+    fn drop(&mut self) {
+        unsafe {
+            if *self.present.get_mut() {
+                ptr::drop_in_place((*self.value.get()).as_mut_ptr());
+            }
+        }
+    }
 }
 
 // ThreadLocal is always Sync, even if T isn't
@@ -145,7 +150,7 @@ impl<T: Send> Drop for ThreadLocal<T> {
                 continue;
             }
 
-            unsafe { Box::from_raw(std::slice::from_raw_parts_mut(bucket_ptr, this_bucket_size)) };
+            unsafe { deallocate_bucket(bucket_ptr, this_bucket_size) };
         }
     }
 }
@@ -180,14 +185,12 @@ impl<T: Send> ThreadLocal<T> {
             // representation as a sequence of their inner type.
             buckets: unsafe { mem::transmute(buckets) },
             values: AtomicUsize::new(0),
-            lock: Mutex::new(()),
         }
     }
 
     /// Returns the element for the current thread, if it exists.
     pub fn get(&self) -> Option<&T> {
-        let thread = thread_id::get();
-        self.get_inner(thread)
+        self.get_inner(thread_id::get())
     }
 
     /// Returns the element for the current thread, or creates it if it doesn't
@@ -210,10 +213,11 @@ impl<T: Send> ThreadLocal<T> {
         F: FnOnce() -> Result<T, E>,
     {
         let thread = thread_id::get();
-        match self.get_inner(thread) {
-            Some(x) => Ok(x),
-            None => Ok(self.insert(thread, create()?)),
+        if let Some(val) = self.get_inner(thread) {
+            return Ok(val);
         }
+
+        Ok(self.insert(create()?))
     }
 
     fn get_inner(&self, thread: Thread) -> Option<&T> {
@@ -234,23 +238,33 @@ impl<T: Send> ThreadLocal<T> {
     }
 
     #[cold]
-    fn insert(&self, thread: Thread, data: T) -> &T {
-        // Lock the Mutex to ensure only a single thread is allocating buckets at once
-        let _guard = self.lock.lock().unwrap();
-
+    fn insert(&self, data: T) -> &T {
+        let thread = thread_id::get();
         let bucket_atomic_ptr = unsafe { self.buckets.get_unchecked(thread.bucket) };
-
         let bucket_ptr: *const _ = bucket_atomic_ptr.load(Ordering::Acquire);
+
+        // If the bucket doesn't already exist, we need to allocate it
         let bucket_ptr = if bucket_ptr.is_null() {
-            // Allocate a new bucket
-            let bucket_ptr = allocate_bucket(thread.bucket_size);
-            bucket_atomic_ptr.store(bucket_ptr, Ordering::Release);
-            bucket_ptr
+            let new_bucket = allocate_bucket(thread.bucket_size);
+
+            match bucket_atomic_ptr.compare_exchange(
+                ptr::null_mut(),
+                new_bucket,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => new_bucket,
+                // If the bucket value changed (from null), that means
+                // another thread stored a new bucket before we could,
+                // and we can free our bucket and use that one instead
+                Err(bucket_ptr) => {
+                    unsafe { deallocate_bucket(new_bucket, thread.bucket_size) }
+                    bucket_ptr
+                }
+            }
         } else {
             bucket_ptr
         };
-
-        drop(_guard);
 
         // Insert the new element into the bucket
         let entry = unsafe { &*bucket_ptr.add(thread.index) };
@@ -368,7 +382,7 @@ impl RawIter {
     fn next<'a, T: Send + Sync>(&mut self, thread_local: &'a ThreadLocal<T>) -> Option<&'a T> {
         while self.bucket < BUCKETS {
             let bucket = unsafe { thread_local.buckets.get_unchecked(self.bucket) };
-            let bucket = bucket.load(Ordering::Relaxed);
+            let bucket = bucket.load(Ordering::Acquire);
 
             if !bucket.is_null() {
                 while self.index < self.bucket_size {
@@ -515,6 +529,10 @@ fn allocate_bucket<T>(size: usize) -> *mut Entry<T> {
     ) as *mut _
 }
 
+unsafe fn deallocate_bucket<T>(bucket: *mut Entry<T>, size: usize) {
+    let _ = Box::from_raw(std::slice::from_raw_parts_mut(bucket, size));
+}
+
 #[cfg(test)]
 mod tests {
     use super::ThreadLocal;
@@ -600,6 +618,23 @@ mod tests {
         let mut v = tls.into_iter().map(|x| *x).collect::<Vec<i32>>();
         v.sort_unstable();
         assert_eq!(vec![1, 2, 3], v);
+    }
+
+    #[test]
+    fn test_drop() {
+        let local = ThreadLocal::new();
+        struct Dropped(Arc<AtomicUsize>);
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Relaxed);
+            }
+        }
+
+        let dropped = Arc::new(AtomicUsize::new(0));
+        local.get_or(|| Dropped(dropped.clone()));
+        assert_eq!(dropped.load(Relaxed), 0);
+        drop(local);
+        assert_eq!(dropped.load(Relaxed), 1);
     }
 
     #[test]

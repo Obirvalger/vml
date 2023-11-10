@@ -16,30 +16,26 @@
 //! Generate a 2048-bit RSA key pair and use the public key to encrypt some data.
 //!
 //! ```rust
-//!
-//! extern crate openssl;
-//!
 //! use openssl::rsa::{Rsa, Padding};
 //!
-//! fn main() {
-//!     let rsa = Rsa::generate(2048).unwrap();
-//!     let data = b"foobar";
-//!     let mut buf = vec![0; rsa.size() as usize];
-//!     let encrypted_len = rsa.public_encrypt(data, &mut buf, Padding::PKCS1).unwrap();
-//! }
+//! let rsa = Rsa::generate(2048).unwrap();
+//! let data = b"foobar";
+//! let mut buf = vec![0; rsa.size() as usize];
+//! let encrypted_len = rsa.public_encrypt(data, &mut buf, Padding::PKCS1).unwrap();
 //! ```
-use ffi;
+use cfg_if::cfg_if;
 use foreign_types::{ForeignType, ForeignTypeRef};
 use libc::c_int;
 use std::fmt;
 use std::mem;
 use std::ptr;
 
-use bn::{BigNum, BigNumRef};
-use error::ErrorStack;
-use pkey::{HasPrivate, HasPublic, Private, Public};
-use util::ForeignTypeRefExt;
-use {cvt, cvt_n, cvt_p};
+use crate::bn::{BigNum, BigNumRef};
+use crate::error::ErrorStack;
+use crate::pkey::{HasPrivate, HasPublic, Private, Public};
+use crate::util::ForeignTypeRefExt;
+use crate::{cvt, cvt_n, cvt_p, LenType};
+use openssl_macros::corresponds;
 
 /// Type of encryption padding to use.
 ///
@@ -103,28 +99,19 @@ where
         /// Serializes the private key to a PEM-encoded PKCS#1 RSAPrivateKey structure.
         ///
         /// The output will have a header of `-----BEGIN RSA PRIVATE KEY-----`.
-        ///
-        /// This corresponds to [`PEM_write_bio_RSAPrivateKey`].
-        ///
-        /// [`PEM_write_bio_RSAPrivateKey`]: https://www.openssl.org/docs/man1.1.0/crypto/PEM_write_bio_RSAPrivateKey.html
+        #[corresponds(PEM_write_bio_RSAPrivateKey)]
         private_key_to_pem,
         /// Serializes the private key to a PEM-encoded encrypted PKCS#1 RSAPrivateKey structure.
         ///
         /// The output will have a header of `-----BEGIN RSA PRIVATE KEY-----`.
-        ///
-        /// This corresponds to [`PEM_write_bio_RSAPrivateKey`].
-        ///
-        /// [`PEM_write_bio_RSAPrivateKey`]: https://www.openssl.org/docs/man1.1.0/crypto/PEM_write_bio_RSAPrivateKey.html
+        #[corresponds(PEM_write_bio_RSAPrivateKey)]
         private_key_to_pem_passphrase,
         ffi::PEM_write_bio_RSAPrivateKey
     }
 
     to_der! {
         /// Serializes the private key to a DER-encoded PKCS#1 RSAPrivateKey structure.
-        ///
-        /// This corresponds to [`i2d_RSAPrivateKey`].
-        ///
-        /// [`i2d_RSAPrivateKey`]: https://www.openssl.org/docs/man1.0.2/crypto/i2d_RSAPrivateKey.html
+        #[corresponds(i2d_RSAPrivateKey)]
         private_key_to_der,
         ffi::i2d_RSAPrivateKey
     }
@@ -135,6 +122,7 @@ where
     ///
     /// Panics if `self` has no private components, or if `to` is smaller
     /// than `self.size()`.
+    #[corresponds(RSA_private_decrypt)]
     pub fn private_decrypt(
         &self,
         from: &[u8],
@@ -146,7 +134,7 @@ where
 
         unsafe {
             let len = cvt_n(ffi::RSA_private_decrypt(
-                from.len() as c_int,
+                from.len() as LenType,
                 from.as_ptr(),
                 to.as_mut_ptr(),
                 self.as_ptr(),
@@ -162,6 +150,7 @@ where
     ///
     /// Panics if `self` has no private components, or if `to` is smaller
     /// than `self.size()`.
+    #[corresponds(RSA_private_encrypt)]
     pub fn private_encrypt(
         &self,
         from: &[u8],
@@ -173,7 +162,7 @@ where
 
         unsafe {
             let len = cvt_n(ffi::RSA_private_encrypt(
-                from.len() as c_int,
+                from.len() as LenType,
                 from.as_ptr(),
                 to.as_mut_ptr(),
                 self.as_ptr(),
@@ -184,10 +173,7 @@ where
     }
 
     /// Returns a reference to the private exponent of the key.
-    ///
-    /// This corresponds to [`RSA_get0_key`].
-    ///
-    /// [`RSA_get0_key`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_get0_key.html
+    #[corresponds(RSA_get0_key)]
     pub fn d(&self) -> &BigNumRef {
         unsafe {
             let mut d = ptr::null();
@@ -197,10 +183,7 @@ where
     }
 
     /// Returns a reference to the first factor of the exponent of the key.
-    ///
-    /// This corresponds to [`RSA_get0_factors`].
-    ///
-    /// [`RSA_get0_factors`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_get0_key.html
+    #[corresponds(RSA_get0_factors)]
     pub fn p(&self) -> Option<&BigNumRef> {
         unsafe {
             let mut p = ptr::null();
@@ -210,10 +193,7 @@ where
     }
 
     /// Returns a reference to the second factor of the exponent of the key.
-    ///
-    /// This corresponds to [`RSA_get0_factors`].
-    ///
-    /// [`RSA_get0_factors`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_get0_key.html
+    #[corresponds(RSA_get0_factors)]
     pub fn q(&self) -> Option<&BigNumRef> {
         unsafe {
             let mut q = ptr::null();
@@ -223,10 +203,7 @@ where
     }
 
     /// Returns a reference to the first exponent used for CRT calculations.
-    ///
-    /// This corresponds to [`RSA_get0_crt_params`].
-    ///
-    /// [`RSA_get0_crt_params`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_get0_key.html
+    #[corresponds(RSA_get0_crt_params)]
     pub fn dmp1(&self) -> Option<&BigNumRef> {
         unsafe {
             let mut dp = ptr::null();
@@ -236,10 +213,7 @@ where
     }
 
     /// Returns a reference to the second exponent used for CRT calculations.
-    ///
-    /// This corresponds to [`RSA_get0_crt_params`].
-    ///
-    /// [`RSA_get0_crt_params`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_get0_key.html
+    #[corresponds(RSA_get0_crt_params)]
     pub fn dmq1(&self) -> Option<&BigNumRef> {
         unsafe {
             let mut dq = ptr::null();
@@ -249,10 +223,7 @@ where
     }
 
     /// Returns a reference to the coefficient used for CRT calculations.
-    ///
-    /// This corresponds to [`RSA_get0_crt_params`].
-    ///
-    /// [`RSA_get0_crt_params`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_get0_key.html
+    #[corresponds(RSA_get0_crt_params)]
     pub fn iqmp(&self) -> Option<&BigNumRef> {
         unsafe {
             let mut qi = ptr::null();
@@ -262,10 +233,8 @@ where
     }
 
     /// Validates RSA parameters for correctness
-    ///
-    /// This corresponds to [`RSA_check_key`].
-    ///
-    /// [`RSA_check_key`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_check_key.html
+    #[corresponds(RSA_check_key)]
+    #[allow(clippy::unnecessary_cast)]
     pub fn check_key(&self) -> Result<bool, ErrorStack> {
         unsafe {
             let result = ffi::RSA_check_key(self.as_ptr()) as i32;
@@ -286,20 +255,14 @@ where
         /// Serializes the public key into a PEM-encoded SubjectPublicKeyInfo structure.
         ///
         /// The output will have a header of `-----BEGIN PUBLIC KEY-----`.
-        ///
-        /// This corresponds to [`PEM_write_bio_RSA_PUBKEY`].
-        ///
-        /// [`PEM_write_bio_RSA_PUBKEY`]: https://www.openssl.org/docs/man1.0.2/crypto/pem.html
+        #[corresponds(PEM_write_bio_RSA_PUBKEY)]
         public_key_to_pem,
         ffi::PEM_write_bio_RSA_PUBKEY
     }
 
     to_der! {
         /// Serializes the public key into a DER-encoded SubjectPublicKeyInfo structure.
-        ///
-        /// This corresponds to [`i2d_RSA_PUBKEY`].
-        ///
-        /// [`i2d_RSA_PUBKEY`]: https://www.openssl.org/docs/man1.1.0/crypto/i2d_RSA_PUBKEY.html
+        #[corresponds(i2d_RSA_PUBKEY)]
         public_key_to_der,
         ffi::i2d_RSA_PUBKEY
     }
@@ -308,29 +271,20 @@ where
         /// Serializes the public key into a PEM-encoded PKCS#1 RSAPublicKey structure.
         ///
         /// The output will have a header of `-----BEGIN RSA PUBLIC KEY-----`.
-        ///
-        /// This corresponds to [`PEM_write_bio_RSAPublicKey`].
-        ///
-        /// [`PEM_write_bio_RSAPublicKey`]: https://www.openssl.org/docs/man1.0.2/crypto/pem.html
+        #[corresponds(PEM_write_bio_RSAPublicKey)]
         public_key_to_pem_pkcs1,
         ffi::PEM_write_bio_RSAPublicKey
     }
 
     to_der! {
         /// Serializes the public key into a DER-encoded PKCS#1 RSAPublicKey structure.
-        ///
-        /// This corresponds to [`i2d_RSAPublicKey`].
-        ///
-        /// [`i2d_RSAPublicKey`]: https://www.openssl.org/docs/man1.0.2/crypto/i2d_RSAPublicKey.html
+        #[corresponds(i2d_RSAPublicKey)]
         public_key_to_der_pkcs1,
         ffi::i2d_RSAPublicKey
     }
 
     /// Returns the size of the modulus in bytes.
-    ///
-    /// This corresponds to [`RSA_size`].
-    ///
-    /// [`RSA_size`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_size.html
+    #[corresponds(RSA_size)]
     pub fn size(&self) -> u32 {
         unsafe { ffi::RSA_size(self.as_ptr()) as u32 }
     }
@@ -340,6 +294,7 @@ where
     /// # Panics
     ///
     /// Panics if `to` is smaller than `self.size()`.
+    #[corresponds(RSA_public_decrypt)]
     pub fn public_decrypt(
         &self,
         from: &[u8],
@@ -351,7 +306,7 @@ where
 
         unsafe {
             let len = cvt_n(ffi::RSA_public_decrypt(
-                from.len() as c_int,
+                from.len() as LenType,
                 from.as_ptr(),
                 to.as_mut_ptr(),
                 self.as_ptr(),
@@ -366,6 +321,7 @@ where
     /// # Panics
     ///
     /// Panics if `to` is smaller than `self.size()`.
+    #[corresponds(RSA_public_encrypt)]
     pub fn public_encrypt(
         &self,
         from: &[u8],
@@ -377,7 +333,7 @@ where
 
         unsafe {
             let len = cvt_n(ffi::RSA_public_encrypt(
-                from.len() as c_int,
+                from.len() as LenType,
                 from.as_ptr(),
                 to.as_mut_ptr(),
                 self.as_ptr(),
@@ -388,10 +344,7 @@ where
     }
 
     /// Returns a reference to the modulus of the key.
-    ///
-    /// This corresponds to [`RSA_get0_key`].
-    ///
-    /// [`RSA_get0_key`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_get0_key.html
+    #[corresponds(RSA_get0_key)]
     pub fn n(&self) -> &BigNumRef {
         unsafe {
             let mut n = ptr::null();
@@ -401,10 +354,7 @@ where
     }
 
     /// Returns a reference to the public exponent of the key.
-    ///
-    /// This corresponds to [`RSA_get0_key`].
-    ///
-    /// [`RSA_get0_key`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_get0_key.html
+    #[corresponds(RSA_get0_key)]
     pub fn e(&self) -> &BigNumRef {
         unsafe {
             let mut e = ptr::null();
@@ -422,8 +372,8 @@ impl Rsa<Public> {
     ///
     /// This corresponds to [`RSA_new`] and uses [`RSA_set0_key`].
     ///
-    /// [`RSA_new`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_new.html
-    /// [`RSA_set0_key`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_set0_key.html
+    /// [`RSA_new`]: https://www.openssl.org/docs/manmaster/crypto/RSA_new.html
+    /// [`RSA_set0_key`]: https://www.openssl.org/docs/manmaster/crypto/RSA_set0_key.html
     pub fn from_public_components(n: BigNum, e: BigNum) -> Result<Rsa<Public>, ErrorStack> {
         unsafe {
             let rsa = cvt_p(ffi::RSA_new())?;
@@ -437,10 +387,7 @@ impl Rsa<Public> {
         /// Decodes a PEM-encoded SubjectPublicKeyInfo structure containing an RSA key.
         ///
         /// The input should have a header of `-----BEGIN PUBLIC KEY-----`.
-        ///
-        /// This corresponds to [`PEM_read_bio_RSA_PUBKEY`].
-        ///
-        /// [`PEM_read_bio_RSA_PUBKEY`]: https://www.openssl.org/docs/man1.0.2/crypto/PEM_read_bio_RSA_PUBKEY.html
+        #[corresponds(PEM_read_bio_RSA_PUBKEY)]
         public_key_from_pem,
         Rsa<Public>,
         ffi::PEM_read_bio_RSA_PUBKEY
@@ -450,10 +397,7 @@ impl Rsa<Public> {
         /// Decodes a PEM-encoded PKCS#1 RSAPublicKey structure.
         ///
         /// The input should have a header of `-----BEGIN RSA PUBLIC KEY-----`.
-        ///
-        /// This corresponds to [`PEM_read_bio_RSAPublicKey`].
-        ///
-        /// [`PEM_read_bio_RSAPublicKey`]: https://www.openssl.org/docs/man1.0.2/crypto/PEM_read_bio_RSAPublicKey.html
+        #[corresponds(PEM_read_bio_RSAPublicKey)]
         public_key_from_pem_pkcs1,
         Rsa<Public>,
         ffi::PEM_read_bio_RSAPublicKey
@@ -461,10 +405,7 @@ impl Rsa<Public> {
 
     from_der! {
         /// Decodes a DER-encoded SubjectPublicKeyInfo structure containing an RSA key.
-        ///
-        /// This corresponds to [`d2i_RSA_PUBKEY`].
-        ///
-        /// [`d2i_RSA_PUBKEY`]: https://www.openssl.org/docs/man1.0.2/crypto/d2i_RSA_PUBKEY.html
+        #[corresponds(d2i_RSA_PUBKEY)]
         public_key_from_der,
         Rsa<Public>,
         ffi::d2i_RSA_PUBKEY
@@ -472,10 +413,7 @@ impl Rsa<Public> {
 
     from_der! {
         /// Decodes a DER-encoded PKCS#1 RSAPublicKey structure.
-        ///
-        /// This corresponds to [`d2i_RSAPublicKey`].
-        ///
-        /// [`d2i_RSAPublicKey`]: https://www.openssl.org/docs/man1.0.2/crypto/d2i_RSA_PUBKEY.html
+        #[corresponds(d2i_RSAPublicKey)]
         public_key_from_der_pkcs1,
         Rsa<Public>,
         ffi::d2i_RSAPublicKey
@@ -494,8 +432,8 @@ impl RsaPrivateKeyBuilder {
     ///
     /// This corresponds to [`RSA_new`] and uses [`RSA_set0_key`].
     ///
-    /// [`RSA_new`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_new.html
-    /// [`RSA_set0_key`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_set0_key.html
+    /// [`RSA_new`]: https://www.openssl.org/docs/manmaster/crypto/RSA_new.html
+    /// [`RSA_set0_key`]: https://www.openssl.org/docs/manmaster/crypto/RSA_set0_key.html
     pub fn new(n: BigNum, e: BigNum, d: BigNum) -> Result<RsaPrivateKeyBuilder, ErrorStack> {
         unsafe {
             let rsa = cvt_p(ffi::RSA_new())?;
@@ -510,10 +448,7 @@ impl RsaPrivateKeyBuilder {
     /// Sets the factors of the Rsa key.
     ///
     /// `p` and `q` are the first and second factors of `n`.
-    ///
-    /// This correspond to [`RSA_set0_factors`].
-    ///
-    /// [`RSA_set0_factors`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_set0_factors.html
+    #[corresponds(RSA_set0_factors)]
     // FIXME should be infallible
     pub fn set_factors(self, p: BigNum, q: BigNum) -> Result<RsaPrivateKeyBuilder, ErrorStack> {
         unsafe {
@@ -527,10 +462,7 @@ impl RsaPrivateKeyBuilder {
     ///
     /// `dmp1`, `dmq1`, and `iqmp` are the exponents and coefficient for
     /// CRT calculations which is used to speed up RSA operations.
-    ///
-    /// This correspond to [`RSA_set0_crt_params`].
-    ///
-    /// [`RSA_set0_crt_params`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_set0_crt_params.html
+    #[corresponds(RSA_set0_crt_params)]
     // FIXME should be infallible
     pub fn set_crt_params(
         self,
@@ -559,8 +491,18 @@ impl RsaPrivateKeyBuilder {
 impl Rsa<Private> {
     /// Creates a new RSA key with private components (public components are assumed).
     ///
-    /// This a convenience method over
-    /// `Rsa::build(n, e, d)?.set_factors(p, q)?.set_crt_params(dmp1, dmq1, iqmp)?.build()`
+    /// This a convenience method over:
+    /// ```
+    /// # use openssl::rsa::RsaPrivateKeyBuilder;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let bn = || openssl::bn::BigNum::new().unwrap();
+    /// # let (n, e, d, p, q, dmp1, dmq1, iqmp) = (bn(), bn(), bn(), bn(), bn(), bn(), bn(), bn());
+    /// RsaPrivateKeyBuilder::new(n, e, d)?
+    ///     .set_factors(p, q)?
+    ///     .set_crt_params(dmp1, dmq1, iqmp)?
+    ///     .build();
+    /// # Ok(()) }
+    /// ```
     #[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
     pub fn from_private_components(
         n: BigNum,
@@ -581,10 +523,7 @@ impl Rsa<Private> {
     /// Generates a public/private key pair with the specified size.
     ///
     /// The public exponent will be 65537.
-    ///
-    /// This corresponds to [`RSA_generate_key_ex`].
-    ///
-    /// [`RSA_generate_key_ex`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_generate_key_ex.html
+    #[corresponds(RSA_generate_key_ex)]
     pub fn generate(bits: u32) -> Result<Rsa<Private>, ErrorStack> {
         let e = BigNum::from_u32(ffi::RSA_F4 as u32)?;
         Rsa::generate_with_e(bits, &e)
@@ -593,10 +532,7 @@ impl Rsa<Private> {
     /// Generates a public/private key pair with the specified size and a custom exponent.
     ///
     /// Unless you have specific needs and know what you're doing, use `Rsa::generate` instead.
-    ///
-    /// This corresponds to [`RSA_generate_key_ex`].
-    ///
-    /// [`RSA_generate_key_ex`]: https://www.openssl.org/docs/man1.1.0/crypto/RSA_generate_key_ex.html
+    #[corresponds(RSA_generate_key_ex)]
     pub fn generate_with_e(bits: u32, e: &BigNumRef) -> Result<Rsa<Private>, ErrorStack> {
         unsafe {
             let rsa = Rsa::from_ptr(cvt_p(ffi::RSA_new())?);
@@ -613,26 +549,17 @@ impl Rsa<Private> {
     // FIXME these need to identify input formats
     private_key_from_pem! {
         /// Deserializes a private key from a PEM-encoded PKCS#1 RSAPrivateKey structure.
-        ///
-        /// This corresponds to [`PEM_read_bio_RSAPrivateKey`].
-        ///
-        /// [`PEM_read_bio_RSAPrivateKey`]: https://www.openssl.org/docs/man1.1.0/crypto/PEM_read_bio_RSAPrivateKey.html
+        #[corresponds(PEM_read_bio_RSAPrivateKey)]
         private_key_from_pem,
 
         /// Deserializes a private key from a PEM-encoded encrypted PKCS#1 RSAPrivateKey structure.
-        ///
-        /// This corresponds to [`PEM_read_bio_RSAPrivateKey`].
-        ///
-        /// [`PEM_read_bio_RSAPrivateKey`]: https://www.openssl.org/docs/man1.1.0/crypto/PEM_read_bio_RSAPrivateKey.html
+        #[corresponds(PEM_read_bio_RSAPrivateKey)]
         private_key_from_pem_passphrase,
 
         /// Deserializes a private key from a PEM-encoded encrypted PKCS#1 RSAPrivateKey structure.
         ///
         /// The callback should fill the password into the provided buffer and return its length.
-        ///
-        /// This corresponds to [`PEM_read_bio_RSAPrivateKey`].
-        ///
-        /// [`PEM_read_bio_RSAPrivateKey`]: https://www.openssl.org/docs/man1.1.0/crypto/PEM_read_bio_RSAPrivateKey.html
+        #[corresponds(PEM_read_bio_RSAPrivateKey)]
         private_key_from_pem_callback,
         Rsa<Private>,
         ffi::PEM_read_bio_RSAPrivateKey
@@ -640,10 +567,7 @@ impl Rsa<Private> {
 
     from_der! {
         /// Decodes a DER-encoded PKCS#1 RSAPrivateKey structure.
-        ///
-        /// This corresponds to [`d2i_RSAPrivateKey`].
-        ///
-        /// [`d2i_RSAPrivateKey`]: https://www.openssl.org/docs/man1.0.2/crypto/d2i_RSA_PUBKEY.html
+        #[corresponds(d2i_RSAPrivateKey)]
         private_key_from_der,
         Rsa<Private>,
         ffi::d2i_RSAPrivateKey
@@ -651,13 +575,13 @@ impl Rsa<Private> {
 }
 
 impl<T> fmt::Debug for Rsa<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Rsa")
     }
 }
 
 cfg_if! {
-    if #[cfg(any(ossl110, libressl273))] {
+    if #[cfg(any(ossl110, libressl273, boringssl))] {
         use ffi::{
             RSA_get0_key, RSA_get0_factors, RSA_get0_crt_params, RSA_set0_key, RSA_set0_factors,
             RSA_set0_crt_params,
@@ -754,7 +678,7 @@ cfg_if! {
 
 #[cfg(test)]
 mod test {
-    use symm::Cipher;
+    use crate::symm::Cipher;
 
     use super::*;
 

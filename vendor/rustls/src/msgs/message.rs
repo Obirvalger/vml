@@ -1,56 +1,67 @@
-use crate::error::Error;
+use crate::enums::ProtocolVersion;
+use crate::enums::{AlertDescription, ContentType, HandshakeType};
+use crate::error::{Error, InvalidMessage};
 use crate::msgs::alert::AlertMessagePayload;
 use crate::msgs::base::Payload;
 use crate::msgs::ccs::ChangeCipherSpecPayload;
 use crate::msgs::codec::{Codec, Reader};
-use crate::msgs::enums::HandshakeType;
-use crate::msgs::enums::{AlertDescription, AlertLevel};
-use crate::msgs::enums::{ContentType, ProtocolVersion};
+use crate::msgs::enums::AlertLevel;
 use crate::msgs::handshake::HandshakeMessagePayload;
-
-use std::convert::TryFrom;
 
 #[derive(Debug)]
 pub enum MessagePayload {
     Alert(AlertMessagePayload),
-    Handshake(HandshakeMessagePayload),
+    Handshake {
+        parsed: HandshakeMessagePayload,
+        encoded: Payload,
+    },
     ChangeCipherSpec(ChangeCipherSpecPayload),
     ApplicationData(Payload),
 }
 
 impl MessagePayload {
     pub fn encode(&self, bytes: &mut Vec<u8>) {
-        match *self {
-            Self::Alert(ref x) => x.encode(bytes),
-            Self::Handshake(ref x) => x.encode(bytes),
-            Self::ChangeCipherSpec(ref x) => x.encode(bytes),
-            Self::ApplicationData(ref x) => x.encode(bytes),
+        match self {
+            Self::Alert(x) => x.encode(bytes),
+            Self::Handshake { encoded, .. } => bytes.extend(&encoded.0),
+            Self::ChangeCipherSpec(x) => x.encode(bytes),
+            Self::ApplicationData(x) => x.encode(bytes),
         }
     }
 
-    pub fn new(typ: ContentType, vers: ProtocolVersion, payload: Payload) -> Result<Self, Error> {
+    pub fn handshake(parsed: HandshakeMessagePayload) -> Self {
+        Self::Handshake {
+            encoded: Payload::new(parsed.get_encoding()),
+            parsed,
+        }
+    }
+
+    pub fn new(
+        typ: ContentType,
+        vers: ProtocolVersion,
+        payload: Payload,
+    ) -> Result<Self, InvalidMessage> {
         let mut r = Reader::init(&payload.0);
-        let parsed = match typ {
-            ContentType::ApplicationData => return Ok(Self::ApplicationData(payload)),
+        match typ {
+            ContentType::ApplicationData => Ok(Self::ApplicationData(payload)),
             ContentType::Alert => AlertMessagePayload::read(&mut r).map(MessagePayload::Alert),
             ContentType::Handshake => {
-                HandshakeMessagePayload::read_version(&mut r, vers).map(MessagePayload::Handshake)
+                HandshakeMessagePayload::read_version(&mut r, vers).map(|parsed| Self::Handshake {
+                    parsed,
+                    encoded: payload,
+                })
             }
             ContentType::ChangeCipherSpec => {
                 ChangeCipherSpecPayload::read(&mut r).map(MessagePayload::ChangeCipherSpec)
             }
-            _ => None,
-        };
-
-        parsed
-            .filter(|_| !r.any_left())
-            .ok_or(Error::CorruptMessagePayload(typ))
+            _ => Err(InvalidMessage::InvalidContentType),
+        }
     }
 
     pub fn content_type(&self) -> ContentType {
         match self {
             Self::Alert(_) => ContentType::Alert,
-            Self::Handshake(_) => ContentType::Handshake,
+            Self::Handshake { .. } => ContentType::Handshake,
             Self::ChangeCipherSpec(_) => ContentType::ChangeCipherSpec,
             Self::ApplicationData(_) => ContentType::ApplicationData,
         }
@@ -73,38 +84,38 @@ impl OpaqueMessage {
     /// `MessageError` allows callers to distinguish between valid prefixes (might
     /// become valid if we read more data) and invalid data.
     pub fn read(r: &mut Reader) -> Result<Self, MessageError> {
-        let typ = ContentType::read(r).ok_or(MessageError::TooShortForHeader)?;
-        let version = ProtocolVersion::read(r).ok_or(MessageError::TooShortForHeader)?;
-        let len = u16::read(r).ok_or(MessageError::TooShortForHeader)?;
+        let typ = ContentType::read(r).map_err(|_| MessageError::TooShortForHeader)?;
+        // Don't accept any new content-types.
+        if let ContentType::Unknown(_) = typ {
+            return Err(MessageError::InvalidContentType);
+        }
+
+        let version = ProtocolVersion::read(r).map_err(|_| MessageError::TooShortForHeader)?;
+        // Accept only versions 0x03XX for any XX.
+        match version {
+            ProtocolVersion::Unknown(ref v) if (v & 0xff00) != 0x0300 => {
+                return Err(MessageError::UnknownProtocolVersion);
+            }
+            _ => {}
+        };
+
+        let len = u16::read(r).map_err(|_| MessageError::TooShortForHeader)?;
 
         // Reject undersize messages
         //  implemented per section 5.1 of RFC8446 (TLSv1.3)
         //              per section 6.2.1 of RFC5246 (TLSv1.2)
         if typ != ContentType::ApplicationData && len == 0 {
-            return Err(MessageError::IllegalLength);
+            return Err(MessageError::InvalidEmptyPayload);
         }
 
         // Reject oversize messages
         if len >= Self::MAX_PAYLOAD {
-            return Err(MessageError::IllegalLength);
+            return Err(MessageError::MessageTooLarge);
         }
-
-        // Don't accept any new content-types.
-        if let ContentType::Unknown(_) = typ {
-            return Err(MessageError::IllegalContentType);
-        }
-
-        // Accept only versions 0x03XX for any XX.
-        match version {
-            ProtocolVersion::Unknown(ref v) if (v & 0xff00) != 0x0300 => {
-                return Err(MessageError::IllegalProtocolVersion);
-            }
-            _ => {}
-        };
 
         let mut sub = r
             .sub(len as usize)
-            .ok_or(MessageError::TooShortForLength)?;
+            .map_err(|_| MessageError::TooShortForLength)?;
         let payload = Payload::read(&mut sub);
 
         Ok(Self {
@@ -206,8 +217,8 @@ pub struct Message {
 impl Message {
     pub fn is_handshake_type(&self, hstyp: HandshakeType) -> bool {
         // Bit of a layering violation, but OK.
-        if let MessagePayload::Handshake(ref hsp) = self.payload {
-            hsp.typ == hstyp
+        if let MessagePayload::Handshake { parsed, .. } = &self.payload {
+            parsed.typ == hstyp
         } else {
             false
         }
@@ -226,7 +237,7 @@ impl Message {
     pub fn build_key_update_notify() -> Self {
         Self {
             version: ProtocolVersion::TLSv1_3,
-            payload: MessagePayload::Handshake(HandshakeMessagePayload::build_key_update_notify()),
+            payload: MessagePayload::handshake(HandshakeMessagePayload::build_key_update_notify()),
         }
     }
 }
@@ -260,11 +271,22 @@ pub struct BorrowedPlainMessage<'a> {
     pub payload: &'a [u8],
 }
 
+impl<'a> BorrowedPlainMessage<'a> {
+    pub fn to_unencrypted_opaque(&self) -> OpaqueMessage {
+        OpaqueMessage {
+            version: self.version,
+            typ: self.typ,
+            payload: Payload(self.payload.to_vec()),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum MessageError {
     TooShortForHeader,
     TooShortForLength,
-    IllegalLength,
-    IllegalContentType,
-    IllegalProtocolVersion,
+    InvalidEmptyPayload,
+    MessageTooLarge,
+    InvalidContentType,
+    UnknownProtocolVersion,
 }

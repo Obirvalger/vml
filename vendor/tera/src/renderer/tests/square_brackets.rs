@@ -45,8 +45,9 @@ fn var_access_by_square_brackets() {
     ];
 
     for (input, expected) in inputs {
-        println!("{:?} -> {:?}", input, expected);
-        assert_eq!(Tera::one_off(input, &context, true).unwrap(), expected);
+        let result = Tera::one_off(input, &context, true).unwrap();
+        println!("{:?} -> {:?} = {:?}", input, expected, result);
+        assert_eq!(result, expected);
     }
 }
 
@@ -93,7 +94,6 @@ fn var_access_by_loop_index_with_set() {
     assert!(res.is_ok());
 }
 
-
 // https://github.com/Keats/tera/issues/754
 #[test]
 fn can_get_value_if_key_contains_period() {
@@ -103,11 +103,7 @@ fn can_get_value_if_key_contains_period() {
     map.insert("Mt. Robson Provincial Park".to_string(), "hello".to_string());
     context.insert("tag_info", &map);
 
-    let res = Tera::one_off(
-        r#"{{ tag_info[name] }}"#,
-        &context,
-        true,
-    );
+    let res = Tera::one_off(r#"{{ tag_info[name] }}"#, &context, true);
     assert!(res.is_ok());
     let res = res.unwrap();
     assert_eq!(res, "hello");

@@ -4,26 +4,20 @@ use std::fs::File;
 use std::io;
 use std::os::windows::prelude::*;
 use std::ptr;
-use winapi::shared::minwindef::BOOL;
-use winapi::shared::ntdef::{HANDLE, PHANDLE};
-use winapi::um::handleapi::DuplicateHandle;
-use winapi::um::namedpipeapi;
-use winapi::um::processthreadsapi::GetCurrentProcess;
-use winapi::um::winnt::DUPLICATE_SAME_ACCESS;
+use windows_sys::Win32::Foundation::{
+    DuplicateHandle, BOOL, DUPLICATE_SAME_ACCESS, HANDLE, INVALID_HANDLE_VALUE,
+};
+use windows_sys::Win32::System::Pipes::CreatePipe;
+use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
 pub(crate) fn pipe() -> io::Result<(PipeReader, PipeWriter)> {
-    let mut read_pipe: HANDLE = ptr::null_mut();
-    let mut write_pipe: HANDLE = ptr::null_mut();
+    let mut read_pipe = INVALID_HANDLE_VALUE;
+    let mut write_pipe = INVALID_HANDLE_VALUE;
 
     let ret = unsafe {
         // NOTE: These pipes do not support IOCP. We might want to emulate
         // anonymous pipes with CreateNamedPipe, as Rust's stdlib does.
-        namedpipeapi::CreatePipe(
-            &mut read_pipe as PHANDLE,
-            &mut write_pipe as PHANDLE,
-            ptr::null_mut(),
-            0,
-        )
+        CreatePipe(&mut read_pipe, &mut write_pipe, ptr::null_mut(), 0)
     };
 
     if ret == 0 {
@@ -49,6 +43,9 @@ pub(crate) fn dup<F: AsRawHandle>(wrapper: &F) -> io::Result<File> {
     // deadlocks when the handle in question is a stdout pipe. To get that
     // right, we explicitly make the necessary system calls here, just like
     // libstd apart from that one flag.
+    // TODO: The fix for this issue shipped in Rust 1.40 (December 2019). When
+    // we bump the MSRV past that point, we can go ahead and delete this
+    // workaround. Until then, no rush.
     let source_handle = wrapper.as_raw_handle() as HANDLE;
     let desired_access = 0; // Ignored because of DUPLICATE_SAME_ACCESS.
     let inherit_handle = false as BOOL; // <-- Libstd sets this to true!
@@ -106,5 +103,47 @@ impl AsRawHandle for PipeWriter {
 impl FromRawHandle for PipeWriter {
     unsafe fn from_raw_handle(handle: RawHandle) -> PipeWriter {
         PipeWriter(File::from_raw_handle(handle))
+    }
+}
+
+#[cfg(feature = "io_safety")]
+impl From<PipeReader> for OwnedHandle {
+    fn from(reader: PipeReader) -> Self {
+        reader.0.into()
+    }
+}
+
+#[cfg(feature = "io_safety")]
+impl AsHandle for PipeReader {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        self.0.as_handle()
+    }
+}
+
+#[cfg(feature = "io_safety")]
+impl From<OwnedHandle> for PipeReader {
+    fn from(handle: OwnedHandle) -> Self {
+        PipeReader(handle.into())
+    }
+}
+
+#[cfg(feature = "io_safety")]
+impl From<PipeWriter> for OwnedHandle {
+    fn from(writer: PipeWriter) -> Self {
+        writer.0.into()
+    }
+}
+
+#[cfg(feature = "io_safety")]
+impl AsHandle for PipeWriter {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        self.0.as_handle()
+    }
+}
+
+#[cfg(feature = "io_safety")]
+impl From<OwnedHandle> for PipeWriter {
+    fn from(handle: OwnedHandle) -> Self {
+        PipeWriter(handle.into())
     }
 }

@@ -1,60 +1,29 @@
-#[link(name = "windows")]
-extern "system" {
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn AbortSystemShutdownA(lpmachinename: ::windows_sys::core::PCSTR) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn AbortSystemShutdownW(lpmachinename: ::windows_sys::core::PCWSTR) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn CheckForHiberboot(phiberboot: *mut super::super::Foundation::BOOLEAN, bclearflag: super::super::Foundation::BOOLEAN) -> u32;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn ExitWindowsEx(uflags: EXIT_WINDOWS_FLAGS, dwreason: SHUTDOWN_REASON) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-    pub fn InitiateShutdownA(lpmachinename: ::windows_sys::core::PCSTR, lpmessage: ::windows_sys::core::PCSTR, dwgraceperiod: u32, dwshutdownflags: SHUTDOWN_FLAGS, dwreason: SHUTDOWN_REASON) -> u32;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-    pub fn InitiateShutdownW(lpmachinename: ::windows_sys::core::PCWSTR, lpmessage: ::windows_sys::core::PCWSTR, dwgraceperiod: u32, dwshutdownflags: SHUTDOWN_FLAGS, dwreason: SHUTDOWN_REASON) -> u32;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn InitiateSystemShutdownA(lpmachinename: ::windows_sys::core::PCSTR, lpmessage: ::windows_sys::core::PCSTR, dwtimeout: u32, bforceappsclosed: super::super::Foundation::BOOL, brebootaftershutdown: super::super::Foundation::BOOL) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn InitiateSystemShutdownExA(lpmachinename: ::windows_sys::core::PCSTR, lpmessage: ::windows_sys::core::PCSTR, dwtimeout: u32, bforceappsclosed: super::super::Foundation::BOOL, brebootaftershutdown: super::super::Foundation::BOOL, dwreason: SHUTDOWN_REASON) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn InitiateSystemShutdownExW(lpmachinename: ::windows_sys::core::PCWSTR, lpmessage: ::windows_sys::core::PCWSTR, dwtimeout: u32, bforceappsclosed: super::super::Foundation::BOOL, brebootaftershutdown: super::super::Foundation::BOOL, dwreason: SHUTDOWN_REASON) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn InitiateSystemShutdownW(lpmachinename: ::windows_sys::core::PCWSTR, lpmessage: ::windows_sys::core::PCWSTR, dwtimeout: u32, bforceappsclosed: super::super::Foundation::BOOL, brebootaftershutdown: super::super::Foundation::BOOL) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn LockWorkStation() -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn ShutdownBlockReasonCreate(hwnd: super::super::Foundation::HWND, pwszreason: ::windows_sys::core::PCWSTR) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn ShutdownBlockReasonDestroy(hwnd: super::super::Foundation::HWND) -> super::super::Foundation::BOOL;
-    #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn ShutdownBlockReasonQuery(hwnd: super::super::Foundation::HWND, pwszbuff: ::windows_sys::core::PWSTR, pcchbuff: *mut u32) -> super::super::Foundation::BOOL;
-}
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub type EXIT_WINDOWS_FLAGS = u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const EWX_HYBRID_SHUTDOWN: EXIT_WINDOWS_FLAGS = 4194304u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const EWX_LOGOFF: EXIT_WINDOWS_FLAGS = 0u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const EWX_POWEROFF: EXIT_WINDOWS_FLAGS = 8u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const EWX_REBOOT: EXIT_WINDOWS_FLAGS = 2u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const EWX_RESTARTAPPS: EXIT_WINDOWS_FLAGS = 64u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const EWX_SHUTDOWN: EXIT_WINDOWS_FLAGS = 1u32;
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn AbortSystemShutdownA ( lpmachinename : ::windows_sys::core::PCSTR ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn AbortSystemShutdownW ( lpmachinename : ::windows_sys::core::PCWSTR ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn CheckForHiberboot ( phiberboot : *mut super::super::Foundation:: BOOLEAN , bclearflag : super::super::Foundation:: BOOLEAN ) -> u32 );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "user32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn ExitWindowsEx ( uflags : EXIT_WINDOWS_FLAGS , dwreason : SHUTDOWN_REASON ) -> super::super::Foundation:: BOOL );
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"] fn InitiateShutdownA ( lpmachinename : ::windows_sys::core::PCSTR , lpmessage : ::windows_sys::core::PCSTR , dwgraceperiod : u32 , dwshutdownflags : SHUTDOWN_FLAGS , dwreason : SHUTDOWN_REASON ) -> u32 );
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"] fn InitiateShutdownW ( lpmachinename : ::windows_sys::core::PCWSTR , lpmessage : ::windows_sys::core::PCWSTR , dwgraceperiod : u32 , dwshutdownflags : SHUTDOWN_FLAGS , dwreason : SHUTDOWN_REASON ) -> u32 );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn InitiateSystemShutdownA ( lpmachinename : ::windows_sys::core::PCSTR , lpmessage : ::windows_sys::core::PCSTR , dwtimeout : u32 , bforceappsclosed : super::super::Foundation:: BOOL , brebootaftershutdown : super::super::Foundation:: BOOL ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn InitiateSystemShutdownExA ( lpmachinename : ::windows_sys::core::PCSTR , lpmessage : ::windows_sys::core::PCSTR , dwtimeout : u32 , bforceappsclosed : super::super::Foundation:: BOOL , brebootaftershutdown : super::super::Foundation:: BOOL , dwreason : SHUTDOWN_REASON ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn InitiateSystemShutdownExW ( lpmachinename : ::windows_sys::core::PCWSTR , lpmessage : ::windows_sys::core::PCWSTR , dwtimeout : u32 , bforceappsclosed : super::super::Foundation:: BOOL , brebootaftershutdown : super::super::Foundation:: BOOL , dwreason : SHUTDOWN_REASON ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "advapi32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn InitiateSystemShutdownW ( lpmachinename : ::windows_sys::core::PCWSTR , lpmessage : ::windows_sys::core::PCWSTR , dwtimeout : u32 , bforceappsclosed : super::super::Foundation:: BOOL , brebootaftershutdown : super::super::Foundation:: BOOL ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "user32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn LockWorkStation ( ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "user32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn ShutdownBlockReasonCreate ( hwnd : super::super::Foundation:: HWND , pwszreason : ::windows_sys::core::PCWSTR ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "user32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn ShutdownBlockReasonDestroy ( hwnd : super::super::Foundation:: HWND ) -> super::super::Foundation:: BOOL );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "user32.dll""system" #[doc = "*Required features: `\"Win32_System_Shutdown\"`, `\"Win32_Foundation\"`*"] fn ShutdownBlockReasonQuery ( hwnd : super::super::Foundation:: HWND , pwszbuff : ::windows_sys::core::PWSTR , pcchbuff : *mut u32 ) -> super::super::Foundation:: BOOL );
 #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
 pub const MAX_NUM_REASONS: u32 = 256u32;
 #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
@@ -73,6 +42,28 @@ pub const POLICY_SHOWREASONUI_NEVER: u32 = 0u32;
 pub const POLICY_SHOWREASONUI_SERVERONLY: u32 = 3u32;
 #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
 pub const POLICY_SHOWREASONUI_WORKSTATIONONLY: u32 = 2u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const SHUTDOWN_TYPE_LEN: u32 = 32u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const SNAPSHOT_POLICY_ALWAYS: u32 = 1u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const SNAPSHOT_POLICY_NEVER: u32 = 0u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const SNAPSHOT_POLICY_UNPLANNED: u32 = 2u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub type EXIT_WINDOWS_FLAGS = u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const EWX_HYBRID_SHUTDOWN: EXIT_WINDOWS_FLAGS = 4194304u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const EWX_LOGOFF: EXIT_WINDOWS_FLAGS = 0u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const EWX_POWEROFF: EXIT_WINDOWS_FLAGS = 8u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const EWX_REBOOT: EXIT_WINDOWS_FLAGS = 2u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const EWX_RESTARTAPPS: EXIT_WINDOWS_FLAGS = 64u32;
+#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
+pub const EWX_SHUTDOWN: EXIT_WINDOWS_FLAGS = 1u32;
 #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
 pub type SHUTDOWN_FLAGS = u32;
 #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
@@ -213,11 +204,3 @@ pub const SHTDN_REASON_UNKNOWN: SHUTDOWN_REASON = 255u32;
 pub const SHTDN_REASON_LEGACY_API: SHUTDOWN_REASON = 2147942400u32;
 #[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
 pub const SHTDN_REASON_VALID_BIT_MASK: SHUTDOWN_REASON = 3238002687u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const SHUTDOWN_TYPE_LEN: u32 = 32u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const SNAPSHOT_POLICY_ALWAYS: u32 = 1u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const SNAPSHOT_POLICY_NEVER: u32 = 0u32;
-#[doc = "*Required features: `\"Win32_System_Shutdown\"`*"]
-pub const SNAPSHOT_POLICY_UNPLANNED: u32 = 2u32;

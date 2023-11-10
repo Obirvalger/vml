@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -35,5 +36,10 @@ impl AssignedNodesOptions {
         );
         let _ = r;
         self
+    }
+}
+impl Default for AssignedNodesOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

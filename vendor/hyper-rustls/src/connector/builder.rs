@@ -106,6 +106,7 @@ impl ConnectorBuilder<WantsSchemes> {
         ConnectorBuilder(WantsProtocols1 {
             tls_config: self.0.tls_config,
             https_only: true,
+            override_server_name: None,
         })
     }
 
@@ -117,6 +118,7 @@ impl ConnectorBuilder<WantsSchemes> {
         ConnectorBuilder(WantsProtocols1 {
             tls_config: self.0.tls_config,
             https_only: false,
+            override_server_name: None,
         })
     }
 }
@@ -128,6 +130,7 @@ impl ConnectorBuilder<WantsSchemes> {
 pub struct WantsProtocols1 {
     tls_config: ClientConfig,
     https_only: bool,
+    override_server_name: Option<String>,
 }
 
 impl WantsProtocols1 {
@@ -136,6 +139,7 @@ impl WantsProtocols1 {
             force_https: self.https_only,
             http: conn,
             tls_config: std::sync::Arc::new(self.tls_config),
+            override_server_name: self.override_server_name,
         }
     }
 
@@ -161,12 +165,46 @@ impl ConnectorBuilder<WantsProtocols1> {
     ///
     /// This needs to be called explicitly, no protocol is enabled by default
     #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
     pub fn enable_http2(mut self) -> ConnectorBuilder<WantsProtocols3> {
         self.0.tls_config.alpn_protocols = vec![b"h2".to_vec()];
         ConnectorBuilder(WantsProtocols3 {
             inner: self.0,
             enable_http1: false,
         })
+    }
+
+    /// Enable all HTTP versions built into this library (enabled with Cargo features)
+    ///
+    /// For now, this could enable both HTTP 1 and 2, depending on active features.
+    /// In the future, other supported versions will be enabled as well.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn enable_all_versions(mut self) -> ConnectorBuilder<WantsProtocols3> {
+        #[cfg(feature = "http1")]
+        let alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        #[cfg(not(feature = "http1"))]
+        let alpn_protocols = vec![b"h2".to_vec()];
+
+        self.0.tls_config.alpn_protocols = alpn_protocols;
+        ConnectorBuilder(WantsProtocols3 {
+            inner: self.0,
+            enable_http1: cfg!(feature = "http1"),
+        })
+    }
+
+    /// Override server name for the TLS stack
+    ///
+    /// By default, for each connection hyper-rustls will extract host portion
+    /// of the destination URL and verify that server certificate contains
+    /// this value.
+    ///
+    /// If this method is called, hyper-rustls will instead verify that server
+    /// certificate contains `override_server_name`. Domain name included in
+    /// the URL will not affect certificate validation.
+    pub fn with_server_name(mut self, override_server_name: String) -> Self {
+        self.0.override_server_name = Some(override_server_name);
+        self
     }
 }
 
@@ -185,6 +223,7 @@ impl ConnectorBuilder<WantsProtocols2> {
     ///
     /// This needs to be called explicitly, no protocol is enabled by default
     #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
     pub fn enable_http2(mut self) -> ConnectorBuilder<WantsProtocols3> {
         self.0.inner.tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         ConnectorBuilder(WantsProtocols3 {
@@ -241,13 +280,11 @@ impl ConnectorBuilder<WantsProtocols3> {
 
 #[cfg(test)]
 mod tests {
-    use super::ConnectorBuilder as HttpsConnectorBuilder;
-
     // Typical usage
     #[test]
     #[cfg(all(feature = "webpki-roots", feature = "http1"))]
     fn test_builder() {
-        let _connector = HttpsConnectorBuilder::new()
+        let _connector = super::ConnectorBuilder::new()
             .with_webpki_roots()
             .https_only()
             .enable_http1()
@@ -264,7 +301,7 @@ mod tests {
             .with_root_certificates(roots)
             .with_no_client_auth();
         config_with_alpn.alpn_protocols = vec![b"fancyprotocol".to_vec()];
-        let _connector = HttpsConnectorBuilder::new()
+        let _connector = super::ConnectorBuilder::new()
             .with_tls_config(config_with_alpn)
             .https_only()
             .enable_http1()
@@ -279,7 +316,7 @@ mod tests {
             .with_safe_defaults()
             .with_root_certificates(roots)
             .with_no_client_auth();
-        let connector = HttpsConnectorBuilder::new()
+        let connector = super::ConnectorBuilder::new()
             .with_tls_config(tls_config.clone())
             .https_only()
             .enable_http1()
@@ -288,13 +325,13 @@ mod tests {
             .tls_config
             .alpn_protocols
             .is_empty());
-        let connector = HttpsConnectorBuilder::new()
+        let connector = super::ConnectorBuilder::new()
             .with_tls_config(tls_config.clone())
             .https_only()
             .enable_http2()
             .build();
         assert_eq!(&connector.tls_config.alpn_protocols, &[b"h2".to_vec()]);
-        let connector = HttpsConnectorBuilder::new()
+        let connector = super::ConnectorBuilder::new()
             .with_tls_config(tls_config.clone())
             .https_only()
             .enable_http1()
@@ -304,5 +341,36 @@ mod tests {
             &connector.tls_config.alpn_protocols,
             &[b"h2".to_vec(), b"http/1.1".to_vec()]
         );
+        let connector = super::ConnectorBuilder::new()
+            .with_tls_config(tls_config)
+            .https_only()
+            .enable_all_versions()
+            .build();
+        assert_eq!(
+            &connector.tls_config.alpn_protocols,
+            &[b"h2".to_vec(), b"http/1.1".to_vec()]
+        );
+    }
+
+    #[test]
+    #[cfg(all(not(feature = "http1"), feature = "http2"))]
+    fn test_alpn_http2() {
+        let roots = rustls::RootCertStore::empty();
+        let tls_config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let connector = super::ConnectorBuilder::new()
+            .with_tls_config(tls_config.clone())
+            .https_only()
+            .enable_http2()
+            .build();
+        assert_eq!(&connector.tls_config.alpn_protocols, &[b"h2".to_vec()]);
+        let connector = super::ConnectorBuilder::new()
+            .with_tls_config(tls_config)
+            .https_only()
+            .enable_all_versions()
+            .build();
+        assert_eq!(&connector.tls_config.alpn_protocols, &[b"h2".to_vec()]);
     }
 }

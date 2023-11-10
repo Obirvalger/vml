@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -289,5 +290,10 @@ impl ConsoleEvent {
         );
         let _ = r;
         self
+    }
+}
+impl Default for ConsoleEvent {
+    fn default() -> Self {
+        Self::new()
     }
 }

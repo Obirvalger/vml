@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -45,5 +46,10 @@ impl BrowserElementExecuteScriptOptions {
         );
         let _ = r;
         self
+    }
+}
+impl Default for BrowserElementExecuteScriptOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

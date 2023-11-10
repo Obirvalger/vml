@@ -7,6 +7,7 @@ use self::security_framework::base;
 use self::security_framework::certificate::SecCertificate;
 use self::security_framework::identity::SecIdentity;
 use self::security_framework::import_export::{ImportedIdentity, Pkcs12ImportOptions};
+use self::security_framework::random::SecRandom;
 use self::security_framework::secure_transport::{
     self, ClientBuilder, SslConnectionType, SslContext, SslProtocol, SslProtocolSide,
 };
@@ -23,6 +24,8 @@ use std::sync::Once;
 use self::security_framework::os::macos::certificate::{PropertyType, SecCertificateExt};
 #[cfg(not(target_os = "ios"))]
 use self::security_framework::os::macos::certificate_oids::CertificateOid;
+#[cfg(not(target_os = "ios"))]
+use self::security_framework::os::macos::identity::SecIdentityExt;
 #[cfg(not(target_os = "ios"))]
 use self::security_framework::os::macos::import_export::{
     ImportOptions, Pkcs12ImportOptionsExt, SecItems,
@@ -82,6 +85,47 @@ pub struct Identity {
 }
 
 impl Identity {
+    #[cfg(target_os = "ios")]
+    pub fn from_pkcs8(_: &[u8], _: &[u8]) -> Result<Identity, Error> {
+        panic!("Not implemented on iOS");
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    pub fn from_pkcs8(pem: &[u8], key: &[u8]) -> Result<Identity, Error> {
+        if !key.starts_with(b"-----BEGIN PRIVATE KEY-----") {
+            return Err(Error(base::Error::from(errSecParam)));
+        }
+
+        let dir = TempDir::new().map_err(|_| Error(base::Error::from(errSecIO)))?;
+        let keychain = keychain::CreateOptions::new()
+            .password(&random_password()?)
+            .create(dir.path().join("identity.keychain"))?;
+
+        let mut items = SecItems::default();
+
+        ImportOptions::new()
+            .filename("key.pem")
+            .items(&mut items)
+            .keychain(&keychain)
+            .import(&key)?;
+
+        ImportOptions::new()
+            .filename("chain.pem")
+            .items(&mut items)
+            .keychain(&keychain)
+            .import(&pem)?;
+
+        let cert = items
+            .certificates
+            .get(0)
+            .ok_or_else(|| Error(base::Error::from(errSecParam)))?;
+        let ident = SecIdentity::with_certificate(&[keychain], cert)?;
+        Ok(Identity {
+            identity: ident,
+            chain: items.certificates,
+        })
+    }
+
     pub fn from_pkcs12(buf: &[u8], pass: &str) -> Result<Identity, Error> {
         let mut imports = Identity::import_options(buf, pass)?;
         let import = imports.pop().unwrap();
@@ -143,6 +187,19 @@ impl Identity {
     }
 }
 
+fn random_password() -> Result<String, Error> {
+    use std::fmt::Write;
+    let mut bytes = [0_u8; 10];
+    SecRandom::default()
+        .copy_bytes(&mut bytes)
+        .map_err(|_| Error(base::Error::from(errSecIO)))?;
+    let mut s = String::with_capacity(2 * bytes.len());
+    for byte in bytes {
+        write!(s, "{:02X}", byte).map_err(|_| Error(base::Error::from(errSecIO)))?;
+    }
+    Ok(s)
+}
+
 #[derive(Clone)]
 pub struct Certificate(SecCertificate);
 
@@ -164,7 +221,7 @@ impl Certificate {
     }
 
     #[cfg(target_os = "ios")]
-    pub fn from_pem(buf: &[u8]) -> Result<Certificate, Error> {
+    pub fn from_pem(_: &[u8]) -> Result<Certificate, Error> {
         panic!("Not implemented on iOS");
     }
 
@@ -390,6 +447,7 @@ impl<S: io::Read + io::Write> TlsStream<S> {
         Ok(self.stream.context().buffered_read_size()?)
     }
 
+    #[allow(deprecated)]
     pub fn peer_certificate(&self) -> Result<Option<Certificate>, Error> {
         let trust = match self.stream.context().peer_trust2()? {
             Some(trust) => trust,

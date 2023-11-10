@@ -2,13 +2,7 @@ use std::cmp;
 use std::io;
 use std::io::prelude::*;
 
-#[cfg(feature = "tokio")]
-use futures::Poll;
-#[cfg(feature = "tokio")]
-use tokio_io::{AsyncRead, AsyncWrite};
-
-use super::bufread::{corrupt, read_gz_header};
-use super::{GzBuilder, GzHeader};
+use super::{corrupt, GzBuilder, GzHeader, GzHeaderParser};
 use crate::crc::{Crc, CrcWriter};
 use crate::zio;
 use crate::{Compress, Compression, Decompress, Status};
@@ -47,7 +41,7 @@ pub fn gz_encoder<W: Write>(header: Vec<u8>, w: W, lvl: Compression) -> GzEncode
     GzEncoder {
         inner: zio::Writer::new(w, Compress::new(lvl, false)),
         crc: Crc::new(),
-        header: header,
+        header,
         crc_bytes_written: 0,
     }
 }
@@ -97,7 +91,7 @@ impl<W: Write> GzEncoder<W> {
         self.inner.finish()?;
 
         while self.crc_bytes_written < 8 {
-            let (sum, amt) = (self.crc.sum() as u32, self.crc.amount());
+            let (sum, amt) = (self.crc.sum(), self.crc.amount());
             let buf = [
                 (sum >> 0) as u8,
                 (sum >> 8) as u8,
@@ -134,7 +128,7 @@ impl<W: Write> GzEncoder<W> {
     }
 
     fn write_header(&mut self) -> io::Result<()> {
-        while self.header.len() > 0 {
+        while !self.header.is_empty() {
             let n = self.inner.get_mut().write(&self.header)?;
             self.header.drain(..n);
         }
@@ -158,22 +152,11 @@ impl<W: Write> Write for GzEncoder<W> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<W: AsyncWrite> AsyncWrite for GzEncoder<W> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.try_finish()?;
-        self.get_mut().shutdown()
-    }
-}
-
 impl<R: Read + Write> Read for GzEncoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.get_mut().read(buf)
     }
 }
-
-#[cfg(feature = "tokio")]
-impl<R: AsyncRead + AsyncWrite> AsyncRead for GzEncoder<R> {}
 
 impl<W: Write> Drop for GzEncoder<W> {
     fn drop(&mut self) {
@@ -183,11 +166,20 @@ impl<W: Write> Drop for GzEncoder<W> {
     }
 }
 
-/// A gzip streaming decoder
+/// A decoder for a single member of a [gzip file].
 ///
-/// This structure exposes a [`Write`] interface that will emit compressed data
-/// to the underlying writer `W`.
+/// This structure exposes a [`Write`] interface, receiving compressed data and
+/// writing uncompressed data to the underlying writer.
 ///
+/// After decoding a single member of the gzip data this writer will return the number of bytes up to
+/// to the end of the gzip member and subsequent writes will return Ok(0) allowing the caller to
+/// handle any data following the gzip member.
+///
+/// To handle gzip files that may have multiple members, see [`MultiGzDecoder`]
+/// or read more
+/// [in the introduction](../index.html#about-multi-member-gzip-files).
+///
+/// [gzip file]: https://www.rfc-editor.org/rfc/rfc1952#page-5
 /// [`Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
 ///
 /// # Examples
@@ -219,8 +211,7 @@ impl<W: Write> Drop for GzEncoder<W> {
 pub struct GzDecoder<W: Write> {
     inner: zio::Writer<CrcWriter<W>, Decompress>,
     crc_bytes: Vec<u8>,
-    header: Option<GzHeader>,
-    header_buf: Vec<u8>,
+    header_parser: GzHeaderParser,
 }
 
 const CRC_BYTES_LEN: usize = 8;
@@ -234,14 +225,13 @@ impl<W: Write> GzDecoder<W> {
         GzDecoder {
             inner: zio::Writer::new(CrcWriter::new(w), Decompress::new(false)),
             crc_bytes: Vec::with_capacity(CRC_BYTES_LEN),
-            header: None,
-            header_buf: Vec::new(),
+            header_parser: GzHeaderParser::new(),
         }
     }
 
     /// Returns the header associated with this stream.
     pub fn header(&self) -> Option<&GzHeader> {
-        self.header.as_ref()
+        self.header_parser.header()
     }
 
     /// Acquires a reference to the underlying writer.
@@ -312,7 +302,7 @@ impl<W: Write> GzDecoder<W> {
             | ((self.crc_bytes[5] as u32) << 8)
             | ((self.crc_bytes[6] as u32) << 16)
             | ((self.crc_bytes[7] as u32) << 24);
-        if crc != self.inner.get_ref().crc().sum() as u32 {
+        if crc != self.inner.get_ref().crc().sum() {
             return Err(corrupt());
         }
         if amt != self.inner.get_ref().crc().amount() {
@@ -322,59 +312,34 @@ impl<W: Write> GzDecoder<W> {
     }
 }
 
-struct Counter<T: Read> {
-    inner: T,
-    pos: usize,
-}
-
-impl<T: Read> Read for Counter<T> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let pos = self.inner.read(buf)?;
-        self.pos += pos;
-        Ok(pos)
-    }
-}
-
 impl<W: Write> Write for GzDecoder<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.header.is_none() {
-            // trying to avoid buffer usage
-            let (res, pos) = {
-                let mut counter = Counter {
-                    inner: self.header_buf.chain(buf),
-                    pos: 0,
-                };
-                let res = read_gz_header(&mut counter);
-                (res, counter.pos)
-            };
-
-            match res {
+    fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
+        let buflen = buf.len();
+        if self.header().is_none() {
+            match self.header_parser.parse(&mut buf) {
                 Err(err) => {
                     if err.kind() == io::ErrorKind::UnexpectedEof {
-                        // not enough data for header, save to the buffer
-                        self.header_buf.extend(buf);
-                        Ok(buf.len())
+                        // all data read but header still not complete
+                        Ok(buflen)
                     } else {
                         Err(err)
                     }
                 }
-                Ok(header) => {
-                    self.header = Some(header);
-                    let pos = pos - self.header_buf.len();
-                    self.header_buf.truncate(0);
-                    Ok(pos)
+                Ok(_) => {
+                    debug_assert!(self.header().is_some());
+                    // buf now contains the unread part of the original buf
+                    let n = buflen - buf.len();
+                    Ok(n)
                 }
             }
         } else {
             let (n, status) = self.inner.write_with_status(buf)?;
 
-            if status == Status::StreamEnd {
-                if n < buf.len() && self.crc_bytes.len() < 8 {
-                    let remaining = buf.len() - n;
-                    let crc_bytes = cmp::min(remaining, CRC_BYTES_LEN - self.crc_bytes.len());
-                    self.crc_bytes.extend(&buf[n..n + crc_bytes]);
-                    return Ok(n + crc_bytes);
-                }
+            if status == Status::StreamEnd && n < buf.len() && self.crc_bytes.len() < 8 {
+                let remaining = buf.len() - n;
+                let crc_bytes = cmp::min(remaining, CRC_BYTES_LEN - self.crc_bytes.len());
+                self.crc_bytes.extend(&buf[n..n + crc_bytes]);
+                return Ok(n + crc_bytes);
             }
             Ok(n)
         }
@@ -385,28 +350,125 @@ impl<W: Write> Write for GzDecoder<W> {
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<W: AsyncWrite> AsyncWrite for GzDecoder<W> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.try_finish()?;
-        self.inner.get_mut().get_mut().shutdown()
-    }
-}
-
 impl<W: Read + Write> Read for GzDecoder<W> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.get_mut().get_mut().read(buf)
     }
 }
 
-#[cfg(feature = "tokio")]
-impl<W: AsyncRead + AsyncWrite> AsyncRead for GzDecoder<W> {}
+/// A gzip streaming decoder that decodes a [gzip file] with multiple members.
+///
+/// This structure exposes a [`Write`] interface that will consume compressed data and
+/// write uncompressed data to the underlying writer.
+///
+/// A gzip file consists of a series of *members* concatenated one after another.
+/// `MultiGzDecoder` decodes all members of a file and writes them to the
+/// underlying writer one after another.
+///
+/// To handle members separately, see [GzDecoder] or read more
+/// [in the introduction](../index.html#about-multi-member-gzip-files).
+///
+/// [gzip file]: https://www.rfc-editor.org/rfc/rfc1952#page-5
+#[derive(Debug)]
+pub struct MultiGzDecoder<W: Write> {
+    inner: GzDecoder<W>,
+}
+
+impl<W: Write> MultiGzDecoder<W> {
+    /// Creates a new decoder which will write uncompressed data to the stream.
+    /// If the gzip stream contains multiple members all will be decoded.
+    pub fn new(w: W) -> MultiGzDecoder<W> {
+        MultiGzDecoder {
+            inner: GzDecoder::new(w),
+        }
+    }
+
+    /// Returns the header associated with the current member.
+    pub fn header(&self) -> Option<&GzHeader> {
+        self.inner.header()
+    }
+
+    /// Acquires a reference to the underlying writer.
+    pub fn get_ref(&self) -> &W {
+        self.inner.get_ref()
+    }
+
+    /// Acquires a mutable reference to the underlying writer.
+    ///
+    /// Note that mutating the output/input state of the stream may corrupt this
+    /// object, so care must be taken when using this method.
+    pub fn get_mut(&mut self) -> &mut W {
+        self.inner.get_mut()
+    }
+
+    /// Attempt to finish this output stream, writing out final chunks of data.
+    ///
+    /// Note that this function can only be used once data has finished being
+    /// written to the output stream. After this function is called then further
+    /// calls to `write` may result in a panic.
+    ///
+    /// # Panics
+    ///
+    /// Attempts to write data to this stream may result in a panic after this
+    /// function is called.
+    ///
+    /// # Errors
+    ///
+    /// This function will perform I/O to finish the stream, returning any
+    /// errors which happen.
+    pub fn try_finish(&mut self) -> io::Result<()> {
+        self.inner.try_finish()
+    }
+
+    /// Consumes this decoder, flushing the output stream.
+    ///
+    /// This will flush the underlying data stream and then return the contained
+    /// writer if the flush succeeded.
+    ///
+    /// Note that this function may not be suitable to call in a situation where
+    /// the underlying stream is an asynchronous I/O stream. To finish a stream
+    /// the `try_finish` (or `shutdown`) method should be used instead. To
+    /// re-acquire ownership of a stream it is safe to call this method after
+    /// `try_finish` or `shutdown` has returned `Ok`.
+    ///
+    /// # Errors
+    ///
+    /// This function will perform I/O to complete this stream, and any I/O
+    /// errors which occur will be returned from this function.
+    pub fn finish(self) -> io::Result<W> {
+        self.inner.finish()
+    }
+}
+
+impl<W: Write> Write for MultiGzDecoder<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            Ok(0)
+        } else {
+            match self.inner.write(buf) {
+                Ok(0) => {
+                    // When the GzDecoder indicates that it has finished
+                    // create a new GzDecoder to handle additional data.
+                    self.inner.try_finish()?;
+                    let w = self.inner.inner.take_inner().into_inner();
+                    self.inner = GzDecoder::new(w);
+                    self.inner.write(buf)
+                }
+                res => res,
+            }
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const STR: &'static str = "Hello World Hello World Hello World Hello World Hello World \
+    const STR: &str = "Hello World Hello World Hello World Hello World Hello World \
                                Hello World Hello World Hello World Hello World Hello World \
                                Hello World Hello World Hello World Hello World Hello World \
                                Hello World Hello World Hello World Hello World Hello World \
@@ -447,6 +509,56 @@ mod tests {
     }
 
     #[test]
+    fn decode_writer_partial_header_filename() {
+        let filename = "test.txt";
+        let mut e = GzBuilder::new()
+            .filename(filename)
+            .read(STR.as_bytes(), Compression::default());
+        let mut bytes = Vec::new();
+        e.read_to_end(&mut bytes).unwrap();
+
+        let mut writer = Vec::new();
+        let mut decoder = GzDecoder::new(writer);
+        assert_eq!(decoder.write(&bytes[..12]).unwrap(), 12);
+        let n = decoder.write(&bytes[12..]).unwrap();
+        if n < bytes.len() - 12 {
+            decoder.write(&bytes[n + 12..]).unwrap();
+        }
+        assert_eq!(
+            decoder.header().unwrap().filename().unwrap(),
+            filename.as_bytes()
+        );
+        writer = decoder.finish().unwrap();
+        let return_string = String::from_utf8(writer).expect("String parsing error");
+        assert_eq!(return_string, STR);
+    }
+
+    #[test]
+    fn decode_writer_partial_header_comment() {
+        let comment = "test comment";
+        let mut e = GzBuilder::new()
+            .comment(comment)
+            .read(STR.as_bytes(), Compression::default());
+        let mut bytes = Vec::new();
+        e.read_to_end(&mut bytes).unwrap();
+
+        let mut writer = Vec::new();
+        let mut decoder = GzDecoder::new(writer);
+        assert_eq!(decoder.write(&bytes[..12]).unwrap(), 12);
+        let n = decoder.write(&bytes[12..]).unwrap();
+        if n < bytes.len() - 12 {
+            decoder.write(&bytes[n + 12..]).unwrap();
+        }
+        assert_eq!(
+            decoder.header().unwrap().comment().unwrap(),
+            comment.as_bytes()
+        );
+        writer = decoder.finish().unwrap();
+        let return_string = String::from_utf8(writer).expect("String parsing error");
+        assert_eq!(return_string, STR);
+    }
+
+    #[test]
     fn decode_writer_exact_header() {
         let mut e = GzEncoder::new(Vec::new(), Compression::default());
         e.write(STR.as_ref()).unwrap();
@@ -475,5 +587,55 @@ mod tests {
         writer = decoder.finish().unwrap();
         let return_string = String::from_utf8(writer).expect("String parsing error");
         assert_eq!(return_string, STR);
+    }
+
+    // Two or more gzip files concatenated form a multi-member gzip file. MultiGzDecoder will
+    // concatenate the decoded contents of all members.
+    #[test]
+    fn decode_multi_writer() {
+        let mut e = GzEncoder::new(Vec::new(), Compression::default());
+        e.write(STR.as_ref()).unwrap();
+        let bytes = e.finish().unwrap().repeat(2);
+
+        let mut writer = Vec::new();
+        let mut decoder = MultiGzDecoder::new(writer);
+        let mut count = 0;
+        while count < bytes.len() {
+            let n = decoder.write(&bytes[count..]).unwrap();
+            assert!(n != 0);
+            count += n;
+        }
+        writer = decoder.finish().unwrap();
+        let return_string = String::from_utf8(writer).expect("String parsing error");
+        let expected = STR.repeat(2);
+        assert_eq!(return_string, expected);
+    }
+
+    // GzDecoder consumes one gzip member and then returns 0 for subsequent writes, allowing any
+    // additional data to be consumed by the caller.
+    #[test]
+    fn decode_extra_data() {
+        let compressed = {
+            let mut e = GzEncoder::new(Vec::new(), Compression::default());
+            e.write(STR.as_ref()).unwrap();
+            let mut b = e.finish().unwrap();
+            b.push(b'x');
+            b
+        };
+
+        let mut writer = Vec::new();
+        let mut decoder = GzDecoder::new(writer);
+        let mut consumed_bytes = 0;
+        loop {
+            let n = decoder.write(&compressed[consumed_bytes..]).unwrap();
+            if n == 0 {
+                break;
+            }
+            consumed_bytes += n;
+        }
+        writer = decoder.finish().unwrap();
+        let actual = String::from_utf8(writer).expect("String parsing error");
+        assert_eq!(actual, STR);
+        assert_eq!(&compressed[consumed_bytes..], b"x");
     }
 }

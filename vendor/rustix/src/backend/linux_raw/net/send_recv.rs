@@ -1,8 +1,14 @@
-use super::super::c;
+use crate::backend::c;
 use bitflags::bitflags;
 
 bitflags! {
-    /// `MSG_*`
+    /// `MSG_*` flags for use with [`send`], [`send_to`], and related
+    /// functions.
+    ///
+    /// [`send`]: crate::net::send
+    /// [`sendto`]: crate::net::sendto
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct SendFlags: u32 {
         /// `MSG_CONFIRM`
         const CONFIRM = c::MSG_CONFIRM;
@@ -18,11 +24,20 @@ bitflags! {
         const NOSIGNAL = c::MSG_NOSIGNAL;
         /// `MSG_OOB`
         const OOB = c::MSG_OOB;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
 bitflags! {
-    /// `MSG_*`
+    /// `MSG_*` flags for use with [`recv`], [`recvfrom`], and related
+    /// functions.
+    ///
+    /// [`recv`]: crate::net::recv
+    /// [`recvfrom`]: crate::net::recvfrom
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct RecvFlags: u32 {
         /// `MSG_CMSG_CLOEXEC`
         const CMSG_CLOEXEC = c::MSG_CMSG_CLOEXEC;
@@ -38,5 +53,8 @@ bitflags! {
         const TRUNC = c::MSG_TRUNC;
         /// `MSG_WAITALL`
         const WAITALL = c::MSG_WAITALL;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }

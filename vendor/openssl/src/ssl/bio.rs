@@ -1,3 +1,4 @@
+use cfg_if::cfg_if;
 use ffi::{
     self, BIO_clear_retry_flags, BIO_new, BIO_set_retry_read, BIO_set_retry_write, BIO,
     BIO_CTRL_DGRAM_QUERY_MTU, BIO_CTRL_FLUSH,
@@ -10,8 +11,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 use std::slice;
 
-use cvt_p;
-use error::ErrorStack;
+use crate::cvt_p;
+use crate::error::ErrorStack;
 
 pub struct StreamState<S> {
     pub stream: S,
@@ -20,7 +21,7 @@ pub struct StreamState<S> {
     pub dtls_mtu_size: c_long,
 }
 
-/// Safe wrapper for BIO_METHOD
+/// Safe wrapper for `BIO_METHOD`
 pub struct BioMethod(BIO_METHOD);
 
 impl BioMethod {
@@ -182,7 +183,7 @@ unsafe extern "C" fn destroy<S>(bio: *mut BIO) -> c_int {
 
     let data = BIO_get_data(bio);
     assert!(!data.is_null());
-    Box::<StreamState<S>>::from_raw(data as *mut _);
+    let _ = Box::<StreamState<S>>::from_raw(data as *mut _);
     BIO_set_data(bio, ptr::null_mut());
     BIO_set_init(bio, 0);
     1
@@ -191,12 +192,12 @@ unsafe extern "C" fn destroy<S>(bio: *mut BIO) -> c_int {
 cfg_if! {
     if #[cfg(any(ossl110, libressl273))] {
         use ffi::{BIO_get_data, BIO_set_data, BIO_set_flags, BIO_set_init};
-        use cvt;
+        use crate::cvt;
 
         #[allow(bad_style)]
         unsafe fn BIO_set_num(_bio: *mut ffi::BIO, _num: c_int) {}
 
-        #[allow(bad_style)]
+        #[allow(bad_style, clippy::upper_case_acronyms)]
         struct BIO_METHOD(*mut ffi::BIO_METHOD);
 
         impl BIO_METHOD {
@@ -204,12 +205,12 @@ cfg_if! {
                 unsafe {
                     let ptr = cvt_p(ffi::BIO_meth_new(ffi::BIO_TYPE_NONE, b"rust\0".as_ptr() as *const _))?;
                     let method = BIO_METHOD(ptr);
-                    cvt(ffi::BIO_meth_set_write(method.0, bwrite::<S>))?;
-                    cvt(ffi::BIO_meth_set_read(method.0, bread::<S>))?;
-                    cvt(ffi::BIO_meth_set_puts(method.0, bputs::<S>))?;
-                    cvt(ffi::BIO_meth_set_ctrl(method.0, ctrl::<S>))?;
-                    cvt(ffi::BIO_meth_set_create(method.0, create))?;
-                    cvt(ffi::BIO_meth_set_destroy(method.0, destroy::<S>))?;
+                    cvt(ffi::BIO_meth_set_write__fixed_rust(method.0, Some(bwrite::<S>)))?;
+                    cvt(ffi::BIO_meth_set_read__fixed_rust(method.0, Some(bread::<S>)))?;
+                    cvt(ffi::BIO_meth_set_puts__fixed_rust(method.0, Some(bputs::<S>)))?;
+                    cvt(ffi::BIO_meth_set_ctrl__fixed_rust(method.0, Some(ctrl::<S>)))?;
+                    cvt(ffi::BIO_meth_set_create__fixed_rust(method.0, Some(create)))?;
+                    cvt(ffi::BIO_meth_set_destroy__fixed_rust(method.0, Some(destroy::<S>)))?;
                     Ok(method)
                 }
             }
@@ -227,7 +228,7 @@ cfg_if! {
             }
         }
     } else {
-        #[allow(bad_style)]
+        #[allow(bad_style, clippy::upper_case_acronyms)]
         struct BIO_METHOD(*mut ffi::BIO_METHOD);
 
         impl BIO_METHOD {
@@ -256,7 +257,7 @@ cfg_if! {
         impl Drop for BIO_METHOD {
             fn drop(&mut self) {
                 unsafe {
-                    Box::<ffi::BIO_METHOD>::from_raw(self.0);
+                    let _ = Box::<ffi::BIO_METHOD>::from_raw(self.0);
                 }
             }
         }

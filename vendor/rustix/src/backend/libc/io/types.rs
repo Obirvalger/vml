@@ -1,29 +1,44 @@
-use super::super::c;
-#[cfg(not(target_os = "wasi"))]
+use crate::backend::c;
 use bitflags::bitflags;
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
+bitflags! {
+    /// `FD_*` constants for use with [`fcntl_getfd`] and [`fcntl_setfd`].
+    ///
+    /// [`fcntl_getfd`]: crate::io::fcntl_getfd
+    /// [`fcntl_setfd`]: crate::io::fcntl_setfd
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+    pub struct FdFlags: u32 {
+        /// `FD_CLOEXEC`
+        const CLOEXEC = bitcast!(c::FD_CLOEXEC);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
+    }
+}
+
+#[cfg(linux_kernel)]
 bitflags! {
     /// `RWF_*` constants for use with [`preadv2`] and [`pwritev2`].
     ///
     /// [`preadv2`]: crate::io::preadv2
     /// [`pwritev2`]: crate::io::pwritev
-    pub struct ReadWriteFlags: c::c_int {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+    pub struct ReadWriteFlags: u32 {
         /// `RWF_DSYNC` (since Linux 4.7)
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        const DSYNC = c::RWF_DSYNC;
+        const DSYNC = linux_raw_sys::general::RWF_DSYNC;
         /// `RWF_HIPRI` (since Linux 4.6)
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        const HIPRI = c::RWF_HIPRI;
+        const HIPRI = linux_raw_sys::general::RWF_HIPRI;
         /// `RWF_SYNC` (since Linux 4.7)
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        const SYNC = c::RWF_SYNC;
+        const SYNC = linux_raw_sys::general::RWF_SYNC;
         /// `RWF_NOWAIT` (since Linux 4.14)
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        const NOWAIT = c::RWF_NOWAIT;
+        const NOWAIT = linux_raw_sys::general::RWF_NOWAIT;
         /// `RWF_APPEND` (since Linux 4.16)
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        const APPEND = c::RWF_APPEND;
+        const APPEND = linux_raw_sys::general::RWF_APPEND;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -32,70 +47,19 @@ bitflags! {
     /// `O_*` constants for use with [`dup2`].
     ///
     /// [`dup2`]: crate::io::dup2
-    pub struct DupFlags: c::c_int {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+    pub struct DupFlags: u32 {
         /// `O_CLOEXEC`
         #[cfg(not(any(
+            apple,
+            target_os = "aix",
             target_os = "android",
-            target_os = "ios",
-            target_os = "macos",
             target_os = "redox",
         )))] // Android 5.0 has dup3, but libc doesn't have bindings
-        const CLOEXEC = c::O_CLOEXEC;
+        const CLOEXEC = bitcast!(c::O_CLOEXEC);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
-
-#[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "wasi")))]
-bitflags! {
-    /// `O_*` constants for use with [`pipe_with`].
-    ///
-    /// [`pipe_with`]: crate::io::pipe_with
-    pub struct PipeFlags: c::c_int {
-        /// `O_CLOEXEC`
-        const CLOEXEC = c::O_CLOEXEC;
-        /// `O_DIRECT`
-        #[cfg(not(any(
-            target_os = "haiku",
-            target_os = "illumos",
-            target_os = "openbsd",
-            target_os = "redox",
-            target_os = "solaris",
-        )))]
-        const DIRECT = c::O_DIRECT;
-        /// `O_NONBLOCK`
-        const NONBLOCK = c::O_NONBLOCK;
-    }
-}
-
-#[cfg(any(target_os = "android", target_os = "linux"))]
-bitflags! {
-    /// `EFD_*` flags for use with [`eventfd`].
-    ///
-    /// [`eventfd`]: crate::io::eventfd
-    pub struct EventfdFlags: c::c_int {
-        /// `EFD_CLOEXEC`
-        const CLOEXEC = c::EFD_CLOEXEC;
-        /// `EFD_NONBLOCK`
-        const NONBLOCK = c::EFD_NONBLOCK;
-        /// `EFD_SEMAPHORE`
-        const SEMAPHORE = c::EFD_SEMAPHORE;
-    }
-}
-
-/// `PIPE_BUF`—The maximum size of a write to a pipe guaranteed to be atomic.
-#[cfg(not(any(
-    target_os = "haiku",
-    target_os = "illumos",
-    target_os = "redox",
-    target_os = "solaris",
-    target_os = "wasi",
-)))]
-pub const PIPE_BUF: usize = c::PIPE_BUF;
-
-#[cfg(not(any(windows, target_os = "redox")))]
-pub(crate) const AT_FDCWD: c::c_int = c::AT_FDCWD;
-#[cfg(not(windows))]
-pub(crate) const STDIN_FILENO: c::c_int = c::STDIN_FILENO;
-#[cfg(not(windows))]
-pub(crate) const STDOUT_FILENO: c::c_int = c::STDOUT_FILENO;
-#[cfg(not(windows))]
-pub(crate) const STDERR_FILENO: c::c_int = c::STDERR_FILENO;

@@ -2,10 +2,8 @@ regex-syntax
 ============
 This crate provides a robust regular expression parser.
 
-[![Build status](https://travis-ci.com/rust-lang/regex.svg?branch=master)](https://travis-ci.com/rust-lang/regex)
-[![Build status](https://ci.appveyor.com/api/projects/status/github/rust-lang/regex?svg=true)](https://ci.appveyor.com/project/rust-lang-libs/regex)
-[![](https://meritbadge.herokuapp.com/regex-syntax)](https://crates.io/crates/regex-syntax)
-[![Rust](https://img.shields.io/badge/rust-1.28.0%2B-blue.svg?maxAge=3600)](https://github.com/rust-lang/regex)
+[![Build status](https://github.com/rust-lang/regex/workflows/ci/badge.svg)](https://github.com/rust-lang/regex/actions)
+[![Crates.io](https://img.shields.io/crates/v/regex-syntax.svg)](https://crates.io/crates/regex-syntax)
 
 
 ### Documentation
@@ -31,13 +29,12 @@ concrete syntax that produced the `Hir`.
 This example shows how to parse a pattern string into its HIR:
 
 ```rust
-use regex_syntax::Parser;
-use regex_syntax::hir::{self, Hir};
+use regex_syntax::{hir::Hir, parse};
 
-let hir = Parser::new().parse("a|b").unwrap();
+let hir = parse("a|b").unwrap();
 assert_eq!(hir, Hir::alternation(vec![
-    Hir::literal(hir::Literal::Unicode('a')),
-    Hir::literal(hir::Literal::Unicode('b')),
+    Hir::literal("a".as_bytes()),
+    Hir::literal("b".as_bytes()),
 ]));
 ```
 
@@ -53,7 +50,7 @@ for extreme optimization, and therefore, use of `unsafe`.
 
 The standard for using `unsafe` in this crate is extremely high because this
 crate is intended to be reasonably safe to use with user supplied regular
-expressions. Therefore, while their may be bugs in the regex parser itself,
+expressions. Therefore, while there may be bugs in the regex parser itself,
 they should _never_ result in memory unsafety unless there is either a bug
 in the compiler or the standard library. (Since `regex-syntax` has zero
 dependencies.)

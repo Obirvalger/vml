@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "hyper"
-version = "0.14.19"
+version = "0.14.27"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 include = [
     "Cargo.toml",
@@ -194,7 +194,7 @@ version = "0.3"
 default-features = false
 
 [dependencies.h2]
-version = "0.3.9"
+version = "0.3.17"
 optional = true
 
 [dependencies.http]
@@ -204,7 +204,7 @@ version = "0.2"
 version = "0.4"
 
 [dependencies.httparse]
-version = "1.6"
+version = "1.8"
 
 [dependencies.httpdate]
 version = "1.0"
@@ -220,7 +220,8 @@ optional = true
 version = "0.2.4"
 
 [dependencies.socket2]
-version = "0.4"
+version = "0.4.7"
+features = ["all"]
 optional = true
 
 [dependencies.tokio]
@@ -289,14 +290,17 @@ features = [
     "make",
     "util",
 ]
+default-features = false
 
 [dev-dependencies.url]
 version = "2.2"
 
 [features]
 __internal_happy_eyeballs_tests = []
+backports = []
 client = []
 default = []
+deprecated = []
 ffi = ["libc"]
 full = [
     "client",

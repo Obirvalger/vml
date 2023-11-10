@@ -2,7 +2,45 @@ use proc_macro2::{Span, TokenStream, TokenTree};
 use proc_macro_error::{abort, proc_macro_error};
 use quote::{quote, ToTokens};
 
-/// export the function as an command to be run by `run_cmd!` or `run_fun!`
+/// Mark main function to log error result by default
+///
+/// ```
+/// # use cmd_lib::*;
+///
+/// #[cmd_lib::main]
+/// fn main() -> MainResult {
+///     run_cmd!(bad_cmd)?;
+///     Ok(())
+/// }
+/// // output:
+/// // [ERROR] FATAL: Running ["bad_cmd"] failed: No such file or directory (os error 2)
+/// ```
+#[proc_macro_attribute]
+pub fn main(
+    _args: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let orig_function: syn::ItemFn = syn::parse2(item.into()).unwrap();
+    let orig_main_return_type = orig_function.sig.output;
+    let orig_main_block = orig_function.block;
+
+    quote! (
+        fn main() {
+            fn cmd_lib_main() #orig_main_return_type {
+                #orig_main_block
+            }
+
+            cmd_lib_main().unwrap_or_else(|err| {
+                ::cmd_lib::error!("FATAL: {err}");
+                std::process::exit(1);
+            });
+        }
+
+    )
+    .into()
+}
+
+/// Export the function as an command to be run by `run_cmd!` or `run_fun!`
 ///
 /// ```
 /// # use cmd_lib::*;
@@ -41,7 +79,7 @@ pub fn export_cmd(
     new_functions.into()
 }
 
-/// import user registered custom command
+/// Import user registered custom command
 /// ```
 /// # use cmd_lib::*;
 /// #[export_cmd(my_cmd)]
@@ -78,35 +116,6 @@ pub fn use_custom_cmd(item: proc_macro::TokenStream) -> proc_macro::TokenStream 
         #(#cmd_fns();)*
     )
     .into()
-}
-
-/// import library predefined builtin command
-/// ```
-/// # use cmd_lib::*;
-/// use_builtin_cmd!(info); // import only one builtin command
-/// use_builtin_cmd!(echo, info, warn, err, die, cat); // import all the builtins
-/// ```
-/// `cd` builtin command is always enabled without importing it.
-#[proc_macro]
-#[proc_macro_error]
-pub fn use_builtin_cmd(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let item: proc_macro2::TokenStream = item.into();
-    let mut ret = TokenStream::new();
-    for t in item {
-        if let TokenTree::Punct(ref ch) = t {
-            if ch.as_char() != ',' {
-                abort!(t, "only comma is allowed");
-            }
-        } else if let TokenTree::Ident(cmd) = t {
-            let cmd_name = cmd.to_string();
-            let cmd_fn = syn::Ident::new(&format!("builtin_{}", cmd_name), Span::call_site());
-            ret.extend(quote!(::cmd_lib::export_cmd(#cmd_name, ::cmd_lib::#cmd_fn);));
-        } else {
-            abort!(t, "expect a list of comma separated commands");
-        }
-    }
-
-    ret.into()
 }
 
 /// Run commands, returning result handle to check status
@@ -205,7 +214,7 @@ pub fn spawn(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 ///
 /// for (i, mut proc) in procs.into_iter().enumerate() {
 ///     let bandwidth = proc.wait_with_output()?;
-///     run_cmd!(info "thread $i bandwidth: $bandwidth MB/s")?;
+///     info!("thread {i} bandwidth: {bandwidth} MB/s")?;
 /// }
 /// # Ok::<(), std::io::Error>(())
 /// ```
@@ -220,90 +229,9 @@ pub fn spawn_with_output(input: proc_macro::TokenStream) -> proc_macro::TokenStr
     .into()
 }
 
-/// Logs a message at the error level with interpolation support
 #[proc_macro]
 #[proc_macro_error]
-pub fn cmd_error(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let msg = parse_msg(input.into());
-    quote!({
-        use ::cmd_lib::AsOsStr;
-        ::cmd_lib::log::error!("{}", #msg)
-    })
-    .into()
-}
-
-/// Logs a message at the warn level with interpolation support
-#[proc_macro]
-#[proc_macro_error]
-pub fn cmd_warn(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let msg = parse_msg(input.into());
-    quote!({
-        use ::cmd_lib::AsOsStr;
-        ::cmd_lib::log::warn!("{}", #msg)
-    })
-    .into()
-}
-
-/// Print a message to stdout with interpolation support
-#[proc_macro]
-#[proc_macro_error]
-pub fn cmd_echo(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let msg = parse_msg(input.into());
-    quote!({
-        use ::cmd_lib::AsOsStr;
-        println!("{}", #msg)
-    })
-    .into()
-}
-
-/// Logs a message at the info level with interpolation support
-///
-/// e.g:
-/// ```
-/// use cmd_lib::cmd_info;
-/// let name = "rust";
-/// cmd_info!("hello, $name");
-///
-/// ```
-/// format should be string literals, and variable interpolation is supported.
-#[proc_macro]
-#[proc_macro_error]
-pub fn cmd_info(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let msg = parse_msg(input.into());
-    quote!({
-        use ::cmd_lib::AsOsStr;
-        ::cmd_lib::log::info!("{}", #msg)
-    })
-    .into()
-}
-
-/// Logs a message at the debug level with interpolation support
-#[proc_macro]
-#[proc_macro_error]
-pub fn cmd_debug(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let msg = parse_msg(input.into());
-    quote!({
-        use ::cmd_lib::AsOsStr;
-        ::cmd_lib::log::debug!("{}", #msg)
-    })
-    .into()
-}
-
-/// Logs a message at the trace level with interpolation support
-#[proc_macro]
-#[proc_macro_error]
-pub fn cmd_trace(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let msg = parse_msg(input.into());
-    quote!({
-        use ::cmd_lib::AsOsStr;
-        ::cmd_lib::log::trace!("{}", #msg)
-    })
-    .into()
-}
-
-#[proc_macro]
-#[proc_macro_error]
-/// Logs a fatal message at the error level, and exit process
+/// Log a fatal message at the error level, and exit process
 ///
 /// e.g:
 /// ```
@@ -311,7 +239,7 @@ pub fn cmd_trace(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// let file = "bad_file";
 /// cmd_die!("could not open file: $file");
 /// // output:
-/// // FATAL: could not open file: bad_file
+/// // [ERROR] FATAL: could not open file: bad_file
 /// ```
 /// format should be string literals, and variable interpolation is supported.
 /// Note that this macro is just for convenience. The process will exit with 1 and print
@@ -320,8 +248,7 @@ pub fn cmd_trace(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn cmd_die(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let msg = parse_msg(input.into());
     quote!({
-        use ::cmd_lib::AsOsStr;
-        ::cmd_lib::log::error!("FATAL: {}", #msg);
+        ::cmd_lib::error!("FATAL: {}", #msg);
         std::process::exit(1)
     })
     .into()

@@ -19,12 +19,13 @@ See the [API documentation] for more.
 
 [API documentation]: https://docs.rs/socket2
 
-# Two branches
+# Branches
 
-Currently Socket2 supports two versions: v0.4 and v0.3. Version 0.4 is developed
-in the master branch, version 0.3 in the [v0.3.x branch].
+Currently Socket2 supports two versions: v0.5 and v0.4. Version 0.5 is being
+developed in the master branch. Version 0.4 is developed in the [v0.4.x branch]
+branch.
 
-[v0.3.x branch]: https://github.com/rust-lang/socket2/tree/v0.3.x
+[v0.4.x branch]: https://github.com/rust-lang/socket2/tree/v0.4.x
 
 # OS support
 
@@ -64,16 +65,16 @@ feature flag.
 
 # Minimum Supported Rust Version (MSRV)
 
-Socket2 uses 1.46.0 as MSRV.
+Socket2 uses 1.63.0 as MSRV.
 
 # License
 
 This project is licensed under either of
 
  * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
-   http://www.apache.org/licenses/LICENSE-2.0)
+   https://www.apache.org/licenses/LICENSE-2.0)
  * MIT license ([LICENSE-MIT](LICENSE-MIT) or
-   http://opensource.org/licenses/MIT)
+   https://opensource.org/licenses/MIT)
 
 at your option.
 

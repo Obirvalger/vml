@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
@@ -68,5 +69,11 @@ impl XrSessionInit {
         );
         let _ = r;
         self
+    }
+}
+#[cfg(web_sys_unstable_apis)]
+impl Default for XrSessionInit {
+    fn default() -> Self {
+        Self::new()
     }
 }

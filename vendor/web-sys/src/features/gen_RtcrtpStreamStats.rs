@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -296,5 +297,10 @@ impl RtcrtpStreamStats {
         );
         let _ = r;
         self
+    }
+}
+impl Default for RtcrtpStreamStats {
+    fn default() -> Self {
+        Self::new()
     }
 }

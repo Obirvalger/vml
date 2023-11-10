@@ -1,11 +1,9 @@
 use axum::{
   body::{boxed, Full},
-  handler::Handler,
   http::{header, StatusCode, Uri},
   response::{Html, IntoResponse, Response},
   routing::{get, Router},
 };
-use mime_guess;
 use rust_embed::RustEmbed;
 use std::net::SocketAddr;
 
@@ -15,8 +13,8 @@ async fn main() {
   let app = Router::new()
     .route("/", get(index_handler))
     .route("/index.html", get(index_handler))
-    .route("/dist/*file", static_handler.into_service())
-    .fallback(get(not_found));
+    .route("/dist/*file", get(static_handler))
+    .fallback_service(get(not_found));
 
   // Start listening on the given address.
   let addr = SocketAddr::from(([127, 0, 0, 1], 3000));

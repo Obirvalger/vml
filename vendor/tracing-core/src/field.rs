@@ -1,13 +1,13 @@
-//! Span and `Event` key-value data.
+//! `Span` and `Event` key-value data.
 //!
-//! Spans and events may be annotated with key-value data, referred to as known
-//! as _fields_. These fields consist of a mapping from a key (corresponding to
-//! a `&str` but represented internally as an array index) to a [`Value`].
+//! Spans and events may be annotated with key-value data, known as _fields_.
+//! These fields consist of a mapping from a key (corresponding to a `&str` but
+//! represented internally as an array index) to a [`Value`].
 //!
 //! # `Value`s and `Subscriber`s
 //!
 //! `Subscriber`s consume `Value`s as fields attached to [span]s or [`Event`]s.
-//! The set of field keys on a given span or is defined on its [`Metadata`].
+//! The set of field keys on a given span or event is defined on its [`Metadata`].
 //! When a span is created, it provides [`Attributes`] to the `Subscriber`'s
 //! [`new_span`] method, containing any fields whose values were provided when
 //! the span was created; and may call the `Subscriber`'s [`record`] method
@@ -16,28 +16,99 @@
 //! will contain any fields attached to each event.
 //!
 //! `tracing` represents values as either one of a set of Rust primitives
-//! (`i64`, `u64`, `bool`, and `&str`) or using a `fmt::Display` or `fmt::Debug`
-//! implementation. `Subscriber`s are provided these primitive value types as
-//! `dyn Value` trait objects.
+//! (`i64`, `u64`, `f64`, `i128`, `u128`, `bool`, and `&str`) or using a
+//! `fmt::Display` or `fmt::Debug` implementation. `Subscriber`s are provided
+//! these primitive value types as `dyn Value` trait objects.
 //!
 //! These trait objects can be formatted using `fmt::Debug`, but may also be
 //! recorded as typed data by calling the [`Value::record`] method on these
 //! trait objects with a _visitor_ implementing the [`Visit`] trait. This trait
 //! represents the behavior used to record values of various types. For example,
-//! we might record integers by incrementing counters for their field names,
-//! rather than printing them.
+//! an implementation of `Visit` might record integers by incrementing counters
+//! for their field names rather than printing them.
 //!
-//! [`Value`]: trait.Value.html
-//! [span]: ../span/
-//! [`Event`]: ../event/struct.Event.html
-//! [`Metadata`]: ../metadata/struct.Metadata.html
-//! [`Attributes`]:  ../span/struct.Attributes.html
-//! [`Record`]: ../span/struct.Record.html
-//! [`new_span`]: ../subscriber/trait.Subscriber.html#method.new_span
-//! [`record`]: ../subscriber/trait.Subscriber.html#method.record
-//! [`event`]:  ../subscriber/trait.Subscriber.html#method.event
-//! [`Value::record`]: trait.Value.html#method.record
-//! [`Visit`]: trait.Visit.html
+//!
+//! # Using `valuable`
+//!
+//! `tracing`'s [`Value`] trait is intentionally minimalist: it supports only a small
+//! number of Rust primitives as typed values, and only permits recording
+//! user-defined types with their [`fmt::Debug`] or [`fmt::Display`]
+//! implementations. However, there are some cases where it may be useful to record
+//! nested values (such as arrays, `Vec`s, or `HashMap`s containing values), or
+//! user-defined `struct` and `enum` types without having to format them as
+//! unstructured text.
+//!
+//! To address `Value`'s limitations, `tracing` offers experimental support for
+//! the [`valuable`] crate, which provides object-safe inspection of structured
+//! values. User-defined types can implement the [`valuable::Valuable`] trait,
+//! and be recorded as a `tracing` field by calling their [`as_value`] method.
+//! If the [`Subscriber`] also supports the `valuable` crate, it can
+//! then visit those types fields as structured values using `valuable`.
+//!
+//! <pre class="ignore" style="white-space:normal;font:inherit;">
+//!     <strong>Note</strong>: <code>valuable</code> support is an
+//!     <a href = "../index.html#unstable-features">unstable feature</a>. See
+//!     the documentation on unstable features for details on how to enable it.
+//! </pre>
+//!
+//! For example:
+//! ```ignore
+//! // Derive `Valuable` for our types:
+//! use valuable::Valuable;
+//!
+//! #[derive(Clone, Debug, Valuable)]
+//! struct User {
+//!     name: String,
+//!     age: u32,
+//!     address: Address,
+//! }
+//!
+//! #[derive(Clone, Debug, Valuable)]
+//! struct Address {
+//!     country: String,
+//!     city: String,
+//!     street: String,
+//! }
+//!
+//! let user = User {
+//!     name: "Arwen Undomiel".to_string(),
+//!     age: 3000,
+//!     address: Address {
+//!         country: "Middle Earth".to_string(),
+//!         city: "Rivendell".to_string(),
+//!         street: "leafy lane".to_string(),
+//!     },
+//! };
+//!
+//! // Recording `user` as a `valuable::Value` will allow the `tracing` subscriber
+//! // to traverse its fields as a nested, typed structure:
+//! tracing::info!(current_user = user.as_value());
+//! ```
+//!
+//! Alternatively, the [`valuable()`] function may be used to convert a type
+//! implementing [`Valuable`] into a `tracing` field value.
+//!
+//! When the `valuable` feature is enabled, the [`Visit`] trait will include an
+//! optional [`record_value`] method. `Visit` implementations that wish to
+//! record `valuable` values can implement this method with custom behavior.
+//! If a visitor does not implement `record_value`, the [`valuable::Value`] will
+//! be forwarded to the visitor's [`record_debug`] method.
+//!
+//! [`valuable`]: https://crates.io/crates/valuable
+//! [`as_value`]: valuable::Valuable::as_value
+//! [`Subscriber`]: crate::Subscriber
+//! [`record_value`]: Visit::record_value
+//! [`record_debug`]: Visit::record_debug
+//!
+//! [span]: super::span
+//! [`Event`]: super::event::Event
+//! [`Metadata`]: super::metadata::Metadata
+//! [`Attributes`]:  super::span::Attributes
+//! [`Record`]: super::span::Record
+//! [`new_span`]: super::subscriber::Subscriber::new_span
+//! [`record`]: super::subscriber::Subscriber::record
+//! [`event`]:  super::subscriber::Subscriber::event
+//! [`Value::record`]: Value::record
 use crate::callsite;
 use crate::stdlib::{
     borrow::Borrow,
@@ -45,6 +116,7 @@ use crate::stdlib::{
     hash::{Hash, Hasher},
     num,
     ops::Range,
+    string::String,
 };
 
 use self::private::ValidLen;
@@ -73,6 +145,16 @@ pub struct Field {
 pub struct Empty;
 
 /// Describes the fields present on a span.
+///
+/// ## Equality
+///
+/// In well-behaved applications, two `FieldSet`s [initialized] with equal
+/// [callsite identifiers] will have identical fields. Consequently, in release
+/// builds, [`FieldSet::eq`] *only* checks that its arguments have equal
+/// callsites. However, the equality of field names is checked in debug builds.
+///
+/// [initialized]: Self::new
+/// [callsite identifiers]: callsite::Identifier
 pub struct FieldSet {
     /// The names of each field on the described span.
     names: &'static [&'static str],
@@ -118,7 +200,7 @@ pub struct Iter {
 /// }
 ///
 /// impl<'a> Visit for StringVisitor<'a> {
-///     fn record_debug(&mut self, field: &Field, value: &fmt::Debug) {
+///     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
 ///         write!(self.string, "{} = {:?}; ", field.name(), value).unwrap();
 ///     }
 /// }
@@ -169,9 +251,6 @@ pub struct Iter {
 /// `examples/counters.rs`, which demonstrates a very simple metrics system
 /// implemented using `tracing`.
 ///
-/// <div class="information">
-///     <div class="tooltip ignore" style="">ⓘ<span class="tooltiptext">Note</span></div>
-/// </div>
 /// <div class="example-wrap" style="display:inline-block">
 /// <pre class="ignore" style="white-space:normal;font:inherit;">
 /// <strong>Note</strong>: The <code>record_error</code> trait method is only
@@ -179,14 +258,26 @@ pub struct Iter {
 /// <code>std::error::Error</code> trait.
 /// </pre></div>
 ///
-/// [`Value`]: trait.Value.html
-/// [recorded]: trait.Value.html#method.record
-/// [`Subscriber`]: ../subscriber/trait.Subscriber.html
-/// [records an `Event`]: ../subscriber/trait.Subscriber.html#method.event
-/// [set of `Value`s added to a `Span`]: ../subscriber/trait.Subscriber.html#method.record
-/// [`Event`]: ../event/struct.Event.html
-/// [`ValueSet`]: struct.ValueSet.html
+/// [recorded]: Value::record
+/// [`Subscriber`]: super::subscriber::Subscriber
+/// [records an `Event`]: super::subscriber::Subscriber::event
+/// [set of `Value`s added to a `Span`]: super::subscriber::Subscriber::record
+/// [`Event`]: super::event::Event
 pub trait Visit {
+    /// Visits an arbitrary type implementing the [`valuable`] crate's `Valuable` trait.
+    ///
+    /// [`valuable`]: https://docs.rs/valuable
+    #[cfg(all(tracing_unstable, feature = "valuable"))]
+    #[cfg_attr(docsrs, doc(cfg(all(tracing_unstable, feature = "valuable"))))]
+    fn record_value(&mut self, field: &Field, value: valuable::Value<'_>) {
+        self.record_debug(field, &value)
+    }
+
+    /// Visit a double-precision floating point value.
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        self.record_debug(field, &value)
+    }
+
     /// Visit a signed 64-bit integer value.
     fn record_i64(&mut self, field: &Field, value: i64) {
         self.record_debug(field, &value)
@@ -194,6 +285,16 @@ pub trait Visit {
 
     /// Visit an unsigned 64-bit integer value.
     fn record_u64(&mut self, field: &Field, value: u64) {
+        self.record_debug(field, &value)
+    }
+
+    /// Visit a signed 128-bit integer value.
+    fn record_i128(&mut self, field: &Field, value: i128) {
+        self.record_debug(field, &value)
+    }
+
+    /// Visit an unsigned 128-bit integer value.
+    fn record_u128(&mut self, field: &Field, value: u128) {
         self.record_debug(field, &value)
     }
 
@@ -209,18 +310,16 @@ pub trait Visit {
 
     /// Records a type implementing `Error`.
     ///
-    /// <div class="information">
-    ///     <div class="tooltip ignore" style="">ⓘ<span class="tooltiptext">Note</span></div>
-    /// </div>
     /// <div class="example-wrap" style="display:inline-block">
     /// <pre class="ignore" style="white-space:normal;font:inherit;">
     /// <strong>Note</strong>: This is only enabled when the Rust standard library is
     /// present.
     /// </pre>
+    /// </div>
     #[cfg(feature = "std")]
     #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     fn record_error(&mut self, field: &Field, value: &(dyn std::error::Error + 'static)) {
-        self.record_debug(field, &format_args!("{}", value))
+        self.record_debug(field, &DisplayValue(value))
     }
 
     /// Visit a value implementing `fmt::Debug`.
@@ -233,7 +332,7 @@ pub trait Visit {
 /// the [visitor] passed to their `record` method in order to indicate how
 /// their data should be recorded.
 ///
-/// [visitor]: trait.Visit.html
+/// [visitor]: Visit
 pub trait Value: crate::sealed::Sealed {
     /// Visits this value with the given `Visitor`.
     fn record(&self, key: &Field, visitor: &mut dyn Visit);
@@ -266,6 +365,19 @@ where
     T: fmt::Debug,
 {
     DebugValue(t)
+}
+
+/// Wraps a type implementing [`Valuable`] as a `Value` that
+/// can be recorded using its `Valuable` implementation.
+///
+/// [`Valuable`]: https://docs.rs/valuable/latest/valuable/trait.Valuable.html
+#[cfg(all(tracing_unstable, feature = "valuable"))]
+#[cfg_attr(docsrs, doc(cfg(all(tracing_unstable, feature = "valuable"))))]
+pub fn valuable<T>(t: &T) -> valuable::Value<'_>
+where
+    T: valuable::Valuable,
+{
+    t.as_value()
 }
 
 // ===== impl Visit =====
@@ -341,6 +453,12 @@ macro_rules! ty_to_nonzero {
 }
 
 macro_rules! impl_one_value {
+    (f32, $op:expr, $record:ident) => {
+        impl_one_value!(normal, f32, $op, $record);
+    };
+    (f64, $op:expr, $record:ident) => {
+        impl_one_value!(normal, f64, $op, $record);
+    };
     (bool, $op:expr, $record:ident) => {
         impl_one_value!(normal, bool, $op, $record);
     };
@@ -352,6 +470,10 @@ macro_rules! impl_one_value {
         impl $crate::sealed::Sealed for $value_ty {}
         impl $crate::field::Value for $value_ty {
             fn record(&self, key: &$crate::field::Field, visitor: &mut dyn $crate::field::Visit) {
+                // `op` is always a function; the closure is used because
+                // sometimes there isn't a real function corresponding to that
+                // operation. the clippy warning is not that useful here.
+                #[allow(clippy::redundant_closure_call)]
                 visitor.$record(key, $op(*self))
             }
         }
@@ -367,6 +489,10 @@ macro_rules! impl_one_value {
         impl $crate::sealed::Sealed for ty_to_nonzero!($value_ty) {}
         impl $crate::field::Value for ty_to_nonzero!($value_ty) {
             fn record(&self, key: &$crate::field::Field, visitor: &mut dyn $crate::field::Visit) {
+                // `op` is always a function; the closure is used because
+                // sometimes there isn't a real function corresponding to that
+                // operation. the clippy warning is not that useful here.
+                #[allow(clippy::redundant_closure_call)]
                 visitor.$record(key, $op(self.get()))
             }
         }
@@ -393,7 +519,10 @@ impl_values! {
     record_u64(usize, u32, u16, u8 as u64),
     record_i64(i64),
     record_i64(isize, i32, i16, i8 as i64),
-    record_bool(bool)
+    record_u128(u128),
+    record_i128(i128),
+    record_bool(bool),
+    record_f64(f64, f32 as f64)
 }
 
 impl<T: crate::sealed::Sealed> crate::sealed::Sealed for Wrapping<T> {}
@@ -407,7 +536,7 @@ impl crate::sealed::Sealed for str {}
 
 impl Value for str {
     fn record(&self, key: &Field, visitor: &mut dyn Visit) {
-        visitor.record_str(key, &self)
+        visitor.record_str(key, self)
     }
 }
 
@@ -422,6 +551,39 @@ impl Value for dyn std::error::Error + 'static {
     }
 }
 
+#[cfg(feature = "std")]
+impl crate::sealed::Sealed for dyn std::error::Error + Send + 'static {}
+
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+impl Value for dyn std::error::Error + Send + 'static {
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        (self as &dyn std::error::Error).record(key, visitor)
+    }
+}
+
+#[cfg(feature = "std")]
+impl crate::sealed::Sealed for dyn std::error::Error + Sync + 'static {}
+
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+impl Value for dyn std::error::Error + Sync + 'static {
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        (self as &dyn std::error::Error).record(key, visitor)
+    }
+}
+
+#[cfg(feature = "std")]
+impl crate::sealed::Sealed for dyn std::error::Error + Send + Sync + 'static {}
+
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+impl Value for dyn std::error::Error + Send + Sync + 'static {
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        (self as &dyn std::error::Error).record(key, visitor)
+    }
+}
+
 impl<'a, T: ?Sized> crate::sealed::Sealed for &'a T where T: Value + crate::sealed::Sealed + 'a {}
 
 impl<'a, T: ?Sized> Value for &'a T
@@ -433,11 +595,43 @@ where
     }
 }
 
+impl<'a, T: ?Sized> crate::sealed::Sealed for &'a mut T where T: Value + crate::sealed::Sealed + 'a {}
+
+impl<'a, T: ?Sized> Value for &'a mut T
+where
+    T: Value + 'a,
+{
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        // Don't use `(*self).record(key, visitor)`, otherwise would
+        // cause stack overflow due to `unconditional_recursion`.
+        T::record(self, key, visitor)
+    }
+}
+
 impl<'a> crate::sealed::Sealed for fmt::Arguments<'a> {}
 
 impl<'a> Value for fmt::Arguments<'a> {
     fn record(&self, key: &Field, visitor: &mut dyn Visit) {
         visitor.record_debug(key, self)
+    }
+}
+
+impl<T: ?Sized> crate::sealed::Sealed for crate::stdlib::boxed::Box<T> where T: Value {}
+
+impl<T: ?Sized> Value for crate::stdlib::boxed::Box<T>
+where
+    T: Value,
+{
+    #[inline]
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        self.as_ref().record(key, visitor)
+    }
+}
+
+impl crate::sealed::Sealed for String {}
+impl Value for String {
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        visitor.record_str(key, self.as_str())
     }
 }
 
@@ -485,19 +679,19 @@ where
     T: fmt::Display,
 {
     fn record(&self, key: &Field, visitor: &mut dyn Visit) {
-        visitor.record_debug(key, &format_args!("{}", self.0))
+        visitor.record_debug(key, self)
     }
 }
 
 impl<T: fmt::Display> fmt::Debug for DisplayValue<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        fmt::Display::fmt(self, f)
     }
 }
 
 impl<T: fmt::Display> fmt::Display for DisplayValue<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
+        self.0.fmt(f)
     }
 }
 
@@ -505,7 +699,7 @@ impl<T: fmt::Display> fmt::Display for DisplayValue<T> {
 
 impl<T: fmt::Debug> crate::sealed::Sealed for DebugValue<T> {}
 
-impl<T: fmt::Debug> Value for DebugValue<T>
+impl<T> Value for DebugValue<T>
 where
     T: fmt::Debug,
 {
@@ -516,7 +710,31 @@ where
 
 impl<T: fmt::Debug> fmt::Debug for DebugValue<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0)
+        self.0.fmt(f)
+    }
+}
+
+// ===== impl ValuableValue =====
+
+#[cfg(all(tracing_unstable, feature = "valuable"))]
+impl crate::sealed::Sealed for valuable::Value<'_> {}
+
+#[cfg(all(tracing_unstable, feature = "valuable"))]
+#[cfg_attr(docsrs, doc(cfg(all(tracing_unstable, feature = "valuable"))))]
+impl Value for valuable::Value<'_> {
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        visitor.record_value(key, *self)
+    }
+}
+
+#[cfg(all(tracing_unstable, feature = "valuable"))]
+impl crate::sealed::Sealed for &'_ dyn valuable::Valuable {}
+
+#[cfg(all(tracing_unstable, feature = "valuable"))]
+#[cfg_attr(docsrs, doc(cfg(all(tracing_unstable, feature = "valuable"))))]
+impl Value for &'_ dyn valuable::Valuable {
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        visitor.record_value(key, self.as_value())
     }
 }
 
@@ -526,14 +744,24 @@ impl Value for Empty {
     fn record(&self, _: &Field, _: &mut dyn Visit) {}
 }
 
+impl<T: Value> crate::sealed::Sealed for Option<T> {}
+
+impl<T: Value> Value for Option<T> {
+    fn record(&self, key: &Field, visitor: &mut dyn Visit) {
+        if let Some(v) = &self {
+            v.record(key, visitor)
+        }
+    }
+}
+
 // ===== impl Field =====
 
 impl Field {
     /// Returns an [`Identifier`] that uniquely identifies the [`Callsite`]
     /// which defines this field.
     ///
-    /// [`Identifier`]: ../callsite/struct.Identifier.html
-    /// [`Callsite`]: ../callsite/trait.Callsite.html
+    /// [`Identifier`]: super::callsite::Identifier
+    /// [`Callsite`]: super::callsite::Callsite
     #[inline]
     pub fn callsite(&self) -> callsite::Identifier {
         self.fields.callsite()
@@ -598,15 +826,16 @@ impl FieldSet {
     /// Returns an [`Identifier`] that uniquely identifies the [`Callsite`]
     /// which defines this set of fields..
     ///
-    /// [`Identifier`]: ../callsite/struct.Identifier.html
-    /// [`Callsite`]: ../callsite/trait.Callsite.html
+    /// [`Identifier`]: super::callsite::Identifier
+    /// [`Callsite`]: super::callsite::Callsite
+    #[inline]
     pub(crate) fn callsite(&self) -> callsite::Identifier {
         callsite::Identifier(self.callsite.0)
     }
 
     /// Returns the [`Field`] named `name`, or `None` if no such field exists.
     ///
-    /// [`Field`]: ../struct.Field.html
+    /// [`Field`]: super::Field
     pub fn field<Q: ?Sized>(&self, name: &Q) -> Option<Field>
     where
         Q: Borrow<str>,
@@ -623,9 +852,6 @@ impl FieldSet {
 
     /// Returns `true` if `self` contains the given `field`.
     ///
-    /// <div class="information">
-    ///     <div class="tooltip ignore" style="">ⓘ<span class="tooltiptext">Note</span></div>
-    /// </div>
     /// <div class="example-wrap" style="display:inline-block">
     /// <pre class="ignore" style="white-space:normal;font:inherit;">
     /// <strong>Note</strong>: If <code>field</code> shares a name with a field
@@ -640,6 +866,7 @@ impl FieldSet {
     }
 
     /// Returns an iterator over the `Field`s in this `FieldSet`.
+    #[inline]
     pub fn iter(&self) -> Iter {
         let idxs = 0..self.len();
         Iter {
@@ -652,9 +879,6 @@ impl FieldSet {
     }
 
     /// Returns a new `ValueSet` with entries for this `FieldSet`'s values.
-    ///
-    /// Note that a `ValueSet` may not be constructed with arrays of over 32
-    /// elements.
     #[doc(hidden)]
     pub fn value_set<'v, V>(&'v self, values: &'v V) -> ValueSet<'v>
     where
@@ -662,7 +886,7 @@ impl FieldSet {
     {
         ValueSet {
             fields: self,
-            values: &values.borrow()[..],
+            values: values.borrow(),
         }
     }
 
@@ -705,10 +929,45 @@ impl fmt::Display for FieldSet {
     }
 }
 
+impl Eq for FieldSet {}
+
+impl PartialEq for FieldSet {
+    fn eq(&self, other: &Self) -> bool {
+        if core::ptr::eq(&self, &other) {
+            true
+        } else if cfg!(not(debug_assertions)) {
+            // In a well-behaving application, two `FieldSet`s can be assumed to
+            // be totally equal so long as they share the same callsite.
+            self.callsite == other.callsite
+        } else {
+            // However, when debug-assertions are enabled, do NOT assume that
+            // the application is well-behaving; check every the field names of
+            // each `FieldSet` for equality.
+
+            // `FieldSet` is destructured here to ensure a compile-error if the
+            // fields of `FieldSet` change.
+            let Self {
+                names: lhs_names,
+                callsite: lhs_callsite,
+            } = self;
+
+            let Self {
+                names: rhs_names,
+                callsite: rhs_callsite,
+            } = &other;
+
+            // Check callsite equality first, as it is probably cheaper to do
+            // than str equality.
+            lhs_callsite == rhs_callsite && lhs_names == rhs_names
+        }
+    }
+}
+
 // ===== impl Iter =====
 
 impl Iterator for Iter {
     type Item = Field;
+    #[inline]
     fn next(&mut self) -> Option<Field> {
         let i = self.idxs.next()?;
         Some(Field {
@@ -727,8 +986,8 @@ impl<'a> ValueSet<'a> {
     /// Returns an [`Identifier`] that uniquely identifies the [`Callsite`]
     /// defining the fields this `ValueSet` refers to.
     ///
-    /// [`Identifier`]: ../callsite/struct.Identifier.html
-    /// [`Callsite`]: ../callsite/trait.Callsite.html
+    /// [`Identifier`]: super::callsite::Identifier
+    /// [`Callsite`]: super::callsite::Callsite
     #[inline]
     pub fn callsite(&self) -> callsite::Identifier {
         self.fields.callsite()
@@ -736,8 +995,8 @@ impl<'a> ValueSet<'a> {
 
     /// Visits all the fields in this `ValueSet` with the provided [visitor].
     ///
-    /// [visitor]: ../trait.Visit.html
-    pub(crate) fn record(&self, visitor: &mut dyn Visit) {
+    /// [visitor]: Visit
+    pub fn record(&self, visitor: &mut dyn Visit) {
         let my_callsite = self.callsite();
         for (field, value) in self.values {
             if field.callsite() != my_callsite {
@@ -747,6 +1006,19 @@ impl<'a> ValueSet<'a> {
                 value.record(field, visitor);
             }
         }
+    }
+
+    /// Returns the number of fields in this `ValueSet` that would be visited
+    /// by a given [visitor] to the [`ValueSet::record()`] method.
+    ///
+    /// [visitor]: Visit
+    /// [`ValueSet::record()`]: ValueSet::record()
+    pub fn len(&self) -> usize {
+        let my_callsite = self.callsite();
+        self.values
+            .iter()
+            .filter(|(field, _)| field.callsite() == my_callsite)
+            .count()
     }
 
     /// Returns `true` if this `ValueSet` contains a value for the given `Field`.
@@ -759,7 +1031,7 @@ impl<'a> ValueSet<'a> {
     }
 
     /// Returns true if this `ValueSet` contains _no_ values.
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         let my_callsite = self.callsite();
         self.values
             .iter()
@@ -805,28 +1077,10 @@ impl<'a> fmt::Display for ValueSet<'a> {
 mod private {
     use super::*;
 
-    /// Marker trait implemented by arrays which are of valid length to
-    /// construct a `ValueSet`.
-    ///
-    /// `ValueSet`s may only be constructed from arrays containing 32 or fewer
-    /// elements, to ensure the array is small enough to always be allocated on the
-    /// stack. This trait is only implemented by arrays of an appropriate length,
-    /// ensuring that the correct size arrays are used at compile-time.
+    /// Restrictions on `ValueSet` lengths were removed in #2508 but this type remains for backwards compatibility.
     pub trait ValidLen<'a>: Borrow<[(&'a Field, Option<&'a (dyn Value + 'a)>)]> {}
-}
 
-macro_rules! impl_valid_len {
-    ( $( $len:tt ),+ ) => {
-        $(
-            impl<'a> private::ValidLen<'a> for
-                [(&'a Field, Option<&'a (dyn Value + 'a)>); $len] {}
-        )+
-    }
-}
-
-impl_valid_len! {
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+    impl<'a, const N: usize> ValidLen<'a> for [(&'a Field, Option<&'a (dyn Value + 'a)>); N] {}
 }
 
 #[cfg(test)]
@@ -835,8 +1089,9 @@ mod test {
     use crate::metadata::{Kind, Level, Metadata};
     use crate::stdlib::{borrow::ToOwned, string::String};
 
-    struct TestCallsite1;
-    static TEST_CALLSITE_1: TestCallsite1 = TestCallsite1;
+    // Make sure TEST_CALLSITE_* have non-zero size, so they can't be located at the same address.
+    struct TestCallsite1(u8);
+    static TEST_CALLSITE_1: TestCallsite1 = TestCallsite1(0);
     static TEST_META_1: Metadata<'static> = metadata! {
         name: "field_test1",
         target: module_path!(),
@@ -856,8 +1111,8 @@ mod test {
         }
     }
 
-    struct TestCallsite2;
-    static TEST_CALLSITE_2: TestCallsite2 = TestCallsite2;
+    struct TestCallsite2(u8);
+    static TEST_CALLSITE_2: TestCallsite2 = TestCallsite2(0);
     static TEST_META_2: Metadata<'static> = metadata! {
         name: "field_test2",
         target: module_path!(),
@@ -976,5 +1231,25 @@ mod test {
             write!(&mut result, "{:?}", value).unwrap();
         });
         assert_eq!(result, "123".to_owned());
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn record_error() {
+        let fields = TEST_META_1.fields();
+        let err: Box<dyn std::error::Error + Send + Sync + 'static> =
+            std::io::Error::new(std::io::ErrorKind::Other, "lol").into();
+        let values = &[
+            (&fields.field("foo").unwrap(), Some(&err as &dyn Value)),
+            (&fields.field("bar").unwrap(), Some(&Empty as &dyn Value)),
+            (&fields.field("baz").unwrap(), Some(&Empty as &dyn Value)),
+        ];
+        let valueset = fields.value_set(values);
+        let mut result = String::new();
+        valueset.record(&mut |_: &Field, value: &dyn fmt::Debug| {
+            use core::fmt::Write;
+            write!(&mut result, "{:?}", value).unwrap();
+        });
+        assert_eq!(result, format!("{}", err));
     }
 }

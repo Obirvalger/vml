@@ -3,7 +3,7 @@ Converts ranges of Unicode scalar values to equivalent ranges of UTF-8 bytes.
 
 This is sub-module is useful for constructing byte based automatons that need
 to embed UTF-8 decoding. The most common use of this module is in conjunction
-with the [`hir::ClassUnicodeRange`](../hir/struct.ClassUnicodeRange.html) type.
+with the [`hir::ClassUnicodeRange`](crate::hir::ClassUnicodeRange) type.
 
 See the documentation on the `Utf8Sequences` iterator for more details and
 an example.
@@ -15,7 +15,7 @@ whether a particular byte sequence was a Cyrillic character. One possible
 scalar value range is `[0400-04FF]`. The set of allowed bytes for this
 range can be expressed as a sequence of byte ranges:
 
-```ignore
+```text
 [D0-D3][80-BF]
 ```
 
@@ -32,7 +32,7 @@ for example, `04FF` (because its last byte, `BF` isn't in the range `80-AF`).
 
 Instead, you need multiple sequences of byte ranges:
 
-```ignore
+```text
 [D0-D3][80-BF]  # matches codepoints 0400-04FF
 [D4][80-AF]     # matches codepoints 0500-052F
 ```
@@ -41,7 +41,7 @@ This gets even more complicated if you want bigger ranges, particularly if
 they naively contain surrogate codepoints. For example, the sequence of byte
 ranges for the basic multilingual plane (`[0000-FFFF]`) look like this:
 
-```ignore
+```text
 [0-7F]
 [C2-DF][80-BF]
 [E0][A0-BF][80-BF]
@@ -55,7 +55,7 @@ UTF-8, including encodings of surrogate codepoints.
 
 And, of course, for all of Unicode (`[000000-10FFFF]`):
 
-```ignore
+```text
 [0-7F]
 [C2-DF][80-BF]
 [E0][A0-BF][80-BF]
@@ -80,12 +80,9 @@ I also got the idea from
 which uses it for executing automata on their term index.
 */
 
-#![deny(missing_docs)]
+use core::{char, fmt, iter::FusedIterator, slice};
 
-use std::char;
-use std::fmt;
-use std::iter::FusedIterator;
-use std::slice;
+use alloc::{vec, vec::Vec};
 
 const MAX_UTF8_BYTES: usize = 4;
 
@@ -157,13 +154,13 @@ impl Utf8Sequence {
     ///
     /// For example, if this corresponds to the following sequence:
     ///
-    /// ```ignore
+    /// ```text
     /// [D0-D3][80-BF]
     /// ```
     ///
     /// Then after reversal, it will be
     ///
-    /// ```ignore
+    /// ```text
     /// [80-BF][D0-D3]
     /// ```
     ///
@@ -198,12 +195,12 @@ impl<'a> IntoIterator for &'a Utf8Sequence {
     type Item = &'a Utf8Range;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.as_slice().into_iter()
+        self.as_slice().iter()
     }
 }
 
 impl fmt::Debug for Utf8Sequence {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::Utf8Sequence::*;
         match *self {
             One(ref r) => write!(f, "{:?}", r),
@@ -237,7 +234,7 @@ impl Utf8Range {
 }
 
 impl fmt::Debug for Utf8Range {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.start == self.end {
             write!(f, "[{:X}]", self.start)
         } else {
@@ -306,7 +303,7 @@ impl Utf8Sequences {
     /// given.
     pub fn new(start: char, end: char) -> Self {
         let mut it = Utf8Sequences { range_stack: vec![] };
-        it.push(start as u32, end as u32);
+        it.push(u32::from(start), u32::from(end));
         it
     }
 
@@ -317,7 +314,7 @@ impl Utf8Sequences {
     #[doc(hidden)]
     pub fn reset(&mut self, start: char, end: char) {
         self.range_stack.clear();
-        self.push(start as u32, end as u32);
+        self.push(u32::from(start), u32::from(end));
     }
 
     fn push(&mut self, start: u32, end: u32) {
@@ -331,7 +328,7 @@ struct ScalarRange {
 }
 
 impl fmt::Debug for ScalarRange {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ScalarRange({:X}, {:X})", self.start, self.end)
     }
 }
@@ -416,7 +413,9 @@ impl ScalarRange {
     /// values in this range can be encoded as a single byte.
     fn as_ascii(&self) -> Option<Utf8Range> {
         if self.is_ascii() {
-            Some(Utf8Range::new(self.start as u8, self.end as u8))
+            let start = u8::try_from(self.start).unwrap();
+            let end = u8::try_from(self.end).unwrap();
+            Some(Utf8Range::new(start, end))
         } else {
             None
         }
@@ -448,16 +447,18 @@ fn max_scalar_value(nbytes: usize) -> u32 {
         1 => 0x007F,
         2 => 0x07FF,
         3 => 0xFFFF,
-        4 => 0x10FFFF,
+        4 => 0x0010_FFFF,
         _ => unreachable!("invalid UTF-8 byte sequence size"),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::char;
+    use core::char;
 
-    use utf8::{Utf8Range, Utf8Sequences};
+    use alloc::{vec, vec::Vec};
+
+    use crate::utf8::{Utf8Range, Utf8Sequences};
 
     fn rutf8(s: u8, e: u8) -> Utf8Range {
         Utf8Range::new(s, e)
@@ -472,7 +473,11 @@ mod tests {
                         "Sequence ({:X}, {:X}) contains range {:?}, \
                          which matches surrogate code point {:X} \
                          with encoded bytes {:?}",
-                        start as u32, end as u32, r, cp, buf,
+                        u32::from(start),
+                        u32::from(end),
+                        r,
+                        cp,
+                        buf,
                     );
                 }
             }
@@ -492,7 +497,7 @@ mod tests {
     fn single_codepoint_one_sequence() {
         // Tests that every range of scalar values that contains a single
         // scalar value is recognized by one sequence of byte ranges.
-        for i in 0x0..(0x10FFFF + 1) {
+        for i in 0x0..=0x0010_FFFF {
             let c = match char::from_u32(i) {
                 None => continue,
                 Some(c) => c,
@@ -504,7 +509,7 @@ mod tests {
 
     #[test]
     fn bmp() {
-        use utf8::Utf8Sequence::*;
+        use crate::utf8::Utf8Sequence::*;
 
         let seqs = Utf8Sequences::new('\u{0}', '\u{FFFF}').collect::<Vec<_>>();
         assert_eq!(
@@ -538,7 +543,7 @@ mod tests {
 
     #[test]
     fn reverse() {
-        use utf8::Utf8Sequence::*;
+        use crate::utf8::Utf8Sequence::*;
 
         let mut s = One(rutf8(0xA, 0xB));
         s.reverse();
@@ -579,9 +584,9 @@ mod tests {
 
         assert!(0xD800 <= cp && cp < 0xE000);
         let mut dst = [0; 3];
-        dst[0] = (cp >> 12 & 0x0F) as u8 | TAG_THREE_B;
-        dst[1] = (cp >> 6 & 0x3F) as u8 | TAG_CONT;
-        dst[2] = (cp & 0x3F) as u8 | TAG_CONT;
+        dst[0] = u8::try_from(cp >> 12 & 0x0F).unwrap() | TAG_THREE_B;
+        dst[1] = u8::try_from(cp >> 6 & 0x3F).unwrap() | TAG_CONT;
+        dst[2] = u8::try_from(cp & 0x3F).unwrap() | TAG_CONT;
         dst
     }
 }

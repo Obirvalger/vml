@@ -3,30 +3,35 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g., crates.io) dependencies
+# to registry (e.g., crates.io) dependencies.
 #
-# If you believe there's an error in this file please file an
-# issue against the rust-lang/cargo repository. If you're
-# editing this file be aware that the upstream Cargo.toml
-# will likely look very different (and much more reasonable)
+# If you are reading this file be aware that the original Cargo.toml
+# will likely look very different (and much more reasonable).
+# See Cargo.toml.orig for the original contents.
 
 [package]
 edition = "2018"
+rust-version = "1.57"
 name = "wasm-bindgen"
-version = "0.2.71"
+version = "0.2.88"
 authors = ["The wasm-bindgen Developers"]
-description = "Easy support for interacting between JS and Rust.\n"
+description = """
+Easy support for interacting between JS and Rust.
+"""
 homepage = "https://rustwasm.github.io/"
 documentation = "https://docs.rs/wasm-bindgen"
 readme = "README.md"
 categories = ["wasm"]
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/rustwasm/wasm-bindgen"
+resolver = "2"
+
 [package.metadata.docs.rs]
 features = ["serde-serialize"]
 
 [lib]
 test = false
+
 [dependencies.cfg-if]
 version = "1.0.0"
 
@@ -39,28 +44,36 @@ version = "1.0"
 optional = true
 
 [dependencies.wasm-bindgen-macro]
-version = "=0.2.71"
+version = "=0.2.88"
 
 [features]
-default = ["spans", "std"]
+default = [
+    "spans",
+    "std",
+]
 enable-interning = ["std"]
-nightly = []
-serde-serialize = ["serde", "serde_json", "std"]
+gg-alloc = ["wasm-bindgen-test/gg-alloc"]
+serde-serialize = [
+    "serde",
+    "serde_json",
+    "std",
+]
 spans = ["wasm-bindgen-macro/spans"]
 std = []
 strict-macro = ["wasm-bindgen-macro/strict-macro"]
 xxx_debug_only_print_generated_code = ["wasm-bindgen-macro/xxx_debug_only_print_generated_code"]
+
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.js-sys]
-version = "0.3.48"
+version = "0.3.65"
 
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.serde_derive]
 version = "1.0"
 
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-futures]
-version = "=0.4.21"
+version = "=0.4.38"
 
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-test]
-version = "=0.3.21"
+version = "=0.3.38"
 
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-test-crate-a]
 version = "0.1"

@@ -1,21 +1,23 @@
-.TH NEWCTIME 3
+.\" This file is in the public domain, so clarified as of
+.\" 2009-05-17 by Arthur David Olson.
+.TH newctime 3 "" "Time Zone Database"
 .SH NAME
 asctime, ctime, difftime, gmtime, localtime, mktime \- convert date and time
 .SH SYNOPSIS
 .nf
-.ie \n(.g .ds - \f(CW-\fP
-.el ds - \-
+.ie \n(.g .ds - \f(CR-\fP
+.el .ds - \-
 .B #include <time.h>
 .PP
 .BR "extern char *tzname[];" " /\(** (optional) \(**/"
 .PP
-.B char *ctime(time_t const *clock);
+.B [[deprecated]] char *ctime(time_t const *clock);
 .PP
 .B char *ctime_r(time_t const *clock, char *buf);
 .PP
 .B double difftime(time_t time1, time_t time0);
 .PP
-.B char *asctime(struct tm const *tm);
+.B [[deprecated]] char *asctime(struct tm const *tm);
 .PP
 .B "char *asctime_r(struct tm const *restrict tm,"
 .B "    char *restrict result);"
@@ -89,6 +91,15 @@ introduction of UTC and are some other flavor of Universal Time (UT).
 Some implementations support leap seconds, in contradiction to POSIX.
 .PP
 The
+.B ctime
+function is deprecated starting in C23.
+Callers can use
+.B localtime_r
+and
+.B strftime
+instead.
+.PP
+The
 .B localtime
 and
 .B gmtime
@@ -126,6 +137,10 @@ converts a time value contained in a
 structure to a string,
 as shown in the above example,
 and returns a pointer to the string.
+This function is deprecated starting in C23.
+Callers can use
+.B strftime
+instead.
 .PP
 The
 .B mktime
@@ -271,8 +286,9 @@ so were made when the library containing these functions was
 created.
 Similarly, the
 .B tzname
-variable is optional.
-There is no guarantee that these fields and this variable will
+variable is optional; also, there is no guarantee that
+.B tzname
+will
 continue to exist in this form in future releases of this code.
 .SH FILES
 .ta \w'/usr/share/zoneinfo/posixrules\0\0'u
@@ -280,7 +296,8 @@ continue to exist in this form in future releases of this code.
 .br
 /usr/share/zoneinfo/localtime	local timezone file
 .br
-/usr/share/zoneinfo/posixrules	used with POSIX-style TZ's
+/usr/share/zoneinfo/posixrules	default DST rules (obsolete,
+	and can cause bugs if present)
 .br
 /usr/share/zoneinfo/GMT	for UTC leap seconds
 .sp
@@ -339,5 +356,3 @@ restricted to years in the range 1900 through 2099.
 To avoid this portability mess, new programs should use
 .B strftime
 instead.
-.\" This file is in the public domain, so clarified as of
-.\" 2009-05-17 by Arthur David Olson.

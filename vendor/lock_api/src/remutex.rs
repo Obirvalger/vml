@@ -183,8 +183,10 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
         if self.lock_count.get() == 1 {
             let id = self.owner.load(Ordering::Relaxed);
             self.owner.store(0, Ordering::Relaxed);
+            self.lock_count.set(0);
             self.mutex.bump();
             self.owner.store(id, Ordering::Relaxed);
+            self.lock_count.set(1);
         }
     }
 }
@@ -287,11 +289,16 @@ impl<R, G, T> ReentrantMutex<R, G, T> {
 }
 
 impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
+    /// Creates a new `ReentrantMutexGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds the lock.
+    ///
+    /// Calling this function when a guard has already been produced is undefined behaviour unless
+    /// the guard was forgotten with `mem::forget`.
     #[inline]
-    unsafe fn guard(&self) -> ReentrantMutexGuard<'_, R, G, T> {
+    pub unsafe fn make_guard_unchecked(&self) -> ReentrantMutexGuard<'_, R, G, T> {
         ReentrantMutexGuard {
             remutex: &self,
             marker: PhantomData,
@@ -312,7 +319,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub fn lock(&self) -> ReentrantMutexGuard<'_, R, G, T> {
         self.raw.lock();
         // SAFETY: The lock is held, as required.
-        unsafe { self.guard() }
+        unsafe { self.make_guard_unchecked() }
     }
 
     /// Attempts to acquire this lock.
@@ -326,7 +333,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub fn try_lock(&self) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
         if self.raw.try_lock() {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
+            Some(unsafe { self.make_guard_unchecked() })
         } else {
             None
         }
@@ -400,12 +407,17 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
         self.data.get()
     }
 
+    /// Creates a new `ArcReentrantMutexGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held before calling this method.
+    /// This method must only be called if the thread logically holds the lock.
+    ///
+    /// Calling this function when a guard has already been produced is undefined behaviour unless
+    /// the guard was forgotten with `mem::forget`.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    unsafe fn guard_arc(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
+    pub unsafe fn make_arc_guard_unchecked(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
         ArcReentrantMutexGuard {
             remutex: self.clone(),
             marker: PhantomData,
@@ -421,7 +433,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub fn lock_arc(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
         self.raw.lock();
         // SAFETY: locking guarantee is upheld
-        unsafe { self.guard_arc() }
+        unsafe { self.make_arc_guard_unchecked() }
     }
 
     /// Attempts to acquire a reentrant mutex through an `Arc`.
@@ -433,7 +445,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcReentrantMutexGuard<R, G, T>> {
         if self.raw.try_lock() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
@@ -468,7 +480,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
         if self.raw.try_lock_for(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
+            Some(unsafe { self.make_guard_unchecked() })
         } else {
             None
         }
@@ -483,7 +495,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
         if self.raw.try_lock_until(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
+            Some(unsafe { self.make_guard_unchecked() })
         } else {
             None
         }
@@ -501,7 +513,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ) -> Option<ArcReentrantMutexGuard<R, G, T>> {
         if self.raw.try_lock_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
@@ -519,7 +531,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ) -> Option<ArcReentrantMutexGuard<R, G, T>> {
         if self.raw.try_lock_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
@@ -599,6 +611,7 @@ where
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` implementation.
+#[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct ReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized> {
     remutex: &'a ReentrantMutex<R, G, T>,
@@ -646,7 +659,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     /// in already locked the mutex.
     ///
     /// This is an associated function that needs to be
-    /// used as `ReentrantMutexGuard::map(...)`. A method would interfere with methods of
+    /// used as `ReentrantMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(
@@ -654,10 +667,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         f: F,
     ) -> Result<MappedReentrantMutexGuard<'a, R, G, U>, Self>
     where
-        F: FnOnce(&mut T) -> Option<&mut U>,
+        F: FnOnce(&T) -> Option<&U>,
     {
         let raw = &s.remutex.raw;
-        let data = match f(unsafe { &mut *s.remutex.data.get() }) {
+        let data = match f(unsafe { &*s.remutex.data.get() }) {
             Some(data) => data,
             None => return Err(s),
         };
@@ -794,6 +807,7 @@ unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAdd
 /// `Mutex` it uses an `Arc<ReentrantMutex>`. This has several advantages, most notably that it has an `'static`
 /// lifetime.
 #[cfg(feature = "arc_lock")]
+#[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct ArcReentrantMutexGuard<R: RawMutex, G: GetThreadId, T: ?Sized> {
     remutex: Arc<ReentrantMutex<R, G, T>>,
@@ -897,6 +911,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> Drop for ArcReentrantMutexGuard<R, 
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
+#[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct MappedReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized> {
     raw: &'a RawReentrantMutex<R, G>,
@@ -942,7 +957,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// in already locked the mutex.
     ///
     /// This is an associated function that needs to be
-    /// used as `MappedReentrantMutexGuard::map(...)`. A method would interfere with methods of
+    /// used as `MappedReentrantMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(

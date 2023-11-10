@@ -6,10 +6,7 @@ use std::future::Future;
 use std::io;
 use std::io::prelude::*;
 use std::pin::Pin;
-use std::task::Poll::*;
 use std::task::{Context, Poll};
-
-use self::State::*;
 
 /// `T` should not implement _both_ Read and Write.
 #[derive(Debug)]
@@ -26,7 +23,7 @@ pub(crate) struct Buf {
     pos: usize,
 }
 
-pub(crate) const MAX_BUF: usize = 16 * 1024;
+pub(crate) const MAX_BUF: usize = 2 * 1024 * 1024;
 
 #[derive(Debug)]
 enum State<T> {
@@ -34,8 +31,9 @@ enum State<T> {
     Busy(sys::Blocking<(io::Result<usize>, Buf, T)>),
 }
 
-cfg_io_std! {
+cfg_io_blocking! {
     impl<T> Blocking<T> {
+        #[cfg_attr(feature = "fs", allow(dead_code))]
         pub(crate) fn new(inner: T) -> Blocking<T> {
             Blocking {
                 inner: Some(inner),
@@ -57,38 +55,38 @@ where
     ) -> Poll<io::Result<()>> {
         loop {
             match self.state {
-                Idle(ref mut buf_cell) => {
+                State::Idle(ref mut buf_cell) => {
                     let mut buf = buf_cell.take().unwrap();
 
                     if !buf.is_empty() {
                         buf.copy_to(dst);
                         *buf_cell = Some(buf);
-                        return Ready(Ok(()));
+                        return Poll::Ready(Ok(()));
                     }
 
                     buf.ensure_capacity_for(dst);
                     let mut inner = self.inner.take().unwrap();
 
-                    self.state = Busy(sys::run(move || {
+                    self.state = State::Busy(sys::run(move || {
                         let res = buf.read_from(&mut inner);
                         (res, buf, inner)
                     }));
                 }
-                Busy(ref mut rx) => {
+                State::Busy(ref mut rx) => {
                     let (res, mut buf, inner) = ready!(Pin::new(rx).poll(cx))?;
                     self.inner = Some(inner);
 
                     match res {
                         Ok(_) => {
                             buf.copy_to(dst);
-                            self.state = Idle(Some(buf));
-                            return Ready(Ok(()));
+                            self.state = State::Idle(Some(buf));
+                            return Poll::Ready(Ok(()));
                         }
                         Err(e) => {
                             assert!(buf.is_empty());
 
-                            self.state = Idle(Some(buf));
-                            return Ready(Err(e));
+                            self.state = State::Idle(Some(buf));
+                            return Poll::Ready(Err(e));
                         }
                     }
                 }
@@ -108,7 +106,7 @@ where
     ) -> Poll<io::Result<usize>> {
         loop {
             match self.state {
-                Idle(ref mut buf_cell) => {
+                State::Idle(ref mut buf_cell) => {
                     let mut buf = buf_cell.take().unwrap();
 
                     assert!(buf.is_empty());
@@ -116,19 +114,19 @@ where
                     let n = buf.copy_from(src);
                     let mut inner = self.inner.take().unwrap();
 
-                    self.state = Busy(sys::run(move || {
+                    self.state = State::Busy(sys::run(move || {
                         let n = buf.len();
-                        let res = buf.write_to(&mut inner).map(|_| n);
+                        let res = buf.write_to(&mut inner).map(|()| n);
 
                         (res, buf, inner)
                     }));
                     self.need_flush = true;
 
-                    return Ready(Ok(n));
+                    return Poll::Ready(Ok(n));
                 }
-                Busy(ref mut rx) => {
+                State::Busy(ref mut rx) => {
                     let (res, buf, inner) = ready!(Pin::new(rx).poll(cx))?;
-                    self.state = Idle(Some(buf));
+                    self.state = State::Idle(Some(buf));
                     self.inner = Some(inner);
 
                     // If error, return
@@ -143,24 +141,24 @@ where
             let need_flush = self.need_flush;
             match self.state {
                 // The buffer is not used here
-                Idle(ref mut buf_cell) => {
+                State::Idle(ref mut buf_cell) => {
                     if need_flush {
                         let buf = buf_cell.take().unwrap();
                         let mut inner = self.inner.take().unwrap();
 
-                        self.state = Busy(sys::run(move || {
-                            let res = inner.flush().map(|_| 0);
+                        self.state = State::Busy(sys::run(move || {
+                            let res = inner.flush().map(|()| 0);
                             (res, buf, inner)
                         }));
 
                         self.need_flush = false;
                     } else {
-                        return Ready(Ok(()));
+                        return Poll::Ready(Ok(()));
                     }
                 }
-                Busy(ref mut rx) => {
+                State::Busy(ref mut rx) => {
                     let (res, buf, inner) = ready!(Pin::new(rx).poll(cx))?;
-                    self.state = Idle(Some(buf));
+                    self.state = State::Idle(Some(buf));
                     self.inner = Some(inner);
 
                     // If error, return
@@ -274,6 +272,23 @@ cfg_fs! {
             self.pos = 0;
             self.buf.truncate(0);
             ret
+        }
+
+        pub(crate) fn copy_from_bufs(&mut self, bufs: &[io::IoSlice<'_>]) -> usize {
+            assert!(self.is_empty());
+
+            let mut rem = MAX_BUF;
+            for buf in bufs {
+                if rem == 0 {
+                    break
+                }
+
+                let len = buf.len().min(rem);
+                self.buf.extend_from_slice(&buf[..len]);
+                rem -= len;
+            }
+
+            MAX_BUF - rem
         }
     }
 }

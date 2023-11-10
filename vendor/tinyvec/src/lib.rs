@@ -1,12 +1,8 @@
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![cfg_attr(
   feature = "nightly_slice_partition_dedup",
   feature(slice_partition_dedup)
-)]
-#![cfg_attr(
-  feature = "nightly_const_generics",
-  feature(min_const_generics, array_map)
 )]
 #![cfg_attr(docs_rs, feature(doc_cfg))]
 #![warn(clippy::missing_inline_in_public_items)]

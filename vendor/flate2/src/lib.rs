@@ -13,30 +13,24 @@
 //!
 //! # Implementation
 //!
-//! In addition to supporting three formats, this crate supports three different
+//! In addition to supporting three formats, this crate supports several different
 //! backends, controlled through this crate's features:
 //!
 //! * `default`, or `rust_backend` - this implementation uses the `miniz_oxide`
 //!   crate which is a port of `miniz.c` (below) to Rust. This feature does not
 //!   require a C compiler and only requires Rust code.
 //!
-//! * `miniz-sys` - when enabled this feature will enable this crate to instead
-//!   use `miniz.c`, distributed with `miniz-sys`, to implement
-//!   compression/decompression.
+//! * `zlib` - this feature will enable linking against the `libz` library, typically found on most
+//!   Linux systems by default. If the library isn't found to already be on the system it will be
+//!   compiled from source (this is a C library).
 //!
-//! * `zlib` - finally, this feature will enable linking against the `libz`
-//!   library, typically found on most Linux systems by default. If the library
-//!   isn't found to already be on the system it will be compiled from source
-//!   (this is a C library).
-//!
-//! There's various tradeoffs associated with each implementation, but in
-//! general you probably won't have to tweak the defaults. The default choice is
-//! selected to avoid the need for a C compiler at build time. The `miniz-sys`
-//! feature is largely a historical artifact at this point and is unlikely to be
-//! needed, and `zlib` is often useful if you're already using `zlib` for other
-//! C dependencies. The compression ratios and performance of each of these
-//! feature should be roughly comparable, but you'll likely want to run your own
-//! tests if you're curious about the performance.
+//! There's various tradeoffs associated with each implementation, but in general you probably
+//! won't have to tweak the defaults. The default choice is selected to avoid the need for a C
+//! compiler at build time. `zlib-ng-compat` is useful if you're using zlib for compatibility but
+//! want performance via zlib-ng's zlib-compat mode. `zlib` is useful if something else in your
+//! dependencies links the original zlib so you cannot use zlib-ng-compat. The compression ratios
+//! and performance of each of these feature should be roughly comparable, but you'll likely want
+//! to run your own tests if you're curious about the performance.
 //!
 //! # Organization
 //!
@@ -71,41 +65,39 @@
 //! `Write` trait if `T: Write`. That is, the "dual trait" is forwarded directly
 //! to the underlying object if available.
 //!
+//! # About multi-member Gzip files
+//!
+//! While most `gzip` files one encounters will have a single *member* that can be read
+//! with the [`GzDecoder`], there may be some files which have multiple members.
+//!
+//! A [`GzDecoder`] will only read the first member of gzip data, which may unexpectedly
+//! provide partial results when a multi-member gzip file is encountered. `GzDecoder` is appropriate
+//! for data that is designed to be read as single members from a multi-member file. `bufread::GzDecoder`
+//! and `write::GzDecoder` also allow non-gzip data following gzip data to be handled.
+//!
+//! The [`MultiGzDecoder`] on the other hand will decode all members of a `gzip` file
+//! into one consecutive stream of bytes, which hides the underlying *members* entirely.
+//! If a file contains contains non-gzip data after the gzip data, MultiGzDecoder will
+//! emit an error after decoding the gzip data. This behavior matches the `gzip`,
+//! `gunzip`, and `zcat` command line tools.
+//!
 //! [`read`]: read/index.html
 //! [`bufread`]: bufread/index.html
 //! [`write`]: write/index.html
 //! [read]: https://doc.rust-lang.org/std/io/trait.Read.html
 //! [write]: https://doc.rust-lang.org/std/io/trait.Write.html
 //! [bufread]: https://doc.rust-lang.org/std/io/trait.BufRead.html
-//!
-//! # Async I/O
-//!
-//! This crate optionally can support async I/O streams with the [Tokio stack] via
-//! the `tokio` feature of this crate:
-//!
-//! [Tokio stack]: https://tokio.rs/
-//!
-//! ```toml
-//! flate2 = { version = "0.2", features = ["tokio"] }
-//! ```
-//!
-//! All methods are internally capable of working with streams that may return
-//! [`ErrorKind::WouldBlock`] when they're not ready to perform the particular
-//! operation.
-//!
-//! [`ErrorKind::WouldBlock`]: https://doc.rust-lang.org/std/io/enum.ErrorKind.html
-//!
-//! Note that care needs to be taken when using these objects, however. The
-//! Tokio runtime, in particular, requires that data is fully flushed before
-//! dropping streams. For compatibility with blocking streams all streams are
-//! flushed/written when they are dropped, and this is not always a suitable
-//! time to perform I/O. If I/O streams are flushed before drop, however, then
-//! these operations will be a noop.
+//! [`GzDecoder`]: read/struct.GzDecoder.html
+//! [`MultiGzDecoder`]: read/struct.MultiGzDecoder.html
 #![doc(html_root_url = "https://docs.rs/flate2/0.2")]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![allow(trivial_numeric_casts)]
 #![cfg_attr(test, deny(warnings))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+
+#[cfg(not(feature = "any_impl",))]
+compile_error!("You need to choose a zlib backend");
 
 pub use crate::crc::{Crc, CrcReader, CrcWriter};
 pub use crate::gz::GzBuilder;
@@ -125,7 +117,14 @@ mod zlib;
 /// Types which operate over [`Read`] streams, both encoders and decoders for
 /// various formats.
 ///
+/// Note that the `read` decoder types may read past the end of the compressed
+/// data while decoding. If the caller requires subsequent reads to start
+/// immediately following the compressed data  wrap the `Read` type in a
+/// [`BufReader`] and use the `BufReader` with the equivalent decoder from the
+/// `bufread` module and also for the subsequent reads.
+///
 /// [`Read`]: https://doc.rust-lang.org/std/io/trait.Read.html
+/// [`BufReader`]: https://doc.rust-lang.org/std/io/struct.BufReader.html
 pub mod read {
     pub use crate::deflate::read::DeflateDecoder;
     pub use crate::deflate::read::DeflateEncoder;
@@ -145,6 +144,7 @@ pub mod write {
     pub use crate::deflate::write::DeflateEncoder;
     pub use crate::gz::write::GzDecoder;
     pub use crate::gz::write::GzEncoder;
+    pub use crate::gz::write::MultiGzDecoder;
     pub use crate::zlib::write::ZlibDecoder;
     pub use crate::zlib::write::ZlibEncoder;
 }
@@ -182,7 +182,7 @@ fn _assert_send_sync() {
 }
 
 /// When compressing data, the compression level can be specified by a value in
-/// this enum.
+/// this struct.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Compression(u32);
 

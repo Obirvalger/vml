@@ -7,6 +7,9 @@ use std::io::Result;
 use crossterm_winapi::ScreenBuffer;
 
 #[cfg(windows)]
+use crossterm_winapi::FontInfo;
+
+#[cfg(windows)]
 fn print_screen_buffer_information() -> Result<()> {
     let screen_buffer = ScreenBuffer::current()?;
 
@@ -17,6 +20,9 @@ fn print_screen_buffer_information() -> Result<()> {
     println!("attributes: {:?}", csbi.attributes());
     println!("terminal window dimentions {:?}", csbi.terminal_window());
     println!("terminal size {:?}", csbi.terminal_size());
+
+    let cfi: FontInfo = screen_buffer.font_info()?;
+    println!("font size {:?}", cfi.size());
 
     Ok(())
 }

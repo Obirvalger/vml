@@ -1,3 +1,15 @@
+#![warn(clippy::all)]
+#![warn(clippy::cargo)]
+#![warn(clippy::undocumented_unsafe_blocks)]
+#![allow(unknown_lints)]
+#![warn(missing_copy_implementations)]
+#![warn(missing_debug_implementations)]
+#![warn(missing_docs)]
+#![warn(rust_2018_idioms)]
+#![warn(trivial_casts, trivial_numeric_casts)]
+#![warn(unused_qualifications)]
+#![warn(variant_size_differences)]
+
 //! get the IANA time zone for the current system
 //!
 //! This small utility crate provides the
@@ -18,7 +30,10 @@
 //! let tz: chrono_tz::Tz = tz_str.parse()?;
 //! ```
 
-#[cfg_attr(target_os = "linux", path = "tz_linux.rs")]
+#[allow(dead_code)]
+mod ffi_utils;
+
+#[cfg_attr(any(target_os = "linux", target_os = "hurd"), path = "tz_linux.rs")]
 #[cfg_attr(target_os = "windows", path = "tz_windows.rs")]
 #[cfg_attr(any(target_os = "macos", target_os = "ios"), path = "tz_macos.rs")]
 #[cfg_attr(
@@ -37,7 +52,9 @@
     any(target_os = "illumos", target_os = "solaris"),
     path = "tz_illumos.rs"
 )]
+#[cfg_attr(target_os = "aix", path = "tz_aix.rs")]
 #[cfg_attr(target_os = "android", path = "tz_android.rs")]
+#[cfg_attr(target_os = "haiku", path = "tz_haiku.rs")]
 mod platform;
 
 /// Error types
@@ -62,7 +79,7 @@ impl std::error::Error for GetTimezoneError {
 }
 
 impl std::fmt::Display for GetTimezoneError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.write_str(match self {
             GetTimezoneError::FailedParsingString => "GetTimezoneError::FailedParsingString",
             GetTimezoneError::IoError(err) => return err.fmt(f),
@@ -71,7 +88,7 @@ impl std::fmt::Display for GetTimezoneError {
     }
 }
 
-impl std::convert::From<std::io::Error> for GetTimezoneError {
+impl From<std::io::Error> for GetTimezoneError {
     fn from(orig: std::io::Error) -> Self {
         GetTimezoneError::IoError(orig)
     }
@@ -79,10 +96,10 @@ impl std::convert::From<std::io::Error> for GetTimezoneError {
 
 /// Get the current IANA time zone as a string.
 ///
-/// See the module-level documentatation for a usage example and more details
+/// See the module-level documentation for a usage example and more details
 /// about this function.
 #[inline]
-pub fn get_timezone() -> std::result::Result<String, crate::GetTimezoneError> {
+pub fn get_timezone() -> Result<String, GetTimezoneError> {
     platform::get_timezone_inner()
 }
 

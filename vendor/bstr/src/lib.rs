@@ -1,5 +1,5 @@
 /*!
-An experimental byte string library.
+A byte string library.
 
 Byte strings are just like standard Unicode strings with one very important
 difference: byte strings are only *conventionally* UTF-8 while Rust's standard
@@ -34,7 +34,7 @@ additional string oriented methods. Operations such as iterating over
 graphemes, searching for substrings, replacing substrings, trimming and case
 conversion are examples of things not provided on the standard library `&[u8]`
 APIs but are provided by this crate. For example, this code iterates over all
-of occurrences of a subtring:
+of occurrences of a substring:
 
 ```
 use bstr::ByteSlice;
@@ -52,23 +52,27 @@ Here's another example showing how to do a search and replace (and also showing
 use of the `B` function):
 
 ```
+# #[cfg(feature = "alloc")] {
 use bstr::{B, ByteSlice};
 
 let old = B("foo ☃☃☃ foo foo quux foo");
 let new = old.replace("foo", "hello");
 assert_eq!(new, B("hello ☃☃☃ hello hello quux hello"));
+# }
 ```
 
 And here's an example that shows case conversion, even in the presence of
 invalid UTF-8:
 
 ```
+# #[cfg(all(feature = "alloc", feature = "unicode"))] {
 use bstr::{ByteSlice, ByteVec};
 
 let mut lower = Vec::from("hello β");
 lower[0] = b'\xFF';
 // lowercase β is uppercased to Β
 assert_eq!(lower.to_uppercase(), b"\xFFELLO \xCE\x92");
+# }
 ```
 
 # Convenient debug representation
@@ -98,10 +102,8 @@ method converts any `&[u8]` to a `&BStr`.
 
 # When should I use byte strings?
 
-This library is somewhat of an experiment that reflects my hypothesis that
-UTF-8 by convention is a better trade off in some circumstances than guaranteed
-UTF-8. It's possible, perhaps even likely, that this is a niche concern for
-folks working closely with core text primitives.
+This library reflects my belief that UTF-8 by convention is a better trade
+off in some circumstances than guaranteed UTF-8.
 
 The first time this idea hit me was in the implementation of Rust's regex
 engine. In particular, very little of the internal implementation cares at all
@@ -134,23 +136,26 @@ incremental way by only parsing chunks at a time, but this is often complex to
 do or impractical. For example, many regex engines only accept one contiguous
 sequence of bytes at a time with no way to perform incremental matching.
 
-In summary, the conventional UTF-8 byte strings provided by this library is an
-experiment. They are definitely useful in some limited circumstances, but how
-useful they are more broadly isn't clear yet.
-
 # `bstr` in public APIs
 
-Since this library is still experimental, you should not use it in the public
-API of your crates until it hits `1.0` (unless you're OK with with tracking
-breaking releases of `bstr`).
+This library is past version `1` and is expected to remain at version `1` for
+the foreseeable future. Therefore, it is encouraged to put types from `bstr`
+(like `BStr` and `BString`) in your public API if that makes sense for your
+crate.
 
-In general, it should be possible to avoid putting anything in this crate into
-your public APIs. Namely, you should never need to use the `ByteSlice` or
-`ByteVec` traits as bounds on public APIs, since their only purpose is to
-extend the methods on the concrete types `[u8]` and `Vec<u8>`, respectively.
-Similarly, it should not be necessary to put either the `BStr` or `BString`
-types into public APIs. If you want to use them internally, then they can
-be converted to/from `[u8]`/`Vec<u8>` as needed.
+With that said, in general, it should be possible to avoid putting anything
+in this crate into your public APIs. Namely, you should never need to use the
+`ByteSlice` or `ByteVec` traits as bounds on public APIs, since their only
+purpose is to extend the methods on the concrete types `[u8]` and `Vec<u8>`,
+respectively. Similarly, it should not be necessary to put either the `BStr` or
+`BString` types into public APIs. If you want to use them internally, then they
+can be converted to/from `[u8]`/`Vec<u8>` as needed. The conversions are free.
+
+So while it shouldn't ever be 100% necessary to make `bstr` a public
+dependency, there may be cases where it is convenient to do so. This is an
+explicitly supported use case of `bstr`, and as such, major version releases
+should be exceptionally rare.
+
 
 # Differences with standard strings
 
@@ -317,7 +322,8 @@ they can do:
    by accessing their underlying 16-bit integer representation. Unfortunately,
    this isn't zero cost (it introduces a second WTF-8 decoding step) and it's
    not clear this is a good thing to do, since WTF-8 should ideally remain an
-   internal implementation detail.
+   internal implementation detail. This is roughly the approach taken by the
+   [`os_str_bytes`](https://crates.io/crates/os_str_bytes) crate.
 2. One could instead declare that they will not handle paths on Windows that
    are not valid UTF-16, and return an error when one is encountered.
 3. Like (2), but instead of returning an error, lossily decode the file path
@@ -364,72 +370,80 @@ UTF-8, and thus contain latent bugs on Unix where paths with invalid UTF-8 are
 not terribly uncommon. If you instead use byte strings, then you're guaranteed
 to write correct code for Unix, at the cost of getting a corner case wrong on
 Windows.
+
+# Cargo features
+
+This crates comes with a few features that control standard library, serde
+and Unicode support.
+
+* `std` - **Enabled** by default. This provides APIs that require the standard
+  library, such as `Vec<u8>` and `PathBuf`. Enabling this feature also enables
+  the `alloc` feature and any other relevant `std` features for dependencies.
+* `alloc` - **Enabled** by default. This provides APIs that require allocations
+  via the `alloc` crate, such as `Vec<u8>`.
+* `unicode` - **Enabled** by default. This provides APIs that require sizable
+  Unicode data compiled into the binary. This includes, but is not limited to,
+  grapheme/word/sentence segmenters. When this is disabled, basic support such
+  as UTF-8 decoding is still included. Note that currently, enabling this
+  feature also requires enabling the `std` feature. It is expected that this
+  limitation will be lifted at some point.
+* `serde` - Enables implementations of serde traits for `BStr`, and also
+  `BString` when `alloc` is enabled.
 */
 
-#![cfg_attr(not(feature = "std"), no_std)]
-#![allow(dead_code)]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
-#[cfg(feature = "std")]
-extern crate core;
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
+pub use crate::bstr::BStr;
+#[cfg(feature = "alloc")]
+pub use crate::bstring::BString;
+pub use crate::escape_bytes::EscapeBytes;
 #[cfg(feature = "unicode")]
-#[macro_use]
-extern crate lazy_static;
-extern crate memchr;
-#[cfg(test)]
-#[macro_use]
-extern crate quickcheck;
-#[cfg(feature = "unicode")]
-extern crate regex_automata;
-#[cfg(feature = "serde1-nostd")]
-extern crate serde;
-#[cfg(test)]
-extern crate ucd_parse;
-
-pub use bstr::BStr;
-#[cfg(feature = "std")]
-pub use bstring::BString;
-pub use ext_slice::{
-    ByteSlice, Bytes, Fields, FieldsWith, Find, FindReverse, Finder,
-    FinderReverse, Lines, LinesWithTerminator, Split, SplitN, SplitNReverse,
-    SplitReverse, B,
+pub use crate::ext_slice::Fields;
+pub use crate::ext_slice::{
+    ByteSlice, Bytes, FieldsWith, Find, FindReverse, Finder, FinderReverse,
+    Lines, LinesWithTerminator, Split, SplitN, SplitNReverse, SplitReverse, B,
 };
-#[cfg(feature = "std")]
-pub use ext_vec::{concat, join, ByteVec, DrainBytes, FromUtf8Error};
+#[cfg(feature = "alloc")]
+pub use crate::ext_vec::{concat, join, ByteVec, DrainBytes, FromUtf8Error};
 #[cfg(feature = "unicode")]
-pub use unicode::{
+pub use crate::unicode::{
     GraphemeIndices, Graphemes, SentenceIndices, Sentences, WordIndices,
     Words, WordsWithBreakIndices, WordsWithBreaks,
 };
-pub use utf8::{
+pub use crate::utf8::{
     decode as decode_utf8, decode_last as decode_last_utf8, CharIndices,
     Chars, Utf8Chunk, Utf8Chunks, Utf8Error,
 };
 
 mod ascii;
 mod bstr;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod bstring;
 mod byteset;
-mod cow;
+mod escape_bytes;
 mod ext_slice;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod ext_vec;
 mod impls;
 #[cfg(feature = "std")]
 pub mod io;
-mod search;
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests;
 #[cfg(feature = "unicode")]
 mod unicode;
 mod utf8;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod apitests {
-    use bstr::BStr;
-    use bstring::BString;
-    use ext_slice::{Finder, FinderReverse};
+    use crate::{
+        bstr::BStr,
+        bstring::BString,
+        ext_slice::{Finder, FinderReverse},
+    };
 
     #[test]
     fn oibits() {
@@ -446,11 +460,11 @@ mod apitests {
         assert_sync::<BString>();
         assert_unwind_safe::<BString>();
 
-        assert_send::<Finder>();
-        assert_sync::<Finder>();
-        assert_unwind_safe::<Finder>();
-        assert_send::<FinderReverse>();
-        assert_sync::<FinderReverse>();
-        assert_unwind_safe::<FinderReverse>();
+        assert_send::<Finder<'_>>();
+        assert_sync::<Finder<'_>>();
+        assert_unwind_safe::<Finder<'_>>();
+        assert_send::<FinderReverse<'_>>();
+        assert_sync::<FinderReverse<'_>>();
+        assert_unwind_safe::<FinderReverse<'_>>();
     }
 }

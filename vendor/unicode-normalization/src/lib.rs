@@ -34,7 +34,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! unicode-normalization = "0.1.8"
+//! unicode-normalization = "0.1.20"
 //! ```
 
 #![deny(missing_docs, unsafe_code)]
@@ -62,7 +62,10 @@ pub use crate::recompose::Recompositions;
 pub use crate::replace::Replacements;
 pub use crate::stream_safe::StreamSafe;
 pub use crate::tables::UNICODE_VERSION;
-use core::str::Chars;
+use core::{
+    str::Chars,
+    option,
+};
 
 mod no_std_prelude;
 
@@ -90,6 +93,11 @@ pub mod char {
     };
 
     pub use crate::lookups::{canonical_combining_class, is_combining_mark};
+
+    /// Return whether the given character is assigned (`General_Category` != `Unassigned`)
+    /// and not Private-Use (`General_Category` != `Private_Use`), in the supported version
+    /// of Unicode.
+    pub use crate::tables::is_public_assigned;
 }
 
 /// Methods for iterating over strings while applying Unicode normalizations
@@ -158,6 +166,39 @@ impl<'a> UnicodeNormalization<Chars<'a>> for &'a str {
     #[inline]
     fn stream_safe(self) -> StreamSafe<Chars<'a>> {
         StreamSafe::new(self.chars())
+    }
+}
+
+
+impl UnicodeNormalization<option::IntoIter<char>> for char {
+    #[inline]
+    fn nfd(self) -> Decompositions<option::IntoIter<char>> {
+        decompose::new_canonical(Some(self).into_iter())
+    }
+
+    #[inline]
+    fn nfkd(self) -> Decompositions<option::IntoIter<char>> {
+        decompose::new_compatible(Some(self).into_iter())
+    }
+
+    #[inline]
+    fn nfc(self) -> Recompositions<option::IntoIter<char>> {
+        recompose::new_canonical(Some(self).into_iter())
+    }
+
+    #[inline]
+    fn nfkc(self) -> Recompositions<option::IntoIter<char>> {
+        recompose::new_compatible(Some(self).into_iter())
+    }
+
+    #[inline]
+    fn cjk_compat_variants(self) -> Replacements<option::IntoIter<char>> {
+        replace::new_cjk_compat_variants(Some(self).into_iter())
+    }
+
+    #[inline]
+    fn stream_safe(self) -> StreamSafe<option::IntoIter<char>> {
+        StreamSafe::new(Some(self).into_iter())
     }
 }
 

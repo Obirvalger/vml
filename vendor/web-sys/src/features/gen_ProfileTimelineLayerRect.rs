@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -71,5 +72,10 @@ impl ProfileTimelineLayerRect {
         );
         let _ = r;
         self
+    }
+}
+impl Default for ProfileTimelineLayerRect {
+    fn default() -> Self {
+        Self::new()
     }
 }

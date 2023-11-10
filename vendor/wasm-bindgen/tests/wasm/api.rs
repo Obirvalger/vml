@@ -1,6 +1,5 @@
 use js_sys::{Uint8Array, WebAssembly};
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::{self, JsCast};
 use wasm_bindgen_test::*;
 
 #[wasm_bindgen(module = "tests/wasm/api.js")]
@@ -83,14 +82,14 @@ pub fn api_mk_symbol() -> JsValue {
     let a = JsValue::symbol(None);
     assert!(a.is_symbol());
     assert_eq!(format!("{:?}", a), "JsValue(Symbol)");
-    return a;
+    a
 }
 
 #[wasm_bindgen]
 pub fn api_mk_symbol2(s: &str) -> JsValue {
     let a = JsValue::symbol(Some(s));
     assert!(a.is_symbol());
-    return a;
+    a
 }
 
 #[wasm_bindgen]
@@ -122,8 +121,23 @@ pub fn eq_test(a: &JsValue, b: &JsValue) -> bool {
 }
 
 #[wasm_bindgen]
+#[allow(clippy::eq_op)]
 pub fn eq_test1(a: &JsValue) -> bool {
     a == a
+}
+
+#[wasm_bindgen(variadic)]
+pub fn api_completely_variadic(args: &JsValue) -> JsValue {
+    args.into()
+}
+
+#[wasm_bindgen(variadic)]
+pub fn api_variadic_with_prefixed_params(
+    _first: &JsValue,
+    _second: &JsValue,
+    args: &JsValue,
+) -> JsValue {
+    args.into()
 }
 
 #[wasm_bindgen_test]

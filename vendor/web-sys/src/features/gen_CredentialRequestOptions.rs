@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -51,5 +52,10 @@ impl CredentialRequestOptions {
         );
         let _ = r;
         self
+    }
+}
+impl Default for CredentialRequestOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

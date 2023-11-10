@@ -1,4 +1,4 @@
-use ffi;
+use cfg_if::cfg_if;
 use foreign_types::{ForeignType, ForeignTypeRef, Opaque};
 use libc::c_int;
 use std::borrow::Borrow;
@@ -9,9 +9,9 @@ use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
 
-use error::ErrorStack;
-use util::ForeignTypeExt;
-use {cvt, cvt_p};
+use crate::error::ErrorStack;
+use crate::util::ForeignTypeExt;
+use crate::{cvt, cvt_p, LenType};
 
 cfg_if! {
     if #[cfg(ossl110)] {
@@ -50,7 +50,7 @@ where
     T: Stackable,
     T::Ref: fmt::Debug,
 {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_list().entries(self).finish()
     }
 }
@@ -80,7 +80,7 @@ impl<T: Stackable> iter::IntoIterator for Stack<T> {
     fn into_iter(self) -> IntoIter<T> {
         let it = IntoIter {
             stack: self.0,
-            idxs: 0..self.len() as c_int,
+            idxs: 0..self.len() as LenType,
         };
         mem::forget(self);
         it
@@ -89,13 +89,13 @@ impl<T: Stackable> iter::IntoIterator for Stack<T> {
 
 impl<T: Stackable> AsRef<StackRef<T>> for Stack<T> {
     fn as_ref(&self) -> &StackRef<T> {
-        &*self
+        self
     }
 }
 
 impl<T: Stackable> Borrow<StackRef<T>> for Stack<T> {
     fn borrow(&self) -> &StackRef<T> {
-        &*self
+        self
     }
 }
 
@@ -135,12 +135,14 @@ impl<T: Stackable> DerefMut for Stack<T> {
 
 pub struct IntoIter<T: Stackable> {
     stack: *mut T::StackType,
-    idxs: Range<c_int>,
+    idxs: Range<LenType>,
 }
 
 impl<T: Stackable> Drop for IntoIter<T> {
     fn drop(&mut self) {
         unsafe {
+            // https://github.com/rust-lang/rust-clippy/issues/7510
+            #[allow(clippy::while_let_on_iterator)]
             while let Some(_) = self.next() {}
             OPENSSL_sk_free(self.stack as *mut _);
         }
@@ -199,16 +201,16 @@ impl<T: Stackable> StackRef<T> {
         self.len() == 0
     }
 
-    pub fn iter(&self) -> Iter<T> {
+    pub fn iter(&self) -> Iter<'_, T> {
         Iter {
             stack: self,
-            idxs: 0..self.len() as c_int,
+            idxs: 0..self.len() as LenType,
         }
     }
 
-    pub fn iter_mut(&mut self) -> IterMut<T> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         IterMut {
-            idxs: 0..self.len() as c_int,
+            idxs: 0..self.len() as LenType,
             stack: self,
         }
     }
@@ -240,7 +242,7 @@ impl<T: Stackable> StackRef<T> {
     /// Pushes a value onto the top of the stack.
     pub fn push(&mut self, data: T) -> Result<(), ErrorStack> {
         unsafe {
-            cvt(OPENSSL_sk_push(self.as_stack(), data.as_ptr() as *mut _))?;
+            cvt(OPENSSL_sk_push(self.as_stack(), data.as_ptr() as *mut _) as c_int)?;
             mem::forget(data);
             Ok(())
         }
@@ -255,7 +257,7 @@ impl<T: Stackable> StackRef<T> {
     }
 
     unsafe fn _get(&self, idx: usize) -> *mut T::CType {
-        OPENSSL_sk_value(self.as_stack(), idx as c_int) as *mut _
+        OPENSSL_sk_value(self.as_stack(), idx as LenType) as *mut _
     }
 }
 
@@ -310,12 +312,9 @@ impl<'a, T: Stackable> iter::IntoIterator for &'a mut Stack<T> {
 }
 
 /// An iterator over the stack's contents.
-pub struct Iter<'a, T: Stackable>
-where
-    T: 'a,
-{
+pub struct Iter<'a, T: Stackable> {
     stack: &'a StackRef<T>,
-    idxs: Range<c_int>,
+    idxs: Range<LenType>,
 }
 
 impl<'a, T: Stackable> Iterator for Iter<'a, T> {
@@ -347,9 +346,9 @@ impl<'a, T: Stackable> DoubleEndedIterator for Iter<'a, T> {
 impl<'a, T: Stackable> ExactSizeIterator for Iter<'a, T> {}
 
 /// A mutable iterator over the stack's contents.
-pub struct IterMut<'a, T: Stackable + 'a> {
+pub struct IterMut<'a, T: Stackable> {
     stack: &'a mut StackRef<T>,
-    idxs: Range<c_int>,
+    idxs: Range<LenType>,
 }
 
 impl<'a, T: Stackable> Iterator for IterMut<'a, T> {

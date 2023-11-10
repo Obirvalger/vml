@@ -56,6 +56,7 @@ pub struct ImportOptions<'a> {
 impl<'a> ImportOptions<'a> {
     /// Creates a new builder with default options.
     #[inline(always)]
+    #[must_use]
     pub fn new() -> ImportOptions<'a> {
         ImportOptions::default()
     }
@@ -63,20 +64,23 @@ impl<'a> ImportOptions<'a> {
     /// Sets the filename from which the imported data came.
     ///
     /// The extension of the file will used as a hint for parsing.
+    #[inline]
     pub fn filename(&mut self, filename: &str) -> &mut ImportOptions<'a> {
         self.filename = Some(CFString::from_str(filename).unwrap());
         self
     }
 
     /// Sets the passphrase to be used to decrypt the imported data.
+    #[inline]
     pub fn passphrase(&mut self, passphrase: &str) -> &mut ImportOptions<'a> {
-        self.passphrase = Some(CFString::from_str(passphrase).unwrap().as_CFType());
+        self.passphrase = Some(CFString::from_str(passphrase).unwrap().into_CFType());
         self
     }
 
     /// Sets the passphrase to be used to decrypt the imported data.
+    #[inline]
     pub fn passphrase_bytes(&mut self, passphrase: &[u8]) -> &mut ImportOptions<'a> {
-        self.passphrase = Some(CFData::from_buffer(passphrase).as_CFType());
+        self.passphrase = Some(CFData::from_buffer(passphrase).into_CFType());
         self
     }
 
@@ -97,6 +101,7 @@ impl<'a> ImportOptions<'a> {
 
     /// Sets the title of the alert popup used with the `secure_passphrase`
     /// option.
+    #[inline]
     pub fn alert_title(&mut self, alert_title: &str) -> &mut ImportOptions<'a> {
         self.alert_title = Some(CFString::from_str(alert_title).unwrap());
         self
@@ -104,6 +109,7 @@ impl<'a> ImportOptions<'a> {
 
     /// Sets the prompt of the alert popup used with the `secure_passphrase`
     /// option.
+    #[inline]
     pub fn alert_prompt(&mut self, alert_prompt: &str) -> &mut ImportOptions<'a> {
         self.alert_prompt = Some(CFString::from_str(alert_prompt).unwrap());
         self
@@ -119,6 +125,7 @@ impl<'a> ImportOptions<'a> {
     /// Sets the keychain into which items will be imported.
     ///
     /// This must be specified to import `SecIdentity`s.
+    #[inline]
     pub fn keychain(&mut self, keychain: &SecKeychain) -> &mut ImportOptions<'a> {
         self.keychain = Some(keychain.clone());
         self
@@ -172,7 +179,7 @@ impl<'a> ImportOptions<'a> {
 
         let mut raw_items = ptr::null();
         let items_ref = match self.items {
-            Some(_) => &mut raw_items as *mut _,
+            Some(_) => std::ptr::addr_of_mut!(raw_items),
             None => ptr::null_mut(),
         };
 
@@ -237,7 +244,7 @@ mod test {
     use crate::import_export::*;
     use crate::os::macos::keychain;
     use hex;
-    use tempdir::TempDir;
+    use tempfile::tempdir;
 
     #[test]
     fn certificate() {
@@ -269,7 +276,7 @@ mod test {
 
     #[test]
     fn identity() {
-        let dir = TempDir::new("identity").unwrap();
+        let dir = tempdir().unwrap();
         let keychain = keychain::CreateOptions::new()
             .password("password")
             .create(dir.path().join("identity.keychain"))
@@ -292,7 +299,7 @@ mod test {
     #[test]
     #[ignore] // since it requires manual intervention
     fn secure_passphrase_identity() {
-        let dir = TempDir::new("identity").unwrap();
+        let dir = tempdir().unwrap();
         let keychain = keychain::CreateOptions::new()
             .password("password")
             .create(dir.path().join("identity.keychain"))
@@ -318,7 +325,7 @@ mod test {
     fn pkcs12_import() {
         use super::Pkcs12ImportOptionsExt;
 
-        let dir = TempDir::new("pkcs12_import").unwrap();
+        let dir = tempdir().unwrap();
         let keychain = keychain::CreateOptions::new()
             .password("password")
             .create(dir.path().join("pkcs12_import"))

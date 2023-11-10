@@ -1,4 +1,4 @@
-//! Asynchronous TLS/SSL streams for Tokio using [Rustls](https://github.com/ctz/rustls).
+//! Asynchronous TLS/SSL streams for Tokio using [Rustls](https://github.com/rustls/rustls).
 //!
 //! # Why do I need to call `poll_flush`?
 //!
@@ -63,7 +63,6 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 pub use rustls;
-pub use webpki;
 
 /// A wrapper around a `rustls::ClientConfig`, providing an async `connect` method.
 #[derive(Clone)]
@@ -204,6 +203,51 @@ where
             io: Some(io),
         }
     }
+
+    /// Takes back the client connection. Will return `None` if called more than once or if the
+    /// connection has been accepted.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # fn choose_server_config(
+    /// #     _: rustls::server::ClientHello,
+    /// # ) -> std::sync::Arc<rustls::ServerConfig> {
+    /// #     unimplemented!();
+    /// # }
+    /// # #[allow(unused_variables)]
+    /// # async fn listen() {
+    /// use tokio::io::AsyncWriteExt;
+    /// let listener = tokio::net::TcpListener::bind("127.0.0.1:4443").await.unwrap();
+    /// let (stream, _) = listener.accept().await.unwrap();
+    ///
+    /// let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls::server::Acceptor::default(), stream);
+    /// futures_util::pin_mut!(acceptor);
+    ///
+    /// match acceptor.as_mut().await {
+    ///     Ok(start) => {
+    ///         let clientHello = start.client_hello();
+    ///         let config = choose_server_config(clientHello);
+    ///         let stream = start.into_stream(config).await.unwrap();
+    ///         // Proceed with handling the ServerConnection...
+    ///     }
+    ///     Err(err) => {
+    ///         if let Some(mut stream) = acceptor.take_io() {
+    ///             stream
+    ///                 .write_all(
+    ///                     format!("HTTP/1.1 400 Invalid Input\r\n\r\n\r\n{:?}\n", err)
+    ///                         .as_bytes()
+    ///                 )
+    ///                 .await
+    ///                 .unwrap();
+    ///         }
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn take_io(&mut self) -> Option<IO> {
+        self.io.take()
+    }
 }
 
 impl<IO> Future for LazyConfigAcceptor<IO>
@@ -308,12 +352,44 @@ impl<IO> Connect<IO> {
     pub fn into_fallible(self) -> FallibleConnect<IO> {
         FallibleConnect(self.0)
     }
+
+    pub fn get_ref(&self) -> Option<&IO> {
+        match &self.0 {
+            MidHandshake::Handshaking(sess) => Some(sess.get_ref().0),
+            MidHandshake::Error { io, .. } => Some(io),
+            MidHandshake::End => None,
+        }
+    }
+
+    pub fn get_mut(&mut self) -> Option<&mut IO> {
+        match &mut self.0 {
+            MidHandshake::Handshaking(sess) => Some(sess.get_mut().0),
+            MidHandshake::Error { io, .. } => Some(io),
+            MidHandshake::End => None,
+        }
+    }
 }
 
 impl<IO> Accept<IO> {
     #[inline]
     pub fn into_fallible(self) -> FallibleAccept<IO> {
         FallibleAccept(self.0)
+    }
+
+    pub fn get_ref(&self) -> Option<&IO> {
+        match &self.0 {
+            MidHandshake::Handshaking(sess) => Some(sess.get_ref().0),
+            MidHandshake::Error { io, .. } => Some(io),
+            MidHandshake::End => None,
+        }
+    }
+
+    pub fn get_mut(&mut self) -> Option<&mut IO> {
+        match &mut self.0 {
+            MidHandshake::Handshaking(sess) => Some(sess.get_mut().0),
+            MidHandshake::Error { io, .. } => Some(io),
+            MidHandshake::End => None,
+        }
     }
 }
 
@@ -357,6 +433,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> Future for FallibleAccept<IO> {
 ///
 /// This abstracts over the inner `client::TlsStream` and `server::TlsStream`, so you can use
 /// a single type to keep both client- and server-initiated TLS-encrypted connections.
+#[allow(clippy::large_enum_variant)] // https://github.com/rust-lang/rust-clippy/issues/9798
 #[derive(Debug)]
 pub enum TlsStream<T> {
     Client(client::TlsStream<T>),
@@ -369,11 +446,11 @@ impl<T> TlsStream<T> {
         match self {
             Client(io) => {
                 let (io, session) = io.get_ref();
-                (io, &*session)
+                (io, session)
             }
             Server(io) => {
                 let (io, session) = io.get_ref();
-                (io, &*session)
+                (io, session)
             }
         }
     }

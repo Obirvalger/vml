@@ -1,7 +1,9 @@
+//! Rust implementation of the `CPU_*` macro API.
+
 #![allow(non_snake_case)]
 
-use super::super::c;
 use super::types::{RawCpuSet, CPU_SETSIZE};
+use crate::backend::c;
 
 #[inline]
 pub(crate) fn CPU_SET(cpu: usize, cpuset: &mut RawCpuSet) {
@@ -41,9 +43,8 @@ pub(crate) fn CPU_ISSET(cpu: usize, cpuset: &RawCpuSet) -> bool {
     unsafe { c::CPU_ISSET(cpu, cpuset) }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
+#[cfg(linux_kernel)]
 #[inline]
 pub(crate) fn CPU_COUNT(cpuset: &RawCpuSet) -> u32 {
-    use core::convert::TryInto;
     unsafe { c::CPU_COUNT(cpuset).try_into().unwrap() }
 }

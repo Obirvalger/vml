@@ -1,8 +1,6 @@
 use js_sys::*;
 use std::iter::FromIterator;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
 
 macro_rules! js_array {
@@ -79,6 +77,13 @@ fn from_iter() {
         to_rust(&Array::from_iter(v.into_iter().map(|s| JsValue::from(s)))),
         vec!["a", "b", "c"],
     );
+}
+
+#[wasm_bindgen_test]
+fn extend() {
+    let mut array = array!["a", "b"];
+    array.extend(vec![JsValue::from("c"), JsValue::from("d")]);
+    assert_eq!(array, array!["a", "b", "c", "d"]);
 }
 
 #[wasm_bindgen_test]
@@ -530,6 +535,33 @@ fn for_each() {
 }
 
 #[wasm_bindgen_test]
+fn set_length() {
+    let array = js_array![1, 2, 3, 4, 5];
+    array.set_length(3);
+    assert_eq!(
+        array.iter().collect::<Vec<_>>(),
+        [1.0, 2.0, 3.0].map(|x| JsValue::from_f64(x))
+    );
+
+    array.set_length(7);
+    assert_eq!(
+        array.iter().collect::<Vec<_>>(),
+        [1.0, 2.0, 3.0]
+            .iter()
+            .copied()
+            .map(|x| JsValue::from_f64(x))
+            .chain([JsValue::UNDEFINED; 4])
+            .collect::<Vec<_>>()
+    );
+
+    let mut calls = 0;
+    array.for_each(&mut |_, _, _| calls += 1);
+    // The later elements don't get filled with `undefined`, they get filled with
+    // empty slots, which get skipped by `for_each`.
+    assert_eq!(calls, 3);
+}
+
+#[wasm_bindgen_test]
 fn array_inheritance() {
     let array = Array::new();
     assert!(array.is_instance_of::<Array>());
@@ -588,6 +620,15 @@ fn Int32Array_view_mut_raw() {
 }
 
 #[wasm_bindgen_test]
+fn BigInt64Array_view_mut_raw() {
+    test_array_view_mut_raw(
+        js_sys::BigInt64Array::view_mut_raw,
+        i64::from,
+        JsValue::from,
+    );
+}
+
+#[wasm_bindgen_test]
 fn Uint8Array_view_mut_raw() {
     test_array_view_mut_raw(js_sys::Uint8Array::view_mut_raw, u8::from, JsValue::from);
 }
@@ -609,6 +650,15 @@ fn Uint16Array_view_mut_raw() {
 #[wasm_bindgen_test]
 fn Uint32Array_view_mut_raw() {
     test_array_view_mut_raw(js_sys::Uint32Array::view_mut_raw, u32::from, JsValue::from);
+}
+
+#[wasm_bindgen_test]
+fn BigUint64Array_view_mut_raw() {
+    test_array_view_mut_raw(
+        js_sys::BigUint64Array::view_mut_raw,
+        u64::from,
+        JsValue::from,
+    );
 }
 
 #[wasm_bindgen_test]

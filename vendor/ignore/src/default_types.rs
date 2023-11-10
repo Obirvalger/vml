@@ -4,7 +4,7 @@
 /// types to each invocation of ripgrep with the '--type-add' flag.
 ///
 /// If you would like to add or improve this list, please file a PR:
-/// https://github.com/BurntSushi/ripgrep
+/// <https://github.com/BurntSushi/ripgrep>.
 ///
 /// Please try to keep this list sorted lexicographically and wrapped to 79
 /// columns (inclusive).
@@ -16,18 +16,24 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ("asciidoc", &["*.adoc", "*.asc", "*.asciidoc"]),
     ("asm", &["*.asm", "*.s", "*.S"]),
     ("asp", &[
-        "*.aspx", "*.aspx.cs", "*.aspx.cs", "*.ascx", "*.ascx.cs", "*.ascx.vb",
+        "*.aspx", "*.aspx.cs", "*.aspx.vb", "*.ascx", "*.ascx.cs",
+        "*.ascx.vb", "*.asp"
     ]),
     ("ats", &["*.ats", "*.dats", "*.sats", "*.hats"]),
     ("avro", &["*.avdl", "*.avpr", "*.avsc"]),
     ("awk", &["*.awk"]),
-    ("bazel", &["*.bazel", "*.bzl", "BUILD", "WORKSPACE"]),
+    ("bazel", &[
+        "*.bazel", "*.bzl", "*.BUILD", "*.bazelrc", "BUILD", "MODULE.bazel",
+        "WORKSPACE", "WORKSPACE.bazel",
+    ]),
     ("bitbake", &["*.bb", "*.bbappend", "*.bbclass", "*.conf", "*.inc"]),
     ("brotli", &["*.br"]),
     ("buildstream", &["*.bst"]),
     ("bzip2", &["*.bz2", "*.tbz2"]),
     ("c", &["*.[chH]", "*.[chH].in", "*.cats"]),
     ("cabal", &["*.cabal"]),
+    ("candid", &["*.did"]),
+    ("carp", &["*.carp"]),
     ("cbor", &["*.cbor"]),
     ("ceylon", &["*.ceylon"]),
     ("clojure", &["*.clj", "*.cljc", "*.cljs", "*.cljx"]),
@@ -40,18 +46,21 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
         "*.[ChH].in", "*.cc.in", "*.[ch]pp.in", "*.[ch]xx.in", "*.hh.in",
     ]),
     ("creole", &["*.creole"]),
-    ("crystal", &["Projectfile", "*.cr"]),
+    ("crystal", &["Projectfile", "*.cr", "*.ecr", "shard.yml"]),
     ("cs", &["*.cs"]),
     ("csharp", &["*.cs"]),
     ("cshtml", &["*.cshtml"]),
     ("css", &["*.css", "*.scss"]),
     ("csv", &["*.csv"]),
+    ("cuda", &["*.cu", "*.cuh"]),
     ("cython", &["*.pyx", "*.pxi", "*.pxd"]),
     ("d", &["*.d"]),
     ("dart", &["*.dart"]),
+    ("devicetree", &["*.dts", "*.dtsi"]),
     ("dhall", &["*.dhall"]),
     ("diff", &["*.patch", "*.diff"]),
     ("docker", &["*Dockerfile*"]),
+    ("dts", &["*.dts", "*.dtsi"]),
     ("dvc", &["Dvcfile", "*.dvc"]),
     ("ebuild", &["*.ebuild"]),
     ("edn", &["*.edn"]),
@@ -60,6 +69,7 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ("elm", &["*.elm"]),
     ("erb", &["*.erb"]),
     ("erlang", &["*.erl", "*.hrl"]),
+    ("fennel", &["*.fnl"]),
     ("fidl", &["*.fidl"]),
     ("fish", &["*.fish"]),
     ("flatbuffers", &["*.fbs"]),
@@ -68,24 +78,27 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
         "*.f90", "*.F90", "*.f95", "*.F95",
     ]),
     ("fsharp", &["*.fs", "*.fsx", "*.fsi"]),
-    ("fut", &[".fut"]),
+    ("fut", &["*.fut"]),
     ("gap", &["*.g", "*.gap", "*.gi", "*.gd", "*.tst"]),
     ("gn", &["*.gn", "*.gni"]),
     ("go", &["*.go"]),
     ("gradle", &["*.gradle"]),
     ("groovy", &["*.groovy", "*.gradle"]),
     ("gzip", &["*.gz", "*.tgz"]),
-    ("h", &["*.h", "*.hpp"]),
+    ("h", &["*.h", "*.hh", "*.hpp"]),
     ("haml", &["*.haml"]),
+    ("hare", &["*.ha"]),
     ("haskell", &["*.hs", "*.lhs", "*.cpphs", "*.c2hs", "*.hsc"]),
     ("hbs", &["*.hbs"]),
     ("hs", &["*.hs", "*.lhs"]),
     ("html", &["*.htm", "*.html", "*.ejs"]),
+    ("hy", &["*.hy"]),
     ("idris", &["*.idr", "*.lidr"]),
+    ("janet", &["*.janet"]),
     ("java", &["*.java", "*.jsp", "*.jspx", "*.properties"]),
     ("jinja", &["*.j2", "*.jinja", "*.jinja2"]),
     ("jl", &["*.jl"]),
-    ("js", &["*.js", "*.jsx", "*.vue"]),
+    ("js", &["*.js", "*.jsx", "*.vue", "*.cjs", "*.mjs"]),
     ("json", &["*.json", "composer.lock"]),
     ("jsonl", &["*.jsonl"]),
     ("julia", &["*.jl"]),
@@ -120,6 +133,7 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
         "MPL-*[0-9]*",
         "OFL-*[0-9]*",
     ]),
+    ("lilypond", &["*.ly", "*.ily"]),
     ("lisp", &["*.el", "*.jl", "*.lisp", "*.lsp", "*.sc", "*.scm"]),
     ("lock", &["*.lock", "package-lock.json"]),
     ("log", &["*.log"]),
@@ -135,13 +149,15 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ]),
     ("mako", &["*.mako", "*.mao"]),
     ("man", &["*.[0-9lnpx]", "*.[0-9][cEFMmpSx]"]),
-    ("markdown", &["*.markdown", "*.md", "*.mdown", "*.mkdn"]),
+    ("markdown", &["*.markdown", "*.md", "*.mdown", "*.mkd", "*.mkdn"]),
     ("matlab", &["*.m"]),
-    ("md", &["*.markdown", "*.md", "*.mdown", "*.mkdn"]),
+    ("md", &["*.markdown", "*.md", "*.mdown", "*.mkd", "*.mkdn"]),
     ("meson", &["meson.build", "meson_options.txt"]),
     ("minified", &["*.min.html", "*.min.css", "*.min.js"]),
+    ("mint", &["*.mint"]),
     ("mk", &["mkfile"]),
     ("ml", &["*.ml"]),
+    ("motoko", &["*.mo"]),
     ("msbuild", &[
         "*.csproj", "*.fsproj", "*.vcxproj", "*.proj", "*.props", "*.targets",
     ]),
@@ -151,15 +167,22 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ("objcpp", &["*.h", "*.mm"]),
     ("ocaml", &["*.ml", "*.mli", "*.mll", "*.mly"]),
     ("org", &["*.org", "*.org_archive"]),
+    ("pants", &["BUILD"]),
     ("pascal", &["*.pas", "*.dpr", "*.lpr", "*.pp", "*.inc"]),
     ("pdf", &["*.pdf"]),
     ("perl", &["*.perl", "*.pl", "*.PL", "*.plh", "*.plx", "*.pm", "*.t"]),
-    ("php", &["*.php", "*.php3", "*.php4", "*.php5", "*.phtml"]),
+    ("php", &[
+        // note that PHP 6 doesn't exist
+        // See: https://wiki.php.net/rfc/php6
+        "*.php", "*.php3", "*.php4", "*.php5", "*.php7", "*.php8",
+        "*.pht", "*.phtml"
+    ]),
+    ("po", &["*.po"]),
     ("pod", &["*.pod"]),
     ("postscript", &["*.eps", "*.ps"]),
     ("protobuf", &["*.proto"]),
     ("ps", &["*.cdxml", "*.ps1", "*.ps1xml", "*.psd1", "*.psm1"]),
-    ("puppet", &["*.erb", "*.pp", "*.rb"]),
+    ("puppet", &["*.epp", "*.erb", "*.pp", "*.rb"]),
     ("purs", &["*.purs"]),
     ("py", &["*.py"]),
     ("qmake", &["*.pro", "*.pri", "*.prf"]),
@@ -168,9 +191,17 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ("racket", &["*.rkt"]),
     ("rdoc", &["*.rdoc"]),
     ("readme", &["README*", "*README"]),
+    ("reasonml", &["*.re", "*.rei"]),
+    ("red", &["*.r", "*.red", "*.reds"]),
+    ("rescript", &["*.res", "*.resi"]),
     ("robot", &["*.robot"]),
     ("rst", &["*.rst"]),
-    ("ruby", &["Gemfile", "*.gemspec", ".irbrc", "Rakefile", "*.rb"]),
+    ("ruby", &[
+        // Idiomatic files
+        "config.ru", "Gemfile", ".irbrc", "Rakefile",
+        // Extensions
+        "*.gemspec", "*.rb", "*.rbw"
+    ]),
     ("rust", &["*.rs"]),
     ("sass", &["*.sass", "*.scss"]),
     ("scala", &["*.scala", "*.sbt"]),
@@ -200,6 +231,7 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ("slim", &["*.skim", "*.slim", "*.slime"]),
     ("smarty", &["*.tpl"]),
     ("sml", &["*.sml", "*.sig"]),
+    ("solidity", &["*.sol"]),
     ("soy", &["*.soy"]),
     ("spark", &["*.spark"]),
     ("spec", &["*.spec"]),
@@ -217,11 +249,12 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ("taskpaper", &["*.taskpaper"]),
     ("tcl", &["*.tcl"]),
     ("tex", &["*.tex", "*.ltx", "*.cls", "*.sty", "*.bib", "*.dtx", "*.ins"]),
+    ("texinfo", &["*.texi"]),
     ("textile", &["*.textile"]),
     ("tf", &["*.tf"]),
     ("thrift", &["*.thrift"]),
     ("toml", &["*.toml", "Cargo.lock"]),
-    ("ts", &["*.ts", "*.tsx"]),
+    ("ts", &["*.ts", "*.tsx", "*.cts", "*.mts"]),
     ("twig", &["*.twig"]),
     ("txt", &["*.txt"]),
     ("typoscript", &["*.typoscript", "*.ts"]),
@@ -230,8 +263,12 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ("vcl", &["*.vcl"]),
     ("verilog", &["*.v", "*.vh", "*.sv", "*.svh"]),
     ("vhdl", &["*.vhd", "*.vhdl"]),
-    ("vim", &["*.vim"]),
-    ("vimscript", &["*.vim"]),
+    ("vim", &[
+        "*.vim", ".vimrc", ".gvimrc", "vimrc", "gvimrc", "_vimrc", "_gvimrc",
+    ]),
+    ("vimscript", &[
+        "*.vim", ".vimrc", ".gvimrc", "vimrc", "gvimrc", "_vimrc", "_gvimrc",
+    ]),
     ("webidl", &["*.idl", "*.webidl", "*.widl"]),
     ("wiki", &["*.mediawiki", "*.wiki"]),
     ("xml", &[
@@ -254,3 +291,26 @@ pub const DEFAULT_TYPES: &[(&str, &[&str])] = &[
     ]),
     ("zstd", &["*.zst", "*.zstd"]),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_TYPES;
+
+    #[test]
+    fn default_types_are_sorted() {
+        let mut names = DEFAULT_TYPES.iter().map(|(name, _exts)| name);
+
+        let Some(mut previous_name) = names.next() else { return; };
+
+        for name in names {
+            assert!(
+                name > previous_name,
+                r#""{}" should be sorted before "{}" in `DEFAULT_TYPES`"#,
+                name,
+                previous_name
+            );
+
+            previous_name = name;
+        }
+    }
+}

@@ -1,11 +1,15 @@
-#[cfg(any(unix, target_os = "wasi"))]
+#![allow(deprecated)] // Don't warn on `IntoFd` and `FromFd` impls.
+
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 use crate::{AsFd, FromFd, IntoFd};
 #[cfg(windows)]
 use crate::{AsHandle, AsSocket, FromHandle, FromSocket, IntoHandle, IntoSocket};
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 use crate::{BorrowedFd, OwnedFd};
 #[cfg(windows)]
 use crate::{BorrowedHandle, BorrowedSocket, HandleOrInvalid, OwnedHandle, OwnedSocket};
+#[cfg(target_os = "hermit")]
+use std::os::hermit::io::{AsRawFd, FromRawFd, IntoRawFd};
 #[cfg(unix)]
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
 #[cfg(target_os = "wasi")]
@@ -15,7 +19,7 @@ use std::os::windows::io::{
     AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
 };
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for BorrowedFd<'_> {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -39,7 +43,7 @@ impl AsSocket for BorrowedSocket<'_> {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for OwnedFd {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -63,7 +67,7 @@ impl AsSocket for OwnedSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl IntoFd for OwnedFd {
     #[inline]
     fn into_fd(self) -> OwnedFd {
@@ -87,7 +91,7 @@ impl IntoSocket for OwnedSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl FromFd for OwnedFd {
     #[inline]
     fn from_fd(owned: OwnedFd) -> Self {
@@ -127,7 +131,7 @@ impl From<OwnedHandle> for HandleOrInvalid {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for std::fs::File {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -143,7 +147,7 @@ impl AsHandle for std::fs::File {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl IntoFd for std::fs::File {
     #[inline]
     fn into_fd(self) -> OwnedFd {
@@ -151,7 +155,7 @@ impl IntoFd for std::fs::File {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl From<std::fs::File> for OwnedFd {
     #[inline]
     fn from(owned: std::fs::File) -> Self {
@@ -175,7 +179,7 @@ impl From<std::fs::File> for OwnedHandle {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl FromFd for std::fs::File {
     #[inline]
     fn from_fd(owned: OwnedFd) -> Self {
@@ -183,7 +187,7 @@ impl FromFd for std::fs::File {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl From<OwnedFd> for std::fs::File {
     #[inline]
     fn from(owned: OwnedFd) -> Self {
@@ -207,7 +211,7 @@ impl From<OwnedHandle> for std::fs::File {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for std::net::TcpStream {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -223,7 +227,7 @@ impl AsSocket for std::net::TcpStream {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl IntoFd for std::net::TcpStream {
     #[inline]
     fn into_fd(self) -> OwnedFd {
@@ -231,7 +235,7 @@ impl IntoFd for std::net::TcpStream {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl From<std::net::TcpStream> for OwnedFd {
     #[inline]
     fn from(owned: std::net::TcpStream) -> Self {
@@ -255,7 +259,7 @@ impl From<std::net::TcpStream> for OwnedSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl FromFd for std::net::TcpStream {
     #[inline]
     fn from_fd(owned: OwnedFd) -> Self {
@@ -263,7 +267,7 @@ impl FromFd for std::net::TcpStream {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl From<OwnedFd> for std::net::TcpStream {
     #[inline]
     fn from(owned: OwnedFd) -> Self {
@@ -287,7 +291,7 @@ impl From<OwnedSocket> for std::net::TcpStream {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for std::net::TcpListener {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -303,7 +307,7 @@ impl AsSocket for std::net::TcpListener {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl IntoFd for std::net::TcpListener {
     #[inline]
     fn into_fd(self) -> OwnedFd {
@@ -311,7 +315,7 @@ impl IntoFd for std::net::TcpListener {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl From<std::net::TcpListener> for OwnedFd {
     #[inline]
     fn from(owned: std::net::TcpListener) -> Self {
@@ -335,7 +339,7 @@ impl From<std::net::TcpListener> for OwnedSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl FromFd for std::net::TcpListener {
     #[inline]
     fn from_fd(owned: OwnedFd) -> Self {
@@ -343,7 +347,7 @@ impl FromFd for std::net::TcpListener {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl From<OwnedFd> for std::net::TcpListener {
     #[inline]
     fn from(owned: OwnedFd) -> Self {
@@ -367,7 +371,7 @@ impl From<OwnedSocket> for std::net::TcpListener {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for std::net::UdpSocket {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -383,7 +387,7 @@ impl AsSocket for std::net::UdpSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl IntoFd for std::net::UdpSocket {
     #[inline]
     fn into_fd(self) -> OwnedFd {
@@ -391,7 +395,7 @@ impl IntoFd for std::net::UdpSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl From<std::net::UdpSocket> for OwnedFd {
     #[inline]
     fn from(owned: std::net::UdpSocket) -> Self {
@@ -415,7 +419,7 @@ impl From<std::net::UdpSocket> for OwnedSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl FromFd for std::net::UdpSocket {
     #[inline]
     fn from_fd(owned: OwnedFd) -> Self {
@@ -423,7 +427,7 @@ impl FromFd for std::net::UdpSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl From<OwnedFd> for std::net::UdpSocket {
     #[inline]
     fn from(owned: OwnedFd) -> Self {
@@ -447,7 +451,7 @@ impl From<OwnedSocket> for std::net::UdpSocket {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for std::io::Stdin {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -463,7 +467,7 @@ impl AsHandle for std::io::Stdin {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl<'a> AsFd for std::io::StdinLock<'a> {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -479,7 +483,7 @@ impl<'a> AsHandle for std::io::StdinLock<'a> {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for std::io::Stdout {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -495,7 +499,7 @@ impl AsHandle for std::io::Stdout {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl<'a> AsFd for std::io::StdoutLock<'a> {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -511,7 +515,7 @@ impl<'a> AsHandle for std::io::StdoutLock<'a> {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl AsFd for std::io::Stderr {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -527,7 +531,7 @@ impl AsHandle for std::io::Stderr {
     }
 }
 
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "hermit"))]
 impl<'a> AsFd for std::io::StderrLock<'a> {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {

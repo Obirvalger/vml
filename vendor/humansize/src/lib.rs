@@ -1,330 +1,147 @@
-//! # **Humansize**
-//!
-//! Humansize lets you easily represent file sizes in a human-friendly format.
-//! You can specify your own formatting style, pick among the three defaults provided
-//! by the library:
-//!
-//! * Decimal (Multiples of 1000, `KB` units)
-//! * Binary (Multiples of 1024, `KiB` units)
-//! * Conventional (Multiples of 1024, `KB` units)
-//!
-//! ## How to use it
-//!
-//! Simply import the `FileSize` trait and the options module and call the
-//! file_size method on any positive integer, using one of the three standards
-//! provided by the options module.
-//!
-//! ```rust
-//! extern crate humansize;
-//! use humansize::{FileSize, file_size_opts as options};
-//!
-//! fn main() {
-//! 	let size = 1000;
-//! 	println!("Size is {}", size.file_size(options::DECIMAL).unwrap());
-//!
-//! 	println!("Size is {}", size.file_size(options::BINARY).unwrap());
-//!
-//! 	println!("Size is {}", size.file_size(options::CONVENTIONAL).unwrap());
-//! }
-//! ```
-//!
-//! If you wish to customize the way sizes are displayed, you may create your own custom `FileSizeOpts` struct
-//! and pass that to the method. See the `custom_options.rs` file in the example folder.
+#![no_std]
+/*!
+# **Humansize**
 
-static SCALE_DECIMAL: [&'static str; 9] = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-static SCALE_DECIMAL_LONG: [&'static str; 9] = [
-    "Bytes",
-    "Kilobytes",
-    "Megabytes",
-    "Gigabytes",
-    "Terabytes",
-    "Petabytes",
-    "Exabytes",
-    "Zettabytes",
-    "Yottabytes",
-];
+## Features
+Humansize is a humanization library for information size that is:
+- Simple & convenient to use
+- Customizable
+- Supports byte or bit sizes
+- `no-std`
+- Optionally non-allocating
+- Optionally accepts signed values
 
-static SCALE_BINARY: [&'static str; 9] =
-    ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
-static SCALE_BINARY_LONG: [&'static str; 9] = [
-    "Bytes",
-    "Kibibytes",
-    "Mebibytes",
-    "Gibibytes",
-    "Tebibytes",
-    "Pebibytes",
-    "Exbibytes",
-    "Zebibytes",
-    "Yobibytes",
-];
+## How to use it...
 
+Add humansize as a dependency to your project's `cargo.toml`:
+```toml
+[dependencies]
+...
+humansize = "2.0.0"
+```
 
-pub mod file_size_opts {
-    //! Describes the struct that holds the options needed by the `file_size` method.
-    //! The three most common formats are provided as constants to be used easily
+### ... to easily format a size:
 
-    #[derive(Debug, PartialEq, Copy, Clone)]
-    /// Holds the standard to use when displying the size.
-    pub enum Kilo {
-        /// The decimal scale and units
-        Decimal,
-        /// The binary scale and units
-        Binary,
-    }
+1. Import the `format_size` function as well as your preferred set of defaults:
+    - `DECIMAL` (SI)
+    - `BINARY` (IEC)
+    - `WINDOWS` (IEC values but SI units)
+2. Call `format_size` with an unsigned integer
 
-    #[derive(Debug, Copy, Clone)]
-    /// Forces a certain representation of the resulting file size.
-    pub enum FixedAt {
-        Byte,
-        Kilo,
-        Mega,
-        Giga,
-        Tera,
-        Peta,
-        Exa,
-        Zetta,
-        Yotta,
-        No,
-    }
+```rust
+use humansize::{format_size, DECIMAL};
 
-    /// Holds the options for the `file_size` method.
-    #[derive(Debug)]
-    pub struct FileSizeOpts {
-        /// The scale (binary/decimal) to divide against.
-        pub divider: Kilo,
-        /// The unit set to display.
-        pub units: Kilo,
-        /// The amount of decimal places to display if the decimal part is non-zero.
-        pub decimal_places: usize,
-        /// The amount of zeroes to display if the decimal part is zero.
-        pub decimal_zeroes: usize,
-        /// Whether to force a certain representation and if so, which one.
-        pub fixed_at: FixedAt,
-        /// Whether to use the full suffix or its abbreveation.
-        pub long_units: bool,
-        /// Whether to place a space between value and units.
-        pub space: bool,
-        /// An optional suffix which will be appended after the unit.
-        pub suffix: &'static str,
-        /// Whether to allow negative numbers as input. If `False`, negative values will return an error.
-        pub allow_negative: bool,
-    }
+let size = 1_000_000u64;
+let res: String = format_size(size, DECIMAL);
 
-    impl AsRef<FileSizeOpts> for FileSizeOpts {
-        fn as_ref(&self) -> &FileSizeOpts {
-            self
-        }
-    }
+assert_eq!(&res, "1 MB");
 
-    /// Options to display sizes in the binary format.
-    pub const BINARY: FileSizeOpts = FileSizeOpts {
-        divider: Kilo::Binary,
-        units: Kilo::Binary,
-        decimal_places: 2,
-        decimal_zeroes: 0,
-        fixed_at: FixedAt::No,
-        long_units: false,
-        space: true,
-        suffix: "",
-        allow_negative: false,
-    };
+```
 
-    /// Options to display sizes in the decimal format.
-    pub const DECIMAL: FileSizeOpts = FileSizeOpts {
-        divider: Kilo::Decimal,
-        units: Kilo::Decimal,
-        decimal_places: 2,
-        decimal_zeroes: 0,
-        fixed_at: FixedAt::No,
-        long_units: false,
-        space: true,
-        suffix: "",
-        allow_negative: false,
-    };
+### ... to format many sizes:
+To improve reusability, you can use `create_format`, which returns a formatter function akin to `format_size` but with the options argument curried so it doesn't need to be specified again:
 
-    /// Options to display sizes in the "conventional" format.
-    /// This 1024 as the value of the `Kilo`, but displays decimal-style units (`KB`, not `KiB`).
-    pub const CONVENTIONAL: FileSizeOpts = FileSizeOpts {
-        divider: Kilo::Binary,
-        units: Kilo::Decimal,
-        decimal_places: 2,
-        decimal_zeroes: 0,
-        fixed_at: FixedAt::No,
-        long_units: false,
-        space: true,
-        suffix: "",
-        allow_negative: false,
-    };
-}
-/// The trait for the `file_size`method
-pub trait FileSize {
-    /// Formats self according to the parameters in `opts`. `opts` can either be one of the
-    /// three defaults providedby the `file_size_opts` module, or be custom-defined according
-    /// to your needs
-    ///
-    /// # Errors
-    /// Will fail by default if called on a negative number. Override this behavior by setting
-    /// `allow_negative` to `True` in a custom options struct.
-    ///
-    /// # Examples
-    /// ```rust
-    /// use humansize::{FileSize, file_size_opts as options};
-    ///
-    /// let size = 5128;
-    /// println!("Size is {}", size.file_size(options::DECIMAL).unwrap());
-    /// ```
-    ///
-    fn file_size<T: AsRef<FileSizeOpts>>(&self, opts: T) -> Result<String, String>;
-}
+```rust
+use humansize::{make_format, DECIMAL};
 
-use self::file_size_opts::*;
+let formatter = make_format(DECIMAL);
 
-macro_rules! impl_file_size_u {
-    (for $($t:ty)*) => ($(
-        impl FileSize for $t {
-        	fn file_size<T: AsRef<FileSizeOpts>>(&self, _opts: T) -> Result<String, String> {
-                let opts = _opts.as_ref();
-        		let divider = match opts.divider {
-        			Kilo::Decimal => 1000.0,
-        			Kilo::Binary => 1024.0
-    			};
+assert_eq!(formatter(1_000_000u64), "1 MB");
+assert_eq!(formatter(1_000_000_000u64), "1 GB");
+//...
 
-    			let mut size: f64 = *self as f64;
-    			let mut scale_idx = 0;
+```
 
-				match opts.fixed_at {
-                    FixedAt::No => {
-                        while size >= divider {
-                            size /= divider;
-                            scale_idx += 1;
-                        }
-                    }
-                    val @ _ => {
-                        while scale_idx != val as usize {
-                            size /= divider;
-                            scale_idx += 1;
-                        }
-                    }
-                }
+### ... to avoid allocation:
+Specify the `no_alloc` feature flag in your project's `cargo.toml`:
+```toml
+[dependencies]
+...
+humansize = { version = "2.0.0", features = ["no_alloc"] }
+```
+This excludes all allocating code from compilation. You may now use the library's internal `SizeFormatter` struct, which implements `core::fmt::display` so that you can `write!` it to a custom buffer of your choice:
+```rust
+use humansize::{SizeFormatter, DECIMAL};
 
-    			let mut scale = match (opts.units, opts.long_units) {
-    				(Kilo::Decimal, false) => SCALE_DECIMAL[scale_idx],
-    				(Kilo::Decimal, true) => SCALE_DECIMAL_LONG[scale_idx],
-    				(Kilo::Binary, false) => SCALE_BINARY[scale_idx],
-    				(Kilo::Binary, true) => SCALE_BINARY_LONG[scale_idx]
-    			};
+let formatter = SizeFormatter::new(1_000_000usize, DECIMAL);
+assert_eq!(format!("{}", formatter), "1 MB");
+```
+### ... with the `impl` style API:
+For stylistic reasons, you may prefer to use the impl-style API of earlier versions of the crate.
+To do so, specify the `impl-style` feature flag in your project's `cargo.toml`:
 
-				// Remove "s" from the scale if the size is 1.x
-    			if opts.long_units && size.trunc() == 1.0 { scale = &scale[0 .. scale.len()-1];}
-    			
-                let places = if size.fract() == 0.0 {
-                    opts.decimal_zeroes
-                } else {
-                    opts.decimal_places
-                };
+```toml
+[dependencies]
+...
+humansize = { version = "2.0.0", features = ["impl_style"] }
+```
+Enabling this feature makes two methods available:
+- `format_size` on unsigned integers types
+- `format_size_i` on signed integer types.
 
-				let space = match opts.space {
-					true => " ",
-					false => ""
-				};
+To use it, bring the FormatSize trait into scope and call its method on an integer type:
+```ignore
+use humansize::{FormatSize, FormatSizeI DECIMAL};
 
-    			Ok(format!("{:.*}{}{}{}", places, size, space, scale, opts.suffix))
-    		}
-	    }
-    )*)
-}
+assert_eq!(1_000_000u64.format_size(DECIMAL), "1 MB");
+assert_eq!((-1_000_000).format_size_i(DECIMAL), "-1 MB");
+```
+### ... to further customize the output:
+Humansize exports three default option sets:
+* `Decimal`: kilo = 1000, unit format is `XB`.
+* `Binary`: kilo = 1024, unit format is `XiB`.
+* `WINDOWS` (Windows): kilo = 1024, unit format is `XB`.
 
-macro_rules! impl_file_size_i {
-    (for $($t:ty)*) => ($(
-        impl FileSize for $t {
-        	fn file_size<T: AsRef<FileSizeOpts>>(&self, _opts: T) -> Result<String, String> {
-                let opts = _opts.as_ref();
-        		if *self < 0 && !opts.allow_negative { 
-                    return Err("Tried calling file_size on a negative value".to_owned());
-                } else {
-                    let sign = if *self < 0 {
-                        "-"
-                    } else {
-                        ""
-                    };
+The formatting can be further customized by providing providing your own option set. See the documentation of the `FormatSizeOptions` struct to see all the addressable parameters, and [this example](examples/custom_options.rs) for its usage.
 
-        		    Ok(format!("{}{}", sign, (self.abs() as u64).file_size(opts)?))
-                }
+### ... to accept negative values:
+The solutions presented above only accept unsigned integer types as input (`usize`, `8`, `u16`, `u32` and `u64`). If however accepting negative values is correct for your application, a signed alternative exists for each of them that will accept signed integer types, and format them accordingly if negative:
 
-    		}
-	    }
-    )*)
-}
+- `format_size` : `format_size_i`
+- `create_format` : `create_format_i`
+- `FormatSize` trait : `FormatSizeI` trait
+- `SizeFormatter` : `ISizeFormatter`
+```rust
+use humansize::{format_size_i, make_format_i, ISizeFormatter, DECIMAL};
 
-impl_file_size_u!(for usize u8 u16 u32 u64);
-impl_file_size_i!(for isize i8 i16 i32 i64);
+assert_eq!(&format_size_i(-1_000_000, DECIMAL), "-1 MB");
 
+let signed_formatter = make_format_i(DECIMAL);
+assert_eq!(&signed_formatter(-1_000_000), "-1 MB");
 
-#[test]
-fn test_sizes() {
-    assert_eq!(0.file_size(BINARY).unwrap(), "0 B");
-    assert_eq!(999.file_size(BINARY).unwrap(), "999 B");
-    assert_eq!(1000.file_size(BINARY).unwrap(), "1000 B");
-    assert_eq!(1000.file_size(DECIMAL).unwrap(), "1 KB");
-    assert_eq!(1023.file_size(BINARY).unwrap(), "1023 B");
-    assert_eq!(1023.file_size(DECIMAL).unwrap(), "1.02 KB");
-    assert_eq!(1024.file_size(BINARY).unwrap(), "1 KiB");
-    assert_eq!(1024.file_size(CONVENTIONAL).unwrap(), "1 KB");
+// With the `impl-style` feature enabled:
+// use humansize::FormatSizeI;
+// assert_eq(-1_000_000.format_size(DECIMAL), "-1 MB");
 
-    let semi_custom_options = file_size_opts::FileSizeOpts {
-        space: false,
-        ..file_size_opts::DECIMAL
-    };
-    assert_eq!(1000.file_size(semi_custom_options).unwrap(), "1KB");
+let signed_size_formatter = ISizeFormatter::new(-1_000_000, DECIMAL);
+assert_eq!(format!("{}", signed_size_formatter), "-1 MB");
 
-    let semi_custom_options2 = file_size_opts::FileSizeOpts {
-        suffix: "/s",
-        ..file_size_opts::BINARY
-    };
-    assert_eq!(999.file_size(semi_custom_options2).unwrap(), "999 B/s");
+```
+*/
 
-    let semi_custom_options3 = file_size_opts::FileSizeOpts {
-        suffix: "/day",
-        space: false,
-        ..file_size_opts::DECIMAL
-    };
-    assert_eq!(1000.file_size(semi_custom_options3).unwrap(), "1KB/day");
+#[macro_use]
+#[cfg(not(feature = "no_alloc"))]
+extern crate alloc;
+extern crate libm;
 
-    let semi_custom_options4 = file_size_opts::FileSizeOpts {
-        fixed_at: file_size_opts::FixedAt::Byte,
-        ..file_size_opts::BINARY
-    };
-    assert_eq!(2048.file_size(semi_custom_options4).unwrap(), "2048 B");
+mod options;
+pub use options::{BaseUnit, FixedAt, FormatSizeOptions, Kilo, BINARY, DECIMAL, WINDOWS};
 
-    let semi_custom_options5 = file_size_opts::FileSizeOpts {
-        fixed_at: file_size_opts::FixedAt::Kilo,
-        ..file_size_opts::BINARY
-    };
-    assert_eq!(
-        16584975.file_size(semi_custom_options5).unwrap(),
-        "16196.26 KiB"
-    );
+mod numeric_traits;
+pub use numeric_traits::{Signed, ToF64, Unsigned};
 
-    let semi_custom_options6 = file_size_opts::FileSizeOpts {
-        fixed_at: file_size_opts::FixedAt::Tera,
-        decimal_places: 10,
-        ..file_size_opts::BINARY
-    };
-    assert_eq!(
-        15284975.file_size(semi_custom_options6).unwrap(),
-        "0.0000139016 TiB"
-    );
+mod scales;
+mod utils;
 
-    let semi_custom_options7 = file_size_opts::FileSizeOpts {
-        allow_negative: true,
-        ..file_size_opts::DECIMAL
-    };
-    assert_eq!(
-        (-5500).file_size(&semi_custom_options7).unwrap(),
-        "-5.50 KB"
-    );
-    assert_eq!(
-        (5500).file_size(&semi_custom_options7).unwrap(),
-        "5.50 KB"
-    );
-}
+#[cfg(not(feature = "no_alloc"))]
+mod allocating;
+#[cfg(not(feature = "no_alloc"))]
+pub use allocating::*;
+
+#[cfg(feature = "impl_style")]
+mod impl_style;
+#[cfg(feature = "impl_style")]
+pub use impl_style::{FormatSize, FormatSizeI};
+
+mod formatters;
+pub use formatters::{SizeFormatter, ISizeFormatter};

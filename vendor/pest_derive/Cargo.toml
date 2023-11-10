@@ -10,13 +10,13 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
-rust-version = "1.56"
+edition = "2021"
+rust-version = "1.61"
 name = "pest_derive"
-version = "2.4.0"
+version = "2.7.5"
 authors = ["Dragoș Tiselice <dragostiselice@gmail.com>"]
 description = "pest's derive macro"
-homepage = "https://pest-parser.github.io/"
+homepage = "https://pest.rs/"
 documentation = "https://docs.rs/pest"
 readme = "_README.md"
 keywords = [
@@ -26,7 +26,7 @@ keywords = [
     "grammar",
 ]
 categories = ["parsing"]
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/pest-parser/pest"
 
 [lib]
@@ -34,15 +34,17 @@ name = "pest_derive"
 proc-macro = true
 
 [dependencies.pest]
-version = "2.4.0"
+version = "2.7.5"
 default-features = false
 
 [dependencies.pest_generator]
-version = "2.4.0"
+version = "2.7.5"
 default-features = false
 
 [features]
 default = ["std"]
+grammar-extras = ["pest_generator/grammar-extras"]
+not-bootstrap-in-src = ["pest_generator/not-bootstrap-in-src"]
 std = [
     "pest/std",
     "pest_generator/std",

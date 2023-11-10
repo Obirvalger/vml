@@ -1,9 +1,7 @@
 use super::TokenStreamExt;
-
-use std::borrow::Cow;
-use std::iter;
-use std::rc::Rc;
-
+use alloc::borrow::Cow;
+use alloc::rc::Rc;
+use core::iter;
 use proc_macro2::{Group, Ident, Literal, Punct, Span, TokenStream, TokenTree};
 
 /// Types that can be interpolated inside a `quote!` invocation.
@@ -127,13 +125,15 @@ impl ToTokens for String {
 }
 
 macro_rules! primitive {
-    ($($t:ident => $name:ident)*) => ($(
-        impl ToTokens for $t {
-            fn to_tokens(&self, tokens: &mut TokenStream) {
-                tokens.append(Literal::$name(*self));
+    ($($t:ident => $name:ident)*) => {
+        $(
+            impl ToTokens for $t {
+                fn to_tokens(&self, tokens: &mut TokenStream) {
+                    tokens.append(Literal::$name(*self));
+                }
             }
-        }
-    )*)
+        )*
+    };
 }
 
 primitive! {

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.4] - 2022-09-15
+- Fix unsoundness in `<BlockRng64 as RngCore>::next_u32` (#1160)
+- Reduce use of `unsafe` and improve gen_bytes performance (#1180)
+- Add `CryptoRngCore` trait (#1187, #1230)
+
+## [0.6.3] - 2021-06-15
+### Changed
+- Improved bound for `serde` impls on `BlockRng` (#1130)
+- Minor doc additions (#1118)
+
+## [0.6.2] - 2021-02-12
+### Fixed
+- Fixed assertions in `le::read_u32_into` and `le::read_u64_into` which could
+  have allowed buffers not to be fully populated (#1096)
+
 ## [0.6.1] - 2021-01-03
 ### Fixed
 - Avoid panic when using `RngCore::seed_from_u64` with a seed which is not a

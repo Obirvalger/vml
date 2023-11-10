@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+#![allow(clippy::all)]
 use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
@@ -36,5 +37,10 @@ impl ServerSocketOptions {
         );
         let _ = r;
         self
+    }
+}
+impl Default for ServerSocketOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

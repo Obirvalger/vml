@@ -1,48 +1,27 @@
-#[link(name = "windows")]
-extern "system" {
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn ApplyLocalManagementSyncML(syncmlrequest: ::windows_sys::core::PCWSTR, syncmlresult: *mut ::windows_sys::core::PWSTR) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn DiscoverManagementService(pszupn: ::windows_sys::core::PCWSTR, ppmgmtinfo: *mut *mut MANAGEMENT_SERVICE_INFO) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn DiscoverManagementServiceEx(pszupn: ::windows_sys::core::PCWSTR, pszdiscoveryservicecandidate: ::windows_sys::core::PCWSTR, ppmgmtinfo: *mut *mut MANAGEMENT_SERVICE_INFO) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn GetDeviceManagementConfigInfo(providerid: ::windows_sys::core::PCWSTR, configstringbufferlength: *mut u32, configstring: ::windows_sys::core::PWSTR) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn GetDeviceRegistrationInfo(deviceinformationclass: REGISTRATION_INFORMATION_CLASS, ppdeviceregistrationinfo: *mut *mut ::core::ffi::c_void) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn GetManagementAppHyperlink(cchhyperlink: u32, pszhyperlink: ::windows_sys::core::PWSTR) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn IsDeviceRegisteredWithManagement(pfisdeviceregisteredwithmanagement: *mut super::super::Foundation::BOOL, cchupn: u32, pszupn: ::windows_sys::core::PWSTR) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn IsManagementRegistrationAllowed(pfismanagementregistrationallowed: *mut super::super::Foundation::BOOL) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn IsMdmUxWithoutAadAllowed(isenrollmentallowed: *mut super::super::Foundation::BOOL) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn RegisterDeviceWithLocalManagement(alreadyregistered: *mut super::super::Foundation::BOOL) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn RegisterDeviceWithManagement(pszupn: ::windows_sys::core::PCWSTR, ppszmdmserviceuri: ::windows_sys::core::PCWSTR, ppzsaccesstoken: ::windows_sys::core::PCWSTR) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn RegisterDeviceWithManagementUsingAADCredentials(usertoken: super::super::Foundation::HANDLE) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn RegisterDeviceWithManagementUsingAADDeviceCredentials() -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn RegisterDeviceWithManagementUsingAADDeviceCredentials2(mdmapplicationid: ::windows_sys::core::PCWSTR) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn SetDeviceManagementConfigInfo(providerid: ::windows_sys::core::PCWSTR, configstring: ::windows_sys::core::PCWSTR) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"]
-    #[cfg(feature = "Win32_Foundation")]
-    pub fn SetManagedExternally(ismanagedexternally: super::super::Foundation::BOOL) -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn UnregisterDeviceWithLocalManagement() -> ::windows_sys::core::HRESULT;
-    #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-    pub fn UnregisterDeviceWithManagement(enrollmentid: ::windows_sys::core::PCWSTR) -> ::windows_sys::core::HRESULT;
-}
+::windows_targets::link ! ( "mdmlocalmanagement.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn ApplyLocalManagementSyncML ( syncmlrequest : ::windows_sys::core::PCWSTR , syncmlresult : *mut ::windows_sys::core::PWSTR ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn DiscoverManagementService ( pszupn : ::windows_sys::core::PCWSTR , ppmgmtinfo : *mut *mut MANAGEMENT_SERVICE_INFO ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn DiscoverManagementServiceEx ( pszupn : ::windows_sys::core::PCWSTR , pszdiscoveryservicecandidate : ::windows_sys::core::PCWSTR , ppmgmtinfo : *mut *mut MANAGEMENT_SERVICE_INFO ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn GetDeviceManagementConfigInfo ( providerid : ::windows_sys::core::PCWSTR , configstringbufferlength : *mut u32 , configstring : ::windows_sys::core::PWSTR ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn GetDeviceRegistrationInfo ( deviceinformationclass : REGISTRATION_INFORMATION_CLASS , ppdeviceregistrationinfo : *mut *mut ::core::ffi::c_void ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn GetManagementAppHyperlink ( cchhyperlink : u32 , pszhyperlink : ::windows_sys::core::PWSTR ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"] fn IsDeviceRegisteredWithManagement ( pfisdeviceregisteredwithmanagement : *mut super::super::Foundation:: BOOL , cchupn : u32 , pszupn : ::windows_sys::core::PWSTR ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"] fn IsManagementRegistrationAllowed ( pfismanagementregistrationallowed : *mut super::super::Foundation:: BOOL ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"] fn IsMdmUxWithoutAadAllowed ( isenrollmentallowed : *mut super::super::Foundation:: BOOL ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "mdmlocalmanagement.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"] fn RegisterDeviceWithLocalManagement ( alreadyregistered : *mut super::super::Foundation:: BOOL ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn RegisterDeviceWithManagement ( pszupn : ::windows_sys::core::PCWSTR , ppszmdmserviceuri : ::windows_sys::core::PCWSTR , ppzsaccesstoken : ::windows_sys::core::PCWSTR ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"] fn RegisterDeviceWithManagementUsingAADCredentials ( usertoken : super::super::Foundation:: HANDLE ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn RegisterDeviceWithManagementUsingAADDeviceCredentials ( ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn RegisterDeviceWithManagementUsingAADDeviceCredentials2 ( mdmapplicationid : ::windows_sys::core::PCWSTR ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn SetDeviceManagementConfigInfo ( providerid : ::windows_sys::core::PCWSTR , configstring : ::windows_sys::core::PCWSTR ) -> ::windows_sys::core::HRESULT );
+#[cfg(feature = "Win32_Foundation")]
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"] fn SetManagedExternally ( ismanagedexternally : super::super::Foundation:: BOOL ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmlocalmanagement.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn UnregisterDeviceWithLocalManagement ( ) -> ::windows_sys::core::HRESULT );
+::windows_targets::link ! ( "mdmregistration.dll""system" #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"] fn UnregisterDeviceWithManagement ( enrollmentid : ::windows_sys::core::PCWSTR ) -> ::windows_sys::core::HRESULT );
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
 pub const DEVICEREGISTRATIONTYPE_MAM: u32 = 5u32;
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
@@ -53,35 +32,6 @@ pub const DEVICEREGISTRATIONTYPE_MDM_ONLY: u32 = 0u32;
 pub const DEVICEREGISTRATIONTYPE_MDM_USERSPECIFIC_WITH_AAD: u32 = 13u32;
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
 pub const DEVICE_ENROLLER_FACILITY_CODE: u32 = 24u32;
-#[repr(C)]
-#[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"]
-#[cfg(feature = "Win32_Foundation")]
-pub struct MANAGEMENT_REGISTRATION_INFO {
-    pub fDeviceRegisteredWithManagement: super::super::Foundation::BOOL,
-    pub dwDeviceRegistionKind: u32,
-    pub pszUPN: ::windows_sys::core::PWSTR,
-    pub pszMDMServiceUri: ::windows_sys::core::PWSTR,
-}
-#[cfg(feature = "Win32_Foundation")]
-impl ::core::marker::Copy for MANAGEMENT_REGISTRATION_INFO {}
-#[cfg(feature = "Win32_Foundation")]
-impl ::core::clone::Clone for MANAGEMENT_REGISTRATION_INFO {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-#[repr(C)]
-#[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-pub struct MANAGEMENT_SERVICE_INFO {
-    pub pszMDMServiceUri: ::windows_sys::core::PWSTR,
-    pub pszAuthenticationUri: ::windows_sys::core::PWSTR,
-}
-impl ::core::marker::Copy for MANAGEMENT_SERVICE_INFO {}
-impl ::core::clone::Clone for MANAGEMENT_SERVICE_INFO {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
 pub const MDM_REGISTRATION_FACILITY_CODE: u32 = 25u32;
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
@@ -90,8 +40,6 @@ pub const MENROLL_E_CERTAUTH_FAILED_TO_FIND_CERT: ::windows_sys::core::HRESULT =
 pub const MENROLL_E_CERTPOLICY_PRIVATEKEYCREATION_FAILED: ::windows_sys::core::HRESULT = -2145910745i32;
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
 pub const MENROLL_E_CONNECTIVITY: ::windows_sys::core::HRESULT = -2145910768i32;
-#[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
-pub const MENROLL_E_DEVICEAPREACHED: ::windows_sys::core::HRESULT = -2145910765i32;
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
 pub const MENROLL_E_DEVICECAPREACHED: ::windows_sys::core::HRESULT = -2145910765i32;
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
@@ -210,3 +158,32 @@ pub type REGISTRATION_INFORMATION_CLASS = i32;
 pub const DeviceRegistrationBasicInfo: REGISTRATION_INFORMATION_CLASS = 1i32;
 #[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
 pub const MaxDeviceInfoClass: REGISTRATION_INFORMATION_CLASS = 2i32;
+#[repr(C)]
+#[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`, `\"Win32_Foundation\"`*"]
+#[cfg(feature = "Win32_Foundation")]
+pub struct MANAGEMENT_REGISTRATION_INFO {
+    pub fDeviceRegisteredWithManagement: super::super::Foundation::BOOL,
+    pub dwDeviceRegistionKind: u32,
+    pub pszUPN: ::windows_sys::core::PWSTR,
+    pub pszMDMServiceUri: ::windows_sys::core::PWSTR,
+}
+#[cfg(feature = "Win32_Foundation")]
+impl ::core::marker::Copy for MANAGEMENT_REGISTRATION_INFO {}
+#[cfg(feature = "Win32_Foundation")]
+impl ::core::clone::Clone for MANAGEMENT_REGISTRATION_INFO {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+#[repr(C)]
+#[doc = "*Required features: `\"Win32_Management_MobileDeviceManagementRegistration\"`*"]
+pub struct MANAGEMENT_SERVICE_INFO {
+    pub pszMDMServiceUri: ::windows_sys::core::PWSTR,
+    pub pszAuthenticationUri: ::windows_sys::core::PWSTR,
+}
+impl ::core::marker::Copy for MANAGEMENT_SERVICE_INFO {}
+impl ::core::clone::Clone for MANAGEMENT_SERVICE_INFO {
+    fn clone(&self) -> Self {
+        *self
+    }
+}

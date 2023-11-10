@@ -1,11 +1,12 @@
 # pin-project-lite
 
-[![crates.io](https://img.shields.io/crates/v/pin-project-lite.svg?style=flat-square&logo=rust)](https://crates.io/crates/pin-project-lite)
-[![docs.rs](https://img.shields.io/badge/docs.rs-pin--project--lite-blue?style=flat-square)](https://docs.rs/pin-project-lite)
-[![license](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg?style=flat-square)](#license)
-[![rustc](https://img.shields.io/badge/rustc-1.37+-blue.svg?style=flat-square)](https://www.rust-lang.org)
-[![build status](https://img.shields.io/github/workflow/status/taiki-e/pin-project-lite/CI/master?style=flat-square)](https://github.com/taiki-e/pin-project-lite/actions?query=workflow%3ACI+branch%3Amaster)
+[![crates.io](https://img.shields.io/crates/v/pin-project-lite?style=flat-square&logo=rust)](https://crates.io/crates/pin-project-lite)
+[![docs.rs](https://img.shields.io/badge/docs.rs-pin--project--lite-blue?style=flat-square&logo=docs.rs)](https://docs.rs/pin-project-lite)
+[![license](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue?style=flat-square)](#license)
+[![rustc](https://img.shields.io/badge/rustc-1.37+-blue?style=flat-square&logo=rust)](https://www.rust-lang.org)
+[![build status](https://img.shields.io/github/actions/workflow/status/taiki-e/pin-project-lite/ci.yml?branch=main&style=flat-square&logo=github)](https://github.com/taiki-e/pin-project-lite/actions)
 
+<!-- tidy:crate-doc:start -->
 A lightweight version of [pin-project] written with declarative macros.
 
 ## Usage
@@ -25,8 +26,9 @@ pin-project-lite = "0.2"
 struct.
 
 ```rust
-use pin_project_lite::pin_project;
 use std::pin::Pin;
+
+use pin_project_lite::pin_project;
 
 pin_project! {
     struct Struct<T, U> {
@@ -49,8 +51,9 @@ To use [`pin_project!`] on enums, you need to name the projection type
 returned from the method.
 
 ```rust
-use pin_project_lite::pin_project;
 use std::pin::Pin;
+
+use pin_project_lite::pin_project;
 
 pin_project! {
     #[project = EnumProj]
@@ -100,23 +103,22 @@ be useful in most cases. If you do need useful error messages, then upon
 error you can pass the same input to [pin-project] to receive a helpful
 description of the compile error.
 
-### Different: No support for custom Drop implementation
-
-pin-project supports this by [`#[pinned_drop]`][pinned-drop].
-
 ### Different: No support for custom Unpin implementation
 
-pin-project supports this by [`UnsafeUnpin`][unsafe-unpin] and [`!Unpin`][not-unpin].
+pin-project supports this by [`UnsafeUnpin`][unsafe-unpin]. (`!Unpin` is supported by both [pin-project][not-unpin] and [pin-project-lite][not-unpin-lite].)
 
 ### Different: No support for tuple structs and tuple variants
 
 pin-project supports this.
 
-[`pin_project!`]: https://docs.rs/pin-project-lite/0.2/pin_project_lite/macro.pin_project.html
 [not-unpin]: https://docs.rs/pin-project/1/pin_project/attr.pin_project.html#unpin
+[not-unpin-lite]: https://docs.rs/pin-project-lite/0.2/pin_project_lite/macro.pin_project.html#unpin
 [pin-project]: https://github.com/taiki-e/pin-project
-[pinned-drop]: https://docs.rs/pin-project/1/pin_project/attr.pin_project.html#pinned_drop
 [unsafe-unpin]: https://docs.rs/pin-project/1/pin_project/attr.pin_project.html#unsafeunpin
+
+<!-- tidy:crate-doc:end -->
+
+[`pin_project!`]: https://docs.rs/pin-project-lite/0.2/pin_project_lite/macro.pin_project.html
 
 ## License
 

@@ -60,9 +60,10 @@ use super::*;
 use crate::from_iter;
 use crate::net::{read_tcp_table, read_udp_table, TcpNetEntry, UdpNetEntry};
 
-use rustix::fd::{AsFd, BorrowedFd, RawFd};
+use rustix::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use rustix::fs::{AtFlags, Mode, OFlags, RawMode};
-use rustix::io::OwnedFd;
+#[cfg(feature = "serde1")]
+use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fs::read_link;
@@ -91,6 +92,9 @@ pub use status::*;
 mod schedstat;
 pub use schedstat::*;
 
+mod smaps_rollup;
+pub use smaps_rollup::*;
+
 mod task;
 pub use task::*;
 
@@ -101,6 +105,7 @@ bitflags! {
     /// Kernel flags for a process
     ///
     /// See also the [Stat::flags()] method.
+    #[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
     pub struct StatFlags: u32 {
         /// I am an IDLE thread
         const PF_IDLE = 0x0000_0002;
@@ -170,6 +175,7 @@ bitflags! {
 bitflags! {
 
     /// See the [coredump_filter()](struct.Process.html#method.coredump_filter) method.
+    #[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
     pub struct CoredumpFlags: u32 {
         const ANONYMOUS_PRIVATE_MAPPINGS = 0x01;
         const ANONYMOUS_SHARED_MAPPINGS = 0x02;
@@ -190,6 +196,7 @@ bitflags! {
     /// [documented] to be within the `u16` range.
     ///
     /// [documented]: https://man7.org/linux/man-pages/man2/chmod.2.html#DESCRIPTION
+    #[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
     pub struct FDPermissions: u16 {
         const READ = Mode::RUSR.bits() as u16;
         const WRITE = Mode::WUSR.bits() as u16;
@@ -200,6 +207,7 @@ bitflags! {
 bitflags! {
     /// Represents the kernel flags associated with the virtual memory area.
     /// The names of these flags are just those you'll find in the man page, but in upper case.
+    #[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
     pub struct VmFlags: u32 {
         /// Invalid flags
         const INVALID = 0;
@@ -403,6 +411,7 @@ impl FromStr for ProcState {
 /// reads process B's `/proc/<pid>/io` while process  B is updating one of these 64-bit
 /// counters, process A could see an intermediate result.
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct Io {
     /// Characters read
     ///
@@ -448,6 +457,7 @@ pub struct Io {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub enum MMapPath {
     /// The file that is backing the mapping.
     Path(PathBuf),
@@ -504,6 +514,7 @@ impl MMapPath {
 ///
 /// To construct this structure, see [Process::maps()] and [Process::smaps()].
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct MemoryMap {
     /// The address space in the process that the mapping occupies.
     pub address: (u64, u64),
@@ -556,6 +567,7 @@ impl MemoryMap {
 ///
 /// To construct this structure, see [Process::smaps()]
 #[derive(Default, Debug)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct MemoryMapData {
     /// Key-Value pairs that may represent statistics about memory usage, or other interesting things,
     /// such a "ProtectionKey"(if you're on X86 and that kernel config option was specified).
@@ -608,6 +620,7 @@ impl Io {
 ///
 /// See also the [Process::fd()] method.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub enum FDTarget {
     /// A file or device
     Path(PathBuf),
@@ -659,7 +672,6 @@ impl FromStr for FDTarget {
                     Ok(FDTarget::Pipe(inode))
                 }
                 "anon_inode" => Ok(FDTarget::AnonInode(expect!(s.next(), "anon inode").to_string())),
-                "/memfd" => Ok(FDTarget::MemFD(expect!(s.next(), "memfd name").to_string())),
                 "" => Err(ProcError::Incomplete(None)),
                 x => {
                     let inode = expect!(s.next(), "other inode");
@@ -667,6 +679,8 @@ impl FromStr for FDTarget {
                     Ok(FDTarget::Other(x.to_string(), inode))
                 }
             }
+        } else if let Some(s) = s.strip_prefix("/memfd:") {
+            Ok(FDTarget::MemFD(s.to_string()))
         } else {
             Ok(FDTarget::Path(PathBuf::from(s)))
         }
@@ -675,6 +689,7 @@ impl FromStr for FDTarget {
 
 /// See the [Process::fd()] method
 #[derive(Clone)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct FDInfo {
     /// The file descriptor
     pub fd: i32,
@@ -791,7 +806,7 @@ impl Process {
         let file = wrap_io_error!(
             root,
             rustix::fs::openat(
-                &rustix::fs::cwd(),
+                rustix::fs::cwd(),
                 &root,
                 OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
                 Mode::empty()
@@ -808,7 +823,7 @@ impl Process {
             })
             .and_then(|s| s.to_string_lossy().parse::<i32>().ok())
             .or_else(|| {
-                rustix::fs::readlinkat(&rustix::fs::cwd(), &root, Vec::new())
+                rustix::fs::readlinkat(rustix::fs::cwd(), &root, Vec::new())
                     .ok()
                     .and_then(|s| s.to_string_lossy().parse::<i32>().ok())
             });
@@ -850,7 +865,7 @@ impl Process {
     }
 
     /// Is this process still alive?
-    /// 
+    ///
     /// Processes in the Zombie or Dead state are not considered alive.
     pub fn is_alive(&self) -> bool {
         if let Ok(stat) = self.stat() {
@@ -1047,6 +1062,15 @@ impl Process {
         }
 
         Ok(vec)
+    }
+
+    /// This is the sum of all the smaps data but it is much more performant to get it this way.
+    ///
+    /// Since 4.14 and requires CONFIG_PROC_PAGE_MONITOR.
+    pub fn smaps_rollup(&self) -> ProcResult<SmapsRollup> {
+        let file = FileWrapper::open_at(&self.root, &self.fd, "smaps_rollup")?;
+
+        SmapsRollup::from_reader(file)
     }
 
     /// Returns a struct that can be used to access information in the `/proc/pid/pagemap` file.
@@ -1411,13 +1435,19 @@ impl Process {
         let file = FileWrapper::open_at(&self.root, &self.fd, "mem")?;
         Ok(file.inner())
     }
+
+    /// Returns a file which is part of the process proc structure
+    pub fn open_relative(&self, path: &str) -> ProcResult<File> {
+        let file = FileWrapper::open_at(&self.root, &self.fd, path)?;
+        Ok(file.inner())
+    }
 }
 
 /// The result of [`Process::fd`], iterates over all fds in a process
 #[derive(Debug)]
 pub struct FDsIter {
     inner: rustix::fs::Dir,
-    inner_fd: rustix::io::OwnedFd,
+    inner_fd: rustix::fd::OwnedFd,
     root: PathBuf,
 }
 
@@ -1447,7 +1477,7 @@ impl std::iter::Iterator for FDsIter {
 pub struct TasksIter {
     pid: i32,
     inner: rustix::fs::Dir,
-    inner_fd: rustix::io::OwnedFd,
+    inner_fd: rustix::fd::OwnedFd,
     root: PathBuf,
 }
 
@@ -1491,14 +1521,17 @@ pub fn all_processes_with_root(root: impl AsRef<Path>) -> ProcResult<ProcessesIt
     let dir = wrap_io_error!(
         root,
         rustix::fs::openat(
-            &rustix::fs::cwd(),
+            rustix::fs::cwd(),
             root,
             OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
             Mode::empty()
         )
     )?;
     let dir = wrap_io_error!(root, rustix::fs::Dir::read_from(dir))?;
-    Ok(ProcessesIter { inner: dir })
+    Ok(ProcessesIter {
+        root: PathBuf::from(root),
+        inner: dir,
+    })
 }
 
 /// An iterator over all processes in the system.
@@ -1510,6 +1543,7 @@ pub fn all_processes_with_root(root: impl AsRef<Path>) -> ProcResult<ProcessesIt
 /// for more information.
 #[derive(Debug)]
 pub struct ProcessesIter {
+    root: PathBuf,
     inner: rustix::fs::Dir,
 }
 
@@ -1520,7 +1554,7 @@ impl std::iter::Iterator for ProcessesIter {
             match self.inner.next() {
                 Some(Ok(entry)) => {
                     if let Ok(pid) = i32::from_str(&entry.file_name().to_string_lossy()) {
-                        if let Ok(proc) = Process::new(pid) {
+                        if let Ok(proc) = Process::new_with_root(self.root.join(pid.to_string())) {
                             break Some(Ok(proc));
                         }
                     }
@@ -1534,6 +1568,7 @@ impl std::iter::Iterator for ProcessesIter {
 
 /// Provides information about memory usage, measured in pages.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde1", derive(Serialize, Deserialize))]
 pub struct StatM {
     /// Total program size, measured in pages
     ///

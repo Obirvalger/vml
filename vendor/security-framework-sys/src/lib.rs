@@ -8,13 +8,17 @@ extern "C" {}
 
 #[cfg(target_os = "macos")]
 pub mod access;
+pub mod access_control;
 #[cfg(target_os = "macos")]
 pub mod authorization;
 pub mod base;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod certificate;
 #[cfg(target_os = "macos")]
 pub mod certificate_oids;
 pub mod cipher_suite;
+#[cfg(target_os = "macos")]
+pub mod code_signing;
 #[cfg(target_os = "macos")]
 pub mod digest_transform;
 #[cfg(target_os = "macos")]

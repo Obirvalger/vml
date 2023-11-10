@@ -56,14 +56,7 @@ where
     Fut: Future<Output = Option<B>>,
 {
     pub(super) fn new(stream: St, initial_state: S, f: F) -> Self {
-        Self {
-            stream,
-            state_f: Some(StateFn {
-                state: initial_state,
-                f,
-            }),
-            future: None,
-        }
+        Self { stream, state_f: Some(StateFn { state: initial_state, f }), future: None }
     }
 
     delegate_access_inner!(stream, St, ());
@@ -125,11 +118,11 @@ where
 
 // Forwarding impl of Sink from the underlying stream
 #[cfg(feature = "sink")]
-impl<S, Fut, F, Item> Sink<Item> for Scan<S, S, Fut, F>
+impl<St, S, Fut, F, Item> Sink<Item> for Scan<St, S, Fut, F>
 where
-    S: Stream + Sink<Item>,
+    St: Stream + Sink<Item>,
 {
-    type Error = S::Error;
+    type Error = St::Error;
 
     delegate_sink!(stream, Item);
 }

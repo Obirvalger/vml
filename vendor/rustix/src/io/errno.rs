@@ -1,8 +1,8 @@
 //! The `Errno` type, which is a minimal wrapper around an error code.
 //!
-//! We define the error constants as individual `const`s instead of an
-//! enum because we may not know about all of the host's error values
-//! and we don't want unrecognized values to create UB.
+//! We define the error constants as individual `const`s instead of an enum
+//! because we may not know about all of the host's error values and we don't
+//! want unrecognized values to create undefined behavior.
 
 use crate::backend;
 use core::{fmt, result};
@@ -10,21 +10,8 @@ use core::{fmt, result};
 use std::error;
 
 /// A specialized [`Result`] type for `rustix` APIs.
-///
-/// [`Result`]: core::result::Result
 pub type Result<T> = result::Result<T, Errno>;
 
-/// `errno`—An error code.
-///
-/// The error type for `rustix` APIs. This is similar to `std::io::Error`, but
-/// only holds an OS error code, and no extra error value.
-///
-/// # References
-///  - [POSIX]
-///  - [Linux]
-///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/errno.html
-/// [Linux]: https://man7.org/linux/man-pages/man3/errno.3.html
 pub use backend::io::errno::Errno;
 
 impl Errno {

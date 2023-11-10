@@ -69,7 +69,7 @@ impl SecKeychainItem {
                 self.as_CFTypeRef() as *mut _,
                 ptr::null(),
                 password.len() as u32,
-                password.as_ptr() as *const _,
+                password.as_ptr().cast(),
             ))?;
         }
         Ok(())
@@ -98,7 +98,7 @@ pub fn find_generic_password(
     service: &str,
     account: &str,
 ) -> Result<(SecKeychainItemPassword, SecKeychainItem)> {
-    let keychains_or_none = keychains.map(|refs| CFArray::from_CFTypes(refs));
+    let keychains_or_none = keychains.map(CFArray::from_CFTypes);
 
     let keychains_or_null = match keychains_or_none {
         None => ptr::null(),
@@ -113,9 +113,9 @@ pub fn find_generic_password(
         cvt(SecKeychainFindGenericPassword(
             keychains_or_null,
             service.len() as u32,
-            service.as_ptr() as *const _,
+            service.as_ptr().cast(),
             account.len() as u32,
-            account.as_ptr() as *const _,
+            account.as_ptr().cast(),
             &mut data_len,
             &mut data,
             &mut item,
@@ -139,6 +139,7 @@ pub fn find_generic_password(
 /// * `port`: The TCP/IP port number.
 /// * `protocol`: The protocol associated with this password.
 /// * `authentication_type`: The authentication scheme used.
+#[allow(clippy::too_many_arguments)]
 pub fn find_internet_password(
     keychains: Option<&[SecKeychain]>,
     server: &str,
@@ -149,7 +150,7 @@ pub fn find_internet_password(
     protocol: SecProtocolType,
     authentication_type: SecAuthenticationType,
 ) -> Result<(SecKeychainItemPassword, SecKeychainItem)> {
-    let keychains_or_none = keychains.map(|refs| CFArray::from_CFTypes(refs));
+    let keychains_or_none = keychains.map(CFArray::from_CFTypes);
 
     let keychains_or_null = match keychains_or_none {
         None => ptr::null(),
@@ -164,14 +165,14 @@ pub fn find_internet_password(
         cvt(SecKeychainFindInternetPassword(
             keychains_or_null,
             server.len() as u32,
-            server.as_ptr() as *const _,
+            server.as_ptr().cast(),
             security_domain.map_or(0, |s| s.len() as u32),
             security_domain
-                .map_or(ptr::null(), |s| s.as_ptr() as *const _),
+                .map_or(ptr::null(), |s| s.as_ptr().cast()),
             account.len() as u32,
-            account.as_ptr() as *const _,
+            account.as_ptr().cast(),
             path.len() as u32,
-            path.as_ptr() as *const _,
+            path.as_ptr().cast(),
             port.unwrap_or(0),
             protocol,
             authentication_type,
@@ -202,6 +203,7 @@ impl SecKeychain {
 
     /// Find internet password in this keychain
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn find_internet_password(
         &self,
         server: &str,
@@ -225,6 +227,7 @@ impl SecKeychain {
     }
 
     /// Update existing or add new internet password
+    #[allow(clippy::too_many_arguments)]
     pub fn set_internet_password(
         &self,
         server: &str,
@@ -292,11 +295,11 @@ impl SecKeychain {
             cvt(SecKeychainAddGenericPassword(
                 self.as_CFTypeRef() as *mut _,
                 service.len() as u32,
-                service.as_ptr() as *const _,
+                service.as_ptr().cast(),
                 account.len() as u32,
-                account.as_ptr() as *const _,
+                account.as_ptr().cast(),
                 password.len() as u32,
-                password.as_ptr() as *const _,
+                password.as_ptr().cast(),
                 ptr::null_mut(),
             ))?;
         }
@@ -307,6 +310,7 @@ impl SecKeychain {
     ///
     /// See `set_internet_password()`
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn add_internet_password(
         &self,
         server: &str,
@@ -322,19 +326,19 @@ impl SecKeychain {
             cvt(SecKeychainAddInternetPassword(
                 self.as_CFTypeRef() as *mut _,
                 server.len() as u32,
-                server.as_ptr() as *const _,
+                server.as_ptr().cast(),
                 security_domain.map_or(0, |s| s.len() as u32),
                 security_domain
-                    .map_or(ptr::null(), |s| s.as_ptr() as *const _),
+                    .map_or(ptr::null(), |s| s.as_ptr().cast()),
                 account.len() as u32,
-                account.as_ptr() as *const _,
+                account.as_ptr().cast(),
                 path.len() as u32,
-                path.as_ptr() as *const _,
+                path.as_ptr().cast(),
                 port.unwrap_or(0),
                 protocol,
                 authentication_type,
                 password.len() as u32,
-                password.as_ptr() as *const _,
+                password.as_ptr().cast(),
                 ptr::null_mut(),
             ))?;
         }
@@ -346,10 +350,11 @@ impl SecKeychain {
 mod test {
     use super::*;
     use crate::os::macos::keychain::{CreateOptions, SecKeychain};
-    use tempdir::TempDir;
+    use tempfile::tempdir;
+    use tempfile::TempDir;
 
     fn temp_keychain_setup(name: &str) -> (TempDir, SecKeychain) {
-        let dir = TempDir::new("passwords").expect("TempDir::new");
+        let dir = tempdir().expect("TempDir::new");
         let keychain = CreateOptions::new()
             .password("foobar")
             .create(dir.path().join(name.to_string() + ".keychain"))

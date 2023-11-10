@@ -1,7 +1,6 @@
 use js_sys::*;
 use std::f64::NAN;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
 
 #[wasm_bindgen]
@@ -189,6 +188,13 @@ fn has_own_property() {
     assert!(foo_42().has_own_property(&"foo".into()));
     assert!(!foo_42().has_own_property(&"bar".into()));
     assert!(map_with_symbol_key().has_own_property(&symbol_key()));
+}
+
+#[wasm_bindgen_test]
+fn has_own() {
+    assert!(Object::has_own(&foo_42(), &"foo".into()));
+    assert!(!Object::has_own(&foo_42(), &"bar".into()));
+    assert!(Object::has_own(&map_with_symbol_key(), &symbol_key()));
 }
 
 #[wasm_bindgen_test]

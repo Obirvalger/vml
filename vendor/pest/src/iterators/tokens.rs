@@ -27,19 +27,19 @@ pub struct Tokens<'i, R> {
     /// # Safety:
     ///
     /// All `QueueableToken`s' `input_pos` must be valid character boundary indices into `input`.
-    queue: Rc<Vec<QueueableToken<R>>>,
+    queue: Rc<Vec<QueueableToken<'i, R>>>,
     input: &'i str,
     start: usize,
     end: usize,
 }
 
 // TODO(safety): QueueableTokens must be valid indices into input.
-pub fn new<R: RuleType>(
-    queue: Rc<Vec<QueueableToken<R>>>,
-    input: &str,
+pub fn new<'i, R: RuleType>(
+    queue: Rc<Vec<QueueableToken<'i, R>>>,
+    input: &'i str,
     start: usize,
     end: usize,
-) -> Tokens<R> {
+) -> Tokens<'i, R> {
     if cfg!(debug_assertions) {
         for tok in queue.iter() {
             match *tok {
@@ -92,6 +92,12 @@ impl<'i, R: RuleType> Tokens<'i, R> {
     }
 }
 
+impl<'i, R: RuleType> ExactSizeIterator for Tokens<'i, R> {
+    fn len(&self) -> usize {
+        self.end - self.start
+    }
+}
+
 impl<'i, R: RuleType> Iterator for Tokens<'i, R> {
     type Item = Token<'i, R>;
 
@@ -105,6 +111,11 @@ impl<'i, R: RuleType> Iterator for Tokens<'i, R> {
         self.start += 1;
 
         Some(token)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = <Self as ExactSizeIterator>::len(self);
+        (len, Some(len))
     }
 }
 
@@ -123,7 +134,7 @@ impl<'i, R: RuleType> DoubleEndedIterator for Tokens<'i, R> {
 }
 
 impl<'i, R: RuleType> fmt::Debug for Tokens<'i, R> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.clone()).finish()
     }
 }
@@ -138,9 +149,26 @@ mod tests {
     #[test]
     fn double_ended_iter_for_tokens() {
         let pairs = AbcParser::parse(Rule::a, "abcde").unwrap();
-        let mut tokens = pairs.clone().tokens().collect::<Vec<Token<Rule>>>();
+        let mut tokens = pairs.clone().tokens().collect::<Vec<Token<'_, Rule>>>();
         tokens.reverse();
-        let reverse_tokens = pairs.tokens().rev().collect::<Vec<Token<Rule>>>();
+        let reverse_tokens = pairs.tokens().rev().collect::<Vec<Token<'_, Rule>>>();
         assert_eq!(tokens, reverse_tokens);
+    }
+
+    #[test]
+    fn exact_size_iter_for_tokens() {
+        let tokens = AbcParser::parse(Rule::a, "abcde").unwrap().tokens();
+        assert_eq!(tokens.len(), tokens.count());
+
+        let tokens = AbcParser::parse(Rule::a, "我很漂亮e").unwrap().tokens();
+        assert_eq!(tokens.len(), tokens.count());
+
+        let tokens = AbcParser::parse(Rule::a, "abcde").unwrap().tokens().rev();
+        assert_eq!(tokens.len(), tokens.count());
+
+        let mut tokens = AbcParser::parse(Rule::a, "abcde").unwrap().tokens();
+        let tokens_len = tokens.len();
+        let _ = tokens.next().unwrap();
+        assert_eq!(tokens.count() + 1, tokens_len);
     }
 }

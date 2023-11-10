@@ -7,24 +7,22 @@ use core::fmt;
 use core::pin::Pin;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering::SeqCst;
-use futures_core::future::{Future, FusedFuture};
+use futures_core::future::{FusedFuture, Future};
 use futures_core::task::{Context, Poll, Waker};
 
 use crate::lock::Lock;
 
 /// A future for a value that will be provided by another asynchronous task.
 ///
-/// This is created by the [`channel`](channel) function.
+/// This is created by the [`channel`] function.
 #[must_use = "futures do nothing unless you `.await` or poll them"]
-#[derive(Debug)]
 pub struct Receiver<T> {
     inner: Arc<Inner<T>>,
 }
 
 /// A means of transmitting a single value to another task.
 ///
-/// This is created by the [`channel`](channel) function.
-#[derive(Debug)]
+/// This is created by the [`channel`] function.
 pub struct Sender<T> {
     inner: Arc<Inner<T>>,
 }
@@ -35,7 +33,6 @@ impl<T> Unpin for Sender<T> {}
 
 /// Internal state of the `Receiver`/`Sender` pair above. This is all used as
 /// the internal synchronization between the two for send/recv operations.
-#[derive(Debug)]
 struct Inner<T> {
     /// Indicates whether this oneshot is complete yet. This is filled in both
     /// by `Sender::drop` and by `Receiver::drop`, and both sides interpret it
@@ -106,12 +103,8 @@ struct Inner<T> {
 /// ```
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     let inner = Arc::new(Inner::new());
-    let receiver = Receiver {
-        inner: inner.clone(),
-    };
-    let sender = Sender {
-        inner,
-    };
+    let receiver = Receiver { inner: inner.clone() };
+    let sender = Sender { inner };
     (sender, receiver)
 }
 
@@ -127,7 +120,7 @@ impl<T> Inner<T> {
 
     fn send(&self, t: T) -> Result<(), T> {
         if self.complete.load(SeqCst) {
-            return Err(t)
+            return Err(t);
         }
 
         // Note that this lock acquisition may fail if the receiver
@@ -164,7 +157,7 @@ impl<T> Inner<T> {
         // destructor, but our destructor hasn't run yet so if it's set then the
         // oneshot is gone.
         if self.complete.load(SeqCst) {
-            return Poll::Ready(())
+            return Poll::Ready(());
         }
 
         // If our other half is not gone then we need to park our current task
@@ -273,7 +266,10 @@ impl<T> Inner<T> {
         } else {
             let task = cx.waker().clone();
             match self.rx_task.try_lock() {
-                Some(mut slot) => { *slot = Some(task); false },
+                Some(mut slot) => {
+                    *slot = Some(task);
+                    false
+                }
                 None => true,
             }
         };
@@ -336,8 +332,8 @@ impl<T> Sender<T> {
     /// Completes this oneshot with a successful result.
     ///
     /// This function will consume `self` and indicate to the other end, the
-    /// [`Receiver`](Receiver), that the value provided is the result of the
-    /// computation this represents.
+    /// [`Receiver`], that the value provided is the result of the computation
+    /// this represents.
     ///
     /// If the value is successfully enqueued for the remote end to receive,
     /// then `Ok(())` is returned. If the receiving end was dropped before
@@ -347,7 +343,7 @@ impl<T> Sender<T> {
     }
 
     /// Polls this `Sender` half to detect whether its associated
-    /// [`Receiver`](Receiver) has been dropped.
+    /// [`Receiver`] has been dropped.
     ///
     /// # Return values
     ///
@@ -363,10 +359,10 @@ impl<T> Sender<T> {
     }
 
     /// Creates a future that resolves when this `Sender`'s corresponding
-    /// [`Receiver`](Receiver) half has hung up.
+    /// [`Receiver`] half has hung up.
     ///
     /// This is a utility wrapping [`poll_canceled`](Sender::poll_canceled)
-    /// to expose a [`Future`](core::future::Future).
+    /// to expose a [`Future`].
     pub fn cancellation(&mut self) -> Cancellation<'_, T> {
         Cancellation { inner: self }
     }
@@ -394,6 +390,12 @@ impl<T> Drop for Sender<T> {
     }
 }
 
+impl<T> fmt::Debug for Sender<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Sender").field("complete", &self.inner.complete).finish()
+    }
+}
+
 /// A future that resolves when the receiving end of a channel has hung up.
 ///
 /// This is an `.await`-friendly interface around [`poll_canceled`](Sender::poll_canceled).
@@ -411,8 +413,8 @@ impl<T> Future for Cancellation<'_, T> {
     }
 }
 
-/// Error returned from a [`Receiver`](Receiver) when the corresponding
-/// [`Sender`](Sender) is dropped.
+/// Error returned from a [`Receiver`] when the corresponding [`Sender`] is
+/// dropped.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Canceled;
 
@@ -453,10 +455,7 @@ impl<T> Receiver<T> {
 impl<T> Future for Receiver<T> {
     type Output = Result<T, Canceled>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<T, Canceled>> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, Canceled>> {
         self.inner.recv(cx)
     }
 }
@@ -479,5 +478,11 @@ impl<T> FusedFuture for Receiver<T> {
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         self.inner.drop_rx()
+    }
+}
+
+impl<T> fmt::Debug for Receiver<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Receiver").field("complete", &self.inner.complete).finish()
     }
 }

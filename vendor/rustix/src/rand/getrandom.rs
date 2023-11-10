@@ -1,6 +1,5 @@
 use crate::{backend, io};
 
-/// `GRND_*`
 pub use backend::rand::types::GetRandomFlags;
 
 /// `getrandom(buf, flags)`—Reads a sequence of random bytes.

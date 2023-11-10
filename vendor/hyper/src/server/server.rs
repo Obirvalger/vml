@@ -2,10 +2,12 @@ use std::error::Error as StdError;
 use std::fmt;
 #[cfg(feature = "tcp")]
 use std::net::{SocketAddr, TcpListener as StdTcpListener};
-#[cfg(any(feature = "tcp", feature = "http1"))]
+
+#[cfg(feature = "tcp")]
 use std::time::Duration;
 
 use pin_project_lite::pin_project;
+
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::trace;
 
@@ -371,6 +373,18 @@ impl<I, E> Builder<I, E> {
         self
     }
 
+    /// Configures the maximum number of pending reset streams allowed before a GOAWAY will be sent.
+    ///
+    /// This will default to whatever the default in h2 is. As of v0.3.17, it is 20.
+    ///
+    /// See <https://github.com/hyperium/hyper/issues/2877> for more information.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_max_pending_accept_reset_streams(mut self, max: impl Into<Option<usize>>) -> Self {
+        self.protocol.http2_max_pending_accept_reset_streams(max);
+        self
+    }
+
     /// Sets the [`SETTINGS_INITIAL_WINDOW_SIZE`][spec] option for HTTP2
     /// stream-level flow control.
     ///
@@ -420,6 +434,16 @@ impl<I, E> Builder<I, E> {
     #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
     pub fn http2_max_frame_size(mut self, sz: impl Into<Option<u32>>) -> Self {
         self.protocol.http2_max_frame_size(sz);
+        self
+    }
+
+    /// Sets the max size of received header frames.
+    ///
+    /// Default is currently ~16MB, but may change.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_max_header_list_size(mut self, max: u32) -> Self {
+        self.protocol.http2_max_header_list_size(max);
         self
     }
 
@@ -559,13 +583,24 @@ impl<I, E> Builder<I, E> {
     doc(cfg(all(feature = "tcp", any(feature = "http1", feature = "http2"))))
 )]
 impl<E> Builder<AddrIncoming, E> {
-    /// Set whether TCP keepalive messages are enabled on accepted connections.
+    /// Set the duration to remain idle before sending TCP keepalive probes.
     ///
-    /// If `None` is specified, keepalive is disabled, otherwise the duration
-    /// specified will be the time to remain idle before sending TCP keepalive
-    /// probes.
+    /// If `None` is specified, keepalive is disabled.
     pub fn tcp_keepalive(mut self, keepalive: Option<Duration>) -> Self {
         self.incoming.set_keepalive(keepalive);
+        self
+    }
+
+    /// Set the duration between two successive TCP keepalive retransmissions,
+    /// if acknowledgement to the previous keepalive transmission is not received.
+    pub fn tcp_keepalive_interval(mut self, interval: Option<Duration>) -> Self {
+        self.incoming.set_keepalive_interval(interval);
+        self
+    }
+
+    /// Set the number of retransmissions to be carried out before declaring that remote end is not available.
+    pub fn tcp_keepalive_retries(mut self, retries: Option<u32>) -> Self {
+        self.incoming.set_keepalive_retries(retries);
         self
     }
 
