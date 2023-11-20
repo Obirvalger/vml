@@ -1,0 +1,4 @@
+#!/bin/bash -eu
+
+echo "You trying to xrun vm, probably with name $BASH_ARGV :)"
+vml run "$@"

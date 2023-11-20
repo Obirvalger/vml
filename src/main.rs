@@ -806,6 +806,21 @@ fn main() -> Result<()> {
             cli::completion(completion_matches.value_of("SHELL").unwrap())?
         }
 
+        Some((ext, sub_matches)) => {
+            let args =
+                sub_matches.get_many::<String>("").into_iter().flatten().collect::<Vec<_>>();
+            let ext = format!("vml-{}", ext);
+            #[cfg(debug_assertions)]
+            println!("Calling out to {:?} with {:?}", ext, args);
+            Command::new(&ext)
+                .args(&args)
+                .spawn()
+                .with_context(|| {
+                    format!("failed to run executable {:?} with args `{:?}`", ext, args)
+                })?
+                .wait()?;
+        }
+
         _ => println!("Unexpected command"),
     }
 
