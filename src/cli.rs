@@ -732,6 +732,7 @@ pub fn build_cli() -> clap::Command<'static> {
             Command::new("list")
                 .about("list virtual machines")
                 .visible_alias("ls")
+                .alias("l")
                 .arg(Arg::new("NAME").takes_value(true))
                 .arg(
                     Arg::new("names")
