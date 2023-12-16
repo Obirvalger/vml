@@ -32,7 +32,7 @@ pub enum Error {
     RsyncTo(String, String),
     #[error("start runnig vm `{0}`")]
     StartRunningVM(String),
-    #[error("can't ssh to vm `{0}`")]
+    #[error("ssh to vm `{0}` failed")]
     SshFailed(String),
     #[error("can't find private ssh key for vm `{0}`")]
     SshPrivateKeyDoesNotExists(String),
