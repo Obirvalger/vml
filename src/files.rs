@@ -5,6 +5,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use cmd_lib::run_cmd;
+use file_lock::{FileLock, FileOptions};
 use rust_embed::RustEmbed;
 
 use crate::config::Config;
@@ -27,6 +28,16 @@ struct AssetScripts;
 #[folder = "files"]
 struct AssetAllFiles;
 
+fn lock_write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let options = FileOptions::new().create(true).truncate(true).write(true);
+    let block = true;
+    if let Ok(mut filelock) = FileLock::lock(path.as_ref(), block, options) {
+        filelock.file.write_all(contents.as_ref())?;
+    }
+
+    Ok(())
+}
+
 pub fn get_config<S: AsRef<str>>(path: S) -> Result<Cow<'static, [u8]>> {
     AssetConfigs::get(path.as_ref())
         .map(|f| f.data)
@@ -44,7 +55,7 @@ fn install_executables_in_config_dir<E: RustEmbed, S: AsRef<str>>(
         let filename = filename.as_ref();
         let filepath = directory.join(filename);
         let content = E::get(filename).unwrap();
-        fs::write(&filepath, content.data)?;
+        lock_write(&filepath, content.data)?;
         run_cmd!(chmod +x $filepath)?
     }
 
@@ -70,7 +81,7 @@ fn install_config(filename: &str) -> Result<()> {
             fs::copy(etc_config, config)?;
         } else {
             let content = AssetConfigs::get(filename).unwrap();
-            fs::write(config, content.data)?;
+            lock_write(config, content.data)?;
         }
     }
 
@@ -88,7 +99,7 @@ fn install_openssh_config(config: &Config) -> Result<()> {
     if let Some(dir) = main_config.parent() {
         fs::create_dir_all(dir)?;
     }
-    fs::write(
+    lock_write(
         main_config,
         format!("Include {}/*", &config.openssh_config.vm_configs_dir.display()),
     )?;
