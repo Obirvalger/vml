@@ -4,13 +4,13 @@ use std::collections::btree_map;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::env::consts::ARCH;
 use std::fs;
-use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{bail, Context, Result};
 use cmd_lib::run_fun;
+use file_lock::{FileLock, FileOptions};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Images as ConfigImages;
@@ -351,11 +351,14 @@ pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()
 
     let images = update_images(&mut embedded_images, &mut config_images);
 
-    let mut images_file = OpenOptions::new().truncate(true).write(true).open(&images_file_path)?;
     let header = files::get_config("images-header")?;
-    images_file.write_all(&header)?;
     let images_string = toml::to_string(&images).expect("Bad internal images representation");
-    images_file.write_all(images_string.as_bytes())?;
+    let options = FileOptions::new().create(true).truncate(true).write(true);
+    let block = true;
+    if let Ok(mut images_filelock) = FileLock::lock(&images_file_path, block, options) {
+        images_filelock.file.write_all(&header)?;
+        images_filelock.file.write_all(images_string.as_bytes())?;
+    }
 
     Ok(())
 }
