@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -10,14 +11,14 @@ use std::time::Duration;
 
 use anyhow::Context as AnyhowContext;
 use anyhow::{bail, Result};
+use file_lock::{FileLock, FileOptions};
 use procfs::process::Process;
 use rand::Rng;
 use tera::Context;
 
 use crate::cache::Cache;
 use crate::cloud_init;
-use crate::config::Config;
-use crate::config::CreateExistsAction;
+use crate::config::{Config, CreateExistsAction, config_dir};
 use crate::gui::ConfigGui;
 use crate::images;
 use crate::images::Images;
@@ -311,6 +312,7 @@ impl VM {
         eprintln!("Start vm {:?}", self.name);
         let mut qemu = Command::new(&self.qemu_binary);
         let mut context = self.context();
+        let mut user_net = "".to_string();
 
         qemu.args(["-m", &self.memory])
             .arg("--enable-kvm")
@@ -342,14 +344,11 @@ impl VM {
                     let hostfwd = if let Some(ssh) = &self.ssh {
                         let host = ssh.host().to_string();
                         let port = ssh.port().to_string();
-                        let port =
-                            if port == "random" { get_available_port().unwrap() } else { port };
-                        self.cache.store("port", &port)?;
                         format!(",hostfwd=tcp:{}:{}-:22,model={}", host, port, &self.nic_model)
                     } else {
                         "".to_string()
                     };
-                    qemu.args(["-nic", &format!("user{}", hostfwd)]);
+                    user_net = format!("user{}", hostfwd);
                 }
                 Net::Tap { address, nameservers, tap, .. } => {
                     context.insert("address", &address);
@@ -415,6 +414,39 @@ impl VM {
 
         if let Some(size) = &self.minimum_disk_size {
             try_resize(&self.disk, *size)?;
+        }
+
+        if !user_net.is_empty() {
+            if user_net.contains("random") {
+                let options = FileOptions::new().create(true).truncate(true).write(true);
+                let block = true;
+                let lock_path = config_dir().join("port-lock");
+                if let Ok(mut filelock) = FileLock::lock(lock_path, block, options) {
+                    let port = get_available_port().unwrap();
+                    self.cache.store("port", &port)?;
+                    let user_net = user_net.replace("random", &port);
+                    qemu.args(["-nic", &user_net]);
+
+                    #[cfg(debug_assertions)]
+                    eprintln!("{:?}", &qemu);
+                    let exit_status = qemu
+                        .spawn()
+                        .with_context(|| {
+                            format!("failed to run executable executable {}", &self.qemu_binary)
+                        })?
+                        .wait()?;
+
+                    if !exit_status.success() {
+                        bail!(Error::StartVmFailed(self.name.to_string()));
+                    }
+
+                    filelock.file.write_all(port.as_bytes())?;
+
+                    return Ok(())
+                }
+            } else {
+                qemu.args(["-nic", &user_net]);
+            };
         }
 
         #[cfg(debug_assertions)]
