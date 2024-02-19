@@ -763,11 +763,7 @@ fn main() -> Result<()> {
             let interactive =
                 remove_matches.is_present("interactive") || config.commands.remove.interactive;
 
-            if !force {
-                vmc.with_pid(WithPid::Without);
-            } else {
-                vmc.with_pid(WithPid::Option);
-            }
+            vmc.with_pid(WithPid::Option);
 
             let remove = if force {
                 true
