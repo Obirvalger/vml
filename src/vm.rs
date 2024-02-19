@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use anyhow::Context as AnyhowContext;
 use anyhow::{bail, Result};
+use cmd_lib::run_fun;
 use file_lock::{FileLock, FileOptions};
 use log::{debug, info};
 use procfs::process::Process;
@@ -930,15 +931,12 @@ fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u64> {
 fn try_resize<S: AsRef<OsStr>>(image: S, size: u64) -> Result<()> {
     let image = image.as_ref();
     let current_size = image_size(image)?;
+    let image = image.to_os_string();
 
     if current_size < size {
-        Command::new("qemu-img")
-            .arg("resize")
-            .arg(image)
-            .arg(&size.to_string())
-            .spawn()
-            .context("failed to run executable qemu-img")?
-            .wait()?;
+        let out =
+            run_fun!(qemu-img resize $image $size).context("failed to run executable qemu-img")?;
+        info!("{}", out);
     }
 
     Ok(())
