@@ -735,7 +735,7 @@ impl VM {
 
     pub fn remove(self) -> Result<()> {
         if self.has_pid() {
-            bail!(Error::RemoveRuuningVM(self.name));
+            bail!(Error::RemoveRunningVM(self.name));
         }
 
         fs::remove_dir_all(self.directory)?;

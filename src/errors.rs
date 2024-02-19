@@ -23,7 +23,7 @@ pub enum Error {
     #[error("image `{0}` does not exist")]
     ImageDoesNotExists(String),
     #[error("try to remove running vm `{0}`")]
-    RemoveRuuningVM(String),
+    RemoveRunningVM(String),
     #[error("try to store image to existing file `{0}`")]
     RewriteExistsPath(String),
     #[error("could not rsync files `{0}` from vm `{1}`")]
