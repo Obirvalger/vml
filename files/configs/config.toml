@@ -1,6 +1,8 @@
 # NOTE user your own path
 vms-dir = "~/vml"
 
+log-level = "info"
+
 nameservers = ["8.8.8.8"]
 
 # treat vml-common.toml files in parent dirs as additional configs
@@ -21,7 +23,7 @@ list.fold = false
 
 remove.interactive = true
 
-remove.verbose = true
+remove.verbose = false
 
 rsync.check = true
 

@@ -29,6 +29,13 @@ pub fn build_cli() -> clap::Command<'static> {
         .allow_external_subcommands(true)
         .infer_subcommands(true)
         .infer_long_args(true)
+        .arg(
+            Arg::new("log-level")
+                .long("log-level")
+                .value_parser(["off", "error", "warn", "info", "debug", "trace"])
+                .takes_value(true)
+                .help("Set log level"),
+        )
         .arg(Arg::new("all-vms").long("all-vms").help("Specify all vms"))
         .arg(
             Arg::new("host")

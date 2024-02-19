@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::{bail, Context, Result};
 use cmd_lib::run_fun;
 use file_lock::{FileLock, FileOptions};
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Images as ConfigImages;
@@ -113,7 +114,7 @@ impl<'a> Image<'a> {
         let images_dir = &self.config.directory;
         let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;
 
-        println!("Downloading image {} {}", &self.name, url);
+        info!("Downloading image {} {}", &self.name, url);
         body.copy_to(&mut tmp).map_err(|e| Error::DownloadImage(e.to_string()))?;
 
         fs::rename(tmp.path(), &image_path)?;

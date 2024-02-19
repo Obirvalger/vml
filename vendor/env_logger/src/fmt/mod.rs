@@ -9,8 +9,14 @@
 //!
 //! The format used to print log records can be customised using the [`Builder::format`]
 //! method.
-//! Custom formats can apply different color and weight to printed values using
-//! [`Style`] builders.
+//!
+//! Terminal styling is done through ANSI escape codes and will be adapted to the capabilities of
+//! the target stream.
+//! For example, you could use one of:
+//! - [anstyle](https://docs.rs/anstyle) is a minimal, runtime string styling API and is re-exported as [`style`]
+//! - [owo-colors](https://docs.rs/owo-colors) is a feature rich runtime string styling API
+//! - [color-print](https://docs.rs/color-print) for feature-rich compile-time styling API
+//! See also [`Formatter::default_level_style`]
 //!
 //! ```
 //! use std::io::Write;
@@ -24,10 +30,8 @@
 //! });
 //! ```
 //!
-//! [`Formatter`]: struct.Formatter.html
-//! [`Style`]: struct.Style.html
-//! [`Builder::format`]: ../struct.Builder.html#method.format
-//! [`Write`]: https://doc.rust-lang.org/stable/std/io/trait.Write.html
+//! [`Builder::format`]: crate::Builder::format
+//! [`Write`]: std::io::Write
 
 use std::cell::RefCell;
 use std::fmt::Display;
@@ -35,19 +39,23 @@ use std::io::prelude::*;
 use std::rc::Rc;
 use std::{fmt, io, mem};
 
+#[cfg(feature = "color")]
+use log::Level;
 use log::Record;
 
+#[cfg(feature = "humantime")]
 mod humantime;
 pub(crate) mod writer;
 
-pub use self::humantime::glob::*;
-pub use self::writer::glob::*;
+#[cfg(feature = "color")]
+pub use anstyle as style;
+
+#[cfg(feature = "humantime")]
+pub use self::humantime::Timestamp;
+pub use self::writer::Target;
+pub use self::writer::WriteStyle;
 
 use self::writer::{Buffer, Writer};
-
-pub(crate) mod glob {
-    pub use super::{Target, TimestampPrecision, WriteStyle};
-}
 
 /// Formatting precision of timestamps.
 ///
@@ -76,7 +84,7 @@ impl Default for TimestampPrecision {
 /// A formatter to write logs into.
 ///
 /// `Formatter` implements the standard [`Write`] trait for writing log records.
-/// It also supports terminal colors, through the [`style`] method.
+/// It also supports terminal styling using ANSI escape codes.
 ///
 /// # Examples
 ///
@@ -91,9 +99,8 @@ impl Default for TimestampPrecision {
 /// builder.format(|buf, record| writeln!(buf, "{}: {}", record.level(), record.args()));
 /// ```
 ///
-/// [`Write`]: https://doc.rust-lang.org/stable/std/io/trait.Write.html
-/// [`writeln`]: https://doc.rust-lang.org/stable/std/macro.writeln.html
-/// [`style`]: #method.style
+/// [`Write`]: std::io::Write
+/// [`writeln`]: std::writeln
 pub struct Formatter {
     buf: Rc<RefCell<Buffer>>,
     write_style: WriteStyle,
@@ -120,6 +127,30 @@ impl Formatter {
     }
 }
 
+#[cfg(feature = "color")]
+impl Formatter {
+    /// Get the default [`style::Style`] for the given level.
+    ///
+    /// The style can be used to print other values besides the level.
+    ///
+    /// See [`style`] for how to adapt it to the styling crate of your choice
+    pub fn default_level_style(&self, level: Level) -> style::Style {
+        if self.write_style == WriteStyle::Never {
+            style::Style::new()
+        } else {
+            match level {
+                Level::Trace => style::AnsiColor::Cyan.on_default(),
+                Level::Debug => style::AnsiColor::Blue.on_default(),
+                Level::Info => style::AnsiColor::Green.on_default(),
+                Level::Warn => style::AnsiColor::Yellow.on_default(),
+                Level::Error => style::AnsiColor::Red
+                    .on_default()
+                    .effects(style::Effects::BOLD),
+            }
+        }
+    }
+}
+
 impl Write for Formatter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buf.borrow_mut().write(buf)
@@ -132,7 +163,11 @@ impl Write for Formatter {
 
 impl fmt::Debug for Formatter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Formatter").finish()
+        let buf = self.buf.borrow();
+        f.debug_struct("Formatter")
+            .field("buf", &buf)
+            .field("write_style", &self.write_style)
+            .finish()
     }
 }
 
@@ -147,21 +182,6 @@ pub(crate) struct Builder {
     pub custom_format: Option<FormatFn>,
     pub format_suffix: &'static str,
     built: bool,
-}
-
-impl Default for Builder {
-    fn default() -> Self {
-        Builder {
-            format_timestamp: Some(Default::default()),
-            format_module_path: false,
-            format_target: true,
-            format_level: true,
-            format_indent: Some(4),
-            custom_format: None,
-            format_suffix: "\n",
-            built: false,
-        }
-    }
 }
 
 impl Builder {
@@ -202,10 +222,46 @@ impl Builder {
     }
 }
 
+impl Default for Builder {
+    fn default() -> Self {
+        Builder {
+            format_timestamp: Some(Default::default()),
+            format_module_path: false,
+            format_target: true,
+            format_level: true,
+            format_indent: Some(4),
+            custom_format: None,
+            format_suffix: "\n",
+            built: false,
+        }
+    }
+}
+
 #[cfg(feature = "color")]
-type SubtleStyle = StyledValue<'static, &'static str>;
+type SubtleStyle = StyledValue<&'static str>;
 #[cfg(not(feature = "color"))]
 type SubtleStyle = &'static str;
+
+/// A value that can be printed using the given styles.
+#[cfg(feature = "color")]
+struct StyledValue<T> {
+    style: style::Style,
+    value: T,
+}
+
+#[cfg(feature = "color")]
+impl<T: std::fmt::Display> std::fmt::Display for StyledValue<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let style = self.style;
+
+        // We need to make sure `f`s settings don't get passed onto the styling but do get passed
+        // to the value
+        write!(f, "{style}")?;
+        self.value.fmt(f)?;
+        write!(f, "{style:#}")?;
+        Ok(())
+    }
+}
 
 /// The default format.
 ///
@@ -235,12 +291,14 @@ impl<'a> DefaultFormat<'a> {
     fn subtle_style(&self, text: &'static str) -> SubtleStyle {
         #[cfg(feature = "color")]
         {
-            self.buf
-                .style()
-                .set_color(Color::Black)
-                .set_intense(true)
-                .clone()
-                .into_value(text)
+            StyledValue {
+                style: if self.buf.write_style == WriteStyle::Never {
+                    style::Style::new()
+                } else {
+                    style::AnsiColor::BrightBlack.on_default()
+                },
+                value: text,
+            }
         }
         #[cfg(not(feature = "color"))]
         {
@@ -268,13 +326,17 @@ impl<'a> DefaultFormat<'a> {
         }
 
         let level = {
+            let level = record.level();
             #[cfg(feature = "color")]
             {
-                self.buf.default_styled_level(record.level())
+                StyledValue {
+                    style: self.buf.default_level_style(level),
+                    value: level,
+                }
             }
             #[cfg(not(feature = "color"))]
             {
-                record.level()
+                level
             }
         };
 
@@ -403,7 +465,7 @@ mod tests {
         fmt.write(&record).expect("failed to write record");
 
         let buf = buf.borrow();
-        String::from_utf8(buf.bytes().to_vec()).expect("failed to read record")
+        String::from_utf8(buf.as_bytes().to_vec()).expect("failed to read record")
     }
 
     fn write_target(target: &str, fmt: DefaultFormat) -> String {

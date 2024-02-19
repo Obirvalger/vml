@@ -12,6 +12,8 @@ use byte_unit::Byte;
 use clap::{ArgMatches, Values};
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Cell, Color, ContentArrangement, Table};
+use env_logger::Env;
+use log::{debug, error, info};
 
 use vml::cli;
 use vml::config::Config;
@@ -323,6 +325,11 @@ fn main() -> Result<()> {
     files::install_main_config()?;
     let matches = cli::build_cli().get_matches();
     let config = Config::new()?;
+    let level = matches.value_of("log-level").unwrap_or(config.log_level.as_str());
+    env_logger::Builder::from_env(Env::default().default_filter_or(level))
+        .format_target(false)
+        .format_timestamp(None)
+        .init();
 
     if let Some(host) = matches.value_of("host") {
         let args: Vec<String> = args_without_host();
@@ -332,8 +339,7 @@ fn main() -> Result<()> {
         }
         ssh.arg(host).args(&args);
 
-        #[cfg(debug_assertions)]
-        eprintln!("{:?}", &ssh);
+        debug!("{:?}", &ssh);
         ssh.spawn().context("failed to run executable ssh")?.wait()?;
 
         return Ok(());
@@ -431,7 +437,7 @@ fn main() -> Result<()> {
                         image.pull()?;
                     }
                 }
-                _ => println!("Unexpected images command"),
+                _ => error!("Unexpected images command"),
             }
         }
 
@@ -526,8 +532,7 @@ fn main() -> Result<()> {
                     vm.stop(true)?;
                     openssh_config::rm(&config.openssh_config.vm_configs_dir, &name)?;
                     vm.remove()?;
-                    #[cfg(debug_assertions)]
-                    eprintln!("Removed {}", &name);
+                    debug!("Removed {}", &name);
                 }
                 if res != Some(0) && ssh_matches.is_present("check") {
                     bail!(Error::SshFailed(name));
@@ -792,6 +797,8 @@ fn main() -> Result<()> {
                     vm.remove()?;
                     if verbose {
                         println!("Removed {}", vm_name)
+                    } else {
+                        info!("Removed {}", vm_name)
                     }
                     openssh_config::rm(&config.openssh_config.vm_configs_dir, &vm_name)?;
                 }
@@ -810,8 +817,7 @@ fn main() -> Result<()> {
             let args =
                 sub_matches.get_many::<String>("").into_iter().flatten().collect::<Vec<_>>();
             let ext = format!("vml-{}", ext);
-            #[cfg(debug_assertions)]
-            println!("Calling out to {:?} with {:?}", ext, args);
+            debug!("Calling out to {:?} with {:?}", ext, args);
             Command::new(&ext)
                 .args(&args)
                 .spawn()
@@ -820,8 +826,7 @@ fn main() -> Result<()> {
                 })?
                 .wait()?;
         }
-
-        _ => println!("Unexpected command"),
+        _ => error!("Unexpected command"),
     }
 
     Ok(())

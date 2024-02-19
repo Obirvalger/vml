@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use byte_unit::Byte;
+use log::LevelFilter;
 use serde::Deserialize;
 
 use crate::gui::ConfigGui;
@@ -112,7 +113,7 @@ fn default_remove_interactive() -> bool {
 }
 
 fn default_remove_verbose() -> bool {
-    true
+    false
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -282,11 +283,17 @@ impl Default for OpensshConfig {
     }
 }
 
+fn default_log_level() -> LevelFilter {
+    LevelFilter::Info
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub vms_dir: PathBuf,
+    #[serde(default = "default_log_level")]
+    pub log_level: LevelFilter,
     pub config_hierarchy: bool,
     pub commands: Commands,
     #[serde(default)]

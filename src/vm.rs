@@ -12,13 +12,14 @@ use std::time::Duration;
 use anyhow::Context as AnyhowContext;
 use anyhow::{bail, Result};
 use file_lock::{FileLock, FileOptions};
+use log::{debug, info};
 use procfs::process::Process;
 use rand::Rng;
 use tera::Context;
 
 use crate::cache::Cache;
 use crate::cloud_init;
-use crate::config::{Config, CreateExistsAction, config_dir};
+use crate::config::{config_dir, Config, CreateExistsAction};
 use crate::gui::ConfigGui;
 use crate::images;
 use crate::images::Images;
@@ -65,7 +66,7 @@ pub fn create<S: AsRef<str>>(
                 if config.images.update_on_create {
                     if let Some(image) = available_images.get(image_name) {
                         if image.outdate() {
-                            println!("Update {} image", &image.name);
+                            info!("Update {} image", &image.name);
                             image.pull()?;
                         }
                     }
@@ -308,8 +309,7 @@ impl VM {
     }
 
     pub fn start<S: AsRef<OsStr>>(&self, cloud_init: Option<bool>, drives: &[S]) -> Result<()> {
-        #[cfg(debug_assertions)]
-        eprintln!("Start vm {:?}", self.name);
+        debug!("Start vm {:?}", self.name);
         let mut qemu = Command::new(&self.qemu_binary);
         let mut context = self.context();
         let mut user_net = "".to_string();
@@ -427,8 +427,7 @@ impl VM {
                     let user_net = user_net.replace("random", &port);
                     qemu.args(["-nic", &user_net]);
 
-                    #[cfg(debug_assertions)]
-                    eprintln!("{:?}", &qemu);
+                    debug!("{:?}", &qemu);
                     let exit_status = qemu
                         .spawn()
                         .with_context(|| {
@@ -442,15 +441,14 @@ impl VM {
 
                     filelock.file.write_all(port.as_bytes())?;
 
-                    return Ok(())
+                    return Ok(());
                 }
             } else {
                 qemu.args(["-nic", &user_net]);
             };
         }
 
-        #[cfg(debug_assertions)]
-        eprintln!("{:?}", &qemu);
+        debug!("{:?}", &qemu);
         let exit_status = qemu
             .spawn()
             .with_context(|| format!("failed to run executable executable {}", &self.qemu_binary))?
@@ -464,16 +462,14 @@ impl VM {
     }
 
     pub fn stop(&mut self, force: bool) -> Result<()> {
-        #[cfg(debug_assertions)]
-        eprintln!("Stop vm {:?}", self.name);
+        debug!("Stop vm {:?}", self.name);
 
         fn kill(pid: i32) -> Result<()> {
             Command::new("kill")
                 .args(&[pid.to_string()])
                 .spawn()
                 .context("failed to run executable kill")?;
-            #[cfg(debug_assertions)]
-            eprintln!("Kill {}", pid);
+            debug!("Kill {}", pid);
 
             Ok(())
         }
@@ -542,8 +538,7 @@ impl VM {
         ssh_flags: &[F],
         cmd: &Option<Vec<C>>,
     ) -> Result<Option<i32>> {
-        #[cfg(debug_assertions)]
-        eprintln!("Ssh to vm {:?}", self.name);
+        debug!("Ssh to vm {:?}", self.name);
 
         let self_ssh =
             self.ssh.as_ref().ok_or_else(|| Error::VMHasNoSsh(self.name.to_string()))?;
@@ -574,8 +569,7 @@ impl VM {
             ssh_cmd.args(cmd);
         }
 
-        #[cfg(debug_assertions)]
-        eprintln!("{:?}", &ssh_cmd);
+        debug!("{:?}", &ssh_cmd);
         let rc = ssh_cmd.spawn().context("failed to run executable ssh")?.wait()?.code();
 
         Ok(rc)
@@ -656,8 +650,7 @@ impl VM {
             }
         }
 
-        #[cfg(debug_assertions)]
-        eprintln!("{:#?}", &rsync);
+        debug!("{:#?}", &rsync);
         let rc = rsync.spawn().context("failed to run executable rsync")?.wait()?.code();
         if check && rc != Some(0) {
             if to {

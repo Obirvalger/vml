@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.60.0"
+rust-version = "1.71"
 name = "env_logger"
-version = "0.10.1"
+version = "0.11.2"
 include = [
     "build.rs",
     "src/**/*",
@@ -97,41 +97,41 @@ harness = false
 name = "init-twice-retains-filter"
 harness = false
 
-[dependencies.humantime]
-version = "2.0.0"
+[dependencies.anstream]
+version = "0.6.11"
+features = ["wincon"]
+optional = true
+default-features = false
+
+[dependencies.anstyle]
+version = "1.0.6"
 optional = true
 
-[dependencies.is-terminal]
-version = "0.4.0"
+[dependencies.env_filter]
+version = "0.1.0"
+default-features = false
+
+[dependencies.humantime]
+version = "2.0.0"
 optional = true
 
 [dependencies.log]
 version = "0.4.8"
 features = ["std"]
 
-[dependencies.regex]
-version = "1.0.3"
-features = [
-    "std",
-    "perf",
-]
-optional = true
-default-features = false
-
-[dependencies.termcolor]
-version = "1.1.1"
-optional = true
-
 [features]
 auto-color = [
-    "dep:is-terminal",
     "color",
+    "anstream/auto",
 ]
-color = ["dep:termcolor"]
+color = [
+    "dep:anstream",
+    "dep:anstyle",
+]
 default = [
     "auto-color",
     "humantime",
     "regex",
 ]
 humantime = ["dep:humantime"]
-regex = ["dep:regex"]
+regex = ["env_filter/regex"]
