@@ -535,7 +535,11 @@ fn main() -> Result<()> {
                     debug!("Removed {}", &name);
                 }
                 if res != Some(0) && ssh_matches.is_present("check") {
-                    bail!(Error::SshFailed(name));
+                    if let Some(code) = res {
+                        std::process::exit(code);
+                    } else {
+                        std::process::exit(1);
+                    }
                 }
             }
         }
