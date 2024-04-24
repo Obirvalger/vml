@@ -203,14 +203,19 @@ description = "CentOS 7"
 change = ["update-all", "delete"]
 
 [fedora]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/{{arch}}/images/Fedora-Cloud-Base-39-1.5.{{arch}}.qcow2"
-description = "latest Fedora release (39)"
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/{{arch}}/images/Fedora-Cloud-Base-Generic.{{arch}}-40-1.14.qcow2"
+description = "latest Fedora release (40)"
 change = ["update-all", "delete"]
 
 [fedora-rawhide]
 url = ""
 get-url-prog = "vml-get-fedora-rawhide"
 description = "Fedora Rawhide"
+change = ["update-all", "delete"]
+
+[fedora-40]
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/{{arch}}/images/Fedora-Cloud-Base-Generic.{{arch}}-40-1.14.qcow2"
+description = "Fedora 40"
 change = ["update-all", "delete"]
 
 [fedora-39]
@@ -226,26 +231,6 @@ change = ["update-all", "delete"]
 [fedora-37]
 url = "https://download.fedoraproject.org/pub/fedora/linux/releases/37/Cloud/{{arch}}/images/Fedora-Cloud-Base-37-1.7.{{arch}}.qcow2"
 description = "Fedora 37"
-change = ["update-all", "delete"]
-
-[fedora-36]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/36/Cloud/{{arch}}/images/Fedora-Cloud-Base-36-1.5.{{arch}}.qcow2"
-description = "Fedora 36"
-change = ["update-all", "delete"]
-
-[fedora-35]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/35/Cloud/{{arch}}/images/Fedora-Cloud-Base-35-1.2.{{arch}}.qcow2"
-description = "Fedora 35"
-change = ["update-all", "delete"]
-
-[fedora-34]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/34/Cloud/{{arch}}/images/Fedora-Cloud-Base-34-1.2.{{arch}}.qcow2"
-description = "Fedora 34"
-change = ["update-all", "delete"]
-
-[fedora-33]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/33/Cloud/{{arch}}/images/Fedora-Cloud-Base-33-1.2.{{arch}}.qcow2"
-description = "Fedora 33"
 change = ["update-all", "delete"]
 
 [opensuse]
