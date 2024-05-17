@@ -259,6 +259,11 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
+                .arg(
+                    Arg::new("snapshot")
+                        .long("snapshot")
+                        .help("Discard changes created during this start"),
+                )
                 .arg(Arg::new("running-fail").long("running-fail"))
                 .arg(Arg::new("running-ignore").long("running-ignore"))
                 .arg(Arg::new("running-restart").long("running-restart").alias("running-stop"))
@@ -321,6 +326,11 @@ pub fn build_cli() -> clap::Command<'static> {
                 )
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
+                .arg(
+                    Arg::new("snapshot")
+                        .long("snapshot")
+                        .help("Discard changes created during this start"),
+                )
                 .arg(
                     Arg::new("drives")
                         .long("drives")

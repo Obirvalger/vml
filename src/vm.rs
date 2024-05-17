@@ -309,11 +309,20 @@ impl VM {
         }
     }
 
-    pub fn start<S: AsRef<OsStr>>(&self, cloud_init: Option<bool>, drives: &[S]) -> Result<()> {
+    pub fn start<S: AsRef<OsStr>>(
+        &self,
+        cloud_init: Option<bool>,
+        snapshot: bool,
+        drives: &[S],
+    ) -> Result<()> {
         debug!("Start vm {:?}", self.name);
         let mut qemu = Command::new(&self.qemu_binary);
         let mut context = self.context();
         let mut user_net = "".to_string();
+
+        if snapshot {
+            qemu.arg("-snapshot");
+        }
 
         qemu.args(["-m", &self.memory])
             .arg("--enable-kvm")

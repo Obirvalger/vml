@@ -164,6 +164,8 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
         None
     };
 
+    let snapshot = start_matches.is_present("snapshot");
+
     let drives: Vec<&str> = if let Some(drives) = start_matches.values_of("drives") {
         drives.collect()
     } else {
@@ -196,12 +198,12 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
                 }
                 StartRunningAction::Restart => {
                     vm.stop(false)?;
-                    vm.start(cloud_init, &drives)?;
+                    vm.start(cloud_init, snapshot, &drives)?;
                     openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
                 }
             };
         } else {
-            vm.start(cloud_init, &drives)?;
+            vm.start(cloud_init, snapshot, &drives)?;
             openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
         }
     }
