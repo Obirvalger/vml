@@ -697,7 +697,7 @@ fn main() -> Result<()> {
 
                 for vm in vmc.create()? {
                     let info = vm.info();
-                    let state = if info.get("pid").is_some() {
+                    let state = if info.contains_key("pid") {
                         Cell::new("Running").fg(Color::Green)
                     } else {
                         Cell::new("Stopped").fg(Color::Red)
