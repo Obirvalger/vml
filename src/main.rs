@@ -771,31 +771,18 @@ fn main() -> Result<()> {
 
             vmc.with_pid(WithPid::Option);
 
-            let remove = if force {
-                true
-            } else {
-                let names = list(&vmc, &config, false, false)?;
-                if !names.is_empty() {
-                    if interactive {
-                        for name in names {
-                            println!("{}", name);
-                        }
-                        confirm("Do you really want to remove that vms?")
-                    } else {
-                        true
-                    }
-                } else {
-                    false
-                }
-            };
-
-            if remove {
-                for mut vm in vmc.create()? {
-                    if force && vm.has_pid() {
+            for mut vm in vmc.create()? {
+                let vm_name = vm.name.to_string();
+                if vm.has_pid() {
+                    if force {
                         vm.stop(true)?;
+                    } else {
+                        bail!(Error::RemoveRunningVM(vm_name));
                     }
+                }
 
-                    let vm_name = vm.name.to_string();
+                let msg = format!("Do you really want to remove vm `{}`?", vm_name);
+                if force || !interactive || confirm(&msg) {
                     vm.remove()?;
                     if verbose {
                         println!("Removed {}", vm_name)
