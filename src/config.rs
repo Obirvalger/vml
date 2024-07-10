@@ -100,6 +100,32 @@ pub struct CreateCommand {
     pub exists: CreateExistsAction,
 }
 
+fn default_image_add_pull() -> bool {
+    true
+}
+
+impl Default for ImageAddCommand {
+    fn default() -> ImageAddCommand {
+        ImageAddCommand { pull: default_image_add_pull() }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct ImageAddCommand {
+    #[serde(default = "default_image_add_pull")]
+    pub pull: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct ImageCommand {
+    #[serde(default)]
+    pub add: ImageAddCommand,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
@@ -236,6 +262,8 @@ pub struct Commands {
     #[serde(default)]
     pub clean: CleanCommand,
     pub create: CreateCommand,
+    #[serde(default)]
+    pub image: ImageCommand,
     pub list: ListCommand,
     #[serde(default)]
     pub remove: RemoveCommand,

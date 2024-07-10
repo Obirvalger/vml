@@ -214,10 +214,70 @@ struct DeserializeImage {
     arch_mapping: Option<BTreeMap<String, String>>,
 }
 
+impl DeserializeImage {
+    fn from_builder(builder: ImageBuilder) -> Self {
+        DeserializeImage {
+            description: builder.fields.description,
+            url: builder.url,
+            get_url_prog: None,
+            change: builder.fields.change,
+            properties: builder.fields.properties,
+            update_after_days: builder.fields.update_after_days,
+            arch_mapping: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(transparent)]
 struct DeserializeImages(BTreeMap<String, DeserializeImage>);
+
+#[derive(Clone, Debug, Default)]
+struct ImageBuilderFields {
+    description: Option<String>,
+    change: Vec<String>,
+    properties: BTreeSet<String>,
+    update_after_days: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ImageBuilder {
+    name: String,
+    url: String,
+    fields: ImageBuilderFields,
+}
+
+impl ImageBuilder {
+    pub fn new<N: AsRef<str>, U: AsRef<str>>(name: N, url: U) -> Self {
+        ImageBuilder {
+            name: name.as_ref().to_string(),
+            url: url.as_ref().to_string(),
+            fields: ImageBuilderFields::default(),
+        }
+    }
+
+    pub fn description<S: AsRef<str>>(&mut self, description: S) -> &Self {
+        self.fields.description = Some(description.as_ref().to_string());
+        self
+    }
+
+    pub fn change(&mut self, change: &[String]) -> &Self {
+        self.fields.change = Vec::from(change);
+        self
+    }
+
+    pub fn properties(&mut self, properties: &[String]) -> &Self {
+        self.fields.properties =
+            properties.iter().cloned().map(String::from).collect::<BTreeSet<_>>();
+        self
+    }
+
+    pub fn update_after_days(&mut self, update_after_days: u64) -> &Self {
+        self.fields.update_after_days = Some(update_after_days);
+        self
+    }
+}
 
 fn update_images(
     embedded_images: &mut btree_map::IntoIter<String, DeserializeImage>,
@@ -419,6 +479,39 @@ pub fn available(config: &ConfigImages) -> Result<Images> {
         .collect();
 
     Ok(Images(images))
+}
+
+pub fn add(builder: &ImageBuilder) -> Result<()> {
+    let url = &builder.url;
+    let name = &builder.name;
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        bail!(Error::BadUrl(url.to_string()))
+    }
+
+    let image = DeserializeImage::from_builder(builder.to_owned());
+
+    let mut images = parse(&images_file_path())?;
+    images.0.insert(name.to_string(), image.to_owned());
+
+    let header = files::get_config("images-header")?;
+    let images_string = toml::to_string(&images)?;
+    let options = FileOptions::new().create(true).truncate(true).write(true);
+    let block = true;
+    if let Ok(mut images_filelock) = FileLock::lock(images_file_path(), block, options) {
+        images_filelock.file.write_all(&header)?;
+        images_filelock.file.write_all(images_string.as_bytes())?;
+    }
+
+    Ok(())
+}
+
+pub fn pull(config: &ConfigImages, builder: &ImageBuilder) -> Result<()> {
+    let name = builder.name.to_string();
+    let image = DeserializeImage::from_builder(builder.to_owned());
+    let image = Image::from_deserialize(image, name, config);
+    image.pull()?;
+
+    Ok(())
 }
 
 pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {

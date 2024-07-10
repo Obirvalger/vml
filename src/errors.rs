@@ -8,6 +8,8 @@ pub enum Error {
     BadCidr(String),
     #[error("bad program filename `{0}` in run_program_with_context")]
     BadProgramFilename(String),
+    #[error("unsupported url type `{0}`")]
+    BadUrl(String),
     #[error("create existing vm `{0}`")]
     CreateExistingVM(String),
     #[error("cloud init image `{0}` does not exist")]

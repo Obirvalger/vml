@@ -64,6 +64,53 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg_required_else_help(true)
                 .subcommand(Command::new("available").about("list available to pull vm images"))
                 .subcommand(
+                    Command::new("add")
+                        .about("add image")
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .short('n')
+                                .required(true)
+                                .takes_value(true),
+                        )
+                        .arg(
+                            Arg::new("url")
+                                .long("url")
+                                .short('u')
+                                .required(true)
+                                .takes_value(true),
+                        )
+                        .arg(
+                            Arg::new("change")
+                                .long("change")
+                                .takes_value(true)
+                                .default_values(&["update-all"])
+                                .min_values(0)
+                                .multiple_values(true),
+                        )
+                        .arg(
+                            Arg::new("properties")
+                                .long("properties")
+                                .takes_value(true)
+                                .multiple_values(true),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .short('d')
+                                .takes_value(true),
+                        )
+                        .arg(
+                            Arg::new("update-after-days")
+                                .long("update-after-days")
+                                .takes_value(true)
+                                .value_parser(value_parser!(u64)),
+                        )
+                        .arg(Arg::new("pull").long("pull"))
+                        .arg(Arg::new("no-pull").long("no-pull"))
+                        .group(ArgGroup::new("pull-group").args(&["pull", "no-pull"])),
+                )
+                .subcommand(
                     Command::new("remove")
                         .about("remove images")
                         .visible_alias("rm")

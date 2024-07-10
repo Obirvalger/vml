@@ -19,7 +19,7 @@ use vml::cli;
 use vml::config::Config;
 use vml::config::{CreateExistsAction, StartRunningAction};
 use vml::files;
-use vml::images;
+use vml::images::{self, ImageBuilder};
 use vml::net::ConfigNet;
 use vml::openssh_config;
 use vml::template;
@@ -383,6 +383,36 @@ fn main() -> Result<()> {
                         } else {
                             println!("{}", &image.name);
                         }
+                    }
+                }
+
+                Some(("add", add_image_matches)) => {
+                    let name = add_image_matches.value_of("name").unwrap();
+                    let url = add_image_matches.value_of("url").unwrap();
+                    let mut builder = ImageBuilder::new(name, url);
+
+                    if let Some(change) = add_image_matches.values_of("change") {
+                        builder.change(&change.map(str::to_string).collect::<Vec<_>>());
+                    }
+                    if let Some(properties) = add_image_matches.values_of("properties") {
+                        builder.properties(&properties.map(str::to_string).collect::<Vec<_>>());
+                    }
+                    if let Some(description) = add_image_matches.value_of("description") {
+                        builder.description(description);
+                    }
+                    if let Some(update_after_days) =
+                        add_image_matches.get_one::<u64>("update-after-days")
+                    {
+                        builder.update_after_days(*update_after_days);
+                    }
+
+                    let pull = config.commands.image.add.pull
+                        && !add_image_matches.is_present("no-pull")
+                        || add_image_matches.is_present("pull");
+
+                    vml::images::add(&builder)?;
+                    if pull {
+                        vml::images::pull(&config.images, &builder)?;
                     }
                 }
 

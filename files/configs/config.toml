@@ -17,6 +17,9 @@ create.pull = true
 # Do this when create vm that already exists: fail, ignore, replace
 create.exists = "fail"
 
+# Pulls image after adding to the images config
+image.add.pull = true
+
 list.all = false
 
 list.fold = false
