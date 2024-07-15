@@ -3,6 +3,11 @@ url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/
 description = "ALT Linux Sisyphus"
 change = ["update-all", "delete"]
 
+[alt-p11]
+url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p11/cloud/{{arch}}/alt-p11-cloud-{{arch}}.qcow2"
+description = "ALT Linux p11"
+change = ["update-all", "delete"]
+
 [alt-p10]
 url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p10/cloud/{{arch}}/alt-p10-cloud-{{arch}}.qcow2"
 description = "ALT Linux p10"
