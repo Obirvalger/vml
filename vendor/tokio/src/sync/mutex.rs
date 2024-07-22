@@ -17,6 +17,10 @@ use std::{fmt, mem, ptr};
 /// differences: [`lock`] is an async method so does not block, and the lock
 /// guard is designed to be held across `.await` points.
 ///
+/// Tokio's Mutex operates on a guaranteed FIFO basis.
+/// This means that the order in which tasks call the [`lock`] method is
+/// the exact order in which they will acquire the lock.
+///
 /// # Which kind of mutex should you use?
 ///
 /// Contrary to popular belief, it is ok and often preferred to use the ordinary
@@ -340,6 +344,7 @@ impl<T: ?Sized> Mutex<T> {
             let location = std::panic::Location::caller();
 
             tracing::trace_span!(
+                parent: None,
                 "runtime.resource",
                 concrete_type = "Mutex",
                 kind = "Sync",
@@ -402,6 +407,10 @@ impl<T: ?Sized> Mutex<T> {
     /// Locks this mutex, causing the current task to yield until the lock has
     /// been acquired.  When the lock has been acquired, function returns a
     /// [`MutexGuard`].
+    ///
+    /// If the mutex is available to be acquired immediately, then this call
+    /// will typically not yield to the runtime. However, this is not guaranteed
+    /// under all circumstances.
     ///
     /// # Cancel safety
     ///
@@ -569,6 +578,10 @@ impl<T: ?Sized> Mutex<T> {
     /// Locks this mutex, causing the current task to yield until the lock has
     /// been acquired. When the lock has been acquired, this returns an
     /// [`OwnedMutexGuard`].
+    ///
+    /// If the mutex is available to be acquired immediately, then this call
+    /// will typically not yield to the runtime. However, this is not guaranteed
+    /// under all circumstances.
     ///
     /// This method is identical to [`Mutex::lock`], except that the returned
     /// guard references the `Mutex` with an [`Arc`] rather than by borrowing

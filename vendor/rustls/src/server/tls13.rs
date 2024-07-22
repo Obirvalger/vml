@@ -351,7 +351,9 @@ mod client_hello {
 
             if let Some(ref resume) = resumedata {
                 cx.data.received_resumption_data = Some(resume.application_data.0.clone());
-                cx.common.peer_certificates = resume.client_cert_chain.clone();
+                cx.common
+                    .peer_certificates
+                    .clone_from(&resume.client_cert_chain);
             }
 
             let full_handshake = resumedata.is_none();
@@ -603,7 +605,7 @@ mod client_hello {
         common.send_msg(m, false);
     }
 
-    #[allow(clippy::needless_pass_by_ref_mut)] // cx only mutated if cfg(feature = "quic")
+    #[cfg_attr(not(feature = "quic"), allow(clippy::needless_pass_by_ref_mut))]
     fn decide_if_early_data_allowed(
         cx: &mut ServerContext<'_>,
         client_hello: &ClientHelloPayload,

@@ -11,8 +11,9 @@
 
 [package]
 edition = "2018"
+rust-version = "1.56.0"
 name = "schannel"
-version = "0.1.22"
+version = "0.1.23"
 authors = [
     "Steven Fackler <sfackler@gmail.com>",
     "Steffen Butzer <steffen.butzer@outlook.com>",
@@ -34,7 +35,7 @@ repository = "https://github.com/steffengy/schannel-rs"
 default-target = "x86_64-pc-windows-msvc"
 
 [dependencies.windows-sys]
-version = "0.48"
+version = "0.52"
 features = [
     "Win32_Foundation",
     "Win32_Security_Cryptography",
@@ -44,7 +45,7 @@ features = [
 ]
 
 [dev-dependencies.windows-sys]
-version = "0.48"
+version = "0.52"
 features = [
     "Win32_System_SystemInformation",
     "Win32_System_Time",

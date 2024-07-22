@@ -1,14 +1,14 @@
-use proc_macro2::{Span, TokenStream, TokenTree};
+use proc_macro2::{TokenStream, TokenTree};
 use proc_macro_error::{abort, proc_macro_error};
-use quote::{quote, ToTokens};
+use quote::quote;
 
-/// Mark main function to log error result by default
+/// Mark main function to log error result by default.
 ///
-/// ```
+/// ```no_run
 /// # use cmd_lib::*;
 ///
 /// #[cmd_lib::main]
-/// fn main() -> MainResult {
+/// fn main() -> CmdResult {
 ///     run_cmd!(bad_cmd)?;
 ///     Ok(())
 /// }
@@ -40,52 +40,13 @@ pub fn main(
     .into()
 }
 
-/// Export the function as an command to be run by `run_cmd!` or `run_fun!`
-///
-/// ```
+/// Import user registered custom command.
+/// ```no_run
 /// # use cmd_lib::*;
 /// # use std::io::Write;
-/// #[export_cmd(my_cmd)]
-/// fn foo(env: &mut CmdEnv) -> CmdResult {
-///     let msg = format!("msg from foo(), args: {:?}\n", env.args());
-///     writeln!(env.stderr(), "{}", msg)?;
-///     writeln!(env.stdout(), "bar")
-/// }
-///
-/// use_custom_cmd!(my_cmd);
-/// run_cmd!(my_cmd)?;
-/// println!("get result: {}", run_fun!(my_cmd)?);
-/// # Ok::<(), std::io::Error>(())
-/// ```
-/// Here we export function `foo` as `my_cmd` command.
-
-#[proc_macro_attribute]
-pub fn export_cmd(
-    attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    let cmd_name = attr.to_string();
-    let export_cmd_fn = syn::Ident::new(&format!("export_cmd_{}", cmd_name), Span::call_site());
-
-    let orig_function: syn::ItemFn = syn::parse2(item.into()).unwrap();
-    let fn_ident = &orig_function.sig.ident;
-
-    let mut new_functions = orig_function.to_token_stream();
-    new_functions.extend(quote! (
-        fn #export_cmd_fn() {
-            export_cmd(#cmd_name, #fn_ident);
-        }
-    ));
-    new_functions.into()
-}
-
-/// Import user registered custom command
-/// ```
-/// # use cmd_lib::*;
-/// #[export_cmd(my_cmd)]
-/// fn foo(env: &mut CmdEnv) -> CmdResult {
-///     let msg = format!("msg from foo(), args: {:?}\n", env.args());
-///     writeln!(env.stderr(), "{}", msg)?;
+/// fn my_cmd(env: &mut CmdEnv) -> CmdResult {
+///     let msg = format!("msg from foo(), args: {:?}", env.get_args());
+///     writeln!(env.stderr(), "{msg}")?;
 ///     writeln!(env.stdout(), "bar")
 /// }
 ///
@@ -105,21 +66,21 @@ pub fn use_custom_cmd(item: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 abort!(t, "only comma is allowed");
             }
         } else if let TokenTree::Ident(cmd) = t {
-            let cmd_fn = syn::Ident::new(&format!("export_cmd_{}", cmd), Span::call_site());
-            cmd_fns.push(cmd_fn);
+            let cmd_name = cmd.to_string();
+            cmd_fns.push(quote!(&#cmd_name, #cmd));
         } else {
             abort!(t, "expect a list of comma separated commands");
         }
     }
 
     quote! (
-        #(#cmd_fns();)*
+        #(::cmd_lib::register_cmd(#cmd_fns);)*
     )
     .into()
 }
 
-/// Run commands, returning result handle to check status
-/// ```
+/// Run commands, returning [`CmdResult`](../cmd_lib/type.CmdResult.html) to check status.
+/// ```no_run
 /// # use cmd_lib::run_cmd;
 /// let msg = "I love rust";
 /// run_cmd!(echo $msg)?;
@@ -155,8 +116,8 @@ pub fn run_cmd(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     .into()
 }
 
-/// Run commands, returning result handle to capture output and to check status
-/// ```
+/// Run commands, returning [`FunResult`](../cmd_lib/type.FunResult.html) to capture output and to check status.
+/// ```no_run
 /// # use cmd_lib::run_fun;
 /// let version = run_fun!(rustc --version)?;
 /// println!("Your rust version is {}", version);
@@ -177,12 +138,11 @@ pub fn run_fun(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     .into()
 }
 
-/// Run commands with/without pipes as a child process, returning a handle to check the final
-/// result
-/// ```
+/// Run commands with/without pipes as a child process, returning [`CmdChildren`](../cmd_lib/struct.CmdChildren.html) result.
+/// ```no_run
 /// # use cmd_lib::*;
 ///
-/// let handle = spawn!(ping -c 10 192.168.0.1)?;
+/// let mut handle = spawn!(ping -c 10 192.168.0.1)?;
 /// // ...
 /// if handle.wait().is_err() {
 ///     // ...
@@ -199,14 +159,13 @@ pub fn spawn(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     .into()
 }
 
-/// Run commands with/without pipes as a child process, returning a handle to capture the
-/// final output
-/// ```
+/// Run commands with/without pipes as a child process, returning [`FunChildren`](../cmd_lib/struct.FunChildren.html) result.
+/// ```no_run
 /// # use cmd_lib::*;
 /// let mut procs = vec![];
 /// for _ in 0..4 {
 ///     let proc = spawn_with_output!(
-///         sudo bash -c "dd if=$file of=/dev/null bs=$block_size skip=$off count=$cnt 2>&1"
+///         sudo bash -c "dd if=/dev/nvmen0 of=/dev/null bs=4096 skip=0 count=1024 2>&1"
 ///         | awk r#"/copied/{print $(NF-1) " " $NF}"#
 ///     )?;
 ///     procs.push(proc);
@@ -214,7 +173,7 @@ pub fn spawn(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 ///
 /// for (i, mut proc) in procs.into_iter().enumerate() {
 ///     let bandwidth = proc.wait_with_output()?;
-///     info!("thread {i} bandwidth: {bandwidth} MB/s")?;
+///     info!("thread {i} bandwidth: {bandwidth} MB/s");
 /// }
 /// # Ok::<(), std::io::Error>(())
 /// ```
@@ -231,11 +190,11 @@ pub fn spawn_with_output(input: proc_macro::TokenStream) -> proc_macro::TokenStr
 
 #[proc_macro]
 #[proc_macro_error]
-/// Log a fatal message at the error level, and exit process
+/// Log a fatal message at the error level, and exit process.
 ///
 /// e.g:
-/// ```
-/// # use cmd_lib::cmd_die;
+/// ```no_run
+/// # use cmd_lib::*;
 /// let file = "bad_file";
 /// cmd_die!("could not open file: $file");
 /// // output:
@@ -248,7 +207,7 @@ pub fn spawn_with_output(input: proc_macro::TokenStream) -> proc_macro::TokenStr
 pub fn cmd_die(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let msg = parse_msg(input.into());
     quote!({
-        ::cmd_lib::error!("FATAL: {}", #msg);
+        ::cmd_lib::error!("FATAL: {} at {}:{}", #msg, file!(), line!());
         std::process::exit(1)
     })
     .into()

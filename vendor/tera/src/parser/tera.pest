@@ -98,7 +98,7 @@ comparison_expr = { (string_expr_filter | comparison_val) ~ (comparison_op ~ (st
 in_cond_container = {string_expr_filter | array_filter | dotted_square_bracket_ident}
 in_cond = !{ (string_expr_filter | basic_expr_filter) ~ op_not? ~ "in" ~ in_cond_container }
 
-logic_val  = !{ op_not? ~ (in_cond | comparison_expr) }
+logic_val  = !{ op_not? ~ (in_cond | comparison_expr) | "(" ~ logic_expr ~ ")" }
 logic_expr = !{ logic_val ~ ((op_or | op_and) ~ logic_val)* }
 
 array = !{ "[" ~ (logic_val ~ ",")* ~ logic_val? ~ "]"}
@@ -138,8 +138,8 @@ macro_call      = { ident ~ "::" ~ ident ~ "(" ~ kwargs? ~ ")" }
 test_arg  = { logic_expr | array_filter }
 test_args = _{ test_arg ~ ("," ~ test_arg)* }
 test_call = !{ ident ~ ("(" ~ test_args ~ ")")? }
-test_not  = { dotted_ident ~ "is" ~ "not" ~ test_call }
-test      = { dotted_ident ~ "is" ~ test_call }
+test_not  = { dotted_square_bracket_ident ~ "is" ~ "not" ~ test_call }
+test      = { dotted_square_bracket_ident ~ "is" ~ test_call }
 
 // -------------------------------------------------------
 

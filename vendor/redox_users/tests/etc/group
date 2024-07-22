@@ -1,4 +1,4 @@
-root;0;root
-user;1000;user
-wheel;1;user,root
-loip;1007;loip
+root;x;0;root
+user;x;1000;user
+wheel;x;1;user,root
+loip;x;1007;loip

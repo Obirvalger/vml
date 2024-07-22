@@ -1,3 +1,16 @@
+# 0.8.11
+
+* Fix receiving IOCP events after deregistering a Windows named pipe
+  (https://github.com/tokio-rs/mio/pull/1760, backport pr:
+  https://github.com/tokio-rs/mio/pull/1761).
+
+# 0.8.10
+
+## Added
+
+* Solaris support
+  (https://github.com/tokio-rs/mio/pull/1724).
+
 # 0.8.9
 
 ## Added

@@ -54,6 +54,8 @@ Feel free to fork the repository and submit pull requests :)
 
 Corey Richardson
 
+Ed Branch
+
 Jacob Turner
 
 Mateusz Kondej

@@ -445,8 +445,8 @@ impl CommonState {
         }
 
         // If we get a CloseNotify, make a note to declare EOF to our
-        // caller.
-        if alert.description == AlertDescription::CloseNotify {
+        // caller.  But do not treat unauthenticated alerts like this.
+        if self.may_receive_application_data && alert.description == AlertDescription::CloseNotify {
             self.has_received_close_notify = true;
             return Ok(());
         }
@@ -642,6 +642,8 @@ pub(crate) trait State<Data>: Send + Sync {
     fn extract_secrets(&self) -> Result<PartiallyExtractedSecrets, Error> {
         Err(Error::HandshakeNotComplete)
     }
+
+    fn handle_decrypt_error(&self) {}
 }
 
 pub(crate) struct Context<'a, Data> {

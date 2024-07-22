@@ -6,13 +6,9 @@ pub type timer_t = *mut ::c_void;
 pub type key_t = ::c_int;
 pub type id_t = ::c_uint;
 
-#[cfg_attr(feature = "extra_traits", derive(Debug))]
-pub enum timezone {}
-impl ::Copy for timezone {}
-impl ::Clone for timezone {
-    fn clone(&self) -> timezone {
-        *self
-    }
+missing! {
+    #[cfg_attr(feature = "extra_traits", derive(Debug))]
+    pub enum timezone {}
 }
 
 s! {
@@ -1779,6 +1775,21 @@ extern "C" {
     pub fn uname(buf: *mut ::utsname) -> ::c_int;
 
     pub fn strchrnul(s: *const ::c_char, c: ::c_int) -> *mut ::c_char;
+
+    pub fn strftime(
+        s: *mut ::c_char,
+        max: ::size_t,
+        format: *const ::c_char,
+        tm: *const ::tm,
+    ) -> ::size_t;
+    pub fn strftime_l(
+        s: *mut ::c_char,
+        max: ::size_t,
+        format: *const ::c_char,
+        tm: *const ::tm,
+        locale: ::locale_t,
+    ) -> ::size_t;
+    pub fn strptime(s: *const ::c_char, format: *const ::c_char, tm: *mut ::tm) -> *mut ::c_char;
 }
 
 // LFS64 extensions

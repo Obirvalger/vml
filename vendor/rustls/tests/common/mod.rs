@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::io;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 use std::sync::Arc;
 
 use rustls::internal::msgs::codec::Reader;
@@ -99,8 +99,8 @@ embed_files! {
 }
 
 pub fn transfer(
-    left: &mut (impl DerefMut + Deref<Target = ConnectionCommon<impl SideData>>),
-    right: &mut (impl DerefMut + Deref<Target = ConnectionCommon<impl SideData>>),
+    left: &mut impl DerefMut<Target = ConnectionCommon<impl SideData>>,
+    right: &mut impl DerefMut<Target = ConnectionCommon<impl SideData>>,
 ) -> usize {
     let mut buf = [0u8; 262144];
     let mut total = 0;
@@ -128,7 +128,7 @@ pub fn transfer(
     total
 }
 
-pub fn transfer_eof(conn: &mut (impl DerefMut + Deref<Target = ConnectionCommon<impl SideData>>)) {
+pub fn transfer_eof(conn: &mut impl DerefMut<Target = ConnectionCommon<impl SideData>>) {
     let empty_buf = [0u8; 0];
     let empty_cursor: &mut dyn io::Read = &mut &empty_buf[..];
     let sz = conn.read_tls(empty_cursor).unwrap();
@@ -162,12 +162,21 @@ where
         let mut reader = Reader::init(&buf[..sz]);
         while reader.any_left() {
             let message = OpaqueMessage::read(&mut reader).unwrap();
-            let mut message = Message::try_from(message.into_plain_message()).unwrap();
-            let message_enc = match filter(&mut message) {
-                Altered::InPlace => PlainMessage::from(message)
-                    .into_unencrypted_opaque()
-                    .encode(),
-                Altered::Raw(data) => data,
+
+            // this is a bit of a falsehood: we don't know whether message
+            // is encrypted.  it is quite unlikely that a genuine encrypted
+            // message can be decoded by `Message::try_from`.
+            let plain = message.into_plain_message();
+
+            let message_enc = match Message::try_from(plain.clone()) {
+                Ok(mut message) => match filter(&mut message) {
+                    Altered::InPlace => PlainMessage::from(message)
+                        .into_unencrypted_opaque()
+                        .encode(),
+                    Altered::Raw(data) => data,
+                },
+                // pass through encrypted/undecodable messages
+                Err(_) => plain.into_unencrypted_opaque().encode(),
             };
 
             let message_enc_reader: &mut dyn io::Read = &mut &message_enc[..];
@@ -429,8 +438,8 @@ pub fn make_pair_for_arc_configs(
 }
 
 pub fn do_handshake(
-    client: &mut (impl DerefMut + Deref<Target = ConnectionCommon<impl SideData>>),
-    server: &mut (impl DerefMut + Deref<Target = ConnectionCommon<impl SideData>>),
+    client: &mut impl DerefMut<Target = ConnectionCommon<impl SideData>>,
+    server: &mut impl DerefMut<Target = ConnectionCommon<impl SideData>>,
 ) -> (usize, usize) {
     let (mut to_client, mut to_server) = (0, 0);
     while server.is_handshaking() || client.is_handshaking() {

@@ -13,10 +13,10 @@
 edition = "2021"
 rust-version = "1.61.0"
 name = "ring"
-version = "0.17.5"
+version = "0.17.8"
 authors = ["Brian Smith <brian@briansmith.org>"]
 build = "build.rs"
-links = "ring_core_0_17_5"
+links = "ring_core_0_17_8"
 include = [
     "LICENSE",
     "Cargo.toml",
@@ -75,6 +75,7 @@ include = [
     "crypto/fipsmodule/modes/asm/ghash-x86.pl",
     "crypto/fipsmodule/modes/asm/ghash-x86_64.pl",
     "crypto/fipsmodule/modes/asm/ghashv8-armx.pl",
+    "crypto/fipsmodule/modes/asm/aesv8-gcm-armv8.pl",
     "crypto/fipsmodule/sha/asm/sha256-armv4.pl",
     "crypto/fipsmodule/sha/asm/sha512-armv4.pl",
     "crypto/fipsmodule/sha/asm/sha512-armv8.pl",
@@ -190,6 +191,10 @@ rpath = false
 [lib]
 name = "ring"
 
+[dependencies.cfg-if]
+version = "1.0.0"
+default-features = false
+
 [dependencies.getrandom]
 version = "0.2.10"
 
@@ -207,6 +212,7 @@ default = [
     "dev_urandom_fallback",
 ]
 dev_urandom_fallback = []
+less-safe-getrandom-custom-or-rdrand = []
 slow_tests = []
 std = ["alloc"]
 test_logging = []
@@ -214,8 +220,12 @@ unstable-testing-arm-no-hw = []
 unstable-testing-arm-no-neon = []
 wasm32_unknown_unknown_js = ["getrandom/js"]
 
+[target."cfg(all(any(target_os = \"android\", target_os = \"linux\"), any(target_arch = \"aarch64\", target_arch = \"arm\")))".dependencies.libc]
+version = "0.2.148"
+default-features = false
+
 [target."cfg(all(target_arch = \"aarch64\", target_os = \"windows\"))".dependencies.windows-sys]
-version = "0.48"
+version = "0.52"
 features = [
     "Win32_Foundation",
     "Win32_System_Threading",
@@ -225,13 +235,9 @@ features = [
 version = "0.3.37"
 default-features = false
 
-[target."cfg(any(target_arch = \"x86\",target_arch = \"x86_64\", all(any(target_arch = \"aarch64\", target_arch = \"arm\"), any(target_os = \"android\", target_os = \"fuchsia\", target_os = \"linux\", target_os = \"windows\"))))".dependencies.spin]
+[target."cfg(any(target_arch = \"aarch64\", target_arch = \"arm\", target_arch = \"x86\",target_arch = \"x86_64\"))".dependencies.spin]
 version = "0.9.8"
 features = ["once"]
-default-features = false
-
-[target."cfg(any(target_os = \"android\", target_os = \"linux\"))".dependencies.libc]
-version = "0.2.148"
 default-features = false
 
 [target."cfg(any(unix, windows, target_os = \"wasi\"))".dev-dependencies.libc]

@@ -1598,6 +1598,18 @@ extern "C" {
     #[wasm_bindgen(constructor)]
     pub fn new(buffer: &ArrayBuffer, byteOffset: usize, byteLength: usize) -> DataView;
 
+    /// The `DataView` view provides a low-level interface for reading and
+    /// writing multiple number types in an `ArrayBuffer` irrespective of the
+    /// platform's endianness.
+    ///
+    /// [MDN documentation](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView)
+    #[wasm_bindgen(constructor)]
+    pub fn new_with_shared_array_buffer(
+        buffer: &SharedArrayBuffer,
+        byteOffset: usize,
+        byteLength: usize,
+    ) -> DataView;
+
     /// The ArrayBuffer referenced by this view. Fixed at construction time and thus read only.
     ///
     /// [MDN documentation](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView/buffer)
@@ -2780,6 +2792,37 @@ macro_rules! number_from {
     )*)
 }
 number_from!(i8 u8 i16 u16 i32 u32 f32 f64);
+
+/// The error type returned when a checked integral type conversion fails.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct TryFromIntError(());
+
+impl fmt::Display for TryFromIntError {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.write_str("out of range integral type conversion attempted")
+    }
+}
+
+impl std::error::Error for TryFromIntError {}
+
+macro_rules! number_try_from {
+    ($($x:ident)*) => ($(
+        impl TryFrom<$x> for Number {
+            type Error = TryFromIntError;
+
+            #[inline]
+            fn try_from(x: $x) -> Result<Number, Self::Error> {
+                let x_f64 = x as f64;
+                if x_f64 >= Number::MIN_SAFE_INTEGER && x_f64 <= Number::MAX_SAFE_INTEGER {
+                    Ok(Number::from(x_f64))
+                } else {
+                    Err(TryFromIntError(()))
+                }
+            }
+        }
+    )*)
+}
+number_try_from!(i64 u64 i128 u128);
 
 // TODO: add this on the next major version, when blanket impl is removed
 /*

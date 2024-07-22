@@ -237,7 +237,7 @@ struct Context {
     unhandled_panic: Cell<bool>,
 }
 
-/// LocalSet state shared between threads.
+/// `LocalSet` state shared between threads.
 struct Shared {
     /// # Safety
     ///
@@ -290,7 +290,7 @@ struct LocalData {
 
 impl LocalData {
     /// Should be called except when we call `LocalSet::enter`.
-    /// Especially when we poll a LocalSet.
+    /// Especially when we poll a `LocalSet`.
     #[must_use = "dropping this guard will reset the entered state"]
     fn enter(&self, ctx: Rc<Context>) -> LocalDataEnterGuard<'_> {
         let ctx = self.ctx.replace(Some(ctx));
@@ -392,7 +392,7 @@ const MAX_TASKS_PER_TICK: usize = 61;
 /// How often it check the remote queue first.
 const REMOTE_FIRST_INTERVAL: u8 = 31;
 
-/// Context guard for LocalSet
+/// Context guard for `LocalSet`
 pub struct LocalEnterGuard {
     ctx: Option<Rc<Context>>,
 
@@ -526,7 +526,7 @@ impl LocalSet {
     /// This runs the given future on the runtime, blocking until it is
     /// complete, and yielding its resolved result. Any tasks or timers which
     /// the future spawns internally will be executed on the runtime. The future
-    /// may also call [`spawn_local`] to spawn_local additional local futures on the
+    /// may also call [`spawn_local`] to `spawn_local` additional local futures on the
     /// current thread.
     ///
     /// This method should not be called from an asynchronous context.
@@ -598,9 +598,13 @@ impl LocalSet {
     /// allowing it to call [`spawn_local`] to spawn additional `!Send` futures.
     /// Any local futures spawned on the local set will be driven in the
     /// background until the future passed to `run_until` completes. When the future
-    /// passed to `run` finishes, any local futures which have not completed
+    /// passed to `run_until` finishes, any local futures which have not completed
     /// will remain on the local set, and will be driven on subsequent calls to
     /// `run_until` or when [awaiting the local set] itself.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe when `future` is cancel safe.
     ///
     /// # Examples
     ///
@@ -1165,7 +1169,7 @@ mod tests {
     // Does a `LocalSet` running on a current-thread runtime...basically work?
     //
     // This duplicates a test in `tests/task_local_set.rs`, but because this is
-    // a lib test, it wil run under Miri, so this is necessary to catch stacked
+    // a lib test, it will run under Miri, so this is necessary to catch stacked
     // borrows violations in the `LocalSet` implementation.
     #[test]
     fn local_current_thread_scheduler() {

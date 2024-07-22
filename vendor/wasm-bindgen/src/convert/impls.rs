@@ -1,14 +1,15 @@
 use core::char;
 use core::mem::{self, ManuallyDrop};
+use core::ptr::NonNull;
 
 use crate::convert::traits::{WasmAbi, WasmPrimitive};
+use crate::convert::TryFromJsValue;
 use crate::convert::{FromWasmAbi, IntoWasmAbi, LongRefFromWasmAbi, RefFromWasmAbi};
 use crate::convert::{OptionFromWasmAbi, OptionIntoWasmAbi, ReturnWasmAbi};
 use crate::{Clamped, JsError, JsValue, UnwrapThrowExt};
 
 if_std! {
     use std::boxed::Box;
-    use std::convert::{TryFrom, TryInto};
     use std::fmt::Debug;
     use std::vec::Vec;
 }
@@ -187,6 +188,7 @@ impl FromWasmAbi for char {
 
     #[inline]
     unsafe fn from_abi(js: u32) -> char {
+        // SAFETY: Checked in bindings.
         char::from_u32_unchecked(js)
     }
 }
@@ -223,6 +225,24 @@ impl<T> FromWasmAbi for *const T {
     }
 }
 
+impl<T> IntoWasmAbi for Option<*const T> {
+    type Abi = Option<u32>;
+
+    #[inline]
+    fn into_abi(self) -> Option<u32> {
+        self.map(|ptr| ptr as u32)
+    }
+}
+
+impl<T> FromWasmAbi for Option<*const T> {
+    type Abi = Option<u32>;
+
+    #[inline]
+    unsafe fn from_abi(js: Option<u32>) -> Option<*const T> {
+        js.map(|ptr| ptr as *const T)
+    }
+}
+
 impl<T> IntoWasmAbi for *mut T {
     type Abi = u32;
 
@@ -238,6 +258,57 @@ impl<T> FromWasmAbi for *mut T {
     #[inline]
     unsafe fn from_abi(js: u32) -> *mut T {
         js as *mut T
+    }
+}
+
+impl<T> IntoWasmAbi for Option<*mut T> {
+    type Abi = Option<u32>;
+
+    #[inline]
+    fn into_abi(self) -> Option<u32> {
+        self.map(|ptr| ptr as u32)
+    }
+}
+
+impl<T> FromWasmAbi for Option<*mut T> {
+    type Abi = Option<u32>;
+
+    #[inline]
+    unsafe fn from_abi(js: Option<u32>) -> Option<*mut T> {
+        js.map(|ptr| ptr as *mut T)
+    }
+}
+
+impl<T> IntoWasmAbi for NonNull<T> {
+    type Abi = u32;
+
+    #[inline]
+    fn into_abi(self) -> u32 {
+        self.as_ptr() as u32
+    }
+}
+
+impl<T> OptionIntoWasmAbi for NonNull<T> {
+    #[inline]
+    fn none() -> u32 {
+        0
+    }
+}
+
+impl<T> FromWasmAbi for NonNull<T> {
+    type Abi = u32;
+
+    #[inline]
+    unsafe fn from_abi(js: Self::Abi) -> Self {
+        // SAFETY: Checked in bindings.
+        NonNull::new_unchecked(js as *mut T)
+    }
+}
+
+impl<T> OptionFromWasmAbi for NonNull<T> {
+    #[inline]
+    fn is_none(js: &u32) -> bool {
+        *js == 0
     }
 }
 
@@ -415,7 +486,7 @@ if_std! {
         js_vals.into_abi()
     }
 
-    pub unsafe fn js_value_vector_from_abi<T: TryFrom<JsValue>>(js: <Box<[JsValue]> as FromWasmAbi>::Abi) -> Box<[T]> where T::Error: Debug {
+    pub unsafe fn js_value_vector_from_abi<T: TryFromJsValue>(js: <Box<[JsValue]> as FromWasmAbi>::Abi) -> Box<[T]> where T::Error: Debug {
         let js_vals = <Vec<JsValue> as FromWasmAbi>::from_abi(js);
 
         let mut result = Vec::with_capacity(js_vals.len());
@@ -430,7 +501,7 @@ if_std! {
             // we're talking about, it can only see functions that actually make it to the
             // final wasm binary (i.e., not inlined functions). All of those internal
             // iterator functions get inlined in release mode, and so they don't show up.
-            result.push(value.try_into().expect_throw("array contains a value of the wrong type"));
+            result.push(T::try_from_js_value(value).expect_throw("array contains a value of the wrong type"));
         }
         result.into_boxed_slice()
     }

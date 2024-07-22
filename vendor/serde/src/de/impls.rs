@@ -39,7 +39,7 @@ impl<'de> Deserialize<'de> for () {
 }
 
 #[cfg(feature = "unstable")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "unstable")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "unstable")))]
 impl<'de> Deserialize<'de> for ! {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
@@ -104,6 +104,28 @@ macro_rules! impl_deserialize_num {
                 deserializer.$deserialize(NonZeroVisitor)
             }
         }
+
+        #[cfg(not(no_core_num_saturating))]
+        impl<'de> Deserialize<'de> for Saturating<$primitive> {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct SaturatingVisitor;
+
+                impl<'de> Visitor<'de> for SaturatingVisitor {
+                    type Value = Saturating<$primitive>;
+
+                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                        formatter.write_str("integer with support for saturating semantics")
+                    }
+
+                    $($($method!(saturating $primitive $val : $visit);)*)*
+                }
+
+                deserializer.$deserialize(SaturatingVisitor)
+            }
+        }
     };
 
     ($primitive:ident, $deserialize:ident $($method:ident!($($val:ident : $visit:ident)*);)*) => {
@@ -154,6 +176,15 @@ macro_rules! num_self {
             }
         }
     };
+
+    (saturating $primitive:ident $ty:ident : $visit:ident) => {
+        fn $visit<E>(self, v: $ty) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(Saturating(v))
+        }
+    };
 }
 
 macro_rules! num_as_self {
@@ -177,6 +208,15 @@ macro_rules! num_as_self {
             } else {
                 Err(Error::invalid_value(Unexpected::Unsigned(0), &self))
             }
+        }
+    };
+
+    (saturating $primitive:ident $ty:ident : $visit:ident) => {
+        fn $visit<E>(self, v: $ty) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(Saturating(v as $primitive))
         }
     };
 }
@@ -235,6 +275,21 @@ macro_rules! int_to_int {
             Err(Error::invalid_value(Unexpected::Signed(v as i64), &self))
         }
     };
+
+    (saturating $primitive:ident $ty:ident : $visit:ident) => {
+        fn $visit<E>(self, v: $ty) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            if (v as i64) < $primitive::MIN as i64 {
+                Ok(Saturating($primitive::MIN))
+            } else if ($primitive::MAX as i64) < v as i64 {
+                Ok(Saturating($primitive::MAX))
+            } else {
+                Ok(Saturating(v as $primitive))
+            }
+        }
+    };
 }
 
 macro_rules! int_to_uint {
@@ -265,6 +320,21 @@ macro_rules! int_to_uint {
             Err(Error::invalid_value(Unexpected::Signed(v as i64), &self))
         }
     };
+
+    (saturating $primitive:ident $ty:ident : $visit:ident) => {
+        fn $visit<E>(self, v: $ty) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            if v < 0 {
+                Ok(Saturating(0))
+            } else if ($primitive::MAX as u64) < v as u64 {
+                Ok(Saturating($primitive::MAX))
+            } else {
+                Ok(Saturating(v as $primitive))
+            }
+        }
+    };
 }
 
 macro_rules! uint_to_self {
@@ -293,6 +363,19 @@ macro_rules! uint_to_self {
                 }
             }
             Err(Error::invalid_value(Unexpected::Unsigned(v as u64), &self))
+        }
+    };
+
+    (saturating $primitive:ident $ty:ident : $visit:ident) => {
+        fn $visit<E>(self, v: $ty) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            if v as u64 <= $primitive::MAX as u64 {
+                Ok(Saturating(v as $primitive))
+            } else {
+                Ok(Saturating($primitive::MAX))
+            }
         }
     };
 }
@@ -424,6 +507,21 @@ macro_rules! num_128 {
                     Unexpected::Other(stringify!($ty)),
                     &self,
                 ))
+            }
+        }
+    };
+
+    (saturating $primitive:ident $ty:ident : $visit:ident) => {
+        fn $visit<E>(self, v: $ty) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            if (v as i128) < $primitive::MIN as i128 {
+                Ok(Saturating($primitive::MIN))
+            } else if ($primitive::MAX as u128) < v as u128 {
+                Ok(Saturating($primitive::MAX))
+            } else {
+                Ok(Saturating(v as $primitive))
             }
         }
     };
@@ -597,7 +695,7 @@ impl<'a, 'de> Visitor<'de> for StringInPlaceVisitor<'a> {
 }
 
 #[cfg(any(feature = "std", feature = "alloc"))]
-#[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 impl<'de> Deserialize<'de> for String {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -741,7 +839,7 @@ impl<'de> Visitor<'de> for CStringVisitor {
 }
 
 #[cfg(any(feature = "std", all(not(no_core_cstr), feature = "alloc")))]
-#[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 impl<'de> Deserialize<'de> for CString {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -770,7 +868,7 @@ macro_rules! forwarded_impl {
 
 forwarded_impl! {
     #[cfg(any(feature = "std", all(not(no_core_cstr), feature = "alloc")))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     (), Box<CStr>, CString::into_boxed_c_str
 }
 
@@ -852,7 +950,10 @@ struct PhantomDataVisitor<T: ?Sized> {
     marker: PhantomData<T>,
 }
 
-impl<'de, T: ?Sized> Visitor<'de> for PhantomDataVisitor<T> {
+impl<'de, T> Visitor<'de> for PhantomDataVisitor<T>
+where
+    T: ?Sized,
+{
     type Value = PhantomData<T>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -868,7 +969,10 @@ impl<'de, T: ?Sized> Visitor<'de> for PhantomDataVisitor<T> {
     }
 }
 
-impl<'de, T: ?Sized> Deserialize<'de> for PhantomData<T> {
+impl<'de, T> Deserialize<'de> for PhantomData<T>
+where
+    T: ?Sized,
+{
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -982,7 +1086,7 @@ fn nop_reserve<T>(_seq: T, _n: usize) {}
 
 seq_impl!(
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     BinaryHeap<T: Ord>,
     seq,
     BinaryHeap::clear,
@@ -993,7 +1097,7 @@ seq_impl!(
 
 seq_impl!(
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     BTreeSet<T: Eq + Ord>,
     seq,
     BTreeSet::clear,
@@ -1004,7 +1108,7 @@ seq_impl!(
 
 seq_impl!(
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     LinkedList<T>,
     seq,
     LinkedList::clear,
@@ -1015,7 +1119,7 @@ seq_impl!(
 
 seq_impl!(
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     HashSet<T: Eq + Hash, S: BuildHasher + Default>,
     seq,
     HashSet::clear,
@@ -1026,7 +1130,7 @@ seq_impl!(
 
 seq_impl!(
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     VecDeque<T>,
     seq,
     VecDeque::clear,
@@ -1038,7 +1142,7 @@ seq_impl!(
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(any(feature = "std", feature = "alloc"))]
-#[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 impl<'de, T> Deserialize<'de> for Vec<T>
 where
     T: Deserialize<'de>,
@@ -1289,82 +1393,103 @@ array_impls! {
 macro_rules! tuple_impls {
     ($($len:tt => ($($n:tt $name:ident)+))+) => {
         $(
-            impl<'de, $($name: Deserialize<'de>),+> Deserialize<'de> for ($($name,)+) {
-                #[inline]
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: Deserializer<'de>,
-                {
-                    struct TupleVisitor<$($name,)+> {
-                        marker: PhantomData<($($name,)+)>,
-                    }
-
-                    impl<'de, $($name: Deserialize<'de>),+> Visitor<'de> for TupleVisitor<$($name,)+> {
-                        type Value = ($($name,)+);
-
-                        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                            formatter.write_str(concat!("a tuple of size ", $len))
-                        }
-
-                        #[inline]
-                        #[allow(non_snake_case)]
-                        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-                        where
-                            A: SeqAccess<'de>,
-                        {
-                            $(
-                                let $name = match tri!(seq.next_element()) {
-                                    Some(value) => value,
-                                    None => return Err(Error::invalid_length($n, &self)),
-                                };
-                            )+
-
-                            Ok(($($name,)+))
-                        }
-                    }
-
-                    deserializer.deserialize_tuple($len, TupleVisitor { marker: PhantomData })
-                }
-
-                #[inline]
-                fn deserialize_in_place<D>(deserializer: D, place: &mut Self) -> Result<(), D::Error>
-                where
-                    D: Deserializer<'de>,
-                {
-                    struct TupleInPlaceVisitor<'a, $($name: 'a,)+>(&'a mut ($($name,)+));
-
-                    impl<'a, 'de, $($name: Deserialize<'de>),+> Visitor<'de> for TupleInPlaceVisitor<'a, $($name,)+> {
-                        type Value = ();
-
-                        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                            formatter.write_str(concat!("a tuple of size ", $len))
-                        }
-
-                        #[inline]
-                        #[allow(non_snake_case)]
-                        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-                        where
-                            A: SeqAccess<'de>,
-                        {
-                            $(
-                                if tri!(seq.next_element_seed(InPlaceSeed(&mut (self.0).$n))).is_none() {
-                                    return Err(Error::invalid_length($n, &self));
-                                }
-                            )+
-
-                            Ok(())
-                        }
-                    }
-
-                    deserializer.deserialize_tuple($len, TupleInPlaceVisitor(place))
-                }
+            #[cfg_attr(docsrs, doc(hidden))]
+            impl<'de, $($name),+> Deserialize<'de> for ($($name,)+)
+            where
+                $($name: Deserialize<'de>,)+
+            {
+                tuple_impl_body!($len => ($($n $name)+));
             }
         )+
-    }
+    };
+}
+
+macro_rules! tuple_impl_body {
+    ($len:tt => ($($n:tt $name:ident)+)) => {
+        #[inline]
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct TupleVisitor<$($name,)+> {
+                marker: PhantomData<($($name,)+)>,
+            }
+
+            impl<'de, $($name: Deserialize<'de>),+> Visitor<'de> for TupleVisitor<$($name,)+> {
+                type Value = ($($name,)+);
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str(concat!("a tuple of size ", $len))
+                }
+
+                #[inline]
+                #[allow(non_snake_case)]
+                fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+                where
+                    A: SeqAccess<'de>,
+                {
+                    $(
+                        let $name = match tri!(seq.next_element()) {
+                            Some(value) => value,
+                            None => return Err(Error::invalid_length($n, &self)),
+                        };
+                    )+
+
+                    Ok(($($name,)+))
+                }
+            }
+
+            deserializer.deserialize_tuple($len, TupleVisitor { marker: PhantomData })
+        }
+
+        #[inline]
+        fn deserialize_in_place<D>(deserializer: D, place: &mut Self) -> Result<(), D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct TupleInPlaceVisitor<'a, $($name: 'a,)+>(&'a mut ($($name,)+));
+
+            impl<'a, 'de, $($name: Deserialize<'de>),+> Visitor<'de> for TupleInPlaceVisitor<'a, $($name,)+> {
+                type Value = ();
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str(concat!("a tuple of size ", $len))
+                }
+
+                #[inline]
+                #[allow(non_snake_case)]
+                fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+                where
+                    A: SeqAccess<'de>,
+                {
+                    $(
+                        if tri!(seq.next_element_seed(InPlaceSeed(&mut (self.0).$n))).is_none() {
+                            return Err(Error::invalid_length($n, &self));
+                        }
+                    )+
+
+                    Ok(())
+                }
+            }
+
+            deserializer.deserialize_tuple($len, TupleInPlaceVisitor(place))
+        }
+    };
+}
+
+#[cfg_attr(docsrs, doc(fake_variadic))]
+#[cfg_attr(
+    docsrs,
+    doc = "This trait is implemented for tuples up to 16 items long."
+)]
+impl<'de, T> Deserialize<'de> for (T,)
+where
+    T: Deserialize<'de>,
+{
+    tuple_impl_body!(1 => (0 T));
 }
 
 tuple_impls! {
-    1  => (0 T0)
     2  => (0 T0 1 T1)
     3  => (0 T0 1 T1 2 T2)
     4  => (0 T0 1 T1 2 T2 3 T3)
@@ -1442,7 +1567,7 @@ macro_rules! map_impl {
 
 map_impl! {
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     BTreeMap<K: Ord, V>,
     map,
     BTreeMap::new(),
@@ -1450,7 +1575,7 @@ map_impl! {
 
 map_impl! {
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     HashMap<K: Eq + Hash, V, S: BuildHasher + Default>,
     map,
     HashMap::with_capacity_and_hasher(size_hint::cautious::<(K, V)>(map.size_hint()), S::default()),
@@ -1592,7 +1717,7 @@ macro_rules! deserialize_enum {
 }
 
 #[cfg(feature = "std")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl<'de> Deserialize<'de> for net::IpAddr {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1613,13 +1738,13 @@ impl<'de> Deserialize<'de> for net::IpAddr {
 
 parse_ip_impl! {
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     net::Ipv4Addr, "IPv4 address", 4
 }
 
 parse_ip_impl! {
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     net::Ipv6Addr, "IPv6 address", 16
 }
 
@@ -1646,7 +1771,7 @@ macro_rules! parse_socket_impl {
 }
 
 #[cfg(feature = "std")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl<'de> Deserialize<'de> for net::SocketAddr {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1667,14 +1792,14 @@ impl<'de> Deserialize<'de> for net::SocketAddr {
 
 parse_socket_impl! {
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     net::SocketAddrV4, "IPv4 socket address",
     |(ip, port)| net::SocketAddrV4::new(ip, port),
 }
 
 parse_socket_impl! {
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     net::SocketAddrV6, "IPv6 socket address",
     |(ip, port)| net::SocketAddrV6::new(ip, port, 0, 0),
 }
@@ -1710,7 +1835,7 @@ impl<'a> Visitor<'a> for PathVisitor {
 }
 
 #[cfg(feature = "std")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl<'de: 'a, 'a> Deserialize<'de> for &'a Path {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1765,7 +1890,7 @@ impl<'de> Visitor<'de> for PathBufVisitor {
 }
 
 #[cfg(feature = "std")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl<'de> Deserialize<'de> for PathBuf {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1777,7 +1902,7 @@ impl<'de> Deserialize<'de> for PathBuf {
 
 forwarded_impl! {
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     (), Box<Path>, PathBuf::into_boxed_path
 }
 
@@ -1839,7 +1964,7 @@ impl<'de> Visitor<'de> for OsStringVisitor {
 }
 
 #[cfg(all(feature = "std", any(unix, windows)))]
-#[cfg_attr(doc_cfg, doc(cfg(all(feature = "std", any(unix, windows)))))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "std", any(unix, windows)))))]
 impl<'de> Deserialize<'de> for OsString {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1853,33 +1978,33 @@ impl<'de> Deserialize<'de> for OsString {
 
 forwarded_impl! {
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     (T), Box<T>, Box::new
 }
 
 forwarded_impl! {
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     (T), Box<[T]>, Vec::into_boxed_slice
 }
 
 forwarded_impl! {
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     (), Box<str>, String::into_boxed_str
 }
 
 forwarded_impl! {
     #[cfg(all(feature = "std", any(unix, windows)))]
-    #[cfg_attr(doc_cfg, doc(cfg(all(feature = "std", any(unix, windows)))))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "std", any(unix, windows)))))]
     (), Box<OsStr>, OsString::into_boxed_os_str
 }
 
 #[cfg(any(feature = "std", feature = "alloc"))]
-#[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
-impl<'de, 'a, T: ?Sized> Deserialize<'de> for Cow<'a, T>
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
+impl<'de, 'a, T> Deserialize<'de> for Cow<'a, T>
 where
-    T: ToOwned,
+    T: ?Sized + ToOwned,
     T::Owned: Deserialize<'de>,
 {
     #[inline]
@@ -1899,10 +2024,10 @@ where
 /// [`"rc"`]: https://serde.rs/feature-flags.html#-features-rc
 #[cfg(all(feature = "rc", any(feature = "std", feature = "alloc")))]
 #[cfg_attr(
-    doc_cfg,
+    docsrs,
     doc(cfg(all(feature = "rc", any(feature = "std", feature = "alloc"))))
 )]
-impl<'de, T: ?Sized> Deserialize<'de> for RcWeak<T>
+impl<'de, T> Deserialize<'de> for RcWeak<T>
 where
     T: Deserialize<'de>,
 {
@@ -1921,10 +2046,10 @@ where
 /// [`"rc"`]: https://serde.rs/feature-flags.html#-features-rc
 #[cfg(all(feature = "rc", any(feature = "std", feature = "alloc")))]
 #[cfg_attr(
-    doc_cfg,
+    docsrs,
     doc(cfg(all(feature = "rc", any(feature = "std", feature = "alloc"))))
 )]
-impl<'de, T: ?Sized> Deserialize<'de> for ArcWeak<T>
+impl<'de, T> Deserialize<'de> for ArcWeak<T>
 where
     T: Deserialize<'de>,
 {
@@ -1945,8 +2070,9 @@ macro_rules! box_forwarded_impl {
         $t:ident
     ) => {
         $(#[$attr])*
-        impl<'de, T: ?Sized> Deserialize<'de> for $t<T>
+        impl<'de, T> Deserialize<'de> for $t<T>
         where
+            T: ?Sized,
             Box<T>: Deserialize<'de>,
         {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -1968,7 +2094,7 @@ box_forwarded_impl! {
     ///
     /// [`"rc"`]: https://serde.rs/feature-flags.html#-features-rc
     #[cfg(all(feature = "rc", any(feature = "std", feature = "alloc")))]
-    #[cfg_attr(doc_cfg, doc(cfg(all(feature = "rc", any(feature = "std", feature = "alloc")))))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "rc", any(feature = "std", feature = "alloc")))))]
     Rc
 }
 
@@ -1981,7 +2107,7 @@ box_forwarded_impl! {
     ///
     /// [`"rc"`]: https://serde.rs/feature-flags.html#-features-rc
     #[cfg(all(feature = "rc", any(feature = "std", feature = "alloc")))]
-    #[cfg_attr(doc_cfg, doc(cfg(all(feature = "rc", any(feature = "std", feature = "alloc")))))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "rc", any(feature = "std", feature = "alloc")))))]
     Arc
 }
 
@@ -2005,13 +2131,13 @@ forwarded_impl! {
 
 forwarded_impl! {
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     (T), Mutex<T>, Mutex::new
 }
 
 forwarded_impl! {
     #[cfg(feature = "std")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     (T), RwLock<T>, RwLock::new
 }
 
@@ -2166,7 +2292,7 @@ impl<'de> Deserialize<'de> for Duration {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(feature = "std")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "std")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl<'de> Deserialize<'de> for SystemTime {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -2526,144 +2652,6 @@ mod range_from {
 
     use crate::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
 
-    pub const FIELDS: &[&str] = &["end"];
-
-    // If this were outside of the serde crate, it would just use:
-    //
-    //    #[derive(Deserialize)]
-    //    #[serde(field_identifier, rename_all = "lowercase")]
-    enum Field {
-        End,
-    }
-
-    impl<'de> Deserialize<'de> for Field {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            struct FieldVisitor;
-
-            impl<'de> Visitor<'de> for FieldVisitor {
-                type Value = Field;
-
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("`end`")
-                }
-
-                fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-                where
-                    E: Error,
-                {
-                    match value {
-                        "end" => Ok(Field::End),
-                        _ => Err(Error::unknown_field(value, FIELDS)),
-                    }
-                }
-
-                fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
-                where
-                    E: Error,
-                {
-                    match value {
-                        b"end" => Ok(Field::End),
-                        _ => {
-                            let value = crate::__private::from_utf8_lossy(value);
-                            Err(Error::unknown_field(&*value, FIELDS))
-                        }
-                    }
-                }
-            }
-
-            deserializer.deserialize_identifier(FieldVisitor)
-        }
-    }
-
-    pub struct RangeFromVisitor<Idx> {
-        pub expecting: &'static str,
-        pub phantom: PhantomData<Idx>,
-    }
-
-    impl<'de, Idx> Visitor<'de> for RangeFromVisitor<Idx>
-    where
-        Idx: Deserialize<'de>,
-    {
-        type Value = Idx;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str(self.expecting)
-        }
-
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: SeqAccess<'de>,
-        {
-            let end: Idx = match tri!(seq.next_element()) {
-                Some(value) => value,
-                None => {
-                    return Err(Error::invalid_length(0, &self));
-                }
-            };
-            Ok(end)
-        }
-
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: MapAccess<'de>,
-        {
-            let mut end: Option<Idx> = None;
-            while let Some(key) = tri!(map.next_key()) {
-                match key {
-                    Field::End => {
-                        if end.is_some() {
-                            return Err(<A::Error as Error>::duplicate_field("end"));
-                        }
-                        end = Some(tri!(map.next_value()));
-                    }
-                }
-            }
-            let end = match end {
-                Some(end) => end,
-                None => return Err(<A::Error as Error>::missing_field("end")),
-            };
-            Ok(end)
-        }
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-// Similar to:
-//
-//     #[derive(Deserialize)]
-//     #[serde(deny_unknown_fields)]
-//     struct RangeTo<Idx> {
-//         start: Idx,
-//     }
-impl<'de, Idx> Deserialize<'de> for RangeTo<Idx>
-where
-    Idx: Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let end = tri!(deserializer.deserialize_struct(
-            "RangeTo",
-            range_to::FIELDS,
-            range_to::RangeToVisitor {
-                expecting: "struct RangeTo",
-                phantom: PhantomData,
-            },
-        ));
-        Ok(..end)
-    }
-}
-
-mod range_to {
-    use crate::lib::*;
-
-    use crate::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
-
     pub const FIELDS: &[&str] = &["start"];
 
     // If this were outside of the serde crate, it would just use:
@@ -2716,12 +2704,12 @@ mod range_to {
         }
     }
 
-    pub struct RangeToVisitor<Idx> {
+    pub struct RangeFromVisitor<Idx> {
         pub expecting: &'static str,
         pub phantom: PhantomData<Idx>,
     }
 
-    impl<'de, Idx> Visitor<'de> for RangeToVisitor<Idx>
+    impl<'de, Idx> Visitor<'de> for RangeFromVisitor<Idx>
     where
         Idx: Deserialize<'de>,
     {
@@ -2764,6 +2752,144 @@ mod range_to {
                 None => return Err(<A::Error as Error>::missing_field("start")),
             };
             Ok(start)
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Similar to:
+//
+//     #[derive(Deserialize)]
+//     #[serde(deny_unknown_fields)]
+//     struct RangeTo<Idx> {
+//         end: Idx,
+//     }
+impl<'de, Idx> Deserialize<'de> for RangeTo<Idx>
+where
+    Idx: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let end = tri!(deserializer.deserialize_struct(
+            "RangeTo",
+            range_to::FIELDS,
+            range_to::RangeToVisitor {
+                expecting: "struct RangeTo",
+                phantom: PhantomData,
+            },
+        ));
+        Ok(..end)
+    }
+}
+
+mod range_to {
+    use crate::lib::*;
+
+    use crate::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
+
+    pub const FIELDS: &[&str] = &["end"];
+
+    // If this were outside of the serde crate, it would just use:
+    //
+    //    #[derive(Deserialize)]
+    //    #[serde(field_identifier, rename_all = "lowercase")]
+    enum Field {
+        End,
+    }
+
+    impl<'de> Deserialize<'de> for Field {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct FieldVisitor;
+
+            impl<'de> Visitor<'de> for FieldVisitor {
+                type Value = Field;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("`end`")
+                }
+
+                fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                where
+                    E: Error,
+                {
+                    match value {
+                        "end" => Ok(Field::End),
+                        _ => Err(Error::unknown_field(value, FIELDS)),
+                    }
+                }
+
+                fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+                where
+                    E: Error,
+                {
+                    match value {
+                        b"end" => Ok(Field::End),
+                        _ => {
+                            let value = crate::__private::from_utf8_lossy(value);
+                            Err(Error::unknown_field(&*value, FIELDS))
+                        }
+                    }
+                }
+            }
+
+            deserializer.deserialize_identifier(FieldVisitor)
+        }
+    }
+
+    pub struct RangeToVisitor<Idx> {
+        pub expecting: &'static str,
+        pub phantom: PhantomData<Idx>,
+    }
+
+    impl<'de, Idx> Visitor<'de> for RangeToVisitor<Idx>
+    where
+        Idx: Deserialize<'de>,
+    {
+        type Value = Idx;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str(self.expecting)
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let end: Idx = match tri!(seq.next_element()) {
+                Some(value) => value,
+                None => {
+                    return Err(Error::invalid_length(0, &self));
+                }
+            };
+            Ok(end)
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut end: Option<Idx> = None;
+            while let Some(key) = tri!(map.next_key()) {
+                match key {
+                    Field::End => {
+                        if end.is_some() {
+                            return Err(<A::Error as Error>::duplicate_field("end"));
+                        }
+                        end = Some(tri!(map.next_value()));
+                    }
+                }
+            }
+            let end = match end {
+                Some(end) => end,
+                None => return Err(<A::Error as Error>::missing_field("end")),
+            };
+            Ok(end)
         }
     }
 }
@@ -3002,7 +3128,7 @@ macro_rules! atomic_impl {
     ($($ty:ident $size:expr)*) => {
         $(
             #[cfg(any(no_target_has_atomic, target_has_atomic = $size))]
-            #[cfg_attr(doc_cfg, doc(cfg(all(feature = "std", target_has_atomic = $size))))]
+            #[cfg_attr(docsrs, doc(cfg(all(feature = "std", target_has_atomic = $size))))]
             impl<'de> Deserialize<'de> for $ty {
                 fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                 where

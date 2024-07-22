@@ -24,11 +24,7 @@
 // The goal for this implementation is to drive the overhead as close to zero
 // as possible.
 
-use crate::{
-    c, cpu, debug,
-    endian::{ArrayEncoding, BigEndian},
-    polyfill,
-};
+use crate::{c, cpu, debug, polyfill};
 use core::num::Wrapping;
 
 mod sha1;
@@ -45,8 +41,6 @@ pub(crate) struct BlockContext {
 
     /// The context's algorithm.
     pub algorithm: &'static Algorithm,
-
-    cpu_features: cpu::Features,
 }
 
 impl BlockContext {
@@ -55,7 +49,6 @@ impl BlockContext {
             state: algorithm.initial_state,
             completed_data_blocks: 0,
             algorithm,
-            cpu_features: cpu::features(),
         }
     }
 
@@ -65,9 +58,8 @@ impl BlockContext {
         assert_eq!(num_blocks * self.algorithm.block_len, input.len());
 
         if num_blocks > 0 {
-            let _cpu_features = self.cpu_features;
             unsafe {
-                (self.algorithm.block_data_order)(&mut self.state, input.as_ptr(), num_blocks);
+                self.block_data_order(input.as_ptr(), num_blocks, cpu::features());
             }
             self.completed_data_blocks = self
                 .completed_data_blocks
@@ -87,9 +79,7 @@ impl BlockContext {
 
         if padding_pos > block_len - self.algorithm.len_len {
             pending[padding_pos..block_len].fill(0);
-            unsafe {
-                (self.algorithm.block_data_order)(&mut self.state, pending.as_ptr(), 1);
-            }
+            unsafe { self.block_data_order(pending.as_ptr(), 1, cpu::features()) };
             // We don't increase |self.completed_data_blocks| because the
             // padding isn't data, and so it isn't included in the data length.
             padding_pos = 0;
@@ -108,13 +98,23 @@ impl BlockContext {
             .unwrap();
         pending[(block_len - 8)..block_len].copy_from_slice(&u64::to_be_bytes(completed_data_bits));
 
-        unsafe {
-            (self.algorithm.block_data_order)(&mut self.state, pending.as_ptr(), 1);
-        }
+        unsafe { self.block_data_order(pending.as_ptr(), 1, cpu::features()) };
 
         Digest {
             algorithm: self.algorithm,
             value: (self.algorithm.format_output)(self.state),
+        }
+    }
+
+    unsafe fn block_data_order(
+        &mut self,
+        pending: *const u8,
+        num_blocks: usize,
+        _cpu_features: cpu::Features,
+    ) {
+        // CPU features are inspected by assembly implementations.
+        unsafe {
+            (self.algorithm.block_data_order)(&mut self.state, pending, num_blocks);
         }
     }
 }
@@ -248,8 +248,7 @@ impl Digest {
 impl AsRef<[u8]> for Digest {
     #[inline(always)]
     fn as_ref(&self) -> &[u8] {
-        let as64 = unsafe { &self.value.as64 };
-        &as64.as_byte_array()[..self.algorithm.output_len]
+        &self.value.0[..self.algorithm.output_len]
     }
 }
 
@@ -456,11 +455,7 @@ union State {
 }
 
 #[derive(Clone, Copy)]
-#[repr(C)]
-union Output {
-    as64: [BigEndian<u64>; 512 / 8 / core::mem::size_of::<BigEndian<u64>>()],
-    as32: [BigEndian<u32>; 256 / 8 / core::mem::size_of::<BigEndian<u32>>()],
-}
+struct Output([u8; MAX_OUTPUT_LEN]);
 
 /// The maximum block length ([`Algorithm::block_len()`]) of all the algorithms
 /// in this module.
@@ -475,17 +470,30 @@ pub const MAX_OUTPUT_LEN: usize = 512 / 8;
 pub const MAX_CHAINING_LEN: usize = MAX_OUTPUT_LEN;
 
 fn sha256_format_output(input: State) -> Output {
-    let input = unsafe { &input.as32 };
-    Output {
-        as32: input.map(BigEndian::from),
-    }
+    let input = unsafe { input.as32 };
+    format_output::<_, _, { core::mem::size_of::<u32>() }>(input, u32::to_be_bytes)
 }
 
 fn sha512_format_output(input: State) -> Output {
-    let input = unsafe { &input.as64 };
-    Output {
-        as64: input.map(BigEndian::from),
-    }
+    let input = unsafe { input.as64 };
+    format_output::<_, _, { core::mem::size_of::<u64>() }>(input, u64::to_be_bytes)
+}
+
+#[inline]
+fn format_output<T, F, const N: usize>(input: [Wrapping<T>; sha2::CHAINING_WORDS], f: F) -> Output
+where
+    F: Fn(T) -> [u8; N],
+    T: Copy,
+{
+    let mut output = Output([0; MAX_OUTPUT_LEN]);
+    output
+        .0
+        .chunks_mut(N)
+        .zip(input.iter().copied().map(|Wrapping(w)| f(w)))
+        .for_each(|(o, i)| {
+            o.copy_from_slice(&i);
+        });
+    output
 }
 
 /// The length of the output of SHA-1, in bytes.
@@ -575,7 +583,6 @@ mod tests {
                     state: alg.initial_state,
                     completed_data_blocks: max_blocks - 1,
                     algorithm: alg,
-                    cpu_features: crate::cpu::features(),
                 },
                 pending: [0u8; digest::MAX_BLOCK_LEN],
                 num_pending: 0,

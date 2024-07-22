@@ -10,9 +10,9 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
 name = "globset"
-version = "0.4.13"
+version = "0.4.14"
 authors = ["Andrew Gallant <jamslam@gmail.com>"]
 description = """
 Cross platform single glob and glob set matching. Glob set matching is the
@@ -37,40 +37,43 @@ name = "globset"
 bench = false
 
 [dependencies.aho-corasick]
-version = "1.0.2"
+version = "1.1.1"
 
 [dependencies.bstr]
-version = "1.6.0"
+version = "1.6.2"
 features = ["std"]
 default-features = false
 
-[dependencies.fnv]
-version = "1.0.6"
-
 [dependencies.log]
-version = "0.4.5"
+version = "0.4.20"
 optional = true
 
-[dependencies.regex]
-version = "1.8.3"
+[dependencies.regex-automata]
+version = "0.4.0"
 features = [
-    "perf",
     "std",
+    "perf",
+    "syntax",
+    "meta",
+    "nfa",
+    "hybrid",
 ]
 default-features = false
 
+[dependencies.regex-syntax]
+version = "0.8.0"
+features = ["std"]
+default-features = false
+
 [dependencies.serde]
-version = "1.0.104"
+version = "1.0.188"
 optional = true
 
 [dev-dependencies.glob]
-version = "0.3.0"
-
-[dev-dependencies.lazy_static]
-version = "1"
+version = "0.3.1"
 
 [dev-dependencies.serde_json]
-version = "1.0.45"
+version = "1.0.107"
 
 [features]
 default = ["log"]

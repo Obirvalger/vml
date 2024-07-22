@@ -4,8 +4,11 @@
 
 use crate::backend::c;
 use crate::io;
+#[cfg(target_os = "linux")]
+use crate::net::xdp::{SockaddrXdpFlags, SocketAddrXdp};
 use crate::net::{Ipv4Addr, Ipv6Addr, SocketAddrAny, SocketAddrUnix, SocketAddrV4, SocketAddrV6};
 use core::mem::size_of;
+use core::slice;
 
 // This must match the header of `sockaddr`.
 #[repr(C)]
@@ -93,18 +96,36 @@ pub(crate) unsafe fn read_sockaddr(
                 //
                 // [abstract namespace]: https://man7.org/linux/man-pages/man7/unix.7.html
                 if decode.sun_path[0] == 0 {
-                    return SocketAddrUnix::new_abstract_name(
-                        &decode.sun_path[1..len - offsetof_sun_path],
-                    )
-                    .map(SocketAddrAny::Unix);
+                    let bytes = &decode.sun_path[1..len - offsetof_sun_path];
+
+                    // SAFETY: Convert `&[c_char]` to `&[u8]`.
+                    let bytes = slice::from_raw_parts(bytes.as_ptr().cast::<u8>(), bytes.len());
+
+                    return SocketAddrUnix::new_abstract_name(bytes).map(SocketAddrAny::Unix);
                 }
 
                 // Otherwise we expect a NUL-terminated filesystem path.
+                let bytes = &decode.sun_path[..len - 1 - offsetof_sun_path];
+
+                // SAFETY: Convert `&[c_char]` to `&[u8]`.
+                let bytes = slice::from_raw_parts(bytes.as_ptr().cast::<u8>(), bytes.len());
+
                 assert_eq!(decode.sun_path[len - 1 - offsetof_sun_path], 0);
-                Ok(SocketAddrAny::Unix(SocketAddrUnix::new(
-                    &decode.sun_path[..len - 1 - offsetof_sun_path],
-                )?))
+                Ok(SocketAddrAny::Unix(SocketAddrUnix::new(bytes)?))
             }
+        }
+        #[cfg(target_os = "linux")]
+        c::AF_XDP => {
+            if len < size_of::<c::sockaddr_xdp>() {
+                return Err(io::Errno::INVAL);
+            }
+            let decode = &*storage.cast::<c::sockaddr_xdp>();
+            Ok(SocketAddrAny::Xdp(SocketAddrXdp::new(
+                SockaddrXdpFlags::from_bits_retain(decode.sxdp_flags),
+                u32::from_be(decode.sxdp_ifindex),
+                u32::from_be(decode.sxdp_queue_id),
+                u32::from_be(decode.sxdp_shared_umem_fd),
+            )))
         }
         _ => Err(io::Errno::NOTSUP),
     }
@@ -165,20 +186,35 @@ pub(crate) unsafe fn read_sockaddr_os(storage: *const c::sockaddr, len: usize) -
                 //
                 // [abstract namespace]: https://man7.org/linux/man-pages/man7/unix.7.html
                 if decode.sun_path[0] == 0 {
-                    return SocketAddrAny::Unix(
-                        SocketAddrUnix::new_abstract_name(
-                            &decode.sun_path[1..len - offsetof_sun_path],
-                        )
-                        .unwrap(),
-                    );
+                    let bytes = &decode.sun_path[1..len - offsetof_sun_path];
+
+                    // SAFETY: Convert `&[c_char]` to `&[u8]`.
+                    let bytes = slice::from_raw_parts(bytes.as_ptr().cast::<u8>(), bytes.len());
+
+                    return SocketAddrAny::Unix(SocketAddrUnix::new_abstract_name(bytes).unwrap());
                 }
 
                 // Otherwise we expect a NUL-terminated filesystem path.
                 assert_eq!(decode.sun_path[len - 1 - offsetof_sun_path], 0);
-                SocketAddrAny::Unix(
-                    SocketAddrUnix::new(&decode.sun_path[..len - 1 - offsetof_sun_path]).unwrap(),
-                )
+
+                let bytes = &decode.sun_path[..len - 1 - offsetof_sun_path];
+
+                // SAFETY: Convert `&[c_char]` to `&[u8]`.
+                let bytes = slice::from_raw_parts(bytes.as_ptr().cast::<u8>(), bytes.len());
+
+                SocketAddrAny::Unix(SocketAddrUnix::new(bytes).unwrap())
             }
+        }
+        #[cfg(target_os = "linux")]
+        c::AF_XDP => {
+            assert!(len >= size_of::<c::sockaddr_xdp>());
+            let decode = &*storage.cast::<c::sockaddr_xdp>();
+            SocketAddrAny::Xdp(SocketAddrXdp::new(
+                SockaddrXdpFlags::from_bits_retain(decode.sxdp_flags),
+                u32::from_be(decode.sxdp_ifindex),
+                u32::from_be(decode.sxdp_queue_id),
+                u32::from_be(decode.sxdp_shared_umem_fd),
+            ))
         }
         other => unimplemented!("{:?}", other),
     }

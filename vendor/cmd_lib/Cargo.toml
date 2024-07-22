@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "cmd_lib"
-version = "1.8.0"
+version = "1.9.4"
 authors = ["rust-shell-script <rust-shell-script@gmail.com>"]
 description = "Common rust commandline macros and utils, to write shell script like tasks easily"
 homepage = "https://github.com/rust-shell-script/rust_cmd_lib"
@@ -33,7 +33,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/rust-shell-script/rust_cmd_lib"
 
 [dependencies.cmd_lib_macros]
-version = "1.4.0"
+version = "1.9.4"
 
 [dependencies.env_logger]
 version = "0.10.0"

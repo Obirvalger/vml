@@ -1,4 +1,4 @@
-pub type c_char = i8;
+pub type c_char = u8;
 pub type caddr_t = *mut ::c_char;
 pub type clockid_t = ::c_longlong;
 pub type blkcnt_t = ::c_long;
@@ -2889,7 +2889,7 @@ extern "C" {
         host: *mut ::c_char,
         hostlen: ::size_t,
         serv: *mut ::c_char,
-        sevlen: ::size_t,
+        servlen: ::size_t,
         flags: ::c_int,
     ) -> ::c_int;
     pub fn getpagesize() -> ::c_int;

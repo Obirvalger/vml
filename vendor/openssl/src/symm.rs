@@ -278,9 +278,23 @@ impl Cipher {
         unsafe { Cipher(ffi::EVP_des_ede3_cbc()) }
     }
 
+    pub fn des_ede3_ecb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_des_ede3_ecb()) }
+    }
+
     #[cfg(not(boringssl))]
     pub fn des_ede3_cfb64() -> Cipher {
         unsafe { Cipher(ffi::EVP_des_ede3_cfb64()) }
+    }
+
+    #[cfg(not(boringssl))]
+    pub fn des_ede3_cfb8() -> Cipher {
+        unsafe { Cipher(ffi::EVP_des_ede3_cfb8()) }
+    }
+
+    #[cfg(not(boringssl))]
+    pub fn des_ede3_ofb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_des_ede3_ofb()) }
     }
 
     #[cfg(not(osslconf = "OPENSSL_NO_RC4"))]
@@ -294,8 +308,38 @@ impl Cipher {
     }
 
     #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_128_ecb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_128_ecb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_128_ofb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_128_ofb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_128_cfb128() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_128_cfb128()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
     pub fn camellia_192_cbc() -> Cipher {
         unsafe { Cipher(ffi::EVP_camellia_192_cbc()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_192_ecb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_192_ecb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_192_ofb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_192_ofb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_192_cfb128() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_192_cfb128()) }
     }
 
     #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
@@ -303,13 +347,43 @@ impl Cipher {
         unsafe { Cipher(ffi::EVP_camellia_256_cbc()) }
     }
 
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_256_ecb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_256_ecb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_256_ofb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_256_ofb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAMELLIA"))]
+    pub fn camellia_256_cfb128() -> Cipher {
+        unsafe { Cipher(ffi::EVP_camellia_256_cfb128()) }
+    }
+
     #[cfg(not(osslconf = "OPENSSL_NO_CAST"))]
     pub fn cast5_cbc() -> Cipher {
         unsafe { Cipher(ffi::EVP_cast5_cbc()) }
     }
 
+    #[cfg(not(osslconf = "OPENSSL_NO_CAST"))]
+    pub fn cast5_ecb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_cast5_ecb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAST"))]
+    pub fn cast5_ofb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_cast5_ofb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_CAST"))]
+    pub fn cast5_cfb64() -> Cipher {
+        unsafe { Cipher(ffi::EVP_cast5_cfb64()) }
+    }
+
     /// Requires OpenSSL 1.1.0 or newer.
-    #[cfg(all(ossl110, not(osslconf = "OPENSSL_NO_CHACHA")))]
+    #[cfg(all(any(ossl110, libressl310), not(osslconf = "OPENSSL_NO_CHACHA")))]
     pub fn chacha20() -> Cipher {
         unsafe { Cipher(ffi::EVP_chacha20()) }
     }
@@ -323,6 +397,21 @@ impl Cipher {
     #[cfg(not(osslconf = "OPENSSL_NO_IDEA"))]
     pub fn idea_cbc() -> Cipher {
         unsafe { Cipher(ffi::EVP_idea_cbc()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_IDEA"))]
+    pub fn idea_ecb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_idea_ecb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_IDEA"))]
+    pub fn idea_ofb() -> Cipher {
+        unsafe { Cipher(ffi::EVP_idea_ofb()) }
+    }
+
+    #[cfg(not(osslconf = "OPENSSL_NO_IDEA"))]
+    pub fn idea_cfb64() -> Cipher {
+        unsafe { Cipher(ffi::EVP_idea_cfb64()) }
     }
 
     #[cfg(not(osslconf = "OPENSSL_NO_SEED"))]
@@ -602,9 +691,30 @@ impl Crypter {
     /// Panics for block ciphers if `output.len() < input.len() + block_size`,
     /// where `block_size` is the block size of the cipher (see `Cipher::block_size`).
     ///
-    /// Panics if `output.len() > c_int::max_value()`.
+    /// Panics if `output.len() > c_int::MAX`.
     pub fn update(&mut self, input: &[u8], output: &mut [u8]) -> Result<usize, ErrorStack> {
         self.ctx.cipher_update(input, Some(output))
+    }
+
+    /// Feeds data from `input` through the cipher, writing encrypted/decrypted
+    /// bytes into `output`.
+    ///
+    /// The number of bytes written to `output` is returned. Note that this may
+    /// not be equal to the length of `input`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide an `output` buffer large enough to contain
+    /// correct number of bytes. For streaming ciphers the output buffer size
+    /// should be at least as big as the input buffer. For block ciphers the
+    /// size of the output buffer depends on the state of partially updated
+    /// blocks.
+    pub unsafe fn update_unchecked(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<usize, ErrorStack> {
+        self.ctx.cipher_update_unchecked(input, Some(output))
     }
 
     /// Finishes the encryption/decryption process, writing any remaining data
@@ -1503,7 +1613,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(ossl110)]
+    #[cfg(any(ossl110, libressl310))]
     fn test_chacha20() {
         let key = "0000000000000000000000000000000000000000000000000000000000000000";
         let iv = "00000000000000000000000000000000";

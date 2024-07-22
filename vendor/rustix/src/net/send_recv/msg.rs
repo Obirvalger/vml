@@ -17,7 +17,34 @@ use core::{ptr, slice};
 
 use super::{RecvFlags, SendFlags, SocketAddrAny, SocketAddrV4, SocketAddrV6};
 
-/// Macro for defining the amount of space used by CMSGs.
+/// Macro for defining the amount of space to allocate in a buffer for use with
+/// [`RecvAncillaryBuffer::new`] and [`SendAncillaryBuffer::new`].
+///
+/// # Examples
+///
+/// Allocate a buffer for a single file descriptor:
+/// ```
+/// # use rustix::cmsg_space;
+/// let mut space = [0; rustix::cmsg_space!(ScmRights(1))];
+/// ```
+///
+/// Allocate a buffer for credentials:
+/// ```
+/// # #[cfg(linux_kernel)]
+/// # {
+/// # use rustix::cmsg_space;
+/// let mut space = [0; rustix::cmsg_space!(ScmCredentials(1))];
+/// # }
+/// ```
+///
+/// Allocate a buffer for two file descriptors and credentials:
+/// ```
+/// # #[cfg(linux_kernel)]
+/// # {
+/// # use rustix::cmsg_space;
+/// let mut space = [0; rustix::cmsg_space!(ScmRights(2), ScmCredentials(1))];
+/// # }
+/// ```
 #[macro_export]
 macro_rules! cmsg_space {
     // Base Rules
@@ -33,12 +60,41 @@ macro_rules! cmsg_space {
     };
 
     // Combo Rules
-    (($($($x:tt)*),+)) => {
+    ($firstid:ident($firstex:expr), $($restid:ident($restex:expr)),*) => {{
+        // We only have to add `cmsghdr` alignment once; all other times we can
+        // use `cmsg_aligned_space`.
+        let sum = $crate::cmsg_space!($firstid($firstex));
         $(
-            cmsg_space!($($x)*) +
-        )+
-        0
+            let sum = sum + $crate::cmsg_aligned_space!($restid($restex));
+        )*
+        sum
+    }};
+}
+
+/// Like `cmsg_space`, but doesn't add padding for `cmsghdr` alignment.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! cmsg_aligned_space {
+    // Base Rules
+    (ScmRights($len:expr)) => {
+        $crate::net::__cmsg_aligned_space(
+            $len * ::core::mem::size_of::<$crate::fd::BorrowedFd<'static>>(),
+        )
     };
+    (ScmCredentials($len:expr)) => {
+        $crate::net::__cmsg_aligned_space(
+            $len * ::core::mem::size_of::<$crate::net::UCred>(),
+        )
+    };
+
+    // Combo Rules
+    ($firstid:ident($firstex:expr), $($restid:ident($restex:expr)),*) => {{
+        let sum = cmsg_aligned_space!($firstid($firstex));
+        $(
+            let sum = sum + cmsg_aligned_space!($restid($restex));
+        )*
+        sum
+    }};
 }
 
 #[doc(hidden)]
@@ -47,6 +103,11 @@ pub const fn __cmsg_space(len: usize) -> usize {
     // `&[u8]` to the required alignment boundary.
     let len = len + align_of::<c::cmsghdr>();
 
+    __cmsg_aligned_space(len)
+}
+
+#[doc(hidden)]
+pub const fn __cmsg_aligned_space(len: usize) -> usize {
     // Convert `len` to `u32` for `CMSG_SPACE`. This would be `try_into()` if
     // we could call that in a `const fn`.
     let converted_len = len as u32;
@@ -97,6 +158,10 @@ pub enum RecvAncillaryMessage<'a> {
 
 /// Buffer for sending ancillary messages with [`sendmsg`], [`sendmsg_v4`],
 /// [`sendmsg_v6`], [`sendmsg_unix`], and [`sendmsg_any`].
+///
+/// Use the [`push`] function to add messages to send.
+///
+/// [`push`]: SendAncillaryBuffer::push
 pub struct SendAncillaryBuffer<'buf, 'slice, 'fd> {
     /// Raw byte buffer for messages.
     buffer: &'buf mut [u8],
@@ -126,6 +191,44 @@ impl Default for SendAncillaryBuffer<'_, '_, '_> {
 
 impl<'buf, 'slice, 'fd> SendAncillaryBuffer<'buf, 'slice, 'fd> {
     /// Create a new, empty `SendAncillaryBuffer` from a raw byte buffer.
+    ///
+    /// The buffer size may be computed with [`cmsg_space`], or it may be
+    /// zero for an empty buffer, however in that case, consider `default()`
+    /// instead, or even using [`send`] instead of `sendmsg`.
+    ///
+    /// # Examples
+    ///
+    /// Allocate a buffer for a single file descriptor:
+    /// ```
+    /// # use rustix::cmsg_space;
+    /// # use rustix::net::SendAncillaryBuffer;
+    /// let mut space = [0; rustix::cmsg_space!(ScmRights(1))];
+    /// let mut cmsg_buffer = SendAncillaryBuffer::new(&mut space);
+    /// ```
+    ///
+    /// Allocate a buffer for credentials:
+    /// ```
+    /// # #[cfg(linux_kernel)]
+    /// # {
+    /// # use rustix::cmsg_space;
+    /// # use rustix::net::SendAncillaryBuffer;
+    /// let mut space = [0; rustix::cmsg_space!(ScmCredentials(1))];
+    /// let mut cmsg_buffer = SendAncillaryBuffer::new(&mut space);
+    /// # }
+    /// ```
+    ///
+    /// Allocate a buffer for two file descriptors and credentials:
+    /// ```
+    /// # #[cfg(linux_kernel)]
+    /// # {
+    /// # use rustix::cmsg_space;
+    /// # use rustix::net::SendAncillaryBuffer;
+    /// let mut space = [0; rustix::cmsg_space!(ScmRights(2), ScmCredentials(1))];
+    /// let mut cmsg_buffer = SendAncillaryBuffer::new(&mut space);
+    /// # }
+    /// ```
+    ///
+    /// [`send`]: crate::net::send
     #[inline]
     pub fn new(buffer: &'buf mut [u8]) -> Self {
         Self {
@@ -229,6 +332,10 @@ impl<'slice, 'fd> Extend<SendAncillaryMessage<'slice, 'fd>>
 }
 
 /// Buffer for receiving ancillary messages with [`recvmsg`].
+///
+/// Use the [`drain`] function to iterate over the received messages.
+///
+/// [`drain`]: RecvAncillaryBuffer::drain
 #[derive(Default)]
 pub struct RecvAncillaryBuffer<'buf> {
     /// Raw byte buffer for messages.
@@ -249,6 +356,44 @@ impl<'buf> From<&'buf mut [u8]> for RecvAncillaryBuffer<'buf> {
 
 impl<'buf> RecvAncillaryBuffer<'buf> {
     /// Create a new, empty `RecvAncillaryBuffer` from a raw byte buffer.
+    ///
+    /// The buffer size may be computed with [`cmsg_space`], or it may be
+    /// zero for an empty buffer, however in that case, consider `default()`
+    /// instead, or even using [`recv`] instead of `recvmsg`.
+    ///
+    /// # Examples
+    ///
+    /// Allocate a buffer for a single file descriptor:
+    /// ```
+    /// # use rustix::cmsg_space;
+    /// # use rustix::net::RecvAncillaryBuffer;
+    /// let mut space = [0; rustix::cmsg_space!(ScmRights(1))];
+    /// let mut cmsg_buffer = RecvAncillaryBuffer::new(&mut space);
+    /// ```
+    ///
+    /// Allocate a buffer for credentials:
+    /// ```
+    /// # #[cfg(linux_kernel)]
+    /// # {
+    /// # use rustix::cmsg_space;
+    /// # use rustix::net::RecvAncillaryBuffer;
+    /// let mut space = [0; rustix::cmsg_space!(ScmCredentials(1))];
+    /// let mut cmsg_buffer = RecvAncillaryBuffer::new(&mut space);
+    /// # }
+    /// ```
+    ///
+    /// Allocate a buffer for two file descriptors and credentials:
+    /// ```
+    /// # #[cfg(linux_kernel)]
+    /// # {
+    /// # use rustix::cmsg_space;
+    /// # use rustix::net::RecvAncillaryBuffer;
+    /// let mut space = [0; rustix::cmsg_space!(ScmRights(2), ScmCredentials(1))];
+    /// let mut cmsg_buffer = RecvAncillaryBuffer::new(&mut space);
+    /// # }
+    /// ```
+    ///
+    /// [`recv`]: crate::net::recv
     #[inline]
     pub fn new(buffer: &'buf mut [u8]) -> Self {
         Self {
@@ -295,8 +440,7 @@ impl<'buf> RecvAncillaryBuffer<'buf> {
     pub fn drain(&mut self) -> AncillaryDrain<'_> {
         AncillaryDrain {
             messages: messages::Messages::new(&mut self.buffer[self.read..][..self.length]),
-            read: &mut self.read,
-            length: &mut self.length,
+            read_and_length: Some((&mut self.read, &mut self.length)),
         }
     }
 }
@@ -311,6 +455,12 @@ impl Drop for RecvAncillaryBuffer<'_> {
 /// boundary.
 #[inline]
 fn align_for_cmsghdr(buffer: &mut [u8]) -> &mut [u8] {
+    // If the buffer is empty, we won't be writing anything into it, so it
+    // doesn't need to be aligned.
+    if buffer.is_empty() {
+        return buffer;
+    }
+
     let align = align_of::<c::cmsghdr>();
     let addr = buffer.as_ptr() as usize;
     let adjusted = (addr + (align - 1)) & align.wrapping_neg();
@@ -323,25 +473,41 @@ pub struct AncillaryDrain<'buf> {
     messages: messages::Messages<'buf>,
 
     /// Increment the number of messages we've read.
-    read: &'buf mut usize,
-
     /// Decrement the total length.
-    length: &'buf mut usize,
+    read_and_length: Option<(&'buf mut usize, &'buf mut usize)>,
 }
 
 impl<'buf> AncillaryDrain<'buf> {
-    /// A closure that converts a message into a [`RecvAncillaryMessage`].
-    fn cvt_msg(
-        read: &mut usize,
-        length: &mut usize,
+    /// Create an iterator for control messages that were received without
+    /// [`RecvAncillaryBuffer`].
+    ///
+    /// # Safety
+    ///
+    /// The buffer must contain valid message data (or be empty).
+    pub unsafe fn parse(buffer: &'buf mut [u8]) -> Self {
+        Self {
+            messages: messages::Messages::new(buffer),
+            read_and_length: None,
+        }
+    }
+
+    fn advance(
+        read_and_length: &mut Option<(&'buf mut usize, &'buf mut usize)>,
         msg: &c::cmsghdr,
     ) -> Option<RecvAncillaryMessage<'buf>> {
-        unsafe {
-            // Advance the `read` pointer.
+        // Advance the `read` pointer.
+        if let Some((read, length)) = read_and_length {
             let msg_len = msg.cmsg_len as usize;
-            *read += msg_len;
-            *length -= msg_len;
+            **read += msg_len;
+            **length -= msg_len;
+        }
 
+        Self::cvt_msg(msg)
+    }
+
+    /// A closure that converts a message into a [`RecvAncillaryMessage`].
+    fn cvt_msg(msg: &c::cmsghdr) -> Option<RecvAncillaryMessage<'buf>> {
+        unsafe {
             // Get a pointer to the payload.
             let payload = c::CMSG_DATA(msg);
             let payload_len = msg.cmsg_len as usize - c::CMSG_LEN(0) as usize;
@@ -377,9 +543,8 @@ impl<'buf> Iterator for AncillaryDrain<'buf> {
     type Item = RecvAncillaryMessage<'buf>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let read = &mut self.read;
-        let length = &mut self.length;
-        self.messages.find_map(|ev| Self::cvt_msg(read, length, ev))
+        self.messages
+            .find_map(|ev| Self::advance(&mut self.read_and_length, ev))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -387,45 +552,37 @@ impl<'buf> Iterator for AncillaryDrain<'buf> {
         (0, max)
     }
 
-    fn fold<B, F>(self, init: B, f: F) -> B
+    fn fold<B, F>(mut self, init: B, f: F) -> B
     where
         Self: Sized,
         F: FnMut(B, Self::Item) -> B,
     {
-        let read = self.read;
-        let length = self.length;
         self.messages
-            .filter_map(|ev| Self::cvt_msg(read, length, ev))
+            .filter_map(|ev| Self::advance(&mut self.read_and_length, ev))
             .fold(init, f)
     }
 
-    fn count(self) -> usize {
-        let read = self.read;
-        let length = self.length;
+    fn count(mut self) -> usize {
         self.messages
-            .filter_map(|ev| Self::cvt_msg(read, length, ev))
+            .filter_map(|ev| Self::advance(&mut self.read_and_length, ev))
             .count()
     }
 
-    fn last(self) -> Option<Self::Item>
+    fn last(mut self) -> Option<Self::Item>
     where
         Self: Sized,
     {
-        let read = self.read;
-        let length = self.length;
         self.messages
-            .filter_map(|ev| Self::cvt_msg(read, length, ev))
+            .filter_map(|ev| Self::advance(&mut self.read_and_length, ev))
             .last()
     }
 
-    fn collect<B: FromIterator<Self::Item>>(self) -> B
+    fn collect<B: FromIterator<Self::Item>>(mut self) -> B
     where
         Self: Sized,
     {
-        let read = self.read;
-        let length = self.length;
         self.messages
-            .filter_map(|ev| Self::cvt_msg(read, length, ev))
+            .filter_map(|ev| Self::advance(&mut self.read_and_length, ev))
             .collect()
     }
 }
@@ -557,6 +714,24 @@ pub fn sendmsg_unix(
     backend::net::syscalls::sendmsg_unix(socket.as_fd(), addr, iov, control, flags)
 }
 
+/// `sendmsg(msghdr)`—Sends a message on a socket to a specific XDP address.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man2/sendmsg.2.html
+#[inline]
+#[cfg(target_os = "linux")]
+pub fn sendmsg_xdp(
+    socket: impl AsFd,
+    addr: &super::SocketAddrXdp,
+    iov: &[IoSlice<'_>],
+    control: &mut SendAncillaryBuffer<'_, '_, '_>,
+    flags: SendFlags,
+) -> io::Result<usize> {
+    backend::net::syscalls::sendmsg_xdp(socket.as_fd(), addr, iov, control, flags)
+}
+
 /// `sendmsg(msghdr)`—Sends a message on a socket to a specific address.
 ///
 /// # References
@@ -596,6 +771,10 @@ pub fn sendmsg_any(
         #[cfg(unix)]
         Some(SocketAddrAny::Unix(addr)) => {
             backend::net::syscalls::sendmsg_unix(socket.as_fd(), addr, iov, control, flags)
+        }
+        #[cfg(target_os = "linux")]
+        Some(SocketAddrAny::Xdp(addr)) => {
+            backend::net::syscalls::sendmsg_xdp(socket.as_fd(), addr, iov, control, flags)
         }
     }
 }

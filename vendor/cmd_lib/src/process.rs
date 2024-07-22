@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::{File, OpenOptions};
-use std::io::{Error, ErrorKind, Read, Result, Write};
+use std::io::{Error, ErrorKind, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -19,7 +19,7 @@ use std::thread;
 const CD_CMD: &str = "cd";
 const IGNORE_CMD: &str = "ignore";
 
-/// Environment for builtin or custom commands
+/// Environment for builtin or custom commands.
 pub struct CmdEnv {
     stdin: CmdIn,
     stdout: CmdOut,
@@ -29,33 +29,38 @@ pub struct CmdEnv {
     current_dir: PathBuf,
 }
 impl CmdEnv {
-    /// Returns the arguments for this command
-    pub fn args(&self) -> &[String] {
-        &self.args
+    /// Returns the name of this command.
+    pub fn get_cmd_name(&self) -> &str {
+        &self.args[0]
     }
 
-    /// Fetches the environment variable key for this command
+    /// Returns the arguments for this command.
+    pub fn get_args(&self) -> &[String] {
+        &self.args[1..]
+    }
+
+    /// Fetches the environment variable key for this command.
     pub fn var(&self, key: &str) -> Option<&String> {
         self.vars.get(key)
     }
 
-    /// Returns the current working directory for this command
+    /// Returns the current working directory for this command.
     pub fn current_dir(&self) -> &Path {
         &self.current_dir
     }
 
-    /// Returns a new handle to the standard input for this command
-    pub fn stdin(&mut self) -> impl Read + '_ {
+    /// Returns a new handle to the standard input for this command.
+    pub fn stdin(&mut self) -> &mut CmdIn {
         &mut self.stdin
     }
 
-    /// Returns a new handle to the standard output for this command
-    pub fn stdout(&mut self) -> impl Write + '_ {
+    /// Returns a new handle to the standard output for this command.
+    pub fn stdout(&mut self) -> &mut CmdOut {
         &mut self.stdout
     }
 
-    /// Returns a new handle to the standard error for this command
-    pub fn stderr(&mut self) -> impl Write + '_ {
+    /// Returns a new handle to the standard error for this command.
+    pub fn stderr(&mut self) -> &mut CmdOut {
         &mut self.stderr
     }
 }
@@ -79,18 +84,18 @@ lazy_static! {
 }
 
 #[doc(hidden)]
-pub fn export_cmd(cmd: &'static str, func: FnFun) {
+pub fn register_cmd(cmd: &'static str, func: FnFun) {
     CMD_MAP.lock().unwrap().insert(OsString::from(cmd), func);
 }
 
-/// Set debug mode or not, false by default
+/// Set debug mode or not, false by default.
 ///
 /// Setting environment variable CMD_LIB_DEBUG=0|1 has the same effect
 pub fn set_debug(enable: bool) {
     std::env::set_var("CMD_LIB_DEBUG", if enable { "1" } else { "0" });
 }
 
-/// Set pipefail or not, true by default
+/// Set pipefail or not, true by default.
 ///
 /// Setting environment variable CMD_LIB_PIPEFAIL=0|1 has the same effect
 pub fn set_pipefail(enable: bool) {
@@ -158,11 +163,16 @@ pub struct Cmds {
     cmds: Vec<Option<Cmd>>,
     full_cmds: String,
     ignore_error: bool,
+    file: String,
+    line: u32,
 }
 
 impl Cmds {
     pub fn pipe(mut self, cmd: Cmd) -> Self {
-        if !self.full_cmds.is_empty() {
+        if self.full_cmds.is_empty() {
+            self.file = cmd.file.clone();
+            self.line = cmd.line;
+        } else {
             self.full_cmds += " | ";
         }
         self.full_cmds += &cmd.cmd_str();
@@ -172,7 +182,10 @@ impl Cmds {
                 // first command in the pipe
                 self.ignore_error = true;
             } else {
-                warn!("Builtin {IGNORE_CMD:?} command at wrong position");
+                warn!(
+                    "Builtin {IGNORE_CMD:?} command at wrong position ({}:{})",
+                    self.file, self.line
+                );
             }
         }
         self.cmds.push(Some(cmd));
@@ -180,9 +193,11 @@ impl Cmds {
     }
 
     fn spawn(&mut self, current_dir: &mut PathBuf, with_output: bool) -> Result<CmdChildren> {
-        let full_cmds = format!("[{}]", self.full_cmds);
+        let full_cmds = self.full_cmds.clone();
+        let file = self.file.clone();
+        let line = self.line;
         if debug_enabled() {
-            debug!("Running {full_cmds} ...");
+            debug!("Running [{full_cmds}] at {file}:{line} ...");
         }
 
         // spawning all the sub-processes
@@ -194,17 +209,17 @@ impl Cmds {
             if i != len - 1 {
                 // not the last, update redirects
                 let (pipe_reader, pipe_writer) =
-                    os_pipe::pipe().map_err(|e| new_cmd_io_error(&e, &full_cmds))?;
+                    os_pipe::pipe().map_err(|e| new_cmd_io_error(&e, &full_cmds, &file, line))?;
                 cmd.setup_redirects(&mut prev_pipe_in, Some(pipe_writer), with_output)
-                    .map_err(|e| new_cmd_io_error(&e, &full_cmds))?;
+                    .map_err(|e| new_cmd_io_error(&e, &full_cmds, &file, line))?;
                 prev_pipe_in = Some(pipe_reader);
             } else {
                 cmd.setup_redirects(&mut prev_pipe_in, None, with_output)
-                    .map_err(|e| new_cmd_io_error(&e, &full_cmds))?;
+                    .map_err(|e| new_cmd_io_error(&e, &full_cmds, &file, line))?;
             }
             let child = cmd
                 .spawn(current_dir, with_output)
-                .map_err(|e| new_cmd_io_error(&e, &full_cmds))?;
+                .map_err(|e| new_cmd_io_error(&e, &full_cmds, &file, line))?;
             children.push(child);
         }
 
@@ -264,6 +279,8 @@ pub struct Cmd {
     args: Vec<OsString>,
     vars: HashMap<String, String>,
     redirects: Vec<Redirect>,
+    file: String,
+    line: u32,
 
     // for running
     std_cmd: Option<Command>,
@@ -281,6 +298,8 @@ impl Default for Cmd {
             args: vec![],
             vars: HashMap::new(),
             redirects: vec![],
+            file: "".into(),
+            line: 0,
             std_cmd: None,
             stdin_redirect: None,
             stdout_redirect: None,
@@ -292,20 +311,32 @@ impl Default for Cmd {
 }
 
 impl Cmd {
+    pub fn with_location(mut self, file: &str, line: u32) -> Self {
+        self.file = file.into();
+        self.line = line;
+        self
+    }
+
     pub fn add_arg<O>(mut self, arg: O) -> Self
     where
         O: AsRef<OsStr>,
     {
-        let arg_str = arg.as_ref().to_string_lossy().to_string();
+        let arg = arg.as_ref();
+        if arg.is_empty() {
+            // Skip empty arguments
+            return self;
+        }
+
+        let arg_str = arg.to_string_lossy().to_string();
         if arg_str != IGNORE_CMD && !self.args.iter().any(|cmd| *cmd != IGNORE_CMD) {
             let v: Vec<&str> = arg_str.split('=').collect();
             if v.len() == 2 && v[0].chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                 self.vars.insert(v[0].into(), v[1].into());
                 return self;
             }
-            self.in_cmd_map = CMD_MAP.lock().unwrap().contains_key(arg.as_ref());
+            self.in_cmd_map = CMD_MAP.lock().unwrap().contains_key(arg);
         }
-        self.args.push(arg.as_ref().to_os_string());
+        self.args.push(arg.to_os_string());
         self
     }
 
@@ -364,10 +395,12 @@ impl Cmd {
     fn spawn(mut self, current_dir: &mut PathBuf, with_output: bool) -> Result<CmdChild> {
         let arg0 = self.arg0();
         if arg0 == CD_CMD {
-            self.run_cd_cmd(current_dir)?;
+            self.run_cd_cmd(current_dir, &self.file, self.line)?;
             Ok(CmdChild::new(
                 CmdChildHandle::SyncFn,
                 self.cmd_str(),
+                self.file,
+                self.line,
                 self.stdout_logging,
                 self.stderr_logging,
             ))
@@ -390,17 +423,17 @@ impl Cmd {
                 stdin: if let Some(redirect_in) = self.stdin_redirect.take() {
                     redirect_in
                 } else {
-                    CmdIn::Pipe(os_pipe::dup_stdin()?)
+                    CmdIn::pipe(os_pipe::dup_stdin()?)
                 },
                 stdout: if let Some(redirect_out) = self.stdout_redirect.take() {
                     redirect_out
                 } else {
-                    CmdOut::Pipe(os_pipe::dup_stdout()?)
+                    CmdOut::pipe(os_pipe::dup_stdout()?)
                 },
                 stderr: if let Some(redirect_err) = self.stderr_redirect.take() {
                     redirect_err
                 } else {
-                    CmdOut::Pipe(os_pipe::dup_stderr()?)
+                    CmdOut::pipe(os_pipe::dup_stderr()?)
                 },
             };
 
@@ -410,6 +443,8 @@ impl Cmd {
                 Ok(CmdChild::new(
                     CmdChildHandle::Thread(handle),
                     cmd_str,
+                    self.file,
+                    self.line,
                     self.stdout_logging,
                     self.stderr_logging,
                 ))
@@ -418,6 +453,8 @@ impl Cmd {
                 Ok(CmdChild::new(
                     CmdChildHandle::SyncFn,
                     cmd_str,
+                    self.file,
+                    self.line,
                     self.stdout_logging,
                     self.stderr_logging,
                 ))
@@ -450,23 +487,28 @@ impl Cmd {
             Ok(CmdChild::new(
                 CmdChildHandle::Proc(child),
                 self.cmd_str(),
+                self.file,
+                self.line,
                 self.stdout_logging,
                 self.stderr_logging,
             ))
         }
     }
 
-    fn run_cd_cmd(&self, current_dir: &mut PathBuf) -> CmdResult {
+    fn run_cd_cmd(&self, current_dir: &mut PathBuf, file: &str, line: u32) -> CmdResult {
         if self.args.len() == 1 {
-            return Err(Error::new(ErrorKind::Other, "{CD_CMD}: missing directory"));
+            return Err(Error::new(
+                ErrorKind::Other,
+                "{CD_CMD}: missing directory at {file}:{line}",
+            ));
         } else if self.args.len() > 2 {
-            let err_msg = format!("{CD_CMD}: too many arguments");
+            let err_msg = format!("{CD_CMD}: too many arguments at {file}:{line}");
             return Err(Error::new(ErrorKind::Other, err_msg));
         }
 
         let dir = current_dir.join(&self.args[1]);
         if !dir.is_dir() {
-            let err_msg = format!("{CD_CMD}: No such file or directory");
+            let err_msg = format!("{CD_CMD}: No such file or directory at {file}:{line}");
             return Err(Error::new(ErrorKind::Other, err_msg));
         }
 
@@ -496,56 +538,56 @@ impl Cmd {
     ) -> CmdResult {
         // set up stdin pipe
         if let Some(pipe) = pipe_in.take() {
-            self.stdin_redirect = Some(CmdIn::Pipe(pipe));
+            self.stdin_redirect = Some(CmdIn::pipe(pipe));
         }
         // set up stdout pipe
         if let Some(pipe) = pipe_out {
-            self.stdout_redirect = Some(CmdOut::Pipe(pipe));
+            self.stdout_redirect = Some(CmdOut::pipe(pipe));
         } else if with_output {
             let (pipe_reader, pipe_writer) = os_pipe::pipe()?;
-            self.stdout_redirect = Some(CmdOut::Pipe(pipe_writer));
+            self.stdout_redirect = Some(CmdOut::pipe(pipe_writer));
             self.stdout_logging = Some(pipe_reader);
         }
         // set up stderr pipe
         let (pipe_reader, pipe_writer) = os_pipe::pipe()?;
-        self.stderr_redirect = Some(CmdOut::Pipe(pipe_writer));
+        self.stderr_redirect = Some(CmdOut::pipe(pipe_writer));
         self.stderr_logging = Some(pipe_reader);
 
         for redirect in self.redirects.iter() {
             match redirect {
                 Redirect::FileToStdin(path) => {
                     self.stdin_redirect = Some(if path == Path::new("/dev/null") {
-                        CmdIn::Null
+                        CmdIn::null()
                     } else {
-                        CmdIn::File(Self::open_file(path, true, false)?)
+                        CmdIn::file(Self::open_file(path, true, false)?)
                     });
                 }
                 Redirect::StdoutToStderr => {
                     if let Some(ref redirect) = self.stderr_redirect {
                         self.stdout_redirect = Some(redirect.try_clone()?);
                     } else {
-                        self.stdout_redirect = Some(CmdOut::Pipe(os_pipe::dup_stderr()?));
+                        self.stdout_redirect = Some(CmdOut::pipe(os_pipe::dup_stderr()?));
                     }
                 }
                 Redirect::StderrToStdout => {
                     if let Some(ref redirect) = self.stdout_redirect {
                         self.stderr_redirect = Some(redirect.try_clone()?);
                     } else {
-                        self.stderr_redirect = Some(CmdOut::Pipe(os_pipe::dup_stdout()?));
+                        self.stderr_redirect = Some(CmdOut::pipe(os_pipe::dup_stdout()?));
                     }
                 }
                 Redirect::StdoutToFile(path, append) => {
                     self.stdout_redirect = Some(if path == Path::new("/dev/null") {
-                        CmdOut::Null
+                        CmdOut::null()
                     } else {
-                        CmdOut::File(Self::open_file(path, false, *append)?)
+                        CmdOut::file(Self::open_file(path, false, *append)?)
                     });
                 }
                 Redirect::StderrToFile(path, append) => {
                     self.stderr_redirect = Some(if path == Path::new("/dev/null") {
-                        CmdOut::Null
+                        CmdOut::null()
                     } else {
-                        CmdOut::File(Self::open_file(path, false, *append)?)
+                        CmdOut::file(Self::open_file(path, false, *append)?)
                     });
                 }
             }
@@ -601,8 +643,11 @@ impl fmt::Display for CmdString {
     }
 }
 
-pub(crate) fn new_cmd_io_error(e: &Error, command: &str) -> Error {
-    Error::new(e.kind(), format!("Running {command} failed: {e}"))
+pub(crate) fn new_cmd_io_error(e: &Error, command: &str, file: &str, line: u32) -> Error {
+    Error::new(
+        e.kind(),
+        format!("Running [{command}] failed: {e} at {file}:{line}"),
+    )
 }
 
 #[cfg(test)]

@@ -22,6 +22,7 @@ use crate::number::NumberDeserializer;
 pub use crate::read::{Read, SliceRead, StrRead};
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub use crate::read::IoRead;
 
 //////////////////////////////////////////////////////////////////////////////
@@ -480,7 +481,7 @@ impl<'de, R: Read<'de>> Deserializer<R> {
                             // try to keep the number as a `u64` until we grow
                             // too large. At that point, switch to parsing the
                             // value as a `f64`.
-                            if overflow!(significand * 10 + digit, u64::max_value()) {
+                            if overflow!(significand * 10 + digit, u64::MAX) {
                                 return Ok(ParserNumber::F64(tri!(
                                     self.parse_long_integer(positive, significand),
                                 )));
@@ -532,7 +533,7 @@ impl<'de, R: Read<'de>> Deserializer<R> {
         while let c @ b'0'..=b'9' = tri!(self.peek_or_null()) {
             let digit = (c - b'0') as u64;
 
-            if overflow!(significand * 10 + digit, u64::max_value()) {
+            if overflow!(significand * 10 + digit, u64::MAX) {
                 let exponent = exponent_before_decimal_point + exponent_after_decimal_point;
                 return self.parse_decimal_overflow(positive, significand, exponent);
             }
@@ -596,7 +597,7 @@ impl<'de, R: Read<'de>> Deserializer<R> {
             self.eat_char();
             let digit = (c - b'0') as i32;
 
-            if overflow!(exp * 10 + digit, i32::max_value()) {
+            if overflow!(exp * 10 + digit, i32::MAX) {
                 let zero_significand = significand == 0;
                 return self.parse_exponent_overflow(positive, zero_significand, positive_exp);
             }
@@ -788,7 +789,7 @@ impl<'de, R: Read<'de>> Deserializer<R> {
             self.eat_char();
             let digit = (c - b'0') as i32;
 
-            if overflow!(exp * 10 + digit, i32::max_value()) {
+            if overflow!(exp * 10 + digit, i32::MAX) {
                 let zero_significand = self.scratch.iter().all(|&digit| digit == b'0');
                 return self.parse_exponent_overflow(positive, zero_significand, positive_exp);
             }

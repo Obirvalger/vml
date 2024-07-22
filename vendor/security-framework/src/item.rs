@@ -131,14 +131,17 @@ pub struct ItemSearchOptions {
     keychains: Option<CFArray<SecKeychain>>,
     #[cfg(not(target_os = "macos"))]
     keychains: Option<CFArray<CFType>>,
+    case_insensitive: Option<bool>,
     class: Option<ItemClass>,
     key_class: Option<KeyClass>,
     load_refs: bool,
     load_attributes: bool,
     load_data: bool,
     limit: Option<Limit>,
+    trusted_only: Option<bool>,
     label: Option<CFString>,
     service: Option<CFString>,
+    subject: Option<CFString>,
     account: Option<CFString>,
     access_group: Option<CFString>,
     pub_key_hash: Option<CFData>,
@@ -169,8 +172,15 @@ impl ItemSearchOptions {
         self
     }
 
+    /// Whether search for an item should be case insensitive or not.
+    #[inline(always)]
+    pub fn case_insensitive(&mut self, case_insensitive: Option<bool>) -> &mut Self {
+        self.case_insensitive = case_insensitive;
+        self
+    }
+
     /// Search only for keys of the specified class. Also sets self.class to
-    /// ItemClass::key().
+    /// `ItemClass::key()`.
     #[inline(always)]
     pub fn key_class(&mut self, key_class: KeyClass) -> &mut Self {
         self.class(ItemClass::key());
@@ -218,10 +228,24 @@ impl ItemSearchOptions {
         self
     }
 
+    /// Whether untrusted certificates should be returned.
+    #[inline(always)]
+    pub fn trusted_only(&mut self, trusted_only: Option<bool>) -> &mut Self {
+        self.trusted_only = trusted_only;
+        self
+    }
+
     /// Search for an item with the given service.
     #[inline(always)]
     pub fn service(&mut self, service: &str) -> &mut Self {
         self.service = Some(CFString::new(service));
+        self
+    }
+    
+    /// Search for an item with exactly the given subject.
+    #[inline(always)]
+    pub fn subject(&mut self, subject: &str) -> &mut Self {
+        self.subject = Some(CFString::new(subject));
         self
     }
 
@@ -229,6 +253,12 @@ impl ItemSearchOptions {
     #[inline(always)]
     pub fn account(&mut self, account: &str) -> &mut Self {
         self.account = Some(CFString::new(account));
+        self
+    }
+
+    /// Search for an item with a specific access group.
+    pub fn access_group(&mut self, access_group: &str) -> &mut Self {
+        self.access_group = Some(CFString::new(access_group));
         self
     }
 
@@ -277,6 +307,13 @@ impl ItemSearchOptions {
                 params.push((CFString::wrap_under_get_rule(kSecClass), class.to_value()));
             }
 
+            if let Some(case_insensitive) = self.case_insensitive {
+                params.push((
+                    CFString::wrap_under_get_rule(kSecMatchCaseInsensitive),
+                    CFBoolean::from(case_insensitive).as_CFType()
+                ));
+            }
+
             if let Some(key_class) = self.key_class {
                 params.push((CFString::wrap_under_get_rule(kSecAttrKeyClass), key_class.to_value()));
             }
@@ -316,11 +353,28 @@ impl ItemSearchOptions {
                 ));
             }
 
+            if let Some(ref trusted_only) = self.trusted_only {
+                params.push((
+                    CFString::wrap_under_get_rule(kSecMatchTrustedOnly),
+                    if *trusted_only { CFBoolean::true_value().into_CFType() } else { CFBoolean::false_value().into_CFType() },
+                ));
+            }
+
             if let Some(ref service) = self.service {
                 params.push((
                     CFString::wrap_under_get_rule(kSecAttrService),
                     service.as_CFType(),
                 ));
+            }
+            
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(ref subject) = self.subject {
+                    params.push((
+                        CFString::wrap_under_get_rule(kSecMatchSubjectWholeString),
+                        subject.as_CFType(),
+                    ));
+                }
             }
 
             if let Some(ref account) = self.account {
@@ -412,7 +466,7 @@ unsafe fn get_item(item: CFTypeRef) -> SearchResult {
     } else if type_id == SecIdentity::type_id() {
         Reference::Identity(SecIdentity::wrap_under_get_rule(item as *mut _))
     } else {
-        panic!("Got bad type from SecItemCopyMatching: {}", type_id);
+        panic!("Got bad type from SecItemCopyMatching: {type_id}");
     };
 
     SearchResult::Ref(reference)
@@ -504,7 +558,7 @@ impl SearchResult {
                         ),
                         _ => String::from("unknown"),
                     };
-                    retmap.insert(format!("{}", keycfstr), val);
+                    retmap.insert(format!("{keycfstr}"), val);
                 }
                 Some(retmap)
             },
@@ -521,25 +575,62 @@ impl SearchResult {
 pub struct ItemAddOptions {
     /// The value (by ref or data) of the item to add, required.
     pub value: ItemAddValue,
+    /// Optional kSecAttrAccount attribute.
+    pub account_name: Option<CFString>,
+    /// Optional kSecAttrAccessGroup attribute.
+    pub access_group: Option<CFString>,
+    /// Optional kSecAttrComment attribute.
+    pub comment: Option<CFString>,
+    /// Optional kSecAttrDescription attribute.
+    pub description: Option<CFString>,
     /// Optional kSecAttrLabel attribute.
-    pub label: Option<String>,
+    pub label: Option<CFString>,
+    /// Optional kSecAttrService attribute.
+    pub service: Option<CFString>,
     /// Optional keychain location.
     pub location: Option<Location>,
 }
 
 impl ItemAddOptions {
     /// Specifies the item to add.
-    #[must_use] pub fn new(value: ItemAddValue) -> Self {
-        Self{ value, label: None, location: None }
+    #[must_use]
+    pub fn new(value: ItemAddValue) -> Self {
+        Self{ value, label: None, location: None, service: None, account_name: None, comment: None, description: None, access_group: None }
+    }
+
+    /// Specifies the `kSecAttrAccount` attribute.
+    pub fn set_account_name(&mut self, account_name: impl AsRef<str>) -> &mut Self {
+        self.account_name = Some(account_name.as_ref().into());
+        self
+    }
+    /// Specifies the `kSecAttrAccessGroup` attribute.
+    pub fn set_access_group(&mut self, access_group: impl AsRef<str>) -> &mut Self {
+        self.access_group = Some(access_group.as_ref().into());
+        self
+    }
+    /// Specifies the `kSecAttrComment` attribute.
+    pub fn set_comment(&mut self, comment: impl AsRef<str>) -> &mut Self {
+        self.comment = Some(comment.as_ref().into());
+        self
+    }
+    /// Specifies the `kSecAttrDescription` attribute.
+    pub fn set_description(&mut self, description: impl AsRef<str>) -> &mut Self {
+        self.description = Some(description.as_ref().into());
+        self
     }
     /// Specifies the `kSecAttrLabel` attribute.
-    pub fn set_label(&mut self, label: impl Into<String>) -> &mut Self {
-        self.label = Some(label.into());
+    pub fn set_label(&mut self, label: impl AsRef<str>) -> &mut Self {
+        self.label = Some(label.as_ref().into());
         self
     }
     /// Specifies which keychain to add the item to.
     pub fn set_location(&mut self, location: Location) -> &mut Self {
         self.location = Some(location);
+        self
+    }
+    /// Specifies the `kSecAttrService` attribute.
+    pub fn set_service(&mut self, service: impl AsRef<str>) -> &mut Self {
+        self.service = Some(service.as_ref().into());
         self
     }
     /// Populates a `CFDictionary` to be passed to
@@ -562,7 +653,7 @@ impl ItemAddOptions {
 
         if let Some(location) = &self.location {
             match location {
-                #[cfg(any(feature = "OSX_10_15", target_os = "ios"))]
+                #[cfg(any(feature = "OSX_10_15", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))]
                 Location::DataProtectionKeychain => {
                     dict.add(
                         &unsafe { kSecUseDataProtectionKeychain }.to_void(),
@@ -577,10 +668,23 @@ impl ItemAddOptions {
                 },
             }
         }
-
-        let label = self.label.as_deref().map(CFString::from);
-        if let Some(label) = &label {
+        if let Some(account_name) = &self.account_name {
+            dict.add(&unsafe { kSecAttrAccount }.to_void(), &account_name.to_void());
+        }
+        if let Some(access_group) = &self.access_group {
+            dict.add(&unsafe { kSecAttrAccessGroup }.to_void(), &access_group.to_void());
+        }
+        if let Some(comment) = &self.comment {
+            dict.add(&unsafe { kSecAttrComment }.to_void(), &comment.to_void());
+        }
+        if let Some(description) = &self.description {
+            dict.add(&unsafe { kSecAttrDescription }.to_void(), &description.to_void());
+        }
+        if let Some(label) = &self.label {
             dict.add(&unsafe { kSecAttrLabel }.to_void(), &label.to_void());
+        }
+        if let Some(service) = &self.service {
+            dict.add(&unsafe { kSecAttrService }.to_void(), &service.to_void());
         }
 
         dict.to_immutable()
@@ -602,11 +706,11 @@ pub enum ItemAddValue {
 
 /// Type of Ref to add to the keychain.
 pub enum AddRef {
-    /// SecKey
+    /// `SecKey`
     Key(SecKey),
-    /// SecIdentity
+    /// `SecIdentity`
     Identity(SecIdentity),
-    /// SecCertificate
+    /// `SecCertificate`
     Certificate(SecCertificate),
 }
 
@@ -641,7 +745,7 @@ pub enum Location {
     /// This keychain requires the calling binary to be codesigned with
     /// entitlements for the KeychainAccessGroups it is supposed to
     /// access.
-    #[cfg(any(feature = "OSX_10_15", target_os = "ios"))]
+    #[cfg(any(feature = "OSX_10_15", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))]
     DataProtectionKeychain,
     /// Store the key in the default file-based keychain. On macOS, defaults to
     /// the Login keychain.

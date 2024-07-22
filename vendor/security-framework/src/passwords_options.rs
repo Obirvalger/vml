@@ -17,6 +17,7 @@ pub struct PasswordOptions {
 
 bitflags::bitflags! {
     /// The option flags used to configure the evaluation of a `SecAccessControl`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct AccessControlOptions: CFOptionFlags {
         /** Constraint to access an item with either biometry or passcode. */
         const USER_PRESENCE = kSecAccessControlUserPresence;
@@ -106,13 +107,13 @@ impl PasswordOptions {
             query.push((
                 unsafe { CFString::wrap_under_get_rule(kSecAttrSecurityDomain) },
                 CFString::from(domain).into_CFType(),
-            ))
+            ));
         }
         if let Some(port) = port {
             query.push((
                 unsafe { CFString::wrap_under_get_rule(kSecAttrPort) },
                 CFNumber::from(i32::from(port)).into_CFType(),
-            ))
+            ));
         }
         Self { query }
     }
@@ -124,6 +125,6 @@ impl PasswordOptions {
             SecAccessControl::create_with_flags(options.bits())
                 .unwrap()
                 .into_CFType(),
-        ))
+        ));
     }
 }

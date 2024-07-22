@@ -13,28 +13,34 @@
 // with non-obvious failure modes. Alas, such things haven't been documented
 // well.
 
-use std::collections::HashMap;
-use std::ffi::{OsStr, OsString};
-use std::fs::{File, FileType};
-use std::io::{self, BufRead};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashMap,
+    ffi::{OsStr, OsString},
+    fs::{File, FileType},
+    io::{self, BufRead},
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock, Weak},
+};
 
-use crate::gitignore::{self, Gitignore, GitignoreBuilder};
-use crate::overrides::{self, Override};
-use crate::pathutil::{is_hidden, strip_prefix};
-use crate::types::{self, Types};
-use crate::walk::DirEntry;
-use crate::{Error, Match, PartialErrorBuilder};
+use crate::{
+    gitignore::{self, Gitignore, GitignoreBuilder},
+    overrides::{self, Override},
+    pathutil::{is_hidden, strip_prefix},
+    types::{self, Types},
+    walk::DirEntry,
+    {Error, Match, PartialErrorBuilder},
+};
 
 /// IgnoreMatch represents information about where a match came from when using
 /// the `Ignore` matcher.
 #[derive(Clone, Debug)]
-pub struct IgnoreMatch<'a>(IgnoreMatchInner<'a>);
+#[allow(dead_code)]
+pub(crate) struct IgnoreMatch<'a>(IgnoreMatchInner<'a>);
 
 /// IgnoreMatchInner describes precisely where the match information came from.
 /// This is private to allow expansion to more matchers in the future.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 enum IgnoreMatchInner<'a> {
     Override(overrides::Glob<'a>),
     Gitignore(&'a gitignore::Glob),
@@ -85,7 +91,7 @@ struct IgnoreOptions {
 
 /// Ignore is a matcher useful for recursively walking one or more directories.
 #[derive(Clone, Debug)]
-pub struct Ignore(Arc<IgnoreInner>);
+pub(crate) struct Ignore(Arc<IgnoreInner>);
 
 #[derive(Clone, Debug)]
 struct IgnoreInner {
@@ -95,7 +101,7 @@ struct IgnoreInner {
     /// Note that this is never used during matching, only when adding new
     /// parent directory matchers. This avoids needing to rebuild glob sets for
     /// parent directories if many paths are being searched.
-    compiled: Arc<RwLock<HashMap<OsString, Ignore>>>,
+    compiled: Arc<RwLock<HashMap<OsString, Weak<IgnoreInner>>>>,
     /// The path to the directory that this matcher was built from.
     dir: PathBuf,
     /// An override matcher (default is empty).
@@ -134,22 +140,22 @@ struct IgnoreInner {
 
 impl Ignore {
     /// Return the directory path of this matcher.
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0.dir
     }
 
     /// Return true if this matcher has no parent.
-    pub fn is_root(&self) -> bool {
+    pub(crate) fn is_root(&self) -> bool {
         self.0.parent.is_none()
     }
 
     /// Returns true if this matcher was added via the `add_parents` method.
-    pub fn is_absolute_parent(&self) -> bool {
+    pub(crate) fn is_absolute_parent(&self) -> bool {
         self.0.is_absolute_parent
     }
 
     /// Return this matcher's parent, if one exists.
-    pub fn parent(&self) -> Option<Ignore> {
+    pub(crate) fn parent(&self) -> Option<Ignore> {
         self.0.parent.clone()
     }
 
@@ -157,7 +163,7 @@ impl Ignore {
     ///
     /// Note that this can only be called on an `Ignore` matcher with no
     /// parents (i.e., `is_root` returns `true`). This will panic otherwise.
-    pub fn add_parents<P: AsRef<Path>>(
+    pub(crate) fn add_parents<P: AsRef<Path>>(
         &self,
         path: P,
     ) -> (Ignore, Option<Error>) {
@@ -194,9 +200,11 @@ impl Ignore {
         let mut ig = self.clone();
         for parent in parents.into_iter().rev() {
             let mut compiled = self.0.compiled.write().unwrap();
-            if let Some(prebuilt) = compiled.get(parent.as_os_str()) {
-                ig = prebuilt.clone();
-                continue;
+            if let Some(weak) = compiled.get(parent.as_os_str()) {
+                if let Some(prebuilt) = weak.upgrade() {
+                    ig = Ignore(prebuilt);
+                    continue;
+                }
             }
             let (mut igtmp, err) = ig.add_child_path(parent);
             errs.maybe_push(err);
@@ -208,8 +216,12 @@ impl Ignore {
                 } else {
                     false
                 };
-            ig = Ignore(Arc::new(igtmp));
-            compiled.insert(parent.as_os_str().to_os_string(), ig.clone());
+            let ig_arc = Arc::new(igtmp);
+            ig = Ignore(ig_arc.clone());
+            compiled.insert(
+                parent.as_os_str().to_os_string(),
+                Arc::downgrade(&ig_arc),
+            );
         }
         (ig, errs.into_error_option())
     }
@@ -222,7 +234,7 @@ impl Ignore {
     /// returned if it exists.
     ///
     /// Note that all I/O errors are completely ignored.
-    pub fn add_child<P: AsRef<Path>>(
+    pub(crate) fn add_child<P: AsRef<Path>>(
         &self,
         dir: P,
     ) -> (Ignore, Option<Error>) {
@@ -335,7 +347,7 @@ impl Ignore {
     }
 
     /// Like `matched`, but works with a directory entry instead.
-    pub fn matched_dir_entry<'a>(
+    pub(crate) fn matched_dir_entry<'a>(
         &'a self,
         dent: &DirEntry,
     ) -> Match<IgnoreMatch<'a>> {
@@ -442,7 +454,29 @@ impl Ignore {
         }
         if self.0.opts.parents {
             if let Some(abs_parent_path) = self.absolute_base() {
-                let path = abs_parent_path.join(path);
+                // What we want to do here is take the absolute base path of
+                // this directory and join it with the path we're searching.
+                // The main issue we want to avoid is accidentally duplicating
+                // directory components, so we try to strip any common prefix
+                // off of `path`. Overall, this seems a little ham-fisted, but
+                // it does fix a nasty bug. It should do fine until we overhaul
+                // this crate.
+                let dirpath = self.0.dir.as_path();
+                let path_prefix = match strip_prefix("./", dirpath) {
+                    None => dirpath,
+                    Some(stripped_dot_slash) => stripped_dot_slash,
+                };
+                let path = match strip_prefix(path_prefix, path) {
+                    None => abs_parent_path.join(path),
+                    Some(p) => {
+                        let p = match strip_prefix("/", p) {
+                            None => p,
+                            Some(p) => p,
+                        };
+                        abs_parent_path.join(p)
+                    }
+                };
+
                 for ig in
                     self.parents().skip_while(|ig| !ig.0.is_absolute_parent)
                 {
@@ -498,7 +532,7 @@ impl Ignore {
     }
 
     /// Returns an iterator over parent ignore matchers, including this one.
-    pub fn parents(&self) -> Parents<'_> {
+    pub(crate) fn parents(&self) -> Parents<'_> {
         Parents(Some(self))
     }
 
@@ -512,7 +546,7 @@ impl Ignore {
 /// An iterator over all parents of an ignore matcher, including itself.
 ///
 /// The lifetime `'a` refers to the lifetime of the initial `Ignore` matcher.
-pub struct Parents<'a>(Option<&'a Ignore>);
+pub(crate) struct Parents<'a>(Option<&'a Ignore>);
 
 impl<'a> Iterator for Parents<'a> {
     type Item = &'a Ignore;
@@ -530,7 +564,7 @@ impl<'a> Iterator for Parents<'a> {
 
 /// A builder for creating an Ignore matcher.
 #[derive(Clone, Debug)]
-pub struct IgnoreBuilder {
+pub(crate) struct IgnoreBuilder {
     /// The root directory path for this ignore matcher.
     dir: PathBuf,
     /// An override matcher (default is empty).
@@ -550,7 +584,7 @@ impl IgnoreBuilder {
     ///
     /// All relative file paths are resolved with respect to the current
     /// working directory.
-    pub fn new() -> IgnoreBuilder {
+    pub(crate) fn new() -> IgnoreBuilder {
         IgnoreBuilder {
             dir: Path::new("").to_path_buf(),
             overrides: Arc::new(Override::empty()),
@@ -574,7 +608,7 @@ impl IgnoreBuilder {
     ///
     /// The matcher returned won't match anything until ignore rules from
     /// directories are added to it.
-    pub fn build(&self) -> Ignore {
+    pub(crate) fn build(&self) -> Ignore {
         let git_global_matcher = if !self.opts.git_global {
             Gitignore::empty()
         } else {
@@ -616,7 +650,10 @@ impl IgnoreBuilder {
     /// By default, no override matcher is used.
     ///
     /// This overrides any previous setting.
-    pub fn overrides(&mut self, overrides: Override) -> &mut IgnoreBuilder {
+    pub(crate) fn overrides(
+        &mut self,
+        overrides: Override,
+    ) -> &mut IgnoreBuilder {
         self.overrides = Arc::new(overrides);
         self
     }
@@ -626,13 +663,13 @@ impl IgnoreBuilder {
     /// By default, no file type matcher is used.
     ///
     /// This overrides any previous setting.
-    pub fn types(&mut self, types: Types) -> &mut IgnoreBuilder {
+    pub(crate) fn types(&mut self, types: Types) -> &mut IgnoreBuilder {
         self.types = Arc::new(types);
         self
     }
 
     /// Adds a new global ignore matcher from the ignore file path given.
-    pub fn add_ignore(&mut self, ig: Gitignore) -> &mut IgnoreBuilder {
+    pub(crate) fn add_ignore(&mut self, ig: Gitignore) -> &mut IgnoreBuilder {
         self.explicit_ignores.push(ig);
         self
     }
@@ -643,7 +680,7 @@ impl IgnoreBuilder {
     ///
     /// When specifying multiple names, earlier names have lower precedence than
     /// later names.
-    pub fn add_custom_ignore_filename<S: AsRef<OsStr>>(
+    pub(crate) fn add_custom_ignore_filename<S: AsRef<OsStr>>(
         &mut self,
         file_name: S,
     ) -> &mut IgnoreBuilder {
@@ -654,7 +691,7 @@ impl IgnoreBuilder {
     /// Enables ignoring hidden files.
     ///
     /// This is enabled by default.
-    pub fn hidden(&mut self, yes: bool) -> &mut IgnoreBuilder {
+    pub(crate) fn hidden(&mut self, yes: bool) -> &mut IgnoreBuilder {
         self.opts.hidden = yes;
         self
     }
@@ -665,7 +702,7 @@ impl IgnoreBuilder {
     /// supported by search tools such as ripgrep and The Silver Searcher.
     ///
     /// This is enabled by default.
-    pub fn ignore(&mut self, yes: bool) -> &mut IgnoreBuilder {
+    pub(crate) fn ignore(&mut self, yes: bool) -> &mut IgnoreBuilder {
         self.opts.ignore = yes;
         self
     }
@@ -676,7 +713,7 @@ impl IgnoreBuilder {
     /// file path given are respected. Otherwise, they are ignored.
     ///
     /// This is enabled by default.
-    pub fn parents(&mut self, yes: bool) -> &mut IgnoreBuilder {
+    pub(crate) fn parents(&mut self, yes: bool) -> &mut IgnoreBuilder {
         self.opts.parents = yes;
         self
     }
@@ -689,7 +726,7 @@ impl IgnoreBuilder {
     /// This overwrites any previous global gitignore setting.
     ///
     /// This is enabled by default.
-    pub fn git_global(&mut self, yes: bool) -> &mut IgnoreBuilder {
+    pub(crate) fn git_global(&mut self, yes: bool) -> &mut IgnoreBuilder {
         self.opts.git_global = yes;
         self
     }
@@ -700,7 +737,7 @@ impl IgnoreBuilder {
     /// man page.
     ///
     /// This is enabled by default.
-    pub fn git_ignore(&mut self, yes: bool) -> &mut IgnoreBuilder {
+    pub(crate) fn git_ignore(&mut self, yes: bool) -> &mut IgnoreBuilder {
         self.opts.git_ignore = yes;
         self
     }
@@ -711,7 +748,7 @@ impl IgnoreBuilder {
     /// `gitignore` man page.
     ///
     /// This is enabled by default.
-    pub fn git_exclude(&mut self, yes: bool) -> &mut IgnoreBuilder {
+    pub(crate) fn git_exclude(&mut self, yes: bool) -> &mut IgnoreBuilder {
         self.opts.git_exclude = yes;
         self
     }
@@ -721,7 +758,7 @@ impl IgnoreBuilder {
     ///
     /// When disabled, git-related ignore rules are applied even when searching
     /// outside a git repository.
-    pub fn require_git(&mut self, yes: bool) -> &mut IgnoreBuilder {
+    pub(crate) fn require_git(&mut self, yes: bool) -> &mut IgnoreBuilder {
         self.opts.require_git = yes;
         self
     }
@@ -729,7 +766,7 @@ impl IgnoreBuilder {
     /// Process ignore files case insensitively
     ///
     /// This is disabled by default.
-    pub fn ignore_case_insensitive(
+    pub(crate) fn ignore_case_insensitive(
         &mut self,
         yes: bool,
     ) -> &mut IgnoreBuilder {
@@ -746,7 +783,7 @@ impl IgnoreBuilder {
 /// precedence than later names).
 ///
 /// I/O errors are ignored.
-pub fn create_gitignore<T: AsRef<OsStr>>(
+pub(crate) fn create_gitignore<T: AsRef<OsStr>>(
     dir: &Path,
     dir_for_ignorefile: &Path,
     names: &[T],
@@ -839,22 +876,19 @@ fn resolve_git_commondir(
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{self, File};
-    use std::io::Write;
-    use std::path::Path;
+    use std::{io::Write, path::Path};
 
-    use crate::dir::IgnoreBuilder;
-    use crate::gitignore::Gitignore;
-    use crate::tests::TempDir;
-    use crate::Error;
+    use crate::{
+        dir::IgnoreBuilder, gitignore::Gitignore, tests::TempDir, Error,
+    };
 
     fn wfile<P: AsRef<Path>>(path: P, contents: &str) {
-        let mut file = File::create(path).unwrap();
+        let mut file = std::fs::File::create(path).unwrap();
         file.write_all(contents.as_bytes()).unwrap();
     }
 
     fn mkdirp<P: AsRef<Path>>(path: P) {
-        fs::create_dir_all(path).unwrap();
+        std::fs::create_dir_all(path).unwrap();
     }
 
     fn partial(err: Error) -> Vec<Error> {
@@ -1171,7 +1205,7 @@ mod tests {
         assert!(ignore.matched("ignore_me", false).is_ignore());
 
         // missing commondir file
-        assert!(fs::remove_file(commondir_path()).is_ok());
+        assert!(std::fs::remove_file(commondir_path()).is_ok());
         let (_, err) = ib.add_child(td.path().join("linked-worktree"));
         // We squash the error in this case, because it occurs in repositories
         // that are not linked worktrees but have submodules.

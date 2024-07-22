@@ -4,6 +4,7 @@
 use alloc::borrow::Cow;
 #[cfg(feature = "read")]
 use alloc::string::String;
+use core::fmt;
 use core::ops::{Deref, Range, RangeFrom, RangeTo};
 use core::str;
 
@@ -13,7 +14,7 @@ use crate::read::{Error, Reader, ReaderOffsetId, Result};
 /// A `&[u8]` slice with endianity metadata.
 ///
 /// This implements the `Reader` trait, which is used for all reading of DWARF sections.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EndianSlice<'input, Endian>
 where
     Endian: Endianity,
@@ -67,8 +68,8 @@ where
     /// of the given slice.
     #[inline]
     pub fn offset_from(&self, base: EndianSlice<'input, Endian>) -> usize {
-        let base_ptr = base.slice.as_ptr() as *const u8 as usize;
-        let ptr = self.slice.as_ptr() as *const u8 as usize;
+        let base_ptr = base.slice.as_ptr() as usize;
+        let ptr = self.slice.as_ptr() as usize;
         debug_assert!(base_ptr <= ptr);
         debug_assert!(ptr + self.slice.len() <= base_ptr + base.slice.len());
         ptr - base_ptr
@@ -174,6 +175,44 @@ where
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         self.slice
+    }
+}
+
+impl<'input, Endian: Endianity> fmt::Debug for EndianSlice<'input, Endian> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> core::result::Result<(), fmt::Error> {
+        fmt.debug_tuple("EndianSlice")
+            .field(&self.endian)
+            .field(&DebugBytes(self.slice))
+            .finish()
+    }
+}
+
+struct DebugBytes<'input>(&'input [u8]);
+
+impl<'input> core::fmt::Debug for DebugBytes<'input> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> core::result::Result<(), fmt::Error> {
+        let mut list = fmt.debug_list();
+        list.entries(self.0.iter().take(8).copied().map(DebugByte));
+        if self.0.len() > 8 {
+            list.entry(&DebugLen(self.0.len()));
+        }
+        list.finish()
+    }
+}
+
+struct DebugByte(u8);
+
+impl fmt::Debug for DebugByte {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "0x{:02x}", self.0)
+    }
+}
+
+struct DebugLen(usize);
+
+impl fmt::Debug for DebugLen {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "...; {}", self.0)
     }
 }
 

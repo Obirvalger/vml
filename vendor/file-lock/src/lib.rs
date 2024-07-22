@@ -316,4 +316,14 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn lock_for_read_or_write_only() -> std::io::Result<()> {
+        let filename = "lock_for_read_only.test";
+        std::fs::write(filename, format!("Just at test\n"))?;
+        let lock = FileLock::lock(filename, false, FileOptions::new().read(true))?;
+        lock.unlock()?;
+        FileLock::lock(filename, false, FileOptions::new().write(true).read(false))?;
+        Ok(())
+    }
 }

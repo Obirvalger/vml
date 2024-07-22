@@ -32,7 +32,6 @@ fn supported_protocols(
             Protocol::Tlsv10 => SslVersion::TLS1,
             Protocol::Tlsv11 => SslVersion::TLS1_1,
             Protocol::Tlsv12 => SslVersion::TLS1_2,
-            Protocol::__NonExhaustive => unreachable!(),
         }
     }
 
@@ -71,7 +70,6 @@ fn supported_protocols(
                 | SslOptions::NO_TLSV1
                 | SslOptions::NO_TLSV1_1
         }
-        Some(Protocol::__NonExhaustive) => unreachable!(),
     };
     options |= match max {
         None | Some(Protocol::Tlsv12) => SslOptions::empty(),
@@ -80,7 +78,6 @@ fn supported_protocols(
         Some(Protocol::Sslv3) => {
             SslOptions::NO_TLSV1 | SslOptions::NO_TLSV1_1 | SslOptions::NO_TLSV1_2
         }
-        Some(Protocol::__NonExhaustive) => unreachable!(),
     };
 
     ctx.set_options(options);
@@ -162,14 +159,14 @@ pub struct Identity {
 impl Identity {
     pub fn from_pkcs12(buf: &[u8], pass: &str) -> Result<Identity, Error> {
         let pkcs12 = Pkcs12::from_der(buf)?;
-        let parsed = pkcs12.parse(pass)?;
+        let parsed = pkcs12.parse2(pass)?;
         Ok(Identity {
-            pkey: parsed.pkey,
-            cert: parsed.cert,
+            pkey: parsed.pkey.ok_or_else(|| Error::EmptyChain)?,
+            cert: parsed.cert.ok_or_else(|| Error::EmptyChain)?,
             // > The stack is the reverse of what you might expect due to the way
             // > PKCS12_parse is implemented, so we need to load it backwards.
             // > https://github.com/sfackler/rust-native-tls/commit/05fb5e583be589ab63d9f83d986d095639f8ec44
-            chain: parsed.chain.into_iter().flatten().rev().collect(),
+            chain: parsed.ca.into_iter().flatten().rev().collect(),
         })
     }
 

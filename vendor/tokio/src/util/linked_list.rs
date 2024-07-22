@@ -78,26 +78,19 @@ pub(crate) struct Pointers<T> {
 /// Additionally, we never access the `prev` or `next` fields directly, as any
 /// such access would implicitly involve the creation of a reference to the
 /// field, which we want to avoid since the fields are not `!Unpin`, and would
-/// hence be given the `noalias` attribute if we were to do such an access.
-/// As an alternative to accessing the fields directly, the `Pointers` type
+/// hence be given the `noalias` attribute if we were to do such an access. As
+/// an alternative to accessing the fields directly, the `Pointers` type
 /// provides getters and setters for the two fields, and those are implemented
-/// using raw pointer casts and offsets, which is valid since the struct is
-/// #[repr(C)].
+/// using `ptr`-specific methods which avoids the creation of intermediate
+/// references.
 ///
 /// See this link for more information:
 /// <https://github.com/rust-lang/rust/pull/82834>
-#[repr(C)]
 struct PointersInner<T> {
     /// The previous node in the list. null if there is no previous node.
-    ///
-    /// This field is accessed through pointer manipulation, so it is not dead code.
-    #[allow(dead_code)]
     prev: Option<NonNull<T>>,
 
     /// The next node in the list. null if there is no previous node.
-    ///
-    /// This field is accessed through pointer manipulation, so it is not dead code.
-    #[allow(dead_code)]
     next: Option<NonNull<T>>,
 
     /// This type is !Unpin due to the heuristic from:
@@ -141,6 +134,26 @@ impl<L: Link> LinkedList<L, L::Target> {
             if self.tail.is_none() {
                 self.tail = Some(ptr);
             }
+        }
+    }
+
+    /// Removes the first element from a list and returns it, or None if it is
+    /// empty.
+    pub(crate) fn pop_front(&mut self) -> Option<L::Handle> {
+        unsafe {
+            let head = self.head?;
+            self.head = L::pointers(head).as_ref().get_next();
+
+            if let Some(new_head) = L::pointers(head).as_ref().get_next() {
+                L::pointers(new_head).as_mut().set_prev(None);
+            } else {
+                self.tail = None;
+            }
+
+            L::pointers(head).as_mut().set_prev(None);
+            L::pointers(head).as_mut().set_next(None);
+
+            Some(L::from_raw(head))
         }
     }
 
@@ -228,53 +241,6 @@ impl<L: Link> fmt::Debug for LinkedList<L, L::Target> {
     }
 }
 
-// ===== impl CountedLinkedList ====
-
-// Delegates operations to the base LinkedList implementation, and adds a counter to the elements
-// in the list.
-pub(crate) struct CountedLinkedList<L: Link, T> {
-    list: LinkedList<L, T>,
-    count: usize,
-}
-
-impl<L: Link> CountedLinkedList<L, L::Target> {
-    pub(crate) fn new() -> CountedLinkedList<L, L::Target> {
-        CountedLinkedList {
-            list: LinkedList::new(),
-            count: 0,
-        }
-    }
-
-    pub(crate) fn push_front(&mut self, val: L::Handle) {
-        self.list.push_front(val);
-        self.count += 1;
-    }
-
-    pub(crate) fn pop_back(&mut self) -> Option<L::Handle> {
-        let val = self.list.pop_back();
-        if val.is_some() {
-            self.count -= 1;
-        }
-        val
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.list.is_empty()
-    }
-
-    pub(crate) unsafe fn remove(&mut self, node: NonNull<L::Target>) -> Option<L::Handle> {
-        let val = self.list.remove(node);
-        if val.is_some() {
-            self.count -= 1;
-        }
-        val
-    }
-
-    pub(crate) fn count(&self) -> usize {
-        self.count
-    }
-}
-
 #[cfg(any(
     feature = "fs",
     feature = "rt",
@@ -342,22 +308,11 @@ cfg_io_driver_impl! {
 }
 
 cfg_taskdump! {
-    impl<T: Link> CountedLinkedList<T, T::Target> {
-        pub(crate) fn for_each<F>(&mut self, f: F)
-        where
-            F: FnMut(&T::Handle),
-        {
-            self.list.for_each(f)
-        }
-    }
-
     impl<T: Link> LinkedList<T, T::Target> {
         pub(crate) fn for_each<F>(&mut self, mut f: F)
         where
             F: FnMut(&T::Handle),
         {
-            use std::mem::ManuallyDrop;
-
             let mut next = self.head;
 
             while let Some(curr) = next {
@@ -476,38 +431,24 @@ impl<T> Pointers<T> {
     }
 
     pub(crate) fn get_prev(&self) -> Option<NonNull<T>> {
-        // SAFETY: prev is the first field in PointersInner, which is #[repr(C)].
-        unsafe {
-            let inner = self.inner.get();
-            let prev = inner as *const Option<NonNull<T>>;
-            ptr::read(prev)
-        }
+        // SAFETY: Field is accessed immutably through a reference.
+        unsafe { ptr::addr_of!((*self.inner.get()).prev).read() }
     }
     pub(crate) fn get_next(&self) -> Option<NonNull<T>> {
-        // SAFETY: next is the second field in PointersInner, which is #[repr(C)].
-        unsafe {
-            let inner = self.inner.get();
-            let prev = inner as *const Option<NonNull<T>>;
-            let next = prev.add(1);
-            ptr::read(next)
-        }
+        // SAFETY: Field is accessed immutably through a reference.
+        unsafe { ptr::addr_of!((*self.inner.get()).next).read() }
     }
 
     fn set_prev(&mut self, value: Option<NonNull<T>>) {
-        // SAFETY: prev is the first field in PointersInner, which is #[repr(C)].
+        // SAFETY: Field is accessed mutably through a mutable reference.
         unsafe {
-            let inner = self.inner.get();
-            let prev = inner as *mut Option<NonNull<T>>;
-            ptr::write(prev, value);
+            ptr::addr_of_mut!((*self.inner.get()).prev).write(value);
         }
     }
     fn set_next(&mut self, value: Option<NonNull<T>>) {
-        // SAFETY: next is the second field in PointersInner, which is #[repr(C)].
+        // SAFETY: Field is accessed mutably through a mutable reference.
         unsafe {
-            let inner = self.inner.get();
-            let prev = inner as *mut Option<NonNull<T>>;
-            let next = prev.add(1);
-            ptr::write(next, value);
+            ptr::addr_of_mut!((*self.inner.get()).next).write(value);
         }
     }
 }
@@ -794,26 +735,6 @@ pub(crate) mod tests {
 
             assert!(list.remove(ptr(&c)).is_none());
         }
-    }
-
-    #[test]
-    fn count() {
-        let mut list = CountedLinkedList::<&Entry, <&Entry as Link>::Target>::new();
-        assert_eq!(0, list.count());
-
-        let a = entry(5);
-        let b = entry(7);
-        list.push_front(a.as_ref());
-        list.push_front(b.as_ref());
-        assert_eq!(2, list.count());
-
-        list.pop_back();
-        assert_eq!(1, list.count());
-
-        unsafe {
-            list.remove(ptr(&b));
-        }
-        assert_eq!(0, list.count());
     }
 
     /// This is a fuzz test. You run it by entering `cargo fuzz run fuzz_linked_list` in CLI in `/tokio/` module.

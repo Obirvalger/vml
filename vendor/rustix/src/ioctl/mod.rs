@@ -65,18 +65,17 @@ use bsd as platform;
 /// `ioctl` call is safe to make.
 ///
 /// # References
-///
-/// - [Linux]
-/// - [WinSock2]
-/// - [FreeBSD]
-/// - [NetBSD]
-/// - [OpenBSD]
-/// - [Apple]
-/// - [Solaris]
-/// - [illumos]
+///  - [Linux]
+///  - [Winsock]
+///  - [FreeBSD]
+///  - [NetBSD]
+///  - [OpenBSD]
+///  - [Apple]
+///  - [Solaris]
+///  - [illumos]
 ///
 /// [Linux]: https://man7.org/linux/man-pages/man2/ioctl.2.html
-/// [Winsock2]: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-ioctlsocket
+/// [Winsock]: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-ioctlsocket
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=ioctl&sektion=2
 /// [NetBSD]: https://man.netbsd.org/ioctl.2
 /// [OpenBSD]: https://man.openbsd.org/ioctl.2
@@ -333,6 +332,7 @@ type _RawOpcode = c::c_int;
     bsd,
     target_os = "redox",
     target_os = "haiku",
+    target_os = "horizon",
     target_os = "hurd",
     target_os = "vita"
 ))]

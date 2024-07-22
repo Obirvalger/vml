@@ -1,7 +1,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <immintrin.h>
-#include <string.h>
 
 typedef uint64_t fe4[4];
 typedef uint8_t fiat_uint1;
@@ -464,12 +463,12 @@ static void fe4_invert(fe4 out, const fe4 z) {
   fe4_mul(out, t1, t0);
 }
 
-__attribute__((noinline)) // https://github.com/rust-lang/rust/issues/116573
+RING_NOINLINE // https://github.com/rust-lang/rust/issues/116573
 __attribute__((target("adx,bmi2")))
 void x25519_scalar_mult_adx(uint8_t out[32], const uint8_t scalar[32],
                             const uint8_t point[32]) {
   uint8_t e[32];
-  memcpy(e, scalar, 32);
+  OPENSSL_memcpy(e, scalar, 32);
   e[0] &= 248;
   e[31] &= 127;
   e[31] |= 64;
@@ -641,7 +640,7 @@ static inline void table_select_4(ge_precomp_4 *t, const int pos,
 //
 // Preconditions:
 //   a[31] <= 127
-__attribute__((noinline)) // https://github.com/rust-lang/rust/issues/116573
+RING_NOINLINE // https://github.com/rust-lang/rust/issues/116573
 __attribute__((target("adx,bmi2")))
 void x25519_ge_scalarmult_base_adx(uint8_t h[4][32], const uint8_t a[32]) {
   signed char e[64];

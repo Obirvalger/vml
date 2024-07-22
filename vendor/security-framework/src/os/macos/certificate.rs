@@ -8,7 +8,6 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::error::CFError;
 use core_foundation::string::CFString;
 use security_framework_sys::certificate::*;
-use std::convert::TryInto;
 use std::os::raw::c_void;
 use std::ptr;
 
@@ -216,7 +215,6 @@ pub enum PropertyType {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::os::macos::certificate_oids::CertificateOid;
     use crate::test::certificate;
     use std::collections::HashMap;
 

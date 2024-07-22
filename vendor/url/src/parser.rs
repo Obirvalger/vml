@@ -94,15 +94,18 @@ impl From<::idna::Errors> for ParseError {
 }
 
 macro_rules! syntax_violation_enum {
-    ($($name: ident => $description: expr,)+) => {
+    ($($name: ident => $description: literal,)+) => {
         /// Non-fatal syntax violations that can occur during parsing.
         ///
         /// This may be extended in the future so exhaustive matching is
-        /// discouraged with an unused variant.
+        /// forbidden.
         #[derive(PartialEq, Eq, Clone, Copy, Debug)]
         #[non_exhaustive]
         pub enum SyntaxViolation {
             $(
+                /// ```text
+                #[doc = $description]
+                /// ```
                 $name,
             )+
         }
@@ -1106,7 +1109,7 @@ impl<'a> Parser<'a> {
         while let (Some(c), remaining) = input.split_first() {
             if let Some(digit) = c.to_digit(10) {
                 port = port * 10 + digit;
-                if port > ::std::u16::MAX as u32 {
+                if port > u16::MAX as u32 {
                     return Err(ParseError::InvalidPort);
                 }
                 has_any_digit = true;
@@ -1587,7 +1590,7 @@ pub fn ascii_alpha(ch: char) -> bool {
 
 #[inline]
 pub fn to_u32(i: usize) -> ParseResult<u32> {
-    if i <= ::std::u32::MAX as usize {
+    if i <= u32::MAX as usize {
         Ok(i as u32)
     } else {
         Err(ParseError::Overflow)

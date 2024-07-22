@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "file-lock"
-version = "2.1.10"
+version = "2.1.11"
 authors = [
     "Alfie John <alfie@alfie.wtf>",
     "Corey Richardson <corey@octayn.net>",

@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.64"
 name = "deunicode"
-version = "1.4.1"
+version = "1.6.0"
 authors = [
     "Kornel Lesinski <kornel@geekhood.net>",
     "Amit Chowdhury <amitc97@gmail.com>",

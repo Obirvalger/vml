@@ -1,5 +1,5 @@
 //! `hermit-abi` is small interface to call functions from the
-//! [Hermit unikernel](https://github.com/hermitcore/kernel).
+//! [Hermit unikernel](https://github.com/hermit-os/kernel).
 
 #![no_std]
 #![allow(nonstandard_style)]
@@ -10,7 +10,8 @@ pub mod errno;
 pub mod tcplistener;
 pub mod tcpstream;
 
-use core::ffi::{c_int, c_void};
+pub use self::errno::*;
+pub use core::ffi::{c_int, c_short, c_void};
 
 /// A thread handle type
 pub type Tid = u32;
@@ -54,6 +55,13 @@ pub const O_CREAT: i32 = 0o100;
 pub const O_EXCL: i32 = 0o200;
 pub const O_TRUNC: i32 = 0o1000;
 pub const O_APPEND: i32 = 0o2000;
+pub const O_NONBLOCK: i32 = 0o4000;
+pub const F_DUPFD: i32 = 0;
+pub const F_GETFD: i32 = 1;
+pub const F_SETFD: i32 = 2;
+pub const F_GETFL: i32 = 3;
+pub const F_SETFL: i32 = 4;
+pub const FD_CLOEXEC: i32 = 1;
 
 /// returns true if file descriptor `fd` is a tty
 pub fn isatty(_fd: c_int) -> bool {
@@ -112,6 +120,7 @@ pub const IPV6_ADD_MEMBERSHIP: i32 = 12;
 pub const IPV6_DROP_MEMBERSHIP: i32 = 13;
 pub const IPV6_MULTICAST_LOOP: i32 = 19;
 pub const IPV6_V6ONLY: i32 = 27;
+pub const IP_TOS: i32 = 1;
 pub const IP_TTL: i32 = 2;
 pub const IP_MULTICAST_TTL: i32 = 5;
 pub const IP_MULTICAST_LOOP: i32 = 7;
@@ -122,13 +131,18 @@ pub const SHUT_WR: i32 = 1;
 pub const SHUT_RDWR: i32 = 2;
 pub const SOCK_DGRAM: i32 = 2;
 pub const SOCK_STREAM: i32 = 1;
+pub const SOCK_NONBLOCK: i32 = 0o4000;
+pub const SOCK_CLOEXEC: i32 = 0o40000;
 pub const SOL_SOCKET: i32 = 4095;
-pub const SO_BROADCAST: i32 = 32;
-pub const SO_ERROR: i32 = 4103;
-pub const SO_RCVTIMEO: i32 = 4102;
-pub const SO_REUSEADDR: i32 = 4;
-pub const SO_SNDTIMEO: i32 = 4101;
-pub const SO_LINGER: i32 = 128;
+pub const SO_REUSEADDR: i32 = 0x0004;
+pub const SO_KEEPALIVE: i32 = 0x0008;
+pub const SO_BROADCAST: i32 = 0x0020;
+pub const SO_LINGER: i32 = 0x0080;
+pub const SO_SNDBUF: i32 = 0x1001;
+pub const SO_RCVBUF: i32 = 0x1002;
+pub const SO_SNDTIMEO: i32 = 0x1005;
+pub const SO_RCVTIMEO: i32 = 0x1006;
+pub const SO_ERROR: i32 = 0x1007;
 pub const TCP_NODELAY: i32 = 1;
 pub const MSG_PEEK: i32 = 1;
 pub const FIONBIO: i32 = 0x8008667eu32 as i32;
@@ -145,7 +159,12 @@ pub const POLLHUP: i16 = 0x10;
 pub const POLLNVAL: i16 = 0x20;
 pub const POLLRDNORM: i16 = 0x040;
 pub const POLLRDBAND: i16 = 0x080;
+pub const POLLWRNORM: i16 = 0x0100;
+pub const POLLWRBAND: i16 = 0x0200;
 pub const POLLRDHUP: i16 = 0x2000;
+pub const EFD_SEMAPHORE: i16 = 0o1;
+pub const EFD_NONBLOCK: i16 = 0o4000;
+pub const EFD_CLOEXEC: i16 = 0o40000;
 pub type sa_family_t = u8;
 pub type socklen_t = u32;
 pub type in_addr_t = u32;
@@ -247,46 +266,58 @@ pub struct timeval {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct pollfd {
-	pub fd: i32,      /* file descriptor */
-	pub events: i16,  /* events to look for */
-	pub revents: i16, /* events returned */
+	/// file descriptor
+	pub fd: i32,
+	/// events to look for
+	pub events: i16,
+	/// events returned
+	pub revents: i16,
 }
 
 #[repr(C)]
-pub struct dirent {
-	pub d_ino: u64,
-	pub d_off: u64,
-	pub d_namelen: u32,
-	pub d_type: u32,
-	pub d_name: [u8; 0],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub enum DirectoryEntry {
-	Invalid(i32),
-	Valid(*const dirent),
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct stat {
 	pub st_dev: u64,
 	pub st_ino: u64,
 	pub st_nlink: u64,
+	/// access permissions
 	pub st_mode: u32,
+	/// user id
 	pub st_uid: u32,
+	/// group id
 	pub st_gid: u32,
+	/// device id
 	pub st_rdev: u64,
-	pub st_size: i64,
+	/// size in bytes
+	pub st_size: u64,
+	/// block size
 	pub st_blksize: i64,
+	/// size in blocks
 	pub st_blocks: i64,
-	pub st_atime: i64,
-	pub st_atime_nsec: i64,
-	pub st_mtime: i64,
-	pub st_mtime_nsec: i64,
-	pub st_ctime: i64,
-	pub st_ctime_nsec: i64,
+	/// time of last access
+	pub st_atime: u64,
+	pub st_atime_nsec: u64,
+	/// time of last modification
+	pub st_mtime: u64,
+	pub st_mtime_nsec: u64,
+	/// time of last status change
+	pub st_ctime: u64,
+	pub st_ctime_nsec: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct dirent64 {
+	/// 64-bit inode number
+	pub d_ino: u64,
+	/// 64-bit offset to next structure
+	pub d_off: i64,
+	/// Size of this dirent
+	pub d_reclen: u16,
+	/// File type
+	pub d_type: u8,
+	/// Filename (null-terminated)
+	pub d_name: core::marker::PhantomData<u8>,
 }
 
 pub const DT_UNKNOWN: u32 = 0;
@@ -299,13 +330,17 @@ pub const DT_LNK: u32 = 10;
 pub const DT_SOCK: u32 = 12;
 pub const DT_WHT: u32 = 14;
 
-pub const S_IFDIR: u32 = 16384;
-pub const S_IFREG: u32 = 32768;
-pub const S_IFLNK: u32 = 40960;
-pub const S_IFMT: u32 = 61440;
+pub const S_IFDIR: u32 = 0x4000;
+pub const S_IFREG: u32 = 0x8000;
+pub const S_IFLNK: u32 = 0xA000;
+pub const S_IFMT: u32 = 0xF000;
 
 // sysmbols, which are part of the library operating system
 extern "C" {
+	/// Get the last error number from the thread local storage
+	#[link_name = "sys_get_errno"]
+	pub fn get_errno() -> i32;
+
 	/// If the value at address matches the expected value, park the current thread until it is either
 	/// woken up with [`futex_wake`] (returns 0) or an optional timeout elapses (returns -ETIMEDOUT).
 	///
@@ -559,11 +594,10 @@ extern "C" {
 	#[link_name = "sys_read"]
 	pub fn read(fd: i32, buf: *mut u8, len: usize) -> isize;
 
-	/// 'readdir' returns a pointer to a dirent structure
-	/// representing the next directory entry in the directory stream
-	/// pointed to by the file descriptor
-	#[link_name = "sys_readdir"]
-	pub fn readdir(fd: i32) -> DirectoryEntry;
+	/// `getdents64` reads directory entries from the directory referenced
+	/// by the file descriptor `fd` into the buffer pointed to by `buf`.
+	#[link_name = "sys_getdents64"]
+	pub fn getdents64(fd: i32, dirp: *mut dirent64, count: usize) -> i64;
 
 	/// 'mkdir' attempts to create a directory,
 	/// it returns 0 on success and -1 on error
@@ -639,7 +673,33 @@ extern "C" {
 	#[link_name = "sys_ioctl"]
 	pub fn ioctl(s: i32, cmd: i32, argp: *mut c_void) -> i32;
 
-	#[link_name = "sys_pool"]
+	#[link_name = "sys_fcntl"]
+	pub fn fcntl(fd: i32, cmd: i32, arg: i32) -> i32;
+
+	/// `eventfd` creates an linux-like "eventfd object" that can be used
+	/// as an event wait/notify mechanism by user-space applications, and by
+	/// the kernel to notify user-space applications of events. The
+	/// object contains an unsigned 64-bit integer counter
+	/// that is maintained by the kernel. This counter is initialized
+	/// with the value specified in the argument `initval`.
+	///
+	/// As its return value, `eventfd` returns a new file descriptor that
+	/// can be used to refer to the eventfd object.
+	///
+	/// The following values may be bitwise set in flags to change the
+	/// behavior of `eventfd`:
+	///
+	/// `EFD_NONBLOCK`: Set the file descriptor in non-blocking mode
+	/// `EFD_SEMAPHORE`: Provide semaphore-like semantics for reads
+	/// from the new file descriptor.
+	#[link_name = "sys_eventfd"]
+	pub fn eventfd(initval: u64, flags: i16) -> i32;
+
+	/// The unix-like `poll` waits for one of a set of file descriptors
+	/// to become ready to perform I/O. The set of file descriptors to be
+	/// monitored is specified in the `fds` argument, which is an array
+	/// of structures of `pollfd`.
+	#[link_name = "sys_poll"]
 	pub fn poll(fds: *mut pollfd, nfds: nfds_t, timeout: i32) -> i32;
 
 	/// listen for connections on a socket

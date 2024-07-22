@@ -7,13 +7,13 @@
 
 An ergonomic, batteries-included HTTP Client for Rust.
 
+- Async and blocking `Client`s
 - Plain bodies, JSON, urlencoded, multipart
 - Customizable redirect policy
 - HTTP Proxies
 - HTTPS via system-native TLS (or optionally, rustls)
 - Cookie Store
 - WASM
-- [Changelog](CHANGELOG.md)
 
 
 ## Example
@@ -38,36 +38,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .json::<HashMap<String, String>>()
         .await?;
-    println!("{:#?}", resp);
+    println!("{resp:#?}");
     Ok(())
 }
 ```
 
-## Blocking Client
+## Commercial Support
 
-There is an optional "blocking" client API that can be enabled:
-
-```toml
-[dependencies]
-reqwest = { version = "0.11", features = ["blocking", "json"] }
-```
-
-```rust,no_run
-use std::collections::HashMap;
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let resp = reqwest::blocking::get("https://httpbin.org/ip")?
-        .json::<HashMap<String, String>>()?;
-    println!("{:#?}", resp);
-    Ok(())
-}
-```
+For private advice, support, reviews, access to the maintainer, and the like, reach out for [commercial support][sponsor].
 
 ## Requirements
 
 On Linux:
 
-- OpenSSL 1.0.1, 1.0.2, 1.1.0, or 1.1.1 with headers (see https://github.com/sfackler/rust-openssl)
+- OpenSSL with headers. See https://docs.rs/openssl for supported versions
+  and more details. Alternatively you can enable the `native-tls-vendored`
+  feature to compile a copy of OpenSSL.
 
 On Windows and macOS:
 
@@ -75,7 +61,8 @@ On Windows and macOS:
 
 Reqwest uses [rust-native-tls](https://github.com/sfackler/rust-native-tls),
 which will use the operating system TLS framework if available, meaning Windows
-and macOS. On Linux, it will use OpenSSL 1.1.
+and macOS. On Linux, it will use the available OpenSSL or fail to build if
+not found.
 
 
 ## License
@@ -90,3 +77,9 @@ Licensed under either of
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall
 be dual licensed as above, without any additional terms or conditions.
+
+## Sponsors
+
+Support this project by becoming a [sponsor][].
+
+[sponsor]: https://seanmonstar.com/sponsor

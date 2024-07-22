@@ -10,7 +10,7 @@ use std::net::UdpSocket;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ use crate::error::ErrorStack;
 use crate::hash::MessageDigest;
 #[cfg(not(boringssl))]
 use crate::ocsp::{OcspResponse, OcspResponseStatus};
-use crate::pkey::PKey;
+use crate::pkey::{Id, PKey};
 use crate::srtp::SrtpProfileId;
 use crate::ssl::test::server::Server;
 #[cfg(any(ossl110, ossl111, libressl261))]
@@ -322,6 +322,56 @@ fn state() {
     );
 }
 
+// when a connection uses ECDHE P-384 key exchange, then the temp key APIs
+// return P-384 keys, and the peer and local keys are different.
+#[test]
+#[cfg(ossl300)]
+fn peer_tmp_key_p384() {
+    let mut server = Server::builder();
+    server.ctx().set_groups_list("P-384").unwrap();
+    let server = server.build();
+    let s = server.client().connect();
+    let peer_temp = s.ssl().peer_tmp_key().unwrap();
+    assert_eq!(peer_temp.id(), Id::EC);
+    assert_eq!(peer_temp.bits(), 384);
+
+    let local_temp = s.ssl().tmp_key().unwrap();
+    assert_eq!(local_temp.id(), Id::EC);
+    assert_eq!(local_temp.bits(), 384);
+
+    assert_ne!(
+        peer_temp.ec_key().unwrap().public_key_to_der().unwrap(),
+        local_temp.ec_key().unwrap().public_key_to_der().unwrap(),
+    );
+}
+
+// when a connection uses RSA key exchange, then the peer (server) temp key is
+// an Error because there is no temp key, and the local (client) temp key is the
+// temp key sent in the initial key share.
+#[test]
+#[cfg(ossl300)]
+fn peer_tmp_key_rsa() {
+    let mut server = Server::builder();
+    server.ctx().set_cipher_list("RSA").unwrap();
+    // RSA key exchange is not allowed in TLS 1.3, so force the connection
+    // to negotiate TLS 1.2
+    server
+        .ctx()
+        .set_max_proto_version(Some(SslVersion::TLS1_2))
+        .unwrap();
+    let server = server.build();
+    let mut client = server.client();
+    client.ctx().set_groups_list("P-521").unwrap();
+    let s = client.connect();
+    let peer_temp = s.ssl().peer_tmp_key();
+    assert!(peer_temp.is_err());
+
+    // this is the temp key that the client sent in the initial key share
+    let local_temp = s.ssl().tmp_key().unwrap();
+    assert_eq!(local_temp.id(), Id::EC);
+    assert_eq!(local_temp.bits(), 521);
+}
+
 /// Tests that when both the client as well as the server use SRTP and their
 /// lists of supported protocols have an overlap -- with only ONE protocol
 /// being valid for both.
@@ -502,7 +552,7 @@ fn test_alpn_server_select_none() {
 }
 
 #[test]
-#[cfg(any(ossl102, libressl261))]
+#[cfg(any(boringssl, ossl102, libressl261))]
 fn test_alpn_server_unilateral() {
     let server = Server::builder().build();
 
@@ -1587,4 +1637,51 @@ fn set_security_level() {
     ssl.set_security_level(4);
     let ssl = ssl;
     assert_eq!(4, ssl.security_level());
+}
+
+#[test]
+fn ssl_ctx_ex_data_leak() {
+    static DROPS: AtomicUsize = AtomicUsize::new(0);
+
+    struct DropTest;
+
+    impl Drop for DropTest {
+        fn drop(&mut self) {
+            DROPS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let idx = SslContext::new_ex_index().unwrap();
+
+    let mut ctx = SslContext::builder(SslMethod::tls()).unwrap();
+    ctx.set_ex_data(idx, DropTest);
+    ctx.set_ex_data(idx, DropTest);
+    assert_eq!(DROPS.load(Ordering::Relaxed), 1);
+
+    drop(ctx);
+    assert_eq!(DROPS.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn ssl_ex_data_leak() {
+    static DROPS: AtomicUsize = AtomicUsize::new(0);
+
+    struct DropTest;
+
+    impl Drop for DropTest {
+        fn drop(&mut self) {
+            DROPS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let idx = Ssl::new_ex_index().unwrap();
+
+    let ctx = SslContext::builder(SslMethod::tls()).unwrap().build();
+    let mut ssl = Ssl::new(&ctx).unwrap();
+    ssl.set_ex_data(idx, DropTest);
+    ssl.set_ex_data(idx, DropTest);
+    assert_eq!(DROPS.load(Ordering::Relaxed), 1);
+
+    drop(ssl);
+    assert_eq!(DROPS.load(Ordering::Relaxed), 2);
 }

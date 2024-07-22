@@ -143,7 +143,7 @@ fn parse_test(pair: Pair<Rule>) -> TeraResult<Test> {
 
     for p in pair.into_inner() {
         match p.as_rule() {
-            Rule::dotted_ident => ident = Some(p.as_str().to_string()),
+            Rule::dotted_square_bracket_ident => ident = Some(p.as_str().to_string()),
             Rule::test_call => {
                 let (_name, _args) = parse_test_call(p)?;
                 name = Some(_name);
@@ -427,6 +427,7 @@ fn parse_logic_val(pair: Pair<Rule>) -> TeraResult<Expr> {
             Rule::in_cond => expr = Some(parse_in_condition(p)?),
             Rule::comparison_expr => expr = Some(parse_comparison_expression(p)?),
             Rule::string_expr_filter => expr = Some(parse_string_expr_with_filters(p)?),
+            Rule::logic_expr => expr = Some(parse_logic_expr(p)?),
             _ => unreachable!(),
         };
     }
@@ -1044,9 +1045,10 @@ fn parse_if(pair: Pair<Rule>) -> TeraResult<Node> {
 }
 
 fn parse_content(pair: Pair<Rule>) -> TeraResult<Vec<Node>> {
-    let mut nodes = vec![];
+    let pairs = pair.into_inner();
+    let mut nodes = Vec::with_capacity(pairs.len());
 
-    for p in pair.into_inner() {
+    for p in pairs {
         match p.as_rule() {
             Rule::include_tag => nodes.push(parse_include(p)),
             Rule::comment_tag => nodes.push(parse_comment_tag(p)),

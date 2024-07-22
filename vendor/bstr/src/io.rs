@@ -302,6 +302,9 @@ pub trait BufReadExt: io::BufRead {
             // Lend out complete record slices from our buffer
             {
                 let mut buf = self.fill_buf()?;
+                if buf.is_empty() {
+                    break;
+                }
                 while let Some(index) = buf.find_byte(terminator) {
                     let (record, rest) = buf.split_at(index + 1);
                     buf = rest;
@@ -440,6 +443,8 @@ fn trim_record_slice(mut record: &[u8], terminator: u8) -> &[u8] {
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
+    use alloc::{vec, vec::Vec};
+
     use crate::bstring::BString;
 
     use super::BufReadExt;

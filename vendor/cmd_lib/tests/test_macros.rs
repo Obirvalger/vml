@@ -188,16 +188,14 @@ fn test_proc_env() {
 #[test]
 fn test_export_cmd() {
     use std::io::Write;
-    #[export_cmd(my_cmd)]
-    fn foo(env: &mut CmdEnv) -> CmdResult {
-        let msg = format!("msg from foo(), args: {:?}", env.args());
+    fn my_cmd(env: &mut CmdEnv) -> CmdResult {
+        let msg = format!("msg from foo(), args: {:?}", env.get_args());
         writeln!(env.stderr(), "{}", msg)?;
         writeln!(env.stdout(), "bar")
     }
 
-    #[export_cmd(my_cmd2)]
-    fn foo2(env: &mut CmdEnv) -> CmdResult {
-        let msg = format!("msg from foo2(), args: {:?}", env.args());
+    fn my_cmd2(env: &mut CmdEnv) -> CmdResult {
+        let msg = format!("msg from foo2(), args: {:?}", env.get_args());
         writeln!(env.stderr(), "{}", msg)?;
         writeln!(env.stdout(), "bar2")
     }
@@ -250,4 +248,10 @@ fn test_path_as_var() {
 
     let dir2 = std::path::PathBuf::from("/");
     assert_eq!("/", run_fun!(cd $dir2; pwd).unwrap());
+}
+
+#[test]
+fn test_empty_arg() {
+    let opt = "";
+    assert!(run_cmd!(ls $opt).is_ok());
 }

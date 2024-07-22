@@ -111,6 +111,7 @@
 
 #include <ring-core/base.h> // Must be first.
 
+#include "ring-core/arm_arch.h"
 #include "ring-core/check.h"
 
 #if defined(__clang__)
@@ -129,6 +130,14 @@
 #define alignas(x) __declspec(align(x))
 #else
 #include <stdalign.h>
+#endif
+
+#if defined(__clang__) || defined(__GNUC__)
+#define RING_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define RING_NOINLINE __declspec(noinline)
+#else
+#define RING_NOINLINE
 #endif
 
 // Some C compilers require a useless cast when dealing with arrays for the

@@ -6,8 +6,10 @@ line tools.
 
 use std::path::Path;
 
-use crate::gitignore::{self, Gitignore, GitignoreBuilder};
-use crate::{Error, Match};
+use crate::{
+    gitignore::{self, Gitignore, GitignoreBuilder},
+    Error, Match,
+};
 
 /// Glob represents a single glob in an override matcher.
 ///
@@ -21,9 +23,11 @@ use crate::{Error, Match};
 /// The lifetime `'a` refers to the lifetime of the matcher that produced
 /// this glob.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct Glob<'a>(GlobInner<'a>);
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 enum GlobInner<'a> {
     /// No glob matched, but the file path should still be ignored.
     UnmatchedIgnore,

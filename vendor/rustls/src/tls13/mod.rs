@@ -22,7 +22,7 @@ pub(crate) static TLS13_CHACHA20_POLY1305_SHA256_INTERNAL: &Tls13CipherSuite = &
     common: CipherSuiteCommon {
         suite: CipherSuite::TLS13_CHACHA20_POLY1305_SHA256,
         bulk: BulkAlgorithm::Chacha20Poly1305,
-        aead_algorithm: &ring::aead::CHACHA20_POLY1305,
+        aead_algorithm: &aead::CHACHA20_POLY1305,
     },
     hkdf_algorithm: ring::hkdf::HKDF_SHA256,
     #[cfg(feature = "quic")]
@@ -37,7 +37,7 @@ pub static TLS13_AES_256_GCM_SHA384: SupportedCipherSuite =
         common: CipherSuiteCommon {
             suite: CipherSuite::TLS13_AES_256_GCM_SHA384,
             bulk: BulkAlgorithm::Aes256Gcm,
-            aead_algorithm: &ring::aead::AES_256_GCM,
+            aead_algorithm: &aead::AES_256_GCM,
         },
         hkdf_algorithm: ring::hkdf::HKDF_SHA384,
         #[cfg(feature = "quic")]
@@ -54,7 +54,7 @@ pub(crate) static TLS13_AES_128_GCM_SHA256_INTERNAL: &Tls13CipherSuite = &Tls13C
     common: CipherSuiteCommon {
         suite: CipherSuite::TLS13_AES_128_GCM_SHA256,
         bulk: BulkAlgorithm::Aes128Gcm,
-        aead_algorithm: &ring::aead::AES_128_GCM,
+        aead_algorithm: &aead::AES_128_GCM,
     },
     hkdf_algorithm: ring::hkdf::HKDF_SHA256,
     #[cfg(feature = "quic")]
@@ -84,7 +84,7 @@ impl Tls13CipherSuite {
 
     /// Can a session using suite self resume from suite prev?
     pub fn can_resume_from(&self, prev: &'static Self) -> Option<&'static Self> {
-        (prev.hash_algorithm() == self.hash_algorithm()).then(|| prev)
+        (prev.hash_algorithm() == self.hash_algorithm()).then_some(prev)
     }
 }
 
@@ -129,8 +129,8 @@ fn unpad_tls13(v: &mut Vec<u8>) -> ContentType {
     }
 }
 
-fn make_tls13_aad(len: usize) -> ring::aead::Aad<[u8; TLS13_AAD_SIZE]> {
-    ring::aead::Aad::from([
+fn make_tls13_aad(len: usize) -> aead::Aad<[u8; TLS13_AAD_SIZE]> {
+    aead::Aad::from([
         0x17, // ContentType::ApplicationData
         0x3,  // ProtocolVersion (major)
         0x3,  // ProtocolVersion (minor)

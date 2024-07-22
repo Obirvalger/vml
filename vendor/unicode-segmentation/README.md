@@ -1,7 +1,7 @@
 Iterators which split strings on Grapheme Cluster or Word boundaries, according
 to the [Unicode Standard Annex #29](http://www.unicode.org/reports/tr29/) rules.
 
-[![Build Status](https://travis-ci.org/unicode-rs/unicode-segmentation.svg)](https://travis-ci.org/unicode-rs/unicode-segmentation)
+[![Build Status](https://github.com/unicode-rs/unicode-segmentation/actions/workflows/rust.yml/badge.svg)](https://github.com/unicode-rs/unicode-segmentation/actions/workflows/rust.yml)
 
 [Documentation](https://unicode-rs.github.io/unicode-segmentation/unicode_segmentation/index.html)
 
@@ -21,7 +21,7 @@ fn main() {
 
     let s = "The quick (\"brown\")  fox";
     let w = s.split_word_bounds().collect::<Vec<&str>>();
-    let b: &[_] = &["The", " ", "quick", " ", "(", "\"", "brown", "\"", ")", " ", " ", "fox"];
+    let b: &[_] = &["The", " ", "quick", " ", "(", "\"", "brown", "\"", ")", "  ", "fox"];
     assert_eq!(w, b);
 }
 ```
@@ -42,6 +42,29 @@ unicode-segmentation = "1.10.1"
 ```
 
 # Change Log
+
+## 1.11.0
+* [#124](https://github.com/unicode-rs/unicode-segmentation/pull/124) Update data to Unicode 15.1
+* [#128](https://github.com/unicode-rs/unicode-segmentation/pull/128) Add `size_hint` to iterators
+
+## 1.10.1
+* [#113](https://github.com/unicode-rs/unicode-segmentation/pull/113) Use criterion.rs for word benchmarks
+* [#112](https://github.com/unicode-rs/unicode-segmentation/pull/112) Improve table search speed through lookups
+
+## 1.10.0
+* [#107](https://github.com/unicode-rs/unicode-segmentation/pull/107) Upgrade to Unicode 15.0.0
+* [#104](https://github.com/unicode-rs/unicode-segmentation/pull/104) Supersedes and fixes [#75](https://github.com/unicode-rs/unicode-segmentation/pull/75)
+
+## 1.9.0
+* [#101](https://github.com/unicode-rs/unicode-segmentation/pull/101) Upgrade to Unicode 14.0.0
+
+## 1.8.0
+* [#100](https://github.com/unicode-rs/unicode-segmentation/pull/100) * [#100](https://github.com/unicode-rs/unicode-segmentation/pull/100) - Increase `#[inline]` opportunities, resulting in 15-40% performance improvement.
+* [#95](https://github.com/unicode-rs/unicode-segmentation/pull/98) Implement debug for Graphemes
+* [#94](https://github.com/unicode-rs/unicode-segmentation/pull/94) Add Initial fuzzer for oss-fuzz integration
+* [#93](https://github.com/unicode-rs/unicode-segmentation/pull/93) Fix  unused imports and deprecated pattern warnings
+* [#91](https://github.com/unicode-rs/unicode-segmentation/pull/92) Made local variable immutable by moving it into loop
+* [#91](https://github.com/unicode-rs/unicode-segmentation/pull/91) Add new iterator [UnicodeWordIndices](https://unicode-rs.github.io/unicode-segmentation/unicode_segmentation/struct.UnicodeWordIndices.html) and [unicode_word_indices](https://unicode-rs.github.io/unicode-segmentation/unicode_segmentation/trait.UnicodeSegmentation.html#tymethod.unicode_word_indices)
 
 ## 1.7.1
 

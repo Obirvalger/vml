@@ -7,7 +7,7 @@
 //!
 //!  - [POSIX `getsockopt`]
 //!  - [Linux `getsockopt`]
-//!  - [Winsock2 `getsockopt`]
+//!  - [Winsock `getsockopt`]
 //!  - [Apple `getsockopt`]
 //!  - [FreeBSD `getsockopt`]
 //!  - [NetBSD `getsockopt`]
@@ -18,7 +18,7 @@
 //!
 //! [POSIX `getsockopt`]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/getsockopt.html
 //! [Linux `getsockopt`]: https://man7.org/linux/man-pages/man2/getsockopt.2.html
-//! [Winsock2 `getsockopt`]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-getsockopt
+//! [Winsock `getsockopt`]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-getsockopt
 //! [Apple `getsockopt`]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/getsockopt.2.html
 //! [FreeBSD `getsockopt`]: https://man.freebsd.org/cgi/man.cgi?query=getsockopt&sektion=2
 //! [NetBSD `getsockopt`]: https://man.netbsd.org/getsockopt.2
@@ -31,7 +31,7 @@
 //!
 //!  - [POSIX `setsockopt`]
 //!  - [Linux `setsockopt`]
-//!  - [Winsock2 `setsockopt`]
+//!  - [Winsock `setsockopt`]
 //!  - [Apple `setsockopt`]
 //!  - [FreeBSD `setsockopt`]
 //!  - [NetBSD `setsockopt`]
@@ -42,7 +42,7 @@
 //!
 //! [POSIX `setsockopt`]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/setsockopt.html
 //! [Linux `setsockopt`]: https://man7.org/linux/man-pages/man2/setsockopt.2.html
-//! [Winsock2 `setsockopt`]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-setsockopt
+//! [Winsock `setsockopt`]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-setsockopt
 //! [Apple `setsockopt`]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/setsockopt.2.html
 //! [FreeBSD `setsockopt`]: https://man.freebsd.org/cgi/man.cgi?query=setsockopt&sektion=2
 //! [NetBSD `setsockopt`]: https://man.netbsd.org/setsockopt.2
@@ -57,12 +57,12 @@
 //!  - [References for all `set_*` functions]
 //!  - [POSIX `sys/socket.h`]
 //!  - [Linux `socket`]
-//!  - [Winsock2 `SOL_SOCKET` options]
+//!  - [Winsock `SOL_SOCKET` options]
 //!  - [glibc `SOL_SOCKET` Options]
 //!
 //! [POSIX `sys/socket.h`]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_socket.h.html
 //! [Linux `socket`]: https://man7.org/linux/man-pages/man7/socket.7.html
-//! [Winsock2 `SOL_SOCKET` options]: https://docs.microsoft.com/en-us/windows/win32/winsock/sol-socket-socket-options
+//! [Winsock `SOL_SOCKET` options]: https://docs.microsoft.com/en-us/windows/win32/winsock/sol-socket-socket-options
 //! [glibc `SOL_SOCKET` options]: https://www.gnu.org/software/libc/manual/html_node/Socket_002dLevel-Options.html
 //!
 //! # References for `get_ip_*` and `set_ip_*` functions:
@@ -71,7 +71,7 @@
 //!  - [References for all `set_*` functions]
 //!  - [POSIX `netinet/in.h`]
 //!  - [Linux `ip`]
-//!  - [Winsock2 `IPPROTO_IP` options]
+//!  - [Winsock `IPPROTO_IP` options]
 //!  - [Apple `ip`]
 //!  - [FreeBSD `ip`]
 //!  - [NetBSD `ip`]
@@ -81,7 +81,7 @@
 //!
 //! [POSIX `netinet/in.h`]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/netinet_in.h.html
 //! [Linux `ip`]: https://man7.org/linux/man-pages/man7/ip.7.html
-//! [Winsock2 `IPPROTO_IP` options]: https://docs.microsoft.com/en-us/windows/win32/winsock/ipproto-ip-socket-options
+//! [Winsock `IPPROTO_IP` options]: https://docs.microsoft.com/en-us/windows/win32/winsock/ipproto-ip-socket-options
 //! [Apple `ip`]: https://opensource.apple.com/source/xnu/xnu-7195.81.3/bsd/man/man4/ip.4.auto.html
 //! [FreeBSD `ip`]: https://man.freebsd.org/cgi/man.cgi?query=ip&sektion=4
 //! [NetBSD `ip`]: https://man.netbsd.org/ip.4
@@ -95,7 +95,7 @@
 //!  - [References for all `set_*` functions]
 //!  - [POSIX `netinet/in.h`]
 //!  - [Linux `ipv6`]
-//!  - [Winsock2 `IPPROTO_IPV6` options]
+//!  - [Winsock `IPPROTO_IPV6` options]
 //!  - [Apple `ip6`]
 //!  - [FreeBSD `ip6`]
 //!  - [NetBSD `ip6`]
@@ -105,7 +105,7 @@
 //!
 //! [POSIX `netinet/in.h`]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/netinet_in.h.html
 //! [Linux `ipv6`]: https://man7.org/linux/man-pages/man7/ipv6.7.html
-//! [Winsock2 `IPPROTO_IPV6` options]: https://docs.microsoft.com/en-us/windows/win32/winsock/ipproto-ipv6-socket-options
+//! [Winsock `IPPROTO_IPV6` options]: https://docs.microsoft.com/en-us/windows/win32/winsock/ipproto-ipv6-socket-options
 //! [Apple `ip6`]: https://opensource.apple.com/source/xnu/xnu-7195.81.3/bsd/man/man4/ip6.4.auto.html
 //! [FreeBSD `ip6`]: https://man.freebsd.org/cgi/man.cgi?query=ip6&sektion=4
 //! [NetBSD `ip6`]: https://man.netbsd.org/ip6.4
@@ -119,7 +119,7 @@
 //!  - [References for all `set_*` functions]
 //!  - [POSIX `netinet/tcp.h`]
 //!  - [Linux `tcp`]
-//!  - [Winsock2 `IPPROTO_TCP` options]
+//!  - [Winsock `IPPROTO_TCP` options]
 //!  - [Apple `tcp`]
 //!  - [FreeBSD `tcp`]
 //!  - [NetBSD `tcp`]
@@ -129,7 +129,7 @@
 //!
 //! [POSIX `netinet/tcp.h`]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/netinet_tcp.h.html
 //! [Linux `tcp`]: https://man7.org/linux/man-pages/man7/tcp.7.html
-//! [Winsock2 `IPPROTO_TCP` options]: https://docs.microsoft.com/en-us/windows/win32/winsock/ipproto-tcp-socket-options
+//! [Winsock `IPPROTO_TCP` options]: https://docs.microsoft.com/en-us/windows/win32/winsock/ipproto-tcp-socket-options
 //! [Apple `tcp`]: https://opensource.apple.com/source/xnu/xnu-7195.81.3/bsd/man/man4/tcp.4.auto.html
 //! [FreeBSD `tcp`]: https://man.freebsd.org/cgi/man.cgi?query=tcp&sektion=4
 //! [NetBSD `tcp`]: https://man.netbsd.org/tcp.4
@@ -143,6 +143,8 @@
 #![doc(alias = "getsockopt")]
 #![doc(alias = "setsockopt")]
 
+#[cfg(target_os = "linux")]
+use crate::net::xdp::{XdpMmapOffsets, XdpOptionsFlags, XdpStatistics, XdpUmemReg};
 #[cfg(not(any(
     apple,
     windows,
@@ -1370,6 +1372,104 @@ pub fn get_tcp_cork<Fd: AsFd>(fd: Fd) -> io::Result<bool> {
 #[doc(alias = "SO_PEERCRED")]
 pub fn get_socket_peercred<Fd: AsFd>(fd: Fd) -> io::Result<super::UCred> {
     backend::net::sockopt::get_socket_peercred(fd.as_fd())
+}
+
+/// `setsockopt(fd, SOL_XDP, XDP_UMEM_REG, value)`
+///
+/// On kernel versions only supporting v1, the flags are ignored.
+///
+/// # References
+///   - [Linux]
+///
+/// [Linux]: https://www.kernel.org/doc/html/next/networking/af_xdp.html#xdp-umem-reg-setsockopt
+#[cfg(target_os = "linux")]
+#[doc(alias = "XDP_UMEM_REG")]
+pub fn set_xdp_umem_reg<Fd: AsFd>(fd: Fd, value: XdpUmemReg) -> io::Result<()> {
+    backend::net::sockopt::set_xdp_umem_reg(fd.as_fd(), value)
+}
+
+/// `setsockopt(fd, SOL_XDP, XDP_UMEM_FILL_RING, value)`
+///
+/// # References
+///   - [Linux]
+///
+/// [Linux]: https://www.kernel.org/doc/html/next/networking/af_xdp.html#xdp-rx-tx-umem-fill-umem-completion-ring-setsockopts
+#[cfg(target_os = "linux")]
+#[doc(alias = "XDP_UMEM_FILL_RING")]
+pub fn set_xdp_umem_fill_ring_size<Fd: AsFd>(fd: Fd, value: u32) -> io::Result<()> {
+    backend::net::sockopt::set_xdp_umem_fill_ring_size(fd.as_fd(), value)
+}
+
+/// `setsockopt(fd, SOL_XDP, XDP_UMEM_COMPLETION_RING, value)`
+///
+/// # References
+///   - [Linux]
+///
+/// [Linux]: https://www.kernel.org/doc/html/next/networking/af_xdp.html#xdp-rx-tx-umem-fill-umem-completion-ring-setsockopts
+#[cfg(target_os = "linux")]
+#[doc(alias = "XDP_UMEM_COMPLETION_RING")]
+pub fn set_xdp_umem_completion_ring_size<Fd: AsFd>(fd: Fd, value: u32) -> io::Result<()> {
+    backend::net::sockopt::set_xdp_umem_completion_ring_size(fd.as_fd(), value)
+}
+
+/// `setsockopt(fd, SOL_XDP, XDP_TX_RING, value)`
+///
+/// # References
+///   - [Linux]
+///
+/// [Linux]: https://www.kernel.org/doc/html/next/networking/af_xdp.html#xdp-rx-tx-umem-fill-umem-completion-ring-setsockopts
+#[cfg(target_os = "linux")]
+#[doc(alias = "XDP_TX_RING")]
+pub fn set_xdp_tx_ring_size<Fd: AsFd>(fd: Fd, value: u32) -> io::Result<()> {
+    backend::net::sockopt::set_xdp_tx_ring_size(fd.as_fd(), value)
+}
+
+/// `setsockopt(fd, SOL_XDP, XDP_RX_RING, value)`
+///
+/// # References
+///   - [Linux]
+///
+/// [Linux]: https://www.kernel.org/doc/html/next/networking/af_xdp.html#xdp-rx-tx-umem-fill-umem-completion-ring-setsockopts
+#[cfg(target_os = "linux")]
+#[doc(alias = "XDP_RX_RING")]
+pub fn set_xdp_rx_ring_size<Fd: AsFd>(fd: Fd, value: u32) -> io::Result<()> {
+    backend::net::sockopt::set_xdp_rx_ring_size(fd.as_fd(), value)
+}
+
+/// `getsockopt(fd, SOL_XDP, XDP_MMAP_OFFSETS)`
+///
+/// # References
+///   - [Linux]
+///
+/// [Linux]: https://www.kernel.org/doc/html/next/networking/af_xdp.html
+#[cfg(target_os = "linux")]
+#[doc(alias = "XDP_MMAP_OFFSETS")]
+pub fn get_xdp_mmap_offsets<Fd: AsFd>(fd: Fd) -> io::Result<XdpMmapOffsets> {
+    backend::net::sockopt::get_xdp_mmap_offsets(fd.as_fd())
+}
+
+/// `getsockopt(fd, SOL_XDP, XDP_STATISTICS)`
+///
+/// # References
+///   - [Linux]
+///
+/// [Linux]: https://www.kernel.org/doc/html/next/networking/af_xdp.html#xdp-statistics-getsockopt
+#[cfg(target_os = "linux")]
+#[doc(alias = "XDP_STATISTICS")]
+pub fn get_xdp_statistics<Fd: AsFd>(fd: Fd) -> io::Result<XdpStatistics> {
+    backend::net::sockopt::get_xdp_statistics(fd.as_fd())
+}
+
+/// `getsockopt(fd, SOL_XDP, XDP_OPTIONS)`
+///
+/// # References
+///   - [Linux]
+///
+/// [Linux]: https://www.kernel.org/doc/html/next/networking/af_xdp.html#xdp-options-getsockopt
+#[cfg(target_os = "linux")]
+#[doc(alias = "XDP_OPTIONS")]
+pub fn get_xdp_options<Fd: AsFd>(fd: Fd) -> io::Result<XdpOptionsFlags> {
+    backend::net::sockopt::get_xdp_options(fd.as_fd())
 }
 
 #[test]

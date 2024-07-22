@@ -160,14 +160,15 @@ fn get_password_and_release(data: CFTypeRef) -> Result<Vec<u8>> {
         if type_id == CFData::type_id() {
             let val = unsafe { CFData::wrap_under_create_rule(data as CFDataRef) };
             let mut vec = Vec::new();
-            vec.extend_from_slice(val.bytes());
+            if val.len() > 0 {
+                vec.extend_from_slice(val.bytes());
+            }
             return Ok(vec);
-        } else {
-            // unexpected: we got a reference to some other type.
-            // Release it to make sure there's no leak, but
-            // we can't return the password in this case.
-            unsafe { CFRelease(data) };
         }
+        // unexpected: we got a reference to some other type.
+        // Release it to make sure there's no leak, but
+        // we can't return the password in this case.
+        unsafe { CFRelease(data) };
     }
     Err(Error::from_code(errSecParam))
 }
@@ -188,7 +189,7 @@ mod test {
         };
         let result = get_generic_password(name, name);
         match result {
-            Ok(bytes) => panic!("missing_generic: get returned {:?}", bytes),
+            Ok(bytes) => panic!("missing_generic: get returned {bytes:?}"),
             Err(err) if err.code() == errSecItemNotFound => (),
             Err(err) => panic!("missing_generic: get failed with status: {}", err.code()),
         };
@@ -206,7 +207,7 @@ mod test {
         set_generic_password(name, name, name.as_bytes()).expect("set_generic_password");
         let pass = get_generic_password(name, name).expect("get_generic_password");
         assert_eq!(name.as_bytes(), pass);
-        delete_generic_password(name, name).expect("delete_generic_password")
+        delete_generic_password(name, name).expect("delete_generic_password");
     }
 
     #[test]
@@ -217,7 +218,7 @@ mod test {
         set_generic_password(name, name, alternate.as_bytes()).expect("set_generic_password");
         let pass = get_generic_password(name, name).expect("get_generic_password");
         assert_eq!(pass, alternate.as_bytes());
-        delete_generic_password(name, name).expect("delete_generic_password")
+        delete_generic_password(name, name).expect("delete_generic_password");
     }
 
     #[test]
@@ -243,7 +244,7 @@ mod test {
         };
         let result = get_internet_password(server, domain, account, path, port, protocol, auth);
         match result {
-            Ok(bytes) => panic!("missing_internet: get returned {:?}", bytes),
+            Ok(bytes) => panic!("missing_internet: get returned {bytes:?}"),
             Err(err) if err.code() == errSecItemNotFound => (),
             Err(err) => panic!("missing_internet: get failed with status: {}", err.code()),
         };
@@ -300,6 +301,10 @@ mod test {
             SecProtocolType::HTTP,
             SecAuthenticationType::Any,
         );
+
+        // cleanup after failed test
+        let _ = delete_internet_password(server, domain, account, path, port, protocol, auth);
+
         set_internet_password(
             server,
             domain,

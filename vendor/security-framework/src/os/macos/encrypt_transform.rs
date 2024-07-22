@@ -7,7 +7,7 @@ use core_foundation::string::CFString;
 use core_foundation_sys::data::CFDataRef;
 use core_foundation_sys::string::CFStringRef;
 use security_framework_sys::encrypt_transform::*;
-use security_framework_sys::transform::*;
+use security_framework_sys::transform::kSecTransformInputAttributeName;
 use std::ptr;
 
 use crate::key::SecKey;
@@ -203,11 +203,9 @@ impl Builder {
 
 #[cfg(test)]
 mod test {
-    use core_foundation::data::CFData;
     use hex::FromHex;
 
     use super::*;
-    use crate::key::SecKey;
     use crate::os::macos::item::KeyType;
     use crate::os::macos::key::SecKeyExt;
 

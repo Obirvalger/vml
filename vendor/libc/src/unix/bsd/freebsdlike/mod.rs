@@ -824,15 +824,12 @@ pub const CLOCK_VIRTUAL: ::clockid_t = 1;
 pub const CLOCK_PROF: ::clockid_t = 2;
 pub const CLOCK_MONOTONIC: ::clockid_t = 4;
 pub const CLOCK_UPTIME: ::clockid_t = 5;
-pub const CLOCK_BOOTTIME: ::clockid_t = CLOCK_UPTIME;
 pub const CLOCK_UPTIME_PRECISE: ::clockid_t = 7;
 pub const CLOCK_UPTIME_FAST: ::clockid_t = 8;
 pub const CLOCK_REALTIME_PRECISE: ::clockid_t = 9;
 pub const CLOCK_REALTIME_FAST: ::clockid_t = 10;
-pub const CLOCK_REALTIME_COARSE: ::clockid_t = CLOCK_REALTIME_FAST;
 pub const CLOCK_MONOTONIC_PRECISE: ::clockid_t = 11;
 pub const CLOCK_MONOTONIC_FAST: ::clockid_t = 12;
-pub const CLOCK_MONOTONIC_COARSE: ::clockid_t = CLOCK_MONOTONIC_FAST;
 pub const CLOCK_SECOND: ::clockid_t = 13;
 pub const CLOCK_THREAD_CPUTIME_ID: ::clockid_t = 14;
 pub const CLOCK_PROCESS_CPUTIME_ID: ::clockid_t = 15;
@@ -1459,6 +1456,11 @@ pub const RB_GDB: ::c_int = 0x8000;
 pub const RB_MUTE: ::c_int = 0x10000;
 pub const RB_SELFTEST: ::c_int = 0x20000;
 
+// For getrandom()
+pub const GRND_NONBLOCK: ::c_uint = 0x1;
+pub const GRND_RANDOM: ::c_uint = 0x2;
+pub const GRND_INSECURE: ::c_uint = 0x4;
+
 safe_f! {
     pub {const} fn WIFCONTINUED(status: ::c_int) -> bool {
         status == 0x13
@@ -1491,6 +1493,13 @@ extern "C" {
         path: *const ::c_char,
         flags: ::c_ulong,
         atflag: ::c_int,
+    ) -> ::c_int;
+
+    pub fn clock_nanosleep(
+        clk_id: ::clockid_t,
+        flags: ::c_int,
+        rqtp: *const ::timespec,
+        rmtp: *mut ::timespec,
     ) -> ::c_int;
 
     pub fn clock_getres(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
@@ -1825,6 +1834,9 @@ extern "C" {
         abs_timeout: *const ::timespec,
     ) -> ::c_int;
     pub fn mq_unlink(name: *const ::c_char) -> ::c_int;
+
+    pub fn getrandom(buf: *mut ::c_void, buflen: ::size_t, flags: ::c_uint) -> ::ssize_t;
+    pub fn getentropy(buf: *mut ::c_void, buflen: ::size_t) -> ::c_int;
 }
 
 #[link(name = "util")]

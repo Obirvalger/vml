@@ -11,8 +11,9 @@ use core::ops::Deref;
 use crate::common::{DebugAbbrevOffset, Encoding, SectionId};
 use crate::constants;
 use crate::endianity::Endianity;
-use crate::read::lazy::LazyArc;
-use crate::read::{EndianSlice, Error, Reader, ReaderOffset, Result, Section, UnitHeader};
+use crate::read::{
+    DebugInfoUnitHeadersIter, EndianSlice, Error, Reader, ReaderOffset, Result, Section, UnitHeader,
+};
 
 /// The `DebugAbbrev` struct represents the abbreviations describing
 /// `DebuggingInformationEntry`s' attribute names and forms found in the
@@ -65,17 +66,7 @@ impl<T> DebugAbbrev<T> {
     ///
     /// This is useful when `R` implements `Reader` but `T` does not.
     ///
-    /// ## Example Usage
-    ///
-    /// ```rust,no_run
-    /// # let load_section = || unimplemented!();
-    /// // Read the DWARF section into a `Vec` with whatever object loader you're using.
-    /// let owned_section: gimli::DebugAbbrev<Vec<u8>> = load_section();
-    /// // Create a reference to the DWARF section.
-    /// let section = owned_section.borrow(|section| {
-    ///     gimli::EndianSlice::new(&section, gimli::LittleEndian)
-    /// });
-    /// ```
+    /// Used by `DwarfSections::borrow`.
     pub fn borrow<'a, F, R>(&'a self, mut borrow: F) -> DebugAbbrev<R>
     where
         F: FnMut(&'a T) -> R,
@@ -102,14 +93,24 @@ impl<R> From<R> for DebugAbbrev<R> {
     }
 }
 
+/// The strategy to use for caching abbreviations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AbbreviationsCacheStrategy {
+    /// Cache abbreviations that are used more than once.
+    ///
+    /// This is useful if the units in the `.debug_info` section will be parsed only once.
+    Duplicates,
+    /// Cache all abbreviations.
+    ///
+    /// This is useful if the units in the `.debug_info` section will be parsed more than once.
+    All,
+}
+
 /// A cache of previously parsed `Abbreviations`.
-///
-/// Currently this only caches the abbreviations for offset 0,
-/// since this is a common case in which abbreviations are reused.
-/// This strategy may change in future if there is sufficient need.
 #[derive(Debug, Default)]
 pub struct AbbreviationsCache {
-    abbreviations: LazyArc<Abbreviations>,
+    abbreviations: btree_map::BTreeMap<u64, Result<Arc<Abbreviations>>>,
 }
 
 impl AbbreviationsCache {
@@ -118,19 +119,81 @@ impl AbbreviationsCache {
         Self::default()
     }
 
+    /// Parse abbreviations and store them in the cache.
+    ///
+    /// This will iterate over the given units to determine the abbreviations
+    /// offsets. Any existing cache entries are discarded.
+    ///
+    /// Errors during parsing abbreviations are also stored in the cache.
+    /// Errors during iterating over the units are ignored.
+    pub fn populate<R: Reader>(
+        &mut self,
+        strategy: AbbreviationsCacheStrategy,
+        debug_abbrev: &DebugAbbrev<R>,
+        mut units: DebugInfoUnitHeadersIter<R>,
+    ) {
+        let mut offsets = Vec::new();
+        match strategy {
+            AbbreviationsCacheStrategy::Duplicates => {
+                while let Ok(Some(unit)) = units.next() {
+                    offsets.push(unit.debug_abbrev_offset());
+                }
+                offsets.sort_unstable_by_key(|offset| offset.0);
+                let mut prev_offset = R::Offset::from_u8(0);
+                let mut count = 0;
+                offsets.retain(|offset| {
+                    if count == 0 || prev_offset != offset.0 {
+                        prev_offset = offset.0;
+                        count = 1;
+                    } else {
+                        count += 1;
+                    }
+                    count == 2
+                });
+            }
+            AbbreviationsCacheStrategy::All => {
+                while let Ok(Some(unit)) = units.next() {
+                    offsets.push(unit.debug_abbrev_offset());
+                }
+                offsets.sort_unstable_by_key(|offset| offset.0);
+                offsets.dedup();
+            }
+        }
+        self.abbreviations = offsets
+            .into_iter()
+            .map(|offset| {
+                (
+                    offset.0.into_u64(),
+                    debug_abbrev.abbreviations(offset).map(Arc::new),
+                )
+            })
+            .collect();
+    }
+
+    /// Set an entry in the abbreviations cache.
+    ///
+    /// This is only required if you want to manually populate the cache.
+    pub fn set<R: Reader>(
+        &mut self,
+        offset: DebugAbbrevOffset<R::Offset>,
+        abbreviations: Arc<Abbreviations>,
+    ) {
+        self.abbreviations
+            .insert(offset.0.into_u64(), Ok(abbreviations));
+    }
+
     /// Parse the abbreviations at the given offset.
     ///
-    /// This uses or updates the cache as required.
+    /// This uses the cache if possible, but does not update it.
     pub fn get<R: Reader>(
         &self,
         debug_abbrev: &DebugAbbrev<R>,
         offset: DebugAbbrevOffset<R::Offset>,
     ) -> Result<Arc<Abbreviations>> {
-        if offset.0 != R::Offset::from_u8(0) {
-            return debug_abbrev.abbreviations(offset).map(Arc::new);
+        match self.abbreviations.get(&offset.0.into_u64()) {
+            Some(entry) => entry.clone(),
+            None => debug_abbrev.abbreviations(offset).map(Arc::new),
         }
-        self.abbreviations
-            .get(|| debug_abbrev.abbreviations(offset))
     }
 }
 
@@ -568,7 +631,7 @@ pub(crate) fn get_attribute_size(form: constants::DwForm, encoding: Encoding) ->
 }
 
 #[cfg(test)]
-pub mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::constants;
     use crate::endianity::LittleEndian;
@@ -780,7 +843,7 @@ pub mod tests {
             .append_bytes(&expected_rest)
             .get_contents()
             .unwrap();
-        let rest = &mut EndianSlice::new(&*buf, LittleEndian);
+        let rest = &mut EndianSlice::new(&buf, LittleEndian);
 
         let abbrev1 = Abbreviation::new(
             1,
@@ -835,7 +898,7 @@ pub mod tests {
             .append_bytes(&expected_rest)
             .get_contents()
             .unwrap();
-        let buf = &mut EndianSlice::new(&*buf, LittleEndian);
+        let buf = &mut EndianSlice::new(&buf, LittleEndian);
 
         match Abbreviations::parse(buf) {
             Err(Error::DuplicateAbbreviationCode) => {}
@@ -886,7 +949,7 @@ pub mod tests {
             .append_bytes(&expected_rest)
             .get_contents()
             .unwrap();
-        let rest = &mut EndianSlice::new(&*buf, LittleEndian);
+        let rest = &mut EndianSlice::new(&buf, LittleEndian);
 
         let expect = Some(Abbreviation::new(
             1,
@@ -915,7 +978,7 @@ pub mod tests {
             .append_bytes(&expected_rest)
             .get_contents()
             .unwrap();
-        let rest = &mut EndianSlice::new(&*buf, LittleEndian);
+        let rest = &mut EndianSlice::new(&buf, LittleEndian);
 
         let expect = Some(Abbreviation::new(
             1,
@@ -941,7 +1004,7 @@ pub mod tests {
             .abbrev_attr(constants::DW_AT_name, constants::DW_FORM_implicit_const)
             .get_contents()
             .unwrap();
-        let buf = &mut EndianSlice::new(&*buf, LittleEndian);
+        let buf = &mut EndianSlice::new(&buf, LittleEndian);
 
         match Abbreviation::parse(buf) {
             Err(Error::UnexpectedEof(_)) => {}
@@ -957,7 +1020,7 @@ pub mod tests {
             .append_bytes(&expected_rest)
             .get_contents()
             .unwrap();
-        let rest = &mut EndianSlice::new(&*buf, LittleEndian);
+        let rest = &mut EndianSlice::new(&buf, LittleEndian);
 
         let abbrev = Abbreviation::parse(rest).expect("Should parse null abbreviation");
         assert!(abbrev.is_none());
@@ -1025,65 +1088,5 @@ pub mod tests {
             ))
             .unwrap();
         assert!(abbrevs.get(0).is_none());
-    }
-
-    #[test]
-    fn abbreviations_cache() {
-        #[rustfmt::skip]
-        let buf = Section::new()
-            .abbrev(1, constants::DW_TAG_subprogram, constants::DW_CHILDREN_no)
-                .abbrev_attr(constants::DW_AT_name, constants::DW_FORM_string)
-                .abbrev_attr_null()
-            .abbrev_null()
-            .abbrev(1, constants::DW_TAG_compile_unit, constants::DW_CHILDREN_yes)
-                .abbrev_attr(constants::DW_AT_producer, constants::DW_FORM_strp)
-                .abbrev_attr(constants::DW_AT_language, constants::DW_FORM_data2)
-                .abbrev_attr_null()
-            .abbrev_null()
-            .get_contents()
-            .unwrap();
-
-        let abbrev1 = Abbreviation::new(
-            1,
-            constants::DW_TAG_subprogram,
-            constants::DW_CHILDREN_no,
-            vec![AttributeSpecification::new(
-                constants::DW_AT_name,
-                constants::DW_FORM_string,
-                None,
-            )]
-            .into(),
-        );
-
-        let abbrev2 = Abbreviation::new(
-            1,
-            constants::DW_TAG_compile_unit,
-            constants::DW_CHILDREN_yes,
-            vec![
-                AttributeSpecification::new(
-                    constants::DW_AT_producer,
-                    constants::DW_FORM_strp,
-                    None,
-                ),
-                AttributeSpecification::new(
-                    constants::DW_AT_language,
-                    constants::DW_FORM_data2,
-                    None,
-                ),
-            ]
-            .into(),
-        );
-
-        let debug_abbrev = DebugAbbrev::new(&buf, LittleEndian);
-        let cache = AbbreviationsCache::new();
-        let abbrevs1 = cache.get(&debug_abbrev, DebugAbbrevOffset(0)).unwrap();
-        assert_eq!(abbrevs1.get(1), Some(&abbrev1));
-        let abbrevs2 = cache.get(&debug_abbrev, DebugAbbrevOffset(8)).unwrap();
-        assert_eq!(abbrevs2.get(1), Some(&abbrev2));
-        let abbrevs3 = cache.get(&debug_abbrev, DebugAbbrevOffset(0)).unwrap();
-        assert_eq!(abbrevs3.get(1), Some(&abbrev1));
-
-        assert!(!Arc::ptr_eq(&abbrevs1, &abbrevs2));
-        assert!(Arc::ptr_eq(&abbrevs1, &abbrevs3));
     }
 }

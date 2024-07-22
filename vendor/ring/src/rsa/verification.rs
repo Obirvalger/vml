@@ -15,9 +15,12 @@
 //! Verification of RSA signatures.
 
 use super::{
-    parse_public_key, PublicExponent, PublicKey, RsaParameters, PUBLIC_KEY_PUBLIC_MODULUS_MAX_LEN,
+    parse_public_key, public_key, PublicExponent, RsaParameters, PUBLIC_KEY_PUBLIC_MODULUS_MAX_LEN,
 };
-use crate::{bits, cpu, digest, error, sealed, signature};
+use crate::{
+    bits::{self, FromUsizeBytes as _},
+    cpu, digest, error, sealed, signature,
+};
 
 impl signature::VerificationAlgorithm for RsaParameters {
     fn verify(
@@ -35,6 +38,7 @@ impl signature::VerificationAlgorithm for RsaParameters {
             ),
             msg,
             signature,
+            cpu::features(),
         )
     }
 }
@@ -184,6 +188,7 @@ where
             ),
             untrusted::Input::from(message),
             untrusted::Input::from(signature),
+            cpu::features(),
         )
     }
 }
@@ -193,6 +198,7 @@ pub(crate) fn verify_rsa_(
     (n, e): (untrusted::Input, untrusted::Input),
     msg: untrusted::Input,
     signature: untrusted::Input,
+    cpu_features: cpu::Features,
 ) -> Result<(), error::Unspecified> {
     let max_bits: bits::BitLength =
         bits::BitLength::from_usize_bytes(PUBLIC_KEY_PUBLIC_MODULUS_MAX_LEN)?;
@@ -201,18 +207,18 @@ pub(crate) fn verify_rsa_(
     // exponent value is 2**16 + 1, but it isn't clear if this is just for
     // signing or also for verification. We support exponents of 3 and larger
     // for compatibility with other commonly-used crypto libraries.
-    let key = PublicKey::from_modulus_and_exponent(
+    let key = public_key::Inner::from_modulus_and_exponent(
         n,
         e,
         params.min_bits,
         max_bits,
         PublicExponent::_3,
-        cpu::features(),
+        cpu_features,
     )?;
 
     // RFC 8017 Section 5.2.2: RSAVP1.
     let mut decoded = [0u8; PUBLIC_KEY_PUBLIC_MODULUS_MAX_LEN];
-    let decoded = key.exponentiate(signature, &mut decoded)?;
+    let decoded = key.exponentiate(signature, &mut decoded, cpu_features)?;
 
     // Verify the padded message is correct.
     let m_hash = digest::digest(params.padding_alg.digest_alg(), msg.as_slice_less_safe());

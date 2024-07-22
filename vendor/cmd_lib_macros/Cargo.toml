@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "cmd_lib_macros"
-version = "1.8.0"
+version = "1.9.4"
 authors = ["Tao Guo <tao.guo.code@gmail.com>"]
 description = "Common rust commandline macros and utils, to write shell script like tasks easily"
 homepage = "https://github.com/rust-shell-script/rust_cmd_lib"
@@ -41,3 +41,5 @@ version = "1.0"
 [dependencies.syn]
 version = "1.0"
 features = ["full"]
+
+[dev-dependencies]

@@ -8,9 +8,17 @@
 
 use crate::backend::c;
 use crate::backend::conv::fs::oflags_for_open_how;
+#[cfg(any(
+    not(feature = "linux_4_11"),
+    target_arch = "aarch64",
+    target_arch = "riscv64",
+    target_arch = "mips",
+    target_arch = "mips32r6",
+))]
+use crate::backend::conv::zero;
 use crate::backend::conv::{
     by_ref, c_int, c_uint, dev_t, opt_mut, pass_usize, raw_fd, ret, ret_c_int, ret_c_uint,
-    ret_infallible, ret_owned_fd, ret_usize, size_of, slice, slice_mut, zero,
+    ret_infallible, ret_owned_fd, ret_usize, size_of, slice, slice_mut,
 };
 #[cfg(target_pointer_width = "64")]
 use crate::backend::conv::{loff_t, loff_t_from_u64, ret_u64};
@@ -50,7 +58,7 @@ use {
 #[inline]
 pub(crate) fn open(path: &CStr, flags: OFlags, mode: Mode) -> io::Result<OwnedFd> {
     // Always enable support for large files.
-    let flags = flags | OFlags::from_bits_retain(c::O_LARGEFILE);
+    let flags = flags | OFlags::LARGEFILE;
 
     #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
     {
@@ -70,7 +78,7 @@ pub(crate) fn openat(
     mode: Mode,
 ) -> io::Result<OwnedFd> {
     // Always enable support for large files.
-    let flags = flags | OFlags::from_bits_retain(c::O_LARGEFILE);
+    let flags = flags | OFlags::LARGEFILE;
 
     unsafe { ret_owned_fd(syscall_readonly!(__NR_openat, dirfd, path, flags, mode)) }
 }
@@ -703,6 +711,7 @@ fn lstat_old(path: &CStr) -> io::Result<Stat> {
     target_arch = "mips64",
     target_arch = "mips64r6"
 ))]
+#[allow(deprecated)] // for `st_[amc]time` u64->i64 transition
 fn statx_to_stat(x: crate::fs::Statx) -> io::Result<Stat> {
     Ok(Stat {
         st_dev: crate::fs::makedev(x.stx_dev_major, x.stx_dev_minor),
@@ -714,23 +723,11 @@ fn statx_to_stat(x: crate::fs::Statx) -> io::Result<Stat> {
         st_size: x.stx_size.try_into().map_err(|_| io::Errno::OVERFLOW)?,
         st_blksize: x.stx_blksize.into(),
         st_blocks: x.stx_blocks.into(),
-        st_atime: x
-            .stx_atime
-            .tv_sec
-            .try_into()
-            .map_err(|_| io::Errno::OVERFLOW)?,
+        st_atime: bitcast!(i64::from(x.stx_atime.tv_sec)),
         st_atime_nsec: x.stx_atime.tv_nsec.into(),
-        st_mtime: x
-            .stx_mtime
-            .tv_sec
-            .try_into()
-            .map_err(|_| io::Errno::OVERFLOW)?,
+        st_mtime: bitcast!(i64::from(x.stx_mtime.tv_sec)),
         st_mtime_nsec: x.stx_mtime.tv_nsec.into(),
-        st_ctime: x
-            .stx_ctime
-            .tv_sec
-            .try_into()
-            .map_err(|_| io::Errno::OVERFLOW)?,
+        st_ctime: bitcast!(i64::from(x.stx_ctime.tv_sec)),
         st_ctime_nsec: x.stx_ctime.tv_nsec.into(),
         st_ino: x.stx_ino.into(),
     })
@@ -738,6 +735,7 @@ fn statx_to_stat(x: crate::fs::Statx) -> io::Result<Stat> {
 
 /// Convert from a Linux `stat64` value to rustix's `Stat`.
 #[cfg(target_pointer_width = "32")]
+#[allow(deprecated)] // for `st_[amc]time` u64->i64 transition
 fn stat_to_stat(s64: linux_raw_sys::general::stat64) -> io::Result<Stat> {
     Ok(Stat {
         st_dev: s64.st_dev.try_into().map_err(|_| io::Errno::OVERFLOW)?,
@@ -749,17 +747,17 @@ fn stat_to_stat(s64: linux_raw_sys::general::stat64) -> io::Result<Stat> {
         st_size: s64.st_size.try_into().map_err(|_| io::Errno::OVERFLOW)?,
         st_blksize: s64.st_blksize.try_into().map_err(|_| io::Errno::OVERFLOW)?,
         st_blocks: s64.st_blocks.try_into().map_err(|_| io::Errno::OVERFLOW)?,
-        st_atime: s64.st_atime.try_into().map_err(|_| io::Errno::OVERFLOW)?,
+        st_atime: bitcast!(i64::from(s64.st_atime)),
         st_atime_nsec: s64
             .st_atime_nsec
             .try_into()
             .map_err(|_| io::Errno::OVERFLOW)?,
-        st_mtime: s64.st_mtime.try_into().map_err(|_| io::Errno::OVERFLOW)?,
+        st_mtime: bitcast!(i64::from(s64.st_mtime)),
         st_mtime_nsec: s64
             .st_mtime_nsec
             .try_into()
             .map_err(|_| io::Errno::OVERFLOW)?,
-        st_ctime: s64.st_ctime.try_into().map_err(|_| io::Errno::OVERFLOW)?,
+        st_ctime: bitcast!(i64::from(s64.st_ctime)),
         st_ctime_nsec: s64
             .st_ctime_nsec
             .try_into()
@@ -781,17 +779,17 @@ fn stat_to_stat(s: linux_raw_sys::general::stat) -> io::Result<Stat> {
         st_size: s.st_size.try_into().map_err(|_| io::Errno::OVERFLOW)?,
         st_blksize: s.st_blksize.try_into().map_err(|_| io::Errno::OVERFLOW)?,
         st_blocks: s.st_blocks.try_into().map_err(|_| io::Errno::OVERFLOW)?,
-        st_atime: s.st_atime.try_into().map_err(|_| io::Errno::OVERFLOW)?,
+        st_atime: bitcast!(i64::from(s.st_atime)),
         st_atime_nsec: s
             .st_atime_nsec
             .try_into()
             .map_err(|_| io::Errno::OVERFLOW)?,
-        st_mtime: s.st_mtime.try_into().map_err(|_| io::Errno::OVERFLOW)?,
+        st_mtime: bitcast!(i64::from(s.st_mtime)),
         st_mtime_nsec: s
             .st_mtime_nsec
             .try_into()
             .map_err(|_| io::Errno::OVERFLOW)?,
-        st_ctime: s.st_ctime.try_into().map_err(|_| io::Errno::OVERFLOW)?,
+        st_ctime: bitcast!(i64::from(s.st_ctime)),
         st_ctime_nsec: s
             .st_ctime_nsec
             .try_into()
@@ -839,13 +837,15 @@ pub(crate) fn statx(
     }
 }
 
+#[cfg(not(feature = "linux_4_11"))]
 #[inline]
 pub(crate) fn is_statx_available() -> bool {
     unsafe {
         // Call `statx` with null pointers so that if it fails for any reason
-        // other than `EFAULT`, we know it's not supported.
+        // other than `EFAULT`, we know it's not supported. This can use
+        // "readonly" because we don't pass it a buffer to mutate.
         matches!(
-            ret(syscall!(
+            ret(syscall_readonly!(
                 __NR_statx,
                 raw_fd(AT_FDCWD),
                 zero(),
@@ -957,7 +957,6 @@ pub(crate) fn readlink(path: &CStr, buf: &mut [u8]) -> io::Result<usize> {
     }
 }
 
-#[cfg(any(feature = "alloc", all(linux_kernel, feature = "procfs")))]
 #[inline]
 pub(crate) fn readlinkat(
     dirfd: BorrowedFd<'_>,

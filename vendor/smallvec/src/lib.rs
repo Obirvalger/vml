@@ -1372,13 +1372,14 @@ impl<A: Array> SmallVec<A> {
             }
             let mut ptr = ptr.as_ptr();
             let len = *len_ptr;
+            if index > len {
+                panic!("index exceeds length");
+            }
+            // SAFETY: add is UB if index > len, but we panicked first
             ptr = ptr.add(index);
             if index < len {
+                // Shift element to the right of `index`.
                 ptr::copy(ptr, ptr.add(1), len - index);
-            } else if index == len {
-                // No elements need shifting.
-            } else {
-                panic!("index exceeds length");
             }
             *len_ptr = len + 1;
             ptr::write(ptr, element);
@@ -2381,6 +2382,20 @@ impl<T, const N: usize> SmallVec<[T; N]> {
     pub const fn from_const(items: [T; N]) -> Self {
         SmallVec {
             capacity: N,
+            data: SmallVecData::from_const(MaybeUninit::new(items)),
+        }
+    }
+
+    /// Constructs a new `SmallVec` on the stack from an array without
+    /// copying elements. Also sets the length. The user is responsible
+    /// for ensuring that `len <= N`.
+    /// 
+    /// This is a `const` version of [`SmallVec::from_buf_and_len_unchecked`] that is enabled by the feature `const_new`, with the limitation that it only works for arrays.
+    #[cfg_attr(docsrs, doc(cfg(feature = "const_new")))]
+    #[inline]
+    pub const unsafe fn from_const_with_len_unchecked(items: [T; N], len: usize) -> Self {
+        SmallVec {
+            capacity: len,
             data: SmallVecData::from_const(MaybeUninit::new(items)),
         }
     }

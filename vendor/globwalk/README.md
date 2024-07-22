@@ -1,23 +1,24 @@
 # GlobWalk #
 
-[![Build Status](https://travis-ci.org/Gilnaa/globwalk.svg?branch=master)](https://travis-ci.org/Gilnaa/globwalk)
-[![Build status](https://ci.appveyor.com/api/projects/status/81rkf5lcyt1ouh9n/branch/master?svg=true)](https://ci.appveyor.com/project/Gilnaa/globwalk)
 [![](https://docs.rs/globwalk/badge.svg)](https://docs.rs/globwalk/)
 ![License](https://img.shields.io/crates/l/globwalk.svg)
 [![crates.io](https://img.shields.io/crates/v/globwalk.svg)](https://crates.io/crates/globwalk)
 
 Recursively find files in a directory using globs.
 
-Based on both `walkdir` & `ignore` (❤), this crate inherits many goodies from
-both, such as limiting search depth and amount of open file descriptors.
+This crate is now in a perpetual maintnance mode and new users should probably cosider using [`glob`](https://crates.io/crates/glob/).
 
-Licensed under MIT.
+### Comparison to the `glob` crate ###
 
-### Why not `glob` ###
+This crate was origially written years ago, when [`glob`](https://crates.io/crates/glob/) was a very differet crate,
+before it was adopted by the rust-lang org.
+
+Nowadays `glob` is much better, and overall better maintained,
+but there are a few features that it does not seem to have (based on [glob 0.3.1](https://docs.rs/glob/0.3.1/src/glob/lib.rs.html#466)):
 
  - The `glob` crate does not support having `{a,b}` in patterns.
  - `globwalk` can match several glob-patterns at the same time.
- - `globwalk` supports excluding results with `!`.
+ - `globwalk` supports excluding results with `!`. (negative patterns)
  - `glob` searches for files in the current working directory, whereas `globwalk` starts at a specified base-dir.
 
 ### Usage ###
@@ -26,7 +27,7 @@ To use this crate, add `globwalk` as a dependency to your project's `Cargo.toml`
 
 ```toml
 [dependencies]
-globwalk = "0.8.1"
+globwalk = "0.9.1"
 ```
 
 The following piece of code recursively find all `png`, `jpg`, or `gif` files:

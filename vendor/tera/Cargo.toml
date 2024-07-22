@@ -11,9 +11,9 @@
 
 [package]
 edition = "2018"
-rust-version = "1.63"
+rust-version = "1.70"
 name = "tera"
-version = "1.19.1"
+version = "1.20.0"
 authors = ["Vincent Prouillet <hello@prouilletvincent.com>"]
 include = [
     "/src/**/*",
@@ -22,7 +22,7 @@ include = [
     "/CHANGELOG.md",
 ]
 description = "Template engine based on Jinja2/Django templates"
-homepage = "http://keats.github.io/tera/"
+homepage = "https://keats.github.io/tera/"
 readme = "README.md"
 keywords = [
     "template",
@@ -36,7 +36,7 @@ license = "MIT"
 repository = "https://github.com/Keats/tera"
 
 [dependencies.chrono]
-version = "0.4.23"
+version = "0.4.27"
 features = [
     "std",
     "clock",
@@ -45,11 +45,11 @@ optional = true
 default-features = false
 
 [dependencies.chrono-tz]
-version = "0.8"
+version = "0.9"
 optional = true
 
 [dependencies.globwalk]
-version = "0.8.1"
+version = "0.9.1"
 
 [dependencies.humansize]
 version = "2.1"

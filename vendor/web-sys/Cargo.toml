@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.57"
 name = "web-sys"
-version = "0.3.65"
+version = "0.3.69"
 authors = ["The wasm-bindgen Developers"]
 description = """
 Bindings for all Web APIs, a procedurally generated crate from WebIDL
@@ -34,10 +34,10 @@ test = false
 doctest = false
 
 [dependencies.js-sys]
-version = "0.3.65"
+version = "0.3.69"
 
 [dependencies.wasm-bindgen]
-version = "0.2.88"
+version = "0.2.92"
 
 [features]
 AbortController = []
@@ -273,6 +273,8 @@ CompositionEvent = [
     "UiEvent",
 ]
 CompositionEventInit = []
+CompressionFormat = []
+CompressionStream = []
 ComputedEffectTiming = []
 ConnStatusDict = []
 ConnectionType = []
@@ -314,10 +316,6 @@ CredentialsContainer = []
 Crypto = []
 CryptoKey = []
 CryptoKeyPair = []
-Csp = []
-CspPolicies = []
-CspReport = []
-CspReportProperties = []
 CssAnimation = [
     "Animation",
     "EventTarget",
@@ -366,6 +364,7 @@ DataTransferItemList = []
 DateTimeValue = []
 DecoderDoctorNotification = []
 DecoderDoctorNotificationType = []
+DecompressionStream = []
 DedicatedWorkerGlobalScope = [
     "EventTarget",
     "WorkerGlobalScope",
@@ -390,6 +389,7 @@ DeviceRotationRateInit = []
 DhKeyDeriveParams = []
 DirectionSetting = []
 Directory = []
+DirectoryPickerOptions = []
 DisplayMediaStreamConstraints = []
 DisplayNameOptions = []
 DisplayNameResult = []
@@ -510,6 +510,8 @@ FetchState = []
 File = ["Blob"]
 FileCallback = []
 FileList = []
+FilePickerAcceptType = []
+FilePickerOptions = []
 FilePropertyBag = []
 FileReader = ["EventTarget"]
 FileReaderSync = []
@@ -528,13 +530,15 @@ FileSystemGetDirectoryOptions = []
 FileSystemGetFileOptions = []
 FileSystemHandle = []
 FileSystemHandleKind = []
+FileSystemHandlePermissionDescriptor = []
+FileSystemPermissionDescriptor = []
+FileSystemPermissionMode = []
 FileSystemReadWriteOptions = []
 FileSystemRemoveOptions = []
 FileSystemSyncAccessHandle = []
 FileSystemWritableFileStream = ["WritableStream"]
 FillMode = []
 FlashClassification = []
-FlexLineGrowthState = []
 FlowControlType = []
 FocusEvent = [
     "Event",
@@ -712,8 +716,6 @@ GpuVertexBufferLayout = []
 GpuVertexFormat = []
 GpuVertexState = []
 GpuVertexStepMode = []
-GridDeclaration = []
-GridTrackState = []
 GroupedHistoryEventInit = []
 HalfOpenInfoDict = []
 HardwareAcceleration = []
@@ -1237,7 +1239,6 @@ InputEvent = [
     "UiEvent",
 ]
 InputEventInit = []
-InstallTriggerData = []
 IntersectionObserver = []
 IntersectionObserverEntry = []
 IntersectionObserverEntryInit = []
@@ -1446,6 +1447,7 @@ OfflineAudioContextOptions = []
 OfflineResourceList = ["EventTarget"]
 OffscreenCanvas = ["EventTarget"]
 OffscreenCanvasRenderingContext2d = []
+OpenFilePickerOptions = []
 OpenWindowEventDetail = []
 OptionalEffectTiming = []
 OrientationLockType = []
@@ -1664,21 +1666,24 @@ RtcIdentityProviderOptions = []
 RtcIdentityProviderRegistrar = []
 RtcIdentityValidationResult = []
 RtcInboundRtpStreamStats = []
-RtcLifecycleEvent = []
 RtcMediaStreamStats = []
 RtcMediaStreamTrackStats = []
 RtcOfferAnswerOptions = []
 RtcOfferOptions = []
 RtcOutboundRtpStreamStats = []
 RtcPeerConnection = ["EventTarget"]
+RtcPeerConnectionIceErrorEvent = ["Event"]
 RtcPeerConnectionIceEvent = ["Event"]
 RtcPeerConnectionIceEventInit = []
 RtcPeerConnectionState = []
 RtcPriorityType = []
 RtcRtcpParameters = []
+RtcRtpCapabilities = []
+RtcRtpCodecCapability = []
 RtcRtpCodecParameters = []
 RtcRtpContributingSource = []
 RtcRtpEncodingParameters = []
+RtcRtpHeaderExtensionCapability = []
 RtcRtpHeaderExtensionParameters = []
 RtcRtpParameters = []
 RtcRtpReceiver = []
@@ -1708,6 +1713,7 @@ RtcdtmfToneChangeEvent = ["Event"]
 RtcdtmfToneChangeEventInit = []
 RtcrtpContributingSourceStats = []
 RtcrtpStreamStats = []
+SaveFilePickerOptions = []
 Scheduler = []
 SchedulerPostTaskOptions = []
 Scheduling = []
@@ -2435,6 +2441,7 @@ UsbPermissionStorage = []
 UsbRecipient = []
 UsbRequestType = []
 UsbTransferStatus = []
+UserActivation = []
 UserProximityEvent = ["Event"]
 UserProximityEventInit = []
 UserVerificationRequirement = []
@@ -2558,7 +2565,7 @@ WebglDepthTexture = []
 WebglDrawBuffers = []
 WebglLoseContext = []
 WebglMultiDraw = []
-WebrtcGlobalStatisticsReport = []
+WellKnownDirectory = []
 WgslLanguageFeatures = []
 WheelEvent = [
     "Event",
@@ -2669,7 +2676,7 @@ gpu_shader_stage = []
 gpu_texture_usage = []
 
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-futures]
-version = "0.4.38"
+version = "0.4.42"
 
 [target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-test]
-version = "0.3.38"
+version = "0.3.42"

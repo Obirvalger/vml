@@ -1,6 +1,6 @@
-#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::needless_raw_string_hashes, clippy::uninlined_format_args)]
 
-use std::fmt::{self, Display};
+use core::fmt::{self, Display};
 use thiserror::Error;
 
 fn assert<T: Display>(expected: &str, value: T) {
@@ -235,6 +235,18 @@ fn test_field() {
 }
 
 #[test]
+fn test_nested_tuple_field() {
+    #[derive(Debug)]
+    struct Inner(usize);
+
+    #[derive(Error, Debug)]
+    #[error("{}", .0.0)]
+    struct Error(Inner);
+
+    assert("0", Error(Inner(0)));
+}
+
+#[test]
 fn test_macro_rules() {
     // Regression test for https://github.com/dtolnay/thiserror/issues/86
 
@@ -300,4 +312,59 @@ fn test_keyword() {
     struct Error;
 
     assert("error: 1", Error);
+}
+
+#[test]
+fn test_str_special_chars() {
+    #[derive(Error, Debug)]
+    pub enum Error {
+        #[error("brace left {{")]
+        BraceLeft,
+        #[error("brace left 2 \x7B\x7B")]
+        BraceLeft2,
+        #[error("brace left 3 \u{7B}\u{7B}")]
+        BraceLeft3,
+        #[error("brace right }}")]
+        BraceRight,
+        #[error("brace right 2 \x7D\x7D")]
+        BraceRight2,
+        #[error("brace right 3 \u{7D}\u{7D}")]
+        BraceRight3,
+        #[error(
+            "new_\
+line"
+        )]
+        NewLine,
+        #[error("escape24 \u{78}")]
+        Escape24,
+    }
+
+    assert("brace left {", Error::BraceLeft);
+    assert("brace left 2 {", Error::BraceLeft2);
+    assert("brace left 3 {", Error::BraceLeft3);
+    assert("brace right }", Error::BraceRight);
+    assert("brace right 2 }", Error::BraceRight2);
+    assert("brace right 3 }", Error::BraceRight3);
+    assert("new_line", Error::NewLine);
+    assert("escape24 x", Error::Escape24);
+}
+
+#[test]
+fn test_raw_str() {
+    #[derive(Error, Debug)]
+    pub enum Error {
+        #[error(r#"raw brace left {{"#)]
+        BraceLeft,
+        #[error(r#"raw brace left 2 \x7B"#)]
+        BraceLeft2,
+        #[error(r#"raw brace right }}"#)]
+        BraceRight,
+        #[error(r#"raw brace right 2 \x7D"#)]
+        BraceRight2,
+    }
+
+    assert(r#"raw brace left {"#, Error::BraceLeft);
+    assert(r#"raw brace left 2 \x7B"#, Error::BraceLeft2);
+    assert(r#"raw brace right }"#, Error::BraceRight);
+    assert(r#"raw brace right 2 \x7D"#, Error::BraceRight2);
 }

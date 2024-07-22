@@ -44,7 +44,7 @@ use winreg::RegKey;
 /// For instance, let's look at `Proxy::http`:
 ///
 /// ```rust
-/// # fn run() -> Result<(), Box<std::error::Error>> {
+/// # fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// let proxy = reqwest::Proxy::http("https://secure.example")?;
 /// # Ok(())
 /// # }
@@ -61,7 +61,7 @@ use winreg::RegKey;
 ///
 /// By enabling the `"socks"` feature it is possible to use a socks proxy:
 /// ```rust
-/// # fn run() -> Result<(), Box<std::error::Error>> {
+/// # fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// let proxy = reqwest::Proxy::http("socks5://192.168.1.1:9000")?;
 /// # Ok(())
 /// # }
@@ -196,7 +196,7 @@ impl Proxy {
     ///
     /// ```
     /// # extern crate reqwest;
-    /// # fn run() -> Result<(), Box<std::error::Error>> {
+    /// # fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = reqwest::Client::builder()
     ///     .proxy(reqwest::Proxy::http("https://my.prox")?)
     ///     .build()?;
@@ -216,7 +216,7 @@ impl Proxy {
     ///
     /// ```
     /// # extern crate reqwest;
-    /// # fn run() -> Result<(), Box<std::error::Error>> {
+    /// # fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = reqwest::Client::builder()
     ///     .proxy(reqwest::Proxy::https("https://example.prox:4545")?)
     ///     .build()?;
@@ -236,7 +236,7 @@ impl Proxy {
     ///
     /// ```
     /// # extern crate reqwest;
-    /// # fn run() -> Result<(), Box<std::error::Error>> {
+    /// # fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = reqwest::Client::builder()
     ///     .proxy(reqwest::Proxy::all("http://pro.xy")?)
     ///     .build()?;
@@ -256,7 +256,7 @@ impl Proxy {
     ///
     /// ```
     /// # extern crate reqwest;
-    /// # fn run() -> Result<(), Box<std::error::Error>> {
+    /// # fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let target = reqwest::Url::parse("https://my.prox")?;
     /// let client = reqwest::Client::builder()
     ///     .proxy(reqwest::Proxy::custom(move |url| {
@@ -306,7 +306,7 @@ impl Proxy {
     ///
     /// ```
     /// # extern crate reqwest;
-    /// # fn run() -> Result<(), Box<std::error::Error>> {
+    /// # fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let proxy = reqwest::Proxy::https("http://localhost:1234")?
     ///     .basic_auth("Aladdin", "open sesame");
     /// # Ok(())
@@ -318,13 +318,32 @@ impl Proxy {
         self
     }
 
+    /// Set the `Proxy-Authorization` header to a specified value.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # extern crate reqwest;
+    /// # use reqwest::header::*;
+    /// # fn run() -> Result<(), Box<dyn std::error::Error>> {
+    /// let proxy = reqwest::Proxy::https("http://localhost:1234")?
+    ///     .custom_http_auth(HeaderValue::from_static("justletmeinalreadyplease"));
+    /// # Ok(())
+    /// # }
+    /// # fn main() {}
+    /// ```
+    pub fn custom_http_auth(mut self, header_value: HeaderValue) -> Proxy {
+        self.intercept.set_custom_http_auth(header_value);
+        self
+    }
+
     /// Adds a `No Proxy` exclusion list to this Proxy
     ///
     /// # Example
     ///
     /// ```
     /// # extern crate reqwest;
-    /// # fn run() -> Result<(), Box<std::error::Error>> {
+    /// # fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let proxy = reqwest::Proxy::https("http://localhost:1234")?
     ///     .no_proxy(reqwest::NoProxy::from_string("direct.tld, sub.direct2.tld"));
     /// # Ok(())
@@ -619,6 +638,21 @@ impl ProxyScheme {
         }
     }
 
+    fn set_custom_http_auth(&mut self, header_value: HeaderValue) {
+        match *self {
+            ProxyScheme::Http { ref mut auth, .. } => {
+                *auth = Some(header_value);
+            }
+            ProxyScheme::Https { ref mut auth, .. } => {
+                *auth = Some(header_value);
+            }
+            #[cfg(feature = "socks")]
+            ProxyScheme::Socks5 { .. } => {
+                panic!("Socks is not supported for this method")
+            }
+        }
+    }
+
     fn if_no_auth(mut self, update: &Option<HeaderValue>) -> Self {
         match self {
             ProxyScheme::Http { ref mut auth, .. } => {
@@ -703,8 +737,8 @@ impl ProxyScheme {
 impl fmt::Debug for ProxyScheme {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ProxyScheme::Http { auth: _auth, host } => write!(f, "http://{}", host),
-            ProxyScheme::Https { auth: _auth, host } => write!(f, "https://{}", host),
+            ProxyScheme::Http { auth: _auth, host } => write!(f, "http://{host}"),
+            ProxyScheme::Https { auth: _auth, host } => write!(f, "https://{host}"),
             #[cfg(feature = "socks")]
             ProxyScheme::Socks5 {
                 addr,
@@ -712,7 +746,7 @@ impl fmt::Debug for ProxyScheme {
                 remote_dns,
             } => {
                 let h = if *remote_dns { "h" } else { "" };
-                write!(f, "socks5{}://{}", h, addr)
+                write!(f, "socks5{h}://{addr}")
             }
         }
     }
@@ -739,6 +773,18 @@ impl Intercept {
             Intercept::Custom(ref mut custom) => {
                 let header = encode_basic_auth(username, password);
                 custom.auth = Some(header);
+            }
+        }
+    }
+
+    fn set_custom_http_auth(&mut self, header_value: HeaderValue) {
+        match self {
+            Intercept::All(ref mut s)
+            | Intercept::Http(ref mut s)
+            | Intercept::Https(ref mut s) => s.set_custom_http_auth(header_value),
+            Intercept::System(_) => unimplemented!(),
+            Intercept::Custom(ref mut custom) => {
+                custom.auth = Some(header_value);
             }
         }
     }
@@ -943,7 +989,9 @@ fn parse_setting_from_dynamic_store(
 fn get_from_platform_impl() -> Result<Option<String>, Box<dyn Error>> {
     let store = SCDynamicStoreBuilder::new("reqwest").build();
 
-    let Some(proxies_map) = store.get_proxies() else {
+    let proxies_map = if let Some(proxies_map) = store.get_proxies() {
+        proxies_map
+    } else {
         return Ok(None);
     };
 
@@ -992,7 +1040,7 @@ fn parse_platform_values_impl(platform_values: String) -> SystemProxyMap {
                     let address = if extract_type_prefix(*address).is_some() {
                         String::from(*address)
                     } else {
-                        format!("http://{}", address)
+                        format!("http://{address}")
                     };
 
                     insert_proxy(&mut proxies, *protocol, address);
@@ -1011,8 +1059,8 @@ fn parse_platform_values_impl(platform_values: String) -> SystemProxyMap {
             insert_proxy(&mut proxies, scheme, platform_values.to_owned());
         } else {
             // No explicit protocol has been specified, default to HTTP
-            insert_proxy(&mut proxies, "http", format!("http://{}", platform_values));
-            insert_proxy(&mut proxies, "https", format!("http://{}", platform_values));
+            insert_proxy(&mut proxies, "http", format!("http://{platform_values}"));
+            insert_proxy(&mut proxies, "https", format!("http://{platform_values}"));
         }
     }
     proxies
@@ -1154,7 +1202,7 @@ mod tests {
                 assert_eq!(auth.unwrap(), encode_basic_auth("foo", "bar"));
                 assert_eq!(host, "localhost:1239");
             }
-            other => panic!("unexpected: {:?}", other),
+            other => panic!("unexpected: {other:?}"),
         }
     }
 
@@ -1167,7 +1215,7 @@ mod tests {
                 assert!(auth.is_none());
                 assert_eq!(host, "192.168.1.1:8888");
             }
-            other => panic!("unexpected: {:?}", other),
+            other => panic!("unexpected: {other:?}"),
         }
     }
 
@@ -1181,7 +1229,7 @@ mod tests {
                 assert_eq!(auth.unwrap(), encode_basic_auth("foo", "bar"));
                 assert_eq!(host, "localhost:1239");
             }
-            other => panic!("unexpected: {:?}", other),
+            other => panic!("unexpected: {other:?}"),
         }
     }
 
@@ -1743,7 +1791,7 @@ mod test {
         fn check_parse_error(url: &str, needle: url::ParseError) {
             let error = Proxy::http(url).unwrap_err();
             if !includes(&error, needle) {
-                panic!("{:?} expected; {:?}, {} found", needle, error, error);
+                panic!("{needle:?} expected; {error:?}, {error} found");
             }
         }
 

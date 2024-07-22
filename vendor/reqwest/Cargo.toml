@@ -10,10 +10,10 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
 rust-version = "1.63.0"
 name = "reqwest"
-version = "0.11.22"
+version = "0.11.27"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 autotests = true
 description = "higher level HTTP client library"
@@ -142,6 +142,9 @@ optional = true
 [dependencies.serde_urlencoded]
 version = "0.7.1"
 
+[dependencies.sync_wrapper]
+version = "0.1.2"
+
 [dependencies.tower-service]
 version = "0.3"
 
@@ -155,12 +158,10 @@ __rustls = [
     "tokio-rustls",
     "rustls",
     "__tls",
-    "rustls-pemfile",
 ]
-__tls = []
+__tls = ["dep:rustls-pemfile"]
 blocking = [
     "futures-util/io",
-    "tokio/rt-multi-thread",
     "tokio/sync",
 ]
 brotli = [
@@ -189,6 +190,7 @@ gzip = [
     "async-compression/gzip",
     "tokio-util",
 ]
+hickory-dns = ["hickory-resolver"]
 http3 = [
     "rustls-tls-manual-roots",
     "h3",
@@ -223,7 +225,7 @@ stream = [
     "tokio-util",
     "wasm-streams",
 ]
-trust-dns = ["trust-dns-resolver"]
+trust-dns = ["hickory-dns"]
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.async-compression]
 version = "0.4.0"
@@ -232,12 +234,12 @@ optional = true
 default-features = false
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.cookie_crate]
-version = "0.16"
+version = "0.17.0"
 optional = true
 package = "cookie"
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.cookie_store]
-version = "0.16"
+version = "0.20.0"
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.encoding_rs]
@@ -248,14 +250,19 @@ version = "0.3"
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.h2]
-version = "0.3.10"
+version = "0.3.14"
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.h3]
-version = "0.0.2"
+version = "0.0.3"
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.h3-quinn]
-version = "0.0.3"
+version = "0.0.4"
+optional = true
+
+[target."cfg(not(target_arch = \"wasm32\"))".dependencies.hickory-resolver]
+version = "0.24"
+features = ["tokio-runtime"]
 optional = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.http-body]
@@ -356,11 +363,6 @@ features = [
 optional = true
 default-features = false
 
-[target."cfg(not(target_arch = \"wasm32\"))".dependencies.trust-dns-resolver]
-version = "0.23"
-features = ["tokio-runtime"]
-optional = true
-
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies.webpki-roots]
 version = "0.25"
 optional = true
@@ -373,7 +375,15 @@ package = "brotli"
 version = "0.3"
 
 [target."cfg(not(target_arch = \"wasm32\"))".dev-dependencies.env_logger]
-version = "0.8"
+version = "0.10"
+
+[target."cfg(not(target_arch = \"wasm32\"))".dev-dependencies.futures-util]
+version = "0.3.0"
+features = [
+    "std",
+    "alloc",
+]
+default-features = false
 
 [target."cfg(not(target_arch = \"wasm32\"))".dev-dependencies.hyper]
 version = "0.14"
@@ -416,7 +426,7 @@ version = "0.2.68"
 version = "0.4.18"
 
 [target."cfg(target_arch = \"wasm32\")".dependencies.wasm-streams]
-version = "0.3"
+version = "0.4"
 optional = true
 
 [target."cfg(target_arch = \"wasm32\")".dependencies.web-sys]

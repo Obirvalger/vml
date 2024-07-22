@@ -127,13 +127,13 @@ bitflags! {
 
 impl Mode {
     /// Construct a `Mode` from the mode bits of the `st_mode` field of a
-    /// `Stat`.
+    /// `Mode`.
     #[inline]
     pub const fn from_raw_mode(st_mode: RawMode) -> Self {
         Self::from_bits_truncate(st_mode)
     }
 
-    /// Construct an `st_mode` value from `Stat`.
+    /// Construct an `st_mode` value from a `Mode`.
     #[inline]
     pub const fn as_raw_mode(self) -> RawMode {
         self.bits()
@@ -197,13 +197,13 @@ bitflags! {
         /// `O_DIRECTORY`
         const DIRECTORY = linux_raw_sys::general::O_DIRECTORY;
 
-        /// `O_DSYNC`. Linux 2.6.32 only supports `O_SYNC`.
+        /// `O_DSYNC`.
         const DSYNC = linux_raw_sys::general::O_SYNC;
 
         /// `O_EXCL`
         const EXCL = linux_raw_sys::general::O_EXCL;
 
-        /// `O_FSYNC`. Linux 2.6.32 only supports `O_SYNC`.
+        /// `O_FSYNC`.
         const FSYNC = linux_raw_sys::general::O_SYNC;
 
         /// `O_NOFOLLOW`
@@ -226,7 +226,7 @@ bitflags! {
         /// `O_NOCTTY`
         const NOCTTY = linux_raw_sys::general::O_NOCTTY;
 
-        /// `O_RSYNC`. Linux 2.6.32 only supports `O_SYNC`.
+        /// `O_RSYNC`.
         const RSYNC = linux_raw_sys::general::O_SYNC;
 
         /// `O_SYNC`
@@ -249,6 +249,13 @@ bitflags! {
 
         /// `O_DIRECT`
         const DIRECT = linux_raw_sys::general::O_DIRECT;
+
+        /// `O_LARGEFILE`
+        ///
+        /// Note that rustix and/or libc will automatically set this flag when appropriate on
+        /// `open(2)` and friends, thus typical users do not need to care about it.
+        /// It will may be reported in return of `fcntl_getfl`, though.
+        const LARGEFILE = linux_raw_sys::general::O_LARGEFILE;
 
         /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
         const _ = !0;
@@ -355,7 +362,7 @@ impl FileType {
         }
     }
 
-    /// Construct an `st_mode` value from `Stat`.
+    /// Construct an `st_mode` value from a `FileType`.
     #[inline]
     pub const fn as_raw_mode(self) -> RawMode {
         match self {
@@ -428,9 +435,14 @@ bitflags! {
         /// `MFD_HUGETLB` (since Linux 4.14)
         const HUGETLB = linux_raw_sys::general::MFD_HUGETLB;
 
+        /// `MFD_NOEXEC_SEAL` (since Linux 6.3)
+        const NOEXEC_SEAL = linux_raw_sys::general::MFD_NOEXEC_SEAL;
+        /// `MFD_EXEC` (since Linux 6.3)
+        const EXEC = linux_raw_sys::general::MFD_EXEC;
+
         /// `MFD_HUGE_64KB`
         const HUGE_64KB = linux_raw_sys::general::MFD_HUGE_64KB;
-        /// `MFD_HUGE_512JB`
+        /// `MFD_HUGE_512KB`
         const HUGE_512KB = linux_raw_sys::general::MFD_HUGE_512KB;
         /// `MFD_HUGE_1MB`
         const HUGE_1MB = linux_raw_sys::general::MFD_HUGE_1MB;
@@ -653,10 +665,13 @@ pub struct Stat {
     pub st_size: i64,
     pub st_blksize: u32,
     pub st_blocks: u64,
+    #[deprecated(note = "Use `rustix::fs::StatExt::atime` instead.")]
     pub st_atime: u64,
     pub st_atime_nsec: u32,
+    #[deprecated(note = "Use `rustix::fs::StatExt::mtime` instead.")]
     pub st_mtime: u64,
     pub st_mtime_nsec: u32,
+    #[deprecated(note = "Use `rustix::fs::StatExt::ctime` instead.")]
     pub st_ctime: u64,
     pub st_ctime_nsec: u32,
     pub st_ino: u64,

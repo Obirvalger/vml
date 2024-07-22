@@ -32,7 +32,7 @@ pub fn get_openssl(target: &str) -> (Vec<PathBuf>, PathBuf) {
 }
 
 fn resolve_with_wellknown_homebrew_location(dir: &str) -> Option<PathBuf> {
-    let versions = ["openssl@3", "openssl@1.1"];
+    let versions = ["openssl@3", "openssl@3.0", "openssl@1.1"];
 
     // Check up default aarch 64 Homebrew installation location first
     // for quick resolution if possible.
@@ -165,7 +165,7 @@ installing `pkg-config`.
 It looks like you're compiling for MinGW but you may not have either OpenSSL or
 pkg-config installed. You can install these two dependencies with:
 
-pacman -S openssl-devel pkg-config
+pacman -S openssl-devel pkgconf
 
 and try building this crate again.
 

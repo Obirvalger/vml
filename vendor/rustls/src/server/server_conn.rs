@@ -352,13 +352,13 @@ impl<'a> ReadEarlyData<'a> {
     }
 }
 
-impl<'a> std::io::Read for ReadEarlyData<'a> {
+impl<'a> io::Read for ReadEarlyData<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.early_data.read(buf)
     }
 
     #[cfg(read_buf)]
-    fn read_buf(&mut self, cursor: io::BorrowedCursor<'_>) -> io::Result<()> {
+    fn read_buf(&mut self, cursor: core::io::BorrowedCursor<'_>) -> io::Result<()> {
         self.early_data.read_buf(cursor)
     }
 }
@@ -718,7 +718,7 @@ impl EarlyDataState {
     }
 
     #[cfg(read_buf)]
-    fn read_buf(&mut self, cursor: io::BorrowedCursor<'_>) -> io::Result<()> {
+    fn read_buf(&mut self, cursor: core::io::BorrowedCursor<'_>) -> io::Result<()> {
         match self {
             Self::Accepted(ref mut received) => received.read_buf(cursor),
             _ => Err(io::Error::from(io::ErrorKind::BrokenPipe)),

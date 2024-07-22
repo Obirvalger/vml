@@ -42,7 +42,6 @@ impl FileOptions {
 
     pub fn read(mut self, read: bool) -> Self {
         self.open_options.read(read);
-        self.writeable = read;
         self
     }
 

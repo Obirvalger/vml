@@ -89,6 +89,19 @@ pub trait Arg {
         F: FnOnce(&CStr) -> io::Result<T>;
 }
 
+/// Runs a closure on `arg` where `A` is mapped to a `&CStr`
+pub fn option_into_with_c_str<T, F, A: Arg>(arg: Option<A>, f: F) -> io::Result<T>
+where
+    A: Sized,
+    F: FnOnce(Option<&CStr>) -> io::Result<T>,
+{
+    if let Some(arg) = arg {
+        arg.into_with_c_str(|p| f(Some(p)))
+    } else {
+        f(None)
+    }
+}
+
 impl Arg for &str {
     #[inline]
     fn as_str(&self) -> io::Result<&str> {
@@ -1063,10 +1076,12 @@ where
 
     #[cfg(not(feature = "alloc"))]
     {
-        #[cfg(libc)]
+        #[cfg(all(libc, not(target_os = "wasi")))]
         const LARGE_PATH_BUFFER_SIZE: usize = libc::PATH_MAX as usize;
         #[cfg(linux_raw)]
         const LARGE_PATH_BUFFER_SIZE: usize = linux_raw_sys::general::PATH_MAX as usize;
+        #[cfg(target_os = "wasi")]
+        const LARGE_PATH_BUFFER_SIZE: usize = 4096 as usize; // TODO: upstream this
 
         // Taken from
         // <https://github.com/rust-lang/rust/blob/a00f8ba7fcac1b27341679c51bf5a3271fa82df3/library/std/src/sys/common/small_c_string.rs>

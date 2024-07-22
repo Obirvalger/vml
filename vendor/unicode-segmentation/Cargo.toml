@@ -12,16 +12,15 @@
 [package]
 edition = "2018"
 name = "unicode-segmentation"
-version = "1.10.1"
+version = "1.11.0"
 authors = [
     "kwantam <kwantam@gmail.com>",
     "Manish Goregaokar <manishsmail@gmail.com>",
 ]
 exclude = [
-    "target/*",
-    "Cargo.lock",
-    "scripts/tmp",
-    "benches/texts/*",
+    "/.github",
+    "/benches/texts",
+    "/scripts/**.rs",
     "*.txt",
 ]
 description = """
@@ -29,7 +28,6 @@ This crate provides Grapheme Cluster, Word and Sentence boundaries
 according to Unicode Standard Annex #29 rules.
 """
 homepage = "https://github.com/unicode-rs/unicode-segmentation"
-documentation = "https://unicode-rs.github.io/unicode-segmentation"
 readme = "README.md"
 keywords = [
     "text",

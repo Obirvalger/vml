@@ -57,7 +57,7 @@ impl<'a> DnsNameRef<'a> {
 impl<'a> TryFrom<&'a str> for DnsNameRef<'a> {
     type Error = InvalidDnsNameError;
 
-    fn try_from(value: &'a str) -> Result<DnsNameRef<'a>, Self::Error> {
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         validate(value.as_bytes())?;
         Ok(DnsNameRef(value))
     }
@@ -145,7 +145,7 @@ enum State {
 
 #[cfg(test)]
 mod test {
-    static TESTS: &[(&'static str, bool)] = &[
+    static TESTS: &[(&str, bool)] = &[
         ("", false),
         ("localhost", true),
         ("LOCALHOST", true),

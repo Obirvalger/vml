@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.8
+
+* [Fuuzetsu](https://github.com/Fuuzetsu) added the `ArrayVec::as_inner` method.
+  [pr 197](https://github.com/Lokathor/tinyvec/pull/197)
+
+## 1.7
+
+* [Fuuzetsu](https://github.com/Fuuzetsu) added the `rustc_1_61` cargo feature, which adds the `retain_mut` method.
+  [pr 198](https://github.com/Lokathor/tinyvec/pull/198) 
+
+## 1.6.1
+
+* [e00E](https://github.com/e00E) fixed the Arbitrary impl to work on Stable
+  without using a feature gate.
+  [pr 180](https://github.com/Lokathor/tinyvec/pull/180)
+
 ## 1.6.0
 
 * [i509VCB](https://github.com/i509VCB) added the `try_` functions for fallable reallocation.

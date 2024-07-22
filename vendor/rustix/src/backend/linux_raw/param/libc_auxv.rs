@@ -33,6 +33,8 @@ const AT_PHNUM: c::c_ulong = 5;
 #[cfg(feature = "runtime")]
 const AT_ENTRY: c::c_ulong = 9;
 const AT_HWCAP: c::c_ulong = 16;
+#[cfg(feature = "runtime")]
+const AT_RANDOM: c::c_ulong = 25;
 const AT_HWCAP2: c::c_ulong = 26;
 const AT_SECURE: c::c_ulong = 23;
 const AT_EXECFN: c::c_ulong = 31;
@@ -68,6 +70,8 @@ fn test_abi() {
     const_assert_eq!(self::AT_PHNUM, ::libc::AT_PHNUM);
     #[cfg(feature = "runtime")]
     const_assert_eq!(self::AT_ENTRY, ::libc::AT_ENTRY);
+    #[cfg(feature = "runtime")]
+    const_assert_eq!(self::AT_RANDOM, ::libc::AT_RANDOM);
 }
 
 #[cfg(feature = "param")]
@@ -101,6 +105,25 @@ pub(crate) fn linux_hwcap() -> (usize, usize) {
         let hwcap = getauxval(AT_HWCAP) as usize;
         let hwcap2 = getauxval(AT_HWCAP2) as usize;
         (hwcap, hwcap2)
+    }
+}
+
+#[cfg(feature = "param")]
+#[inline]
+pub(crate) fn linux_minsigstksz() -> usize {
+    // FIXME: reuse const from libc when available?
+    const AT_MINSIGSTKSZ: c::c_ulong = 51;
+
+    #[cfg(not(feature = "runtime"))]
+    if let Some(libc_getauxval) = getauxval.get() {
+        unsafe { libc_getauxval(AT_MINSIGSTKSZ) as usize }
+    } else {
+        0
+    }
+
+    #[cfg(feature = "runtime")]
+    unsafe {
+        getauxval(AT_MINSIGSTKSZ) as usize
     }
 }
 
@@ -162,4 +185,10 @@ pub(in super::super) fn sysinfo_ehdr() -> *const Elf_Ehdr {
 #[inline]
 pub(crate) fn entry() -> usize {
     unsafe { getauxval(AT_ENTRY) as usize }
+}
+
+#[cfg(feature = "runtime")]
+#[inline]
+pub(crate) fn random() -> *const [u8; 16] {
+    unsafe { getauxval(AT_RANDOM) as *const [u8; 16] }
 }

@@ -1,3 +1,37 @@
+1.10.5 (2024-06-09)
+===================
+This is a new patch release with some minor fixes.
+
+Bug fixes:
+
+* [BUG #1203](https://github.com/rust-lang/regex/pull/1203):
+Escape invalid UTF-8 when in the `Debug` impl of `regex::bytes::Match`.
+
+
+1.10.4 (2024-03-22)
+===================
+This is a new patch release with some minor fixes.
+
+* [BUG #1169](https://github.com/rust-lang/regex/issues/1169):
+Fixes a bug with compiling a reverse NFA automaton in `regex-automata`.
+* [BUG #1178](https://github.com/rust-lang/regex/pull/1178):
+Clarifies that when `Cow::Borrowed` is returned from replace APIs, it is
+equivalent to the input.
+
+
+1.10.3 (2024-01-21)
+===================
+This is a new patch release that fixes the feature configuration of optional
+dependencies, and fixes an unsound use of bounds check elision.
+
+Bug fixes:
+
+* [BUG #1147](https://github.com/rust-lang/regex/issues/1147):
+Set `default-features=false` for the `memchr` and `aho-corasick` dependencies.
+* [BUG #1154](https://github.com/rust-lang/regex/pull/1154):
+Fix unsound bounds check elision.
+
+
 1.10.2 (2023-10-16)
 ===================
 This is a new patch release that fixes a search regression where incorrect

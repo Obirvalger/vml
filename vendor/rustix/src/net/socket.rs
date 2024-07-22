@@ -3,6 +3,8 @@ use crate::net::{SocketAddr, SocketAddrAny, SocketAddrV4, SocketAddrV6};
 use crate::{backend, io};
 use backend::fd::{AsFd, BorrowedFd};
 
+#[cfg(target_os = "linux")]
+use crate::net::xdp::SocketAddrXdp;
 pub use crate::net::{AddressFamily, Protocol, Shutdown, SocketFlags, SocketType};
 #[cfg(unix)]
 pub use backend::net::addr::SocketAddrUnix;
@@ -21,7 +23,7 @@ pub use backend::net::addr::SocketAddrUnix;
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -33,7 +35,7 @@ pub use backend::net::addr::SocketAddrUnix;
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/socket.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/socket.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/socket.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-socket
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-socket
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=socket&sektion=2
 /// [NetBSD]: https://man.netbsd.org/socket.2
 /// [OpenBSD]: https://man.openbsd.org/socket.2
@@ -64,7 +66,7 @@ pub fn socket(
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -76,7 +78,7 @@ pub fn socket(
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/socket.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/socket.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/socket.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-socket
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-socket
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=socket&sektion=2
 /// [NetBSD]: https://man.netbsd.org/socket.2
 /// [OpenBSD]: https://man.openbsd.org/socket.2
@@ -101,7 +103,7 @@ pub fn socket_with(
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -113,7 +115,7 @@ pub fn socket_with(
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/bind.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/bind.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2
 /// [NetBSD]: https://man.netbsd.org/bind.2
 /// [OpenBSD]: https://man.openbsd.org/bind.2
@@ -138,7 +140,7 @@ fn _bind(sockfd: BorrowedFd<'_>, addr: &SocketAddr) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -150,7 +152,7 @@ fn _bind(sockfd: BorrowedFd<'_>, addr: &SocketAddr) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/bind.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/bind.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2
 /// [NetBSD]: https://man.netbsd.org/bind.2
 /// [OpenBSD]: https://man.openbsd.org/bind.2
@@ -168,6 +170,8 @@ fn _bind_any(sockfd: BorrowedFd<'_>, addr: &SocketAddrAny) -> io::Result<()> {
         SocketAddrAny::V6(v6) => backend::net::syscalls::bind_v6(sockfd, v6),
         #[cfg(unix)]
         SocketAddrAny::Unix(unix) => backend::net::syscalls::bind_unix(sockfd, unix),
+        #[cfg(target_os = "linux")]
+        SocketAddrAny::Xdp(xdp) => backend::net::syscalls::bind_xdp(sockfd, xdp),
     }
 }
 
@@ -179,7 +183,7 @@ fn _bind_any(sockfd: BorrowedFd<'_>, addr: &SocketAddrAny) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -191,7 +195,7 @@ fn _bind_any(sockfd: BorrowedFd<'_>, addr: &SocketAddrAny) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/bind.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/bind.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2
 /// [NetBSD]: https://man.netbsd.org/bind.2
 /// [OpenBSD]: https://man.openbsd.org/bind.2
@@ -212,7 +216,7 @@ pub fn bind_v4<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrV4) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -224,7 +228,7 @@ pub fn bind_v4<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrV4) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/bind.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/bind.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2
 /// [NetBSD]: https://man.netbsd.org/bind.2
 /// [OpenBSD]: https://man.openbsd.org/bind.2
@@ -245,7 +249,7 @@ pub fn bind_v6<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrV6) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -257,7 +261,7 @@ pub fn bind_v6<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrV6) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/bind.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/bind.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2
 /// [NetBSD]: https://man.netbsd.org/bind.2
 /// [OpenBSD]: https://man.openbsd.org/bind.2
@@ -271,6 +275,20 @@ pub fn bind_unix<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrUnix) -> io::Result<()> 
     backend::net::syscalls::bind_unix(sockfd.as_fd(), addr)
 }
 
+/// `bind(sockfd, addr, sizeof(struct sockaddr_un))`—Binds a socket to a XDP
+/// address.
+///
+/// # References
+///  - [Linux]
+///
+/// [Linux]: https://man7.org/linux/man-pages/man2/bind.2.html
+#[cfg(target_os = "linux")]
+#[inline]
+#[doc(alias = "bind")]
+pub fn bind_xdp<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrXdp) -> io::Result<()> {
+    backend::net::syscalls::bind_xdp(sockfd.as_fd(), addr)
+}
+
 /// `connect(sockfd, addr)`—Initiates a connection to an IP address.
 ///
 /// On Windows, a non-blocking socket returns [`Errno::WOULDBLOCK`] if the
@@ -282,7 +300,7 @@ pub fn bind_unix<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrUnix) -> io::Result<()> 
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -294,7 +312,7 @@ pub fn bind_unix<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrUnix) -> io::Result<()> 
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/connect.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/connect.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/connect.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=connect&sektion=2
 /// [NetBSD]: https://man.netbsd.org/connect.2
 /// [OpenBSD]: https://man.openbsd.org/connect.2
@@ -320,7 +338,7 @@ fn _connect(sockfd: BorrowedFd<'_>, addr: &SocketAddr) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -332,7 +350,7 @@ fn _connect(sockfd: BorrowedFd<'_>, addr: &SocketAddr) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/connect.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/connect.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/connect.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=connect&sektion=2
 /// [NetBSD]: https://man.netbsd.org/connect.2
 /// [OpenBSD]: https://man.openbsd.org/connect.2
@@ -350,6 +368,8 @@ fn _connect_any(sockfd: BorrowedFd<'_>, addr: &SocketAddrAny) -> io::Result<()> 
         SocketAddrAny::V6(v6) => backend::net::syscalls::connect_v6(sockfd, v6),
         #[cfg(unix)]
         SocketAddrAny::Unix(unix) => backend::net::syscalls::connect_unix(sockfd, unix),
+        #[cfg(target_os = "linux")]
+        SocketAddrAny::Xdp(_) => Err(io::Errno::OPNOTSUPP),
     }
 }
 
@@ -361,7 +381,7 @@ fn _connect_any(sockfd: BorrowedFd<'_>, addr: &SocketAddrAny) -> io::Result<()> 
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -373,7 +393,7 @@ fn _connect_any(sockfd: BorrowedFd<'_>, addr: &SocketAddrAny) -> io::Result<()> 
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/connect.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/connect.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/connect.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=connect&sektion=2
 /// [NetBSD]: https://man.netbsd.org/connect.2
 /// [OpenBSD]: https://man.openbsd.org/connect.2
@@ -394,7 +414,7 @@ pub fn connect_v4<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrV4) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -406,7 +426,7 @@ pub fn connect_v4<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrV4) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/connect.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/connect.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/connect.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=connect&sektion=2
 /// [NetBSD]: https://man.netbsd.org/connect.2
 /// [OpenBSD]: https://man.openbsd.org/connect.2
@@ -427,7 +447,7 @@ pub fn connect_v6<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrV6) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -439,7 +459,7 @@ pub fn connect_v6<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrV6) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/connect.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/connect.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/connect.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=connect&sektion=2
 /// [NetBSD]: https://man.netbsd.org/connect.2
 /// [OpenBSD]: https://man.openbsd.org/connect.2
@@ -464,7 +484,7 @@ pub fn connect_unix<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrUnix) -> io::Result<(
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -476,7 +496,7 @@ pub fn connect_unix<Fd: AsFd>(sockfd: Fd, addr: &SocketAddrUnix) -> io::Result<(
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/connect.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/connect.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/connect.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=connect&sektion=2
 /// [NetBSD]: https://man.netbsd.org/connect.2
 /// [OpenBSD]: https://man.openbsd.org/connect.2
@@ -498,7 +518,7 @@ pub fn connect_unspec<Fd: AsFd>(sockfd: Fd) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -510,7 +530,7 @@ pub fn connect_unspec<Fd: AsFd>(sockfd: Fd) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/listen.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/listen.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/listen.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-listen
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-listen
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=listen&sektion=2
 /// [NetBSD]: https://man.netbsd.org/listen.2
 /// [OpenBSD]: https://man.openbsd.org/listen.2
@@ -535,7 +555,7 @@ pub fn listen<Fd: AsFd>(sockfd: Fd, backlog: i32) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -547,7 +567,7 @@ pub fn listen<Fd: AsFd>(sockfd: Fd, backlog: i32) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/accept.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/accept.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/accept.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-accept
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-accept
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=accept&sektion=2
 /// [NetBSD]: https://man.netbsd.org/accept.2
 /// [OpenBSD]: https://man.openbsd.org/accept.2
@@ -601,7 +621,7 @@ pub fn accept_with<Fd: AsFd>(sockfd: Fd, flags: SocketFlags) -> io::Result<Owned
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -613,7 +633,7 @@ pub fn accept_with<Fd: AsFd>(sockfd: Fd, flags: SocketFlags) -> io::Result<Owned
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/accept.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/accept.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/accept.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-accept
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-accept
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=accept&sektion=2
 /// [NetBSD]: https://man.netbsd.org/accept.2
 /// [OpenBSD]: https://man.openbsd.org/accept.2
@@ -664,7 +684,7 @@ pub fn acceptfrom_with<Fd: AsFd>(
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -676,7 +696,7 @@ pub fn acceptfrom_with<Fd: AsFd>(
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/shutdown.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/shutdown.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/shutdown.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-shutdown
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-shutdown
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=shutdown&sektion=2
 /// [NetBSD]: https://man.netbsd.org/shutdown.2
 /// [OpenBSD]: https://man.openbsd.org/shutdown.2
@@ -694,7 +714,7 @@ pub fn shutdown<Fd: AsFd>(sockfd: Fd, how: Shutdown) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -705,7 +725,7 @@ pub fn shutdown<Fd: AsFd>(sockfd: Fd, how: Shutdown) -> io::Result<()> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/getsockname.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/getsockname.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/getsockname.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-getsockname
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-getsockname
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=getsockname&sektion=2
 /// [NetBSD]: https://man.netbsd.org/getsockname.2
 /// [OpenBSD]: https://man.openbsd.org/getsockname.2
@@ -725,7 +745,7 @@ pub fn getsockname<Fd: AsFd>(sockfd: Fd) -> io::Result<SocketAddrAny> {
 ///  - [POSIX]
 ///  - [Linux]
 ///  - [Apple]
-///  - [Winsock2]
+///  - [Winsock]
 ///  - [FreeBSD]
 ///  - [NetBSD]
 ///  - [OpenBSD]
@@ -737,7 +757,7 @@ pub fn getsockname<Fd: AsFd>(sockfd: Fd) -> io::Result<SocketAddrAny> {
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/getpeername.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/getpeername.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/getpeername.2.html
-/// [Winsock2]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-getpeername
+/// [Winsock]: https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-getpeername
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=getpeername&sektion=2
 /// [NetBSD]: https://man.netbsd.org/getpeername.2
 /// [OpenBSD]: https://man.openbsd.org/getpeername.2

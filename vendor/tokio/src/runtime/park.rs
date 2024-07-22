@@ -81,7 +81,6 @@ impl ParkThread {
 // ==== impl Inner ====
 
 impl Inner {
-    /// Parks the current thread for at most `dur`.
     fn park(&self) {
         // If we were previously notified then we consume this notification and
         // return quickly.
@@ -129,6 +128,7 @@ impl Inner {
         }
     }
 
+    /// Parks the current thread for at most `dur`.
     fn park_timeout(&self, dur: Duration) {
         // Like `park` above we have a fast path for an already-notified thread,
         // and afterwards we start coordinating for a sleep. Return quickly.
@@ -272,7 +272,6 @@ impl CachedParkThread {
         use std::task::Context;
         use std::task::Poll::Ready;
 
-        // `get_unpark()` should not return a Result
         let waker = self.waker()?;
         let mut cx = Context::from_waker(&waker);
 

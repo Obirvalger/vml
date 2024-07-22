@@ -182,7 +182,7 @@ pub fn rmdir<P: path::Arg>(path: P) -> io::Result<()> {
 /// POSIX leaves it implementation-defined whether `link` follows a symlink in
 /// `old_path`, or creates a new link to the symbolic link itself. On platforms
 /// which have it, [`linkat`] avoids this problem since it has an [`AtFlags`]
-/// paramter and the [`AtFlags::SYMLINK_FOLLOW`] flag determines whether
+/// parameter and the [`AtFlags::SYMLINK_FOLLOW`] flag determines whether
 /// symlinks should be followed.
 ///
 /// # References
@@ -269,10 +269,10 @@ pub fn statfs<P: path::Arg>(path: P) -> io::Result<StatFs> {
 
 /// `statvfs`—Queries filesystem metadata, POSIX version.
 ///
-/// Compared to [`statfs`], this function often provides less information,
-/// but it is more portable. But even so, filesystems are very diverse and not
-/// all the fields are meaningful for every filesystem. And `f_fsid` doesn't
-/// seem to have a clear meaning anywhere.
+/// Compared to [`statfs`], this function often provides less information, but
+/// it is more portable. But even so, filesystems are very diverse and not all
+/// the fields are meaningful for every filesystem. And `f_fsid` doesn't seem
+/// to have a clear meaning anywhere.
 ///
 /// # References
 ///  - [POSIX]

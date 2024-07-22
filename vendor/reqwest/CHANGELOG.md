@@ -1,3 +1,33 @@
+## v0.11.27
+
+- Add `hickory-dns` feature, deprecating `trust-dns`.
+- (wasm) Fix `Form::text()` to not set octet-stream for plain text fields.
+
+## v0.11.26
+
+- Revert `system-configuration` upgrade, which broke MSRV on macOS.
+
+## v0.11.25
+
+- Fix `Certificate::from_pem_bundle()` parsing.
+- Fix Apple linker errors from detecting system proxies.
+
+## v0.11.24
+
+- Add `Certificate::from_pem_bundle()` to add a bundle.
+- Add `http3_prior_knowledge()` to blocking client builder.
+- Remove `Sync` bounds requirement for `Body::wrap_stream()`.
+- Fix HTTP/2 to retry `REFUSED_STREAM` requests.
+- Fix instances of converting `Url` to `Uri` that could panic.
+
+## v0.11.23
+
+- Add `Proxy::custom_http_auth(val)` for setting the raw `Proxy-Authorization` header when connecting to proxies.
+- Fix redirect to reject locations that are not `http://` or `https://`.
+- Fix setting `nodelay` when TLS is enabled but URL is HTTP.
+- (wasm) Add `ClientBuilder::user_agent(val)`.
+- (wasm) add `multipart::Form::headers(headers)`.
+
 ## v0.11.22
 
 - Fix compilation on Windows when `trust-dns` is enabled.

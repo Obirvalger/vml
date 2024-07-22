@@ -1,9 +1,7 @@
 //! Security Policies support.
-#[cfg(any(feature = "OSX_10_9", target_os = "ios"))]
 use core_foundation::base::CFOptionFlags;
 use core_foundation::base::TCFType;
 use core_foundation::string::CFString;
-#[cfg(any(feature = "OSX_10_9", target_os = "ios"))]
 use security_framework_sys::base::errSecParam;
 use security_framework_sys::base::SecPolicyRef;
 use security_framework_sys::policy::*;
@@ -11,7 +9,6 @@ use std::fmt;
 use std::ptr;
 
 use crate::secure_transport::SslProtocolSide;
-#[cfg(any(feature = "OSX_10_9", target_os = "ios"))]
 use crate::Error;
 
 declare_TCFType! {
@@ -30,9 +27,9 @@ impl fmt::Debug for SecPolicy {
     }
 }
 
-#[cfg(any(feature = "OSX_10_9", target_os = "ios"))]
 bitflags::bitflags! {
     /// The flags used to specify revocation policy options.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct RevocationPolicy: CFOptionFlags {
         /// Perform revocation checking using OCSP (Online Certificate Status Protocol).
         const OCSP_METHOD = kSecRevocationOCSPMethod;
@@ -67,7 +64,6 @@ impl SecPolicy {
         }
     }
 
-    #[cfg(any(feature = "OSX_10_9", target_os = "ios"))]
     /// Creates a `SecPolicy` for checking revocation of certificates.
     ///
     /// If you do not specify this policy creating a `SecTrust` object, the system defaults

@@ -215,7 +215,7 @@ impl<'a> ImportOptions<'a> {
                             .keys
                             .push(SecKey::wrap_under_get_rule(item.as_CFTypeRef() as *mut _));
                     } else {
-                        panic!("Got bad type from SecItemImport: {}", type_id);
+                        panic!("Got bad type from SecItemImport: {type_id}");
                     }
                 }
             }
@@ -243,7 +243,6 @@ mod test {
     use super::*;
     use crate::import_export::*;
     use crate::os::macos::keychain;
-    use hex;
     use tempfile::tempdir;
 
     #[test]

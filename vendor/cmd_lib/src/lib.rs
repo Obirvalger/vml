@@ -83,7 +83,7 @@
 //! ## What this library provides
 //!
 //! ### Macros to run external commands
-//! - run_cmd! --> CmdResult
+//! - [`run_cmd!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.run_cmd.html) -> [`CmdResult`](https://docs.rs/cmd_lib/latest/cmd_lib/type.CmdResult.html)
 //!
 //! ```no_run
 //! # use cmd_lib::run_cmd;
@@ -110,7 +110,7 @@
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
-//! - run_fun! --> FunResult
+//! - [`run_fun!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.run_fun.html) -> [`FunResult`](https://docs.rs/cmd_lib/latest/cmd_lib/type.FunResult.html)
 //!
 //! ```
 //! # use cmd_lib::run_fun;
@@ -230,53 +230,41 @@
 //!
 //! #### echo
 //! Print messages to stdout.
-//!
+//! ```console
 //! -n     do not output the trailing newline
+//! ```
 //!
 //! #### error, warn, info, debug, trace
 //!
-//! Print messages to logging with different logging levels.
+//! Print messages to logging with different levels. You can also use the normal logging macros,
+//! if you don't need to do logging inside the command group.
 //!
 //! ```no_run
 //! # use cmd_lib::*;
 //! run_cmd!(error "This is an error message")?;
 //! run_cmd!(warn "This is a warning message")?;
-//! run_cmd!(info "This is an infomation message")?;
+//! run_cmd!(info "This is an information message")?;
 //! // output:
 //! // [ERROR] This is an error message
 //! // [WARN ] This is a warning message
-//! // [INFO ] This is an infomation message
-//! # Ok::<(), std::io::Error>(())
-//! ```
-//!
-//! ### Macros to register your own commands
-//! Declare your function with `#[export_cmd(..)]` attribute, and import it with `use_custom_cmd!` macro:
-//!
-//! ```
-//! # use cmd_lib::*;
-//! # use std::io::Write;
-//! #[export_cmd(my_cmd)]
-//! fn foo(env: &mut CmdEnv) -> CmdResult {
-//!     let msg = format!("msg from foo(), args: {:?}", env.args());
-//!     writeln!(env.stderr(), "{}", msg)?;
-//!     writeln!(env.stdout(), "bar")
-//! }
-//!
-//! use_custom_cmd!(my_cmd);
-//! run_cmd!(my_cmd)?;
-//! println!("get result: {}", run_fun!(my_cmd)?);
+//! // [INFO ] This is an information message
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
 //! ### Low-level process spawning macros
 //!
-//! `spawn!` macro executes the whole command as a child process, returning a handle to it. By
+//! [`spawn!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.spawn.html) macro executes the whole command as a child process, returning a handle to it. By
 //! default, stdin, stdout and stderr are inherited from the parent. The process will run in the
-//! background, so you can run other stuff concurrently. You can call `wait()` to wait
+//! background, so you can run other stuff concurrently. You can call [`wait()`](https://docs.rs/cmd_lib/latest/cmd_lib/struct.CmdChildren.html#method.wait) to wait
 //! for the process to finish.
 //!
-//! With `spawn_with_output!` you can get output by calling `wait_with_output()`, or even do stream
-//! processing with `wait_with_pipe()`.
+//! With [`spawn_with_output!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.spawn_with_output.html) you can get output by calling
+//! [`wait_with_output()`](https://docs.rs/cmd_lib/latest/cmd_lib/struct.FunChildren.html#method.wait_with_output),
+//! [`wait_with_all()`](https://docs.rs/cmd_lib/latest/cmd_lib/struct.FunChildren.html#method.wait_with_all)
+//! or even do stream
+//! processing with [`wait_with_pipe()`](https://docs.rs/cmd_lib/latest/cmd_lib/struct.FunChildren.html#method.wait_with_pipe).
+//!
+//! There are also other useful APIs, and you can check the docs for more details.
 //!
 //! ```no_run
 //! # use cmd_lib::*;
@@ -302,11 +290,33 @@
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
+//! ### Macro to register your own commands
+//! Declare your function with the right signature, and register it with [`use_custom_cmd!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.use_custom_cmd.html) macro:
+//!
+//! ```
+//! # use cmd_lib::*;
+//! # use std::io::Write;
+//! fn my_cmd(env: &mut CmdEnv) -> CmdResult {
+//!     let args = env.get_args();
+//!     let (res, stdout, stderr) = spawn_with_output! {
+//!         orig_cmd $[args]
+//!             --long-option xxx
+//!             --another-option yyy
+//!     }?
+//!     .wait_with_all();
+//!     writeln!(env.stdout(), "{}", stdout)?;
+//!     writeln!(env.stderr(), "{}", stderr)?;
+//!     res
+//! }
+//!
+//! use_custom_cmd!(my_cmd);
+//! # Ok::<(), std::io::Error>(())
+//! ```
 //!
 //! ### Macros to define, get and set thread-local global variables
-//! - `tls_init!` to define thread local global variable
-//! - `tls_get!` to get the value
-//! - `tls_set!` to set the value
+//! - [`tls_init!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_init.html) to define thread local global variable
+//! - [`tls_get!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_get.html) to get the value
+//! - [`tls_set!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_set.html) to set the value
 //! ```
 //! # use cmd_lib::{ tls_init, tls_get, tls_set };
 //! tls_init!(DELAY, f64, 1.0);
@@ -356,32 +366,29 @@
 //!
 //! This library tries very hard to not set global states, so parallel `cargo test` can be executed just fine.
 //! The only known APIs not supported in multi-thread environment are the
-//! `tls_init/tls_get/tls_set` macros, and you should only use them for *thread local* variables.
+//! [`tls_init!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_init.html)/[`tls_get!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_get.html)/[`tls_set!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_set.html) macros, and you should only use them for *thread local* variables.
 //!
 
 pub use cmd_lib_macros::{
-    cmd_die, export_cmd, main, run_cmd, run_fun, spawn, spawn_with_output, use_custom_cmd,
+    cmd_die, main, run_cmd, run_fun, spawn, spawn_with_output, use_custom_cmd,
 };
-/// Return type for run_fun!() macro
+/// Return type for [`run_fun!()`] macro.
 pub type FunResult = std::io::Result<String>;
-/// Return type for run_cmd!() macro
+/// Return type for [`run_cmd!()`] macro.
 pub type CmdResult = std::io::Result<()>;
 pub use child::{CmdChildren, FunChildren};
+pub use io::{CmdIn, CmdOut};
 #[doc(hidden)]
 pub use log as inner_log;
 #[doc(hidden)]
 pub use logger::try_init_default_logger;
 #[doc(hidden)]
-pub use main_error::MainError;
-pub use main_error::MainResult;
-#[doc(hidden)]
-pub use process::{export_cmd, AsOsStr, Cmd, CmdString, Cmds, GroupCmds, Redirect};
+pub use process::{register_cmd, AsOsStr, Cmd, CmdString, Cmds, GroupCmds, Redirect};
 pub use process::{set_debug, set_pipefail, CmdEnv};
 
 mod builtins;
 mod child;
 mod io;
 mod logger;
-mod main_error;
 mod process;
 mod thread_local;

@@ -98,7 +98,7 @@
 //! [`fastrand-contrib`]: https://crates.io/crates/fastrand-contrib
 //! [`getrandom`]: https://crates.io/crates/getrandom
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
@@ -111,6 +111,8 @@
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 use core::convert::{TryFrom, TryInto};
 use core::ops::{Bound, RangeBounds};
@@ -146,9 +148,14 @@ impl Rng {
     /// Generates a random `u64`.
     #[inline]
     fn gen_u64(&mut self) -> u64 {
-        let s = self.0.wrapping_add(0xA0761D6478BD642F);
+        // Constants for WyRand taken from: https://github.com/wangyi-fudan/wyhash/blob/master/wyhash.h#L151
+        // Updated for the final v4.2 implementation with improved constants for better entropy output.
+        const WY_CONST_0: u64 = 0x2d35_8dcc_aa6c_78a5;
+        const WY_CONST_1: u64 = 0x8bb8_4b93_962e_acc9;
+
+        let s = self.0.wrapping_add(WY_CONST_0);
         self.0 = s;
-        let t = u128::from(s) * u128::from(s ^ 0xE7037ED1A0B428DB);
+        let t = u128::from(s) * u128::from(s ^ WY_CONST_1);
         (t as u64) ^ (t >> 64) as u64
     }
 
@@ -284,10 +291,7 @@ impl Rng {
     #[inline]
     #[must_use = "this creates a new instance of `Rng`; if you want to initialize the thread-local generator, use `fastrand::seed()` instead"]
     pub fn with_seed(seed: u64) -> Self {
-        let mut rng = Rng(0);
-
-        rng.seed(seed);
-        rng
+        Rng(seed)
     }
 
     /// Clones the generator by deterministically deriving a new generator based on the initial

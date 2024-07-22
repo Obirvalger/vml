@@ -48,7 +48,7 @@ fn test_read_fuzz_corpus() {
 }
 
 #[test]
-fn can_read_safari_client_hello() {
+fn can_read_safari_client_hello_with_ip_address_in_sni_extension() {
     let _ = env_logger::Builder::new()
         .filter(None, log::LevelFilter::Trace)
         .try_init();
@@ -72,19 +72,13 @@ fn can_read_safari_client_hello() {
     let mut rd = Reader::init(bytes);
     let m = OpaqueMessage::read(&mut rd).unwrap();
     println!("m = {:?}", m);
-    assert!(Message::try_from(m.into_plain_message()).is_err());
+    Message::try_from(m.into_plain_message()).unwrap();
 }
 
 #[test]
 fn alert_is_not_handshake() {
     let m = Message::build_alert(AlertLevel::Fatal, AlertDescription::DecodeError);
     assert!(!m.is_handshake_type(HandshakeType::ClientHello));
-}
-
-#[test]
-fn alert_is_not_opaque() {
-    let m = Message::build_alert(AlertLevel::Fatal, AlertDescription::DecodeError);
-    assert!(Message::try_from(m).is_ok());
 }
 
 #[test]

@@ -68,6 +68,7 @@ impl Connector {
     {
         http.set_local_address(local_addr.into());
         http.set_nodelay(nodelay);
+
         Connector {
             inner: Inner::Http(http),
             verbose: verbose::OFF,
@@ -109,6 +110,7 @@ impl Connector {
         T: Into<Option<IpAddr>>,
     {
         http.set_local_address(local_addr.into());
+        http.set_nodelay(nodelay);
         http.enforce_http(false);
 
         Connector {
@@ -136,6 +138,7 @@ impl Connector {
         T: Into<Option<IpAddr>>,
     {
         http.set_local_address(local_addr.into());
+        http.set_nodelay(nodelay);
         http.enforce_http(false);
 
         let (tls, tls_proxy) = if proxies.is_empty() {
@@ -314,7 +317,7 @@ impl Connector {
         dst: Uri,
         proxy_scheme: ProxyScheme,
     ) -> Result<Conn, BoxError> {
-        log::debug!("proxy({:?}) intercepts '{:?}'", proxy_scheme, dst);
+        log::debug!("proxy({proxy_scheme:?}) intercepts '{dst:?}'");
 
         let (proxy_dst, _auth) = match proxy_scheme {
             ProxyScheme::Http { host, auth } => (into_uri(Scheme::HTTP, host), auth),
@@ -443,7 +446,7 @@ impl Service<Uri> for Connector {
     }
 
     fn call(&mut self, dst: Uri) -> Self::Future {
-        log::debug!("starting new connection: {:?}", dst);
+        log::debug!("starting new connection: {dst:?}");
         let timeout = self.timeout;
         for prox in self.proxies.iter() {
             if let Some(proxy_scheme) = prox.intercept(&dst) {
@@ -673,10 +676,9 @@ where
 
     let mut buf = format!(
         "\
-         CONNECT {0}:{1} HTTP/1.1\r\n\
-         Host: {0}:{1}\r\n\
-         ",
-        host, port
+         CONNECT {host}:{port} HTTP/1.1\r\n\
+         Host: {host}:{port}\r\n\
+         "
     )
     .into_bytes();
 
@@ -689,7 +691,7 @@ where
 
     // proxy-authorization
     if let Some(value) = auth {
-        log::debug!("tunnel to {}:{} using basic auth", host, port);
+        log::debug!("tunnel to {host}:{port} using basic auth");
         buf.extend_from_slice(b"Proxy-Authorization: ");
         buf.extend_from_slice(value.as_bytes());
         buf.extend_from_slice(b"\r\n");
@@ -984,11 +986,11 @@ mod socks {
                 &password,
             )
             .await
-            .map_err(|e| format!("socks connect error: {}", e))?
+            .map_err(|e| format!("socks connect error: {e}"))?
         } else {
             Socks5Stream::connect(socket_addr, (host.as_str(), port))
                 .await
-                .map_err(|e| format!("socks connect error: {}", e))?
+                .map_err(|e| format!("socks connect error: {e}"))?
         };
 
         Ok(stream.into_inner())
@@ -1133,7 +1135,7 @@ mod verbose {
                 } else if c >= 0x20 && c < 0x7f {
                     write!(f, "{}", c as char)?;
                 } else {
-                    write!(f, "\\x{:02x}", c)?;
+                    write!(f, "\\x{c:02x}")?;
                 }
             }
             write!(f, "\"")?;

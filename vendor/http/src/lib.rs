@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/http/0.2.10")]
+#![doc(html_root_url = "https://docs.rs/http/0.2.11")]
 
 //! A general purpose library of common HTTP types
 //!
@@ -158,7 +158,7 @@
 //! assert_eq!(uri.query(), None);
 //! ```
 
-#![deny(warnings, missing_docs, missing_debug_implementations)]
+#![deny(missing_docs, missing_debug_implementations)]
 
 #[cfg(test)]
 #[macro_use]

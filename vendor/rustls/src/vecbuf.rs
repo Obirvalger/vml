@@ -107,10 +107,10 @@ impl ChunkVecBuffer {
 
     #[cfg(read_buf)]
     /// Read data out of this object, writing it into `cursor`.
-    pub(crate) fn read_buf(&mut self, mut cursor: io::BorrowedCursor<'_>) -> io::Result<()> {
+    pub(crate) fn read_buf(&mut self, mut cursor: core::io::BorrowedCursor<'_>) -> io::Result<()> {
         while !self.is_empty() && cursor.capacity() > 0 {
             let chunk = self.chunks[0].as_slice();
-            let used = std::cmp::min(chunk.len(), cursor.capacity());
+            let used = cmp::min(chunk.len(), cursor.capacity());
             cursor.append(&chunk[..used]);
             self.consume(used);
         }
@@ -167,7 +167,8 @@ mod test {
     #[cfg(read_buf)]
     #[test]
     fn read_buf() {
-        use std::{io::BorrowedBuf, mem::MaybeUninit};
+        use core::io::BorrowedBuf;
+        use core::mem::MaybeUninit;
 
         {
             let mut cvb = ChunkVecBuffer::new(None);
