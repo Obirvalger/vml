@@ -24,7 +24,7 @@ rand = "0.8.5"
 reqwest = { version = "0.11.22", default-features = false, features = ["blocking"] }
 rust-embed = "6.4.1"
 serde = { version = "1.0.145", features = ["derive"] }
-shellexpand = "2.1.2"
+shellexpand = "3.1.0"
 tempfile = "3.3.0"
 tera = "1.17.1"
 thiserror = "1.0.37"
