@@ -6,13 +6,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! A map of String to toml::Value.
+//! A map of `String` to [Value].
 //!
 //! By default the map is backed by a [`BTreeMap`]. Enable the `preserve_order`
-//! feature of toml-rs to use [`LinkedHashMap`] instead.
+//! feature of toml-rs to use [`IndexMap`] instead.
 //!
 //! [`BTreeMap`]: https://doc.rust-lang.org/std/collections/struct.BTreeMap.html
-//! [`LinkedHashMap`]: https://docs.rs/linked-hash-map/*/linked_hash_map/struct.LinkedHashMap.html
+//! [`IndexMap`]: https://docs.rs/indexmap
 
 use crate::value::Value;
 use serde::{de, ser};
@@ -70,7 +70,7 @@ impl Map<String, Value> {
     /// Clears the map, removing all values.
     #[inline]
     pub fn clear(&mut self) {
-        self.map.clear()
+        self.map.clear();
     }
 
     /// Returns a reference to the value corresponding to the key.
@@ -78,10 +78,10 @@ impl Map<String, Value> {
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
     #[inline]
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&Value>
+    pub fn get<Q>(&self, key: &Q) -> Option<&Value>
     where
         String: Borrow<Q>,
-        Q: Ord + Eq + Hash,
+        Q: Ord + Eq + Hash + ?Sized,
     {
         self.map.get(key)
     }
@@ -91,10 +91,10 @@ impl Map<String, Value> {
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
     #[inline]
-    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
         String: Borrow<Q>,
-        Q: Ord + Eq + Hash,
+        Q: Ord + Eq + Hash + ?Sized,
     {
         self.map.contains_key(key)
     }
@@ -104,10 +104,10 @@ impl Map<String, Value> {
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
     #[inline]
-    pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut Value>
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut Value>
     where
         String: Borrow<Q>,
-        Q: Ord + Eq + Hash,
+        Q: Ord + Eq + Hash + ?Sized,
     {
         self.map.get_mut(key)
     }
@@ -130,12 +130,26 @@ impl Map<String, Value> {
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
     #[inline]
-    pub fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<Value>
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<Value>
     where
         String: Borrow<Q>,
-        Q: Ord + Eq + Hash,
+        Q: Ord + Eq + Hash + ?Sized,
     {
         self.map.remove(key)
+    }
+
+    /// Retains only the elements specified by the `keep` predicate.
+    ///
+    /// In other words, remove all pairs `(k, v)` for which `keep(&k, &mut v)`
+    /// returns `false`.
+    ///
+    /// The elements are visited in iteration order.
+    #[inline]
+    pub fn retain<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&str, &mut Value) -> bool,
+    {
+        self.map.retain(|key, value| keep(key.as_str(), value));
     }
 
     /// Gets the given key's corresponding entry in the map for in-place
@@ -227,10 +241,10 @@ impl PartialEq for Map<String, Value> {
 
 /// Access an element of this map. Panics if the given key is not present in the
 /// map.
-impl<'a, Q: ?Sized> ops::Index<&'a Q> for Map<String, Value>
+impl<'a, Q> ops::Index<&'a Q> for Map<String, Value>
 where
     String: Borrow<Q>,
-    Q: Ord + Eq + Hash,
+    Q: Ord + Eq + Hash + ?Sized,
 {
     type Output = Value;
 
@@ -241,10 +255,10 @@ where
 
 /// Mutably access an element of this map. Panics if the given key is not
 /// present in the map.
-impl<'a, Q: ?Sized> ops::IndexMut<&'a Q> for Map<String, Value>
+impl<'a, Q> ops::IndexMut<&'a Q> for Map<String, Value>
 where
     String: Borrow<Q>,
-    Q: Ord + Eq + Hash,
+    Q: Ord + Eq + Hash + ?Sized,
 {
     fn index_mut(&mut self, index: &Q) -> &mut Value {
         self.map.get_mut(index).expect("no entry found for key")
@@ -438,13 +452,13 @@ impl<'a> Entry<'a> {
 
 impl<'a> VacantEntry<'a> {
     /// Gets a reference to the key that would be used when inserting a value
-    /// through the VacantEntry.
+    /// through the `VacantEntry`.
     #[inline]
     pub fn key(&self) -> &String {
         self.vacant.key()
     }
 
-    /// Sets the value of the entry with the VacantEntry's key, and returns a
+    /// Sets the value of the entry with the `VacantEntry`'s key, and returns a
     /// mutable reference to it.
     #[inline]
     pub fn insert(self, value: Value) -> &'a mut Value {
@@ -504,7 +518,7 @@ impl<'a> IntoIterator for &'a Map<String, Value> {
     }
 }
 
-/// An iterator over a toml::Map's entries.
+/// An iterator over a `toml::Map`'s entries.
 pub struct Iter<'a> {
     iter: IterImpl<'a>,
 }
@@ -529,7 +543,7 @@ impl<'a> IntoIterator for &'a mut Map<String, Value> {
     }
 }
 
-/// A mutable iterator over a toml::Map's entries.
+/// A mutable iterator over a `toml::Map`'s entries.
 pub struct IterMut<'a> {
     iter: IterMutImpl<'a>,
 }
@@ -554,7 +568,7 @@ impl IntoIterator for Map<String, Value> {
     }
 }
 
-/// An owning iterator over a toml::Map's entries.
+/// An owning iterator over a `toml::Map`'s entries.
 pub struct IntoIter {
     iter: IntoIterImpl,
 }
@@ -568,7 +582,7 @@ delegate_iterator!((IntoIter) => (String, Value));
 
 //////////////////////////////////////////////////////////////////////////////
 
-/// An iterator over a toml::Map's keys.
+/// An iterator over a `toml::Map`'s keys.
 pub struct Keys<'a> {
     iter: KeysImpl<'a>,
 }
@@ -582,7 +596,7 @@ delegate_iterator!((Keys<'a>) => &'a String);
 
 //////////////////////////////////////////////////////////////////////////////
 
-/// An iterator over a toml::Map's values.
+/// An iterator over a `toml::Map`'s values.
 pub struct Values<'a> {
     iter: ValuesImpl<'a>,
 }

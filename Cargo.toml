@@ -28,7 +28,7 @@ shellexpand = "2.1.2"
 tempfile = "3.3.0"
 tera = "1.17.1"
 thiserror = "1.0.37"
-toml = "0.5.9"
+toml = "0.8.15"
 urlencoding = "2.1.2"
 walkdir = "2.3.2"
 

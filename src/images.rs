@@ -397,7 +397,8 @@ fn update_images(
 }
 
 pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()> {
-    let mut embedded_images = toml::from_slice::<DeserializeImages>(&embedded_iamges_toml)
+    let embedded_iamges_toml = String::from_utf8_lossy(&embedded_iamges_toml);
+    let mut embedded_images = toml::from_str::<DeserializeImages>(&embedded_iamges_toml)
         .expect("Bad embedded images.toml")
         .0
         .into_iter();
