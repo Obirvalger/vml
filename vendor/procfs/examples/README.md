@@ -142,3 +142,42 @@ Lists all processes as a tree. Sub-processes will be hierarchically ordered bene
 ...
 ```
 
+## pfn.rs
+
+List memory mapping, and physical address for each virtual address. Must be run as root, see [pagemap.txt](https://www.kernel.org/doc/Documentation/vm/pagemap.txt)
+
+```text
+Memory mapping MemoryMap { address: (140561525968896, 140561525972992), perms: "r--p", offset: 884736, dev: (252, 0), inode: 18221539, pathname: Path("/usr/lib64/libm.so.6") }
+virt_mem: 0x7fd707d31000, pfn: 0x1fd37d, phys_addr: 0x1fd37d000
+Memory mapping MemoryMap { address: (140561525972992, 140561525977088), perms: "rw-p", offset: 888832, dev: (252, 0), inode: 18221539, pathname: Path("/usr/lib64/libm.so.6") }
+virt_mem: 0x7fd707d32000, pfn: 0x1fcb97, phys_addr: 0x1fcb97000
+```
+
+## process_kpageflags.rs
+
+Search for a pointer (virtual address) in physical memory. Display physical page flags
+
+Requires root or sudo
+
+```text
+Virtual address of `variable`: 0x7ffd2de4708f
+Found memory mapping
+MemoryMap { address: (140725373272064, 140725373407232), perms: "rw-p", offset: 0, dev: (0, 0), inode: 0, pathname: Stack }
+Found page
+virt_mem: 0x7ffd2de47000, pfn: 0x107b06, phys_addr: 0x107b06000, flags: UPTODATE | LRU | MMAP | ANON | SWAPBACKED
+```
+
+## kpagecount
+
+List physical memory pages by reading /proc/iomem, and find the page with the most references
+
+Require root or CAP_SYS_ADMIN
+
+```text
+Found RAM here: 0x1000-0x9fbff
+Lots of references to this locations: addr=0x9d000, pfn=157, refs=0
+Found RAM here: 0x100000-0xdffeffff
+Lots of references to this locations: addr=0x81ba3000, pfn=531363, refs=128
+Found RAM here: 0x100000000-0x11fffffff
+Lots of references to this locations: addr=0x1b575000, pfn=111989, refs=134
+```

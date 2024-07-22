@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 use std::path::Path;
 
-use crate::{read_value, ProcResult};
+use crate::{build_internal_error, from_str, read_value, ProcResult};
 
 /// Returns true if the miscellaneous Binary Formats system is enabled.
 pub fn enabled() -> ProcResult<bool> {
@@ -105,6 +105,7 @@ impl BinFmtEntry {
 
 bitflags! {
     /// Various key flags
+    #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
     pub struct BinFmtFlags: u8 {
             /// Preserve Argv[0]
             ///

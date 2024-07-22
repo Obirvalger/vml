@@ -15,7 +15,7 @@ pub mod keys;
 pub mod random;
 
 /// Represents a kernel version, in major.minor.release version.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Version {
     pub major: u8,
     pub minor: u8,
@@ -355,6 +355,7 @@ pub fn shmmni() -> ProcResult<u64> {
 
 bitflags! {
     /// Flags representing allowed sysrq functions
+    #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
     pub struct AllowedFunctions : u16 {
         /// Enable control of console log level
         const ENABLE_CONTROL_LOG_LEVEL = 2;
@@ -393,7 +394,7 @@ impl SysRq {
         match self {
             SysRq::Disable => 0,
             SysRq::Enable => 1,
-            SysRq::AllowedFunctions(allowed) => allowed.bits,
+            SysRq::AllowedFunctions(allowed) => allowed.bits(),
         }
     }
 
