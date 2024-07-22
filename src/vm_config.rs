@@ -89,40 +89,40 @@ impl VMConfig {
         } = self;
 
         if cloud_init.is_none() {
-            *cloud_init = other.cloud_init.to_owned();
+            other.cloud_init.clone_into(cloud_init);
         }
         if cloud_init_image.is_none() {
-            *cloud_init_image = other.cloud_init_image.to_owned();
+            other.cloud_init_image.clone_into(cloud_init_image);
         }
         if cpu_model.is_none() {
-            *cpu_model = other.cpu_model.to_owned();
+            other.cpu_model.clone_into(cpu_model);
         }
         if data.is_none() {
-            *data = other.data.to_owned();
+            other.data.clone_into(data);
         }
         if disk.is_none() {
-            *disk = other.disk.to_owned();
+            other.disk.clone_into(disk);
         }
         if display.is_none() {
-            *display = other.display.to_owned();
+            other.display.clone_into(display);
         }
         if gui.is_none() {
-            *gui = other.gui.to_owned();
+            other.gui.clone_into(gui);
         }
         if name.is_none() {
-            *name = other.name.to_owned();
+            other.name.clone_into(name);
         }
         if image_name.is_none() {
-            *image_name = other.image_name.to_owned();
+            other.image_name.clone_into(image_name);
         }
         if memory.is_none() {
-            *memory = other.memory.to_owned();
+            other.memory.clone_into(memory);
         }
         if minimum_disk_size.is_none() {
-            *minimum_disk_size = other.minimum_disk_size.to_owned();
+            other.minimum_disk_size.clone_into(minimum_disk_size);
         }
         match net {
-            None => *net = other.net.to_owned(),
+            None => other.net.clone_into(net),
             Some(net) => {
                 if let Some(other_net) = &other.net {
                     *net = other_net.updated(net)
@@ -130,22 +130,22 @@ impl VMConfig {
             }
         }
         if nic_model.is_none() {
-            *nic_model = other.nic_model.to_owned();
+            other.nic_model.clone_into(nic_model);
         }
         if nproc.is_none() {
-            *nproc = other.nproc.to_owned();
+            other.nproc.clone_into(nproc);
         }
         if properties.is_none() {
-            *properties = other.properties.to_owned();
+            other.properties.clone_into(properties);
         }
         if qemu_binary.is_none() {
-            *qemu_binary = other.qemu_binary.to_owned();
+            other.qemu_binary.clone_into(qemu_binary);
         }
         if qemu_arch_options.is_none() {
-            *qemu_arch_options = other.qemu_arch_options.to_owned();
+            other.qemu_arch_options.clone_into(qemu_arch_options);
         }
         match ssh {
-            None => *ssh = other.ssh.to_owned(),
+            None => other.ssh.clone_into(ssh),
             Some(ssh) => {
                 if let Some(other_ssh) = &other.ssh {
                     *ssh = other_ssh.updated(ssh)
@@ -153,7 +153,7 @@ impl VMConfig {
             }
         }
         if tags.is_none() {
-            *tags = other.tags.to_owned();
+            other.tags.clone_into(tags);
         }
     }
 }

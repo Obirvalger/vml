@@ -225,7 +225,7 @@ impl VM {
             Some(net) => net.updated(&config.default.net),
         };
         if let ConfigNet::Tap { nameservers: ref mut nameservers @ None, .. } = net_config {
-            *nameservers = config.nameservers.to_owned();
+            config.nameservers.clone_into(nameservers);
         }
         let net = Net::new(&net_config)?;
 
