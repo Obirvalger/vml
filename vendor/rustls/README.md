@@ -3,13 +3,17 @@
 </p>
 
 <p align="center">
-Rustls is a modern TLS library written in Rust.  It uses <a href = "https://github.com/briansmith/ring"><em>ring</em></a> for cryptography and <a href = "https://github.com/rustls/webpki">webpki</a> for certificate
-verification.
+Rustls is a modern TLS library written in Rust.
 </p>
 
 # Status
-Rustls is mature and widely used. While most of the API surface is stable, we expect the next
-few releases will make further changes as needed to accomodate new features or performance improvements.
+
+Rustls is used in production at many organizations and projects. We aim to maintain
+reasonable API surface stability but the API may evolve as we make changes to accommodate
+new features or performance improvements.
+
+We have a [roadmap](ROADMAP.md) for our future plans. We also have [benchmarks](BENCHMARKING.md) to
+prevent performance regressions and to let you evaluate rustls on your target hardware.
 
 If you'd like to help out, please see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -17,91 +21,122 @@ If you'd like to help out, please see [CONTRIBUTING.md](CONTRIBUTING.md).
 [![Coverage Status (codecov.io)](https://codecov.io/gh/rustls/rustls/branch/main/graph/badge.svg)](https://codecov.io/gh/rustls/rustls/)
 [![Documentation](https://docs.rs/rustls/badge.svg)](https://docs.rs/rustls/)
 [![Chat](https://img.shields.io/discord/976380008299917365?logo=discord)](https://discord.gg/MCSB76RU96)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/9034/badge)](https://www.bestpractices.dev/projects/9034)
 
-## Release history
+## Changelog
 
-Release history can be found [on GitHub](https://github.com/rustls/rustls/releases).
+The detailed list of changes in each release can be found at
+https://github.com/rustls/rustls/releases.
 
 # Documentation
-Lives here: https://docs.rs/rustls/
+
+https://docs.rs/rustls/
 
 # Approach
+
 Rustls is a TLS library that aims to provide a good level of cryptographic security,
 requires no configuration to achieve that security, and provides no unsafe features or
-obsolete cryptography.
+obsolete cryptography by default.
 
-## Current features
-
-* TLS1.2 and TLS1.3.
-* ECDSA, Ed25519 or RSA server authentication by clients.
-* ECDSA, Ed25519 or RSA server authentication by servers.
-* Forward secrecy using ECDHE; with curve25519, nistp256 or nistp384 curves.
-* AES128-GCM and AES256-GCM bulk encryption, with safe nonces.
-* ChaCha20-Poly1305 bulk encryption ([RFC7905](https://tools.ietf.org/html/rfc7905)).
-* ALPN support.
-* SNI support.
-* Tunable fragment size to make TLS messages match size of underlying transport.
-* Optional use of vectored IO to minimise system calls.
-* TLS1.2 session resumption.
-* TLS1.2 resumption via tickets ([RFC5077](https://tools.ietf.org/html/rfc5077)).
-* TLS1.3 resumption via tickets or session storage.
-* TLS1.3 0-RTT data for clients.
-* TLS1.3 0-RTT data for servers.
-* Client authentication by clients.
-* Client authentication by servers.
-* Extended master secret support ([RFC7627](https://tools.ietf.org/html/rfc7627)).
-* Exporters ([RFC5705](https://tools.ietf.org/html/rfc5705)).
-* OCSP stapling by servers.
-* SCT stapling by servers.
-* SCT verification by clients.
-
-## Possible future features
-
-* PSK support.
-* OCSP verification by clients.
-* Certificate pinning.
-
-## Non-features
-
-For reasons [explained in the manual](https://docs.rs/rustls/latest/rustls/manual/_02_tls_vulnerabilities/index.html),
-rustls does not and will not support:
-
-* SSL1, SSL2, SSL3, TLS1 or TLS1.1.
-* RC4.
-* DES or triple DES.
-* EXPORT ciphersuites.
-* MAC-then-encrypt ciphersuites.
-* Ciphersuites without forward secrecy.
-* Renegotiation.
-* Kerberos.
-* Compression.
-* Discrete-log Diffie-Hellman.
-* Automatic protocol version downgrade.
-
-There are plenty of other libraries that provide these features should you
-need them.
+Rustls implements TLS1.2 and TLS1.3 for both clients and servers. See [the full
+list of protocol features](https://docs.rs/rustls/latest/rustls/manual/_04_features/index.html).
 
 ### Platform support
 
-While Rustls itself is platform independent it uses
-[`ring`](https://crates.io/crates/ring) for implementing the cryptography in
-TLS. As a result, rustls only runs on platforms
-supported by `ring`. At the time of writing, this means 32-bit ARM, Aarch64 (64-bit ARM),
-x86, x86-64, LoongArch64, 32-bit & 64-bit Little Endian MIPS, 32-bit PowerPC (Big Endian),
-64-bit PowerPC (Big and Little Endian), 64-bit RISC-V, and s390x. We do not presently
-support WebAssembly.
-For more information, see [the supported `ring` target platforms][ring-target-platforms].
+While Rustls itself is platform independent, by default it uses [`aws-lc-rs`] for implementing
+the cryptography in TLS.  See [the aws-lc-rs FAQ][aws-lc-rs-platforms-faq] for more details of the
+platform/architecture support constraints in aws-lc-rs.
 
-Rustls requires Rust 1.63 or later.
+[`ring`] is also available via the `ring` crate feature: see
+[the supported `ring` target platforms][ring-target-platforms].
+
+By providing a custom instance of the [`crypto::CryptoProvider`] struct, you
+can replace all cryptography dependencies of rustls.  This is a route to being portable
+to a wider set of architectures and environments, or compliance requirements.  See the
+[`crypto::CryptoProvider`] documentation for more details.
+
+Specifying `default-features = false` when depending on rustls will remove the
+dependency on aws-lc-rs.
+
+Rustls requires Rust 1.63 or later. It has an optional dependency on zlib-rs which requires 1.75 or later.
 
 [ring-target-platforms]: https://github.com/briansmith/ring/blob/2e8363b433fa3b3962c877d9ed2e9145612f3160/include/ring-core/target.h#L18-L64
+[`crypto::CryptoProvider`]: https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html
+[`ring`]: https://crates.io/crates/ring
+[aws-lc-rs-platforms-faq]: https://aws.github.io/aws-lc-rs/faq.html#can-i-run-aws-lc-rs-on-x-platform-or-architecture
+[`aws-lc-rs`]: https://crates.io/crates/aws-lc-rs
+
+### Cryptography providers
+
+Since Rustls 0.22 it has been possible to choose the provider of the cryptographic primitives
+that Rustls uses. This may be appealing if you have specific platform, compliance or feature
+requirements that aren't met by the default provider, [`aws-lc-rs`].
+
+Users that wish to customize the provider in use can do so when constructing `ClientConfig`
+and `ServerConfig` instances using the `with_crypto_provider` method on the respective config
+builder types. See the [`crypto::CryptoProvider`] documentation for more details.
+
+#### Built-in providers
+
+Rustls ships with two built-in providers controlled with associated feature flags:
+
+* [`aws-lc-rs`] - enabled by default, available with the `aws_lc_rs` feature flag enabled.
+* [`ring`] - available with the `ring` feature flag enabled.
+
+See the documentation for [`crypto::CryptoProvider`] for details on how providers are
+selected.
+
+#### Third-party providers
+
+The community has also started developing third-party providers for Rustls:
+
+* [`rustls-mbedtls-provider`] - a provider that uses [`mbedtls`] for cryptography.
+* [`boring-rustls-provider`] - a work-in-progress provider that uses [`boringssl`] for
+cryptography.
+* [`rustls-rustcrypto`] - an experimental provider that uses the crypto primitives
+from [`RustCrypto`] for cryptography.
+* [`rustls-post-quantum`]: an experimental provider that adds support for post-quantum
+key exchange to the default aws-lc-rs provider.
+
+[`rustls-mbedtls-provider`]: https://github.com/fortanix/rustls-mbedtls-provider
+[`mbedtls`]: https://github.com/Mbed-TLS/mbedtls
+[`boring-rustls-provider`]: https://github.com/janrueth/boring-rustls-provider
+[`boringssl`]: https://github.com/google/boringssl
+[`rustls-rustcrypto`]: https://github.com/RustCrypto/rustls-rustcrypto
+[`RustCrypto`]: https://github.com/RustCrypto
+[`rustls-post-quantum`]: https://crates.io/crates/rustls-post-quantum
+
+#### Custom provider
+
+We also provide a simple example of writing your own provider in the [`custom-provider`]
+example. This example implements a minimal provider using parts of the [`RustCrypto`]
+ecosystem.
+
+See the [Making a custom CryptoProvider] section of the documentation for more information
+on this topic.
+
+[`custom-provider`]: https://github.com/rustls/rustls/tree/main/provider-example/
+[`RustCrypto`]: https://github.com/RustCrypto
+[Making a custom CryptoProvider]: https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html#making-a-custom-cryptoprovider
 
 # Example code
-There are two example programs which use
-[mio](https://github.com/carllerche/mio) to do asynchronous IO.
+
+Our [examples] directory contains demos that show how to handle I/O using the
+[`stream::Stream`] helper, as well as more complex asynchronous I/O using [`mio`].
+If you're already using Tokio for an async runtime you may prefer to use
+[`tokio-rustls`] instead of interacting with rustls directly.
+
+The [`mio`] based examples are the most complete, and discussed below. Users
+new to Rustls may prefer to look at the simple client/server examples before
+diving in to the more complex MIO examples.
+
+[examples]: examples/
+[`stream::Stream`]: https://docs.rs/rustls/latest/rustls/struct.Stream.html
+[`mio`]: https://docs.rs/mio/latest/mio/
+[`tokio-rustls`]: https://docs.rs/tokio-rustls/latest/tokio_rustls/
 
 ## Client example program
-The client example program is named `tlsclient-mio`.  The interface looks like:
+The MIO client example program is named `tlsclient-mio`.  The interface looks like:
 
 ```tlsclient-mio
 Connects to the TLS server at hostname:PORT.  The default PORT
@@ -160,7 +195,7 @@ Connection closed
 ```
 
 ## Server example program
-The server example program is named `tlsserver-mio`.  The interface looks like:
+The MIO server example program is named `tlsserver-mio`.  The interface looks like:
 
 ```tlsserver-mio
 Runs a TLS server on :PORT.  The default PORT is 443.
@@ -195,6 +230,8 @@ Options:
                         to certificate.  Optional.
     --auth CERTFILE     Enable client authentication, and accept certificates
                         signed by those roots provided in CERTFILE.
+    --crl CRLFILE ...   Perform client certificate revocation checking using the DER-encoded
+                        CRLFILE. May be used multiple times.
     --require-auth      Send a fatal alert if the client does not complete client
                         authentication.
     --resumption        Support session resumption.
@@ -214,13 +251,13 @@ Here's a sample run; we start a TLS echo server, then connect to it with
 `openssl` and `tlsclient-mio`:
 
 ```
-$ cargo run --bin tlsserver-mio -- --certs test-ca/rsa/end.fullchain --key test-ca/rsa/end.rsa -p 8443 echo &
+$ cargo run --bin tlsserver-mio -- --certs test-ca/rsa-2048/end.fullchain --key test-ca/rsa-2048/end.key -p 8443 echo &
 $ echo hello world | openssl s_client -ign_eof -quiet -connect localhost:8443
 depth=2 CN = ponytown RSA CA
 verify error:num=19:self signed certificate in certificate chain
 hello world
 ^C
-$ echo hello world | cargo run --bin tlsclient-mio -- --cafile test-ca/rsa/ca.cert -p 8443 localhost
+$ echo hello world | cargo run --bin tlsclient-mio -- --cafile test-ca/rsa-2048/ca.cert -p 8443 localhost
 hello world
 ^C
 ```
@@ -236,6 +273,19 @@ Rustls is distributed under the following three licenses:
 These are included as LICENSE-APACHE, LICENSE-MIT and LICENSE-ISC
 respectively.  You may use this software under the terms of any
 of these licenses, at your option.
+
+# Project Membership
+
+- Joe Birr-Pixton ([@ctz], Project Founder - full-time funded by [Prossimo])
+- Dirkjan Ochtman ([@djc], Co-maintainer)
+- Daniel McCarney ([@cpu], Co-maintainer - full-time funded by [Prossimo])
+- Josh Aas ([@bdaehlie], Project Management)
+
+[@ctz]: https://github.com/ctz
+[@djc]: https://github.com/djc
+[@cpu]: https://github.com/cpu
+[@bdaehlie]: https://github.com/bdaehlie
+[Prossimo]: https://www.memorysafety.org/initiative/rustls/
 
 # Code of conduct
 

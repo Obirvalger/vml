@@ -1,12 +1,10 @@
 #![cfg(not(target_arch = "wasm32"))]
+#![cfg(not(feature = "rustls-tls-manual-roots-no-provider"))]
 mod support;
 
-use futures_util::stream::StreamExt;
-use support::delay_server;
 use support::server;
 
-#[cfg(feature = "json")]
-use http::header::CONTENT_TYPE;
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 #[cfg(feature = "json")]
 use std::collections::HashMap;
 
@@ -31,6 +29,12 @@ async fn auto_headers() {
                 .unwrap()
                 .contains("br"));
         }
+        if cfg!(feature = "zstd") {
+            assert!(req.headers()["accept-encoding"]
+                .to_str()
+                .unwrap()
+                .contains("zstd"));
+        }
         if cfg!(feature = "deflate") {
             assert!(req.headers()["accept-encoding"]
                 .to_str()
@@ -54,6 +58,59 @@ async fn auto_headers() {
     assert_eq!(res.url().as_str(), &url);
     assert_eq!(res.status(), reqwest::StatusCode::OK);
     assert_eq!(res.remote_addr(), Some(server.addr()));
+}
+
+#[tokio::test]
+async fn donot_set_content_length_0_if_have_no_body() {
+    let server = server::http(move |req| async move {
+        let headers = req.headers();
+        assert_eq!(headers.get(CONTENT_LENGTH), None);
+        assert!(headers.get(CONTENT_TYPE).is_none());
+        assert!(headers.get(TRANSFER_ENCODING).is_none());
+        dbg!(&headers);
+        http::Response::default()
+    });
+
+    let url = format!("http://{}/content-length", server.addr());
+    let res = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .expect("client builder")
+        .get(&url)
+        .send()
+        .await
+        .expect("request");
+
+    assert_eq!(res.status(), reqwest::StatusCode::OK);
+}
+
+#[cfg(feature = "http3")]
+#[tokio::test]
+async fn http3_request_full() {
+    use http_body_util::BodyExt;
+
+    let server = server::http3(move |req| async move {
+        assert_eq!(req.headers()[CONTENT_LENGTH], "5");
+        let reqb = req.collect().await.unwrap().to_bytes();
+        assert_eq!(reqb, "hello");
+        http::Response::default()
+    });
+
+    let url = format!("https://{}/content-length", server.addr());
+    let res = reqwest::Client::builder()
+        .http3_prior_knowledge()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .expect("client builder")
+        .post(url)
+        .version(http::Version::HTTP_3)
+        .body("hello")
+        .send()
+        .await
+        .expect("request");
+
+    assert_eq!(res.version(), http::Version::HTTP_3);
+    assert_eq!(res.status(), reqwest::StatusCode::OK);
 }
 
 #[tokio::test]
@@ -132,19 +189,23 @@ async fn response_json() {
 
 #[tokio::test]
 async fn body_pipe_response() {
+    use http_body_util::BodyExt;
     let _ = env_logger::try_init();
 
-    let server = server::http(move |mut req| async move {
+    let server = server::http(move |req| async move {
         if req.uri() == "/get" {
             http::Response::new("pipe me".into())
         } else {
             assert_eq!(req.uri(), "/pipe");
             assert_eq!(req.headers()["transfer-encoding"], "chunked");
 
-            let mut full: Vec<u8> = Vec::new();
-            while let Some(item) = req.body_mut().next().await {
-                full.extend(&*item.unwrap());
-            }
+            let full: Vec<u8> = req
+                .into_body()
+                .collect()
+                .await
+                .expect("must succeed")
+                .to_bytes()
+                .to_vec();
 
             assert_eq!(full, b"pipe me");
 
@@ -321,7 +382,6 @@ fn use_preconfigured_rustls_default() {
 
     let root_cert_store = rustls::RootCertStore::empty();
     let tls = rustls::ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(root_cert_store)
         .with_no_client_auth();
 
@@ -353,6 +413,7 @@ async fn http2_upgrade() {
 }
 
 #[cfg(feature = "default-tls")]
+#[cfg_attr(feature = "http3", ignore = "enabling http3 seems to break this, why?")]
 #[tokio::test]
 async fn test_allowed_methods() {
     let resp = reqwest::Client::builder()
@@ -436,10 +497,11 @@ async fn test_tls_info() {
     assert!(tls_info.is_none());
 }
 
-// NOTE: using the default "curernt_thread" runtime here would cause the test to
+// NOTE: using the default "current_thread" runtime here would cause the test to
 // fail, because the only thread would block until `panic_rx` receives a
 // notification while the client needs to be driven to get the graceful shutdown
 // done.
+#[cfg(feature = "http2")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn highly_concurrent_requests_to_http2_server_with_low_max_concurrent_streams() {
     let client = reqwest::Client::builder()
@@ -452,7 +514,9 @@ async fn highly_concurrent_requests_to_http2_server_with_low_max_concurrent_stre
             assert_eq!(req.version(), http::Version::HTTP_2);
             http::Response::default()
         },
-        |builder| builder.http2_only(true).http2_max_concurrent_streams(1),
+        |builder| {
+            builder.http2().max_concurrent_streams(1);
+        },
     );
 
     let url = format!("http://{}", server.addr());
@@ -468,8 +532,11 @@ async fn highly_concurrent_requests_to_http2_server_with_low_max_concurrent_stre
     futures_util::future::join_all(futs).await;
 }
 
+#[cfg(feature = "http2")]
 #[tokio::test]
 async fn highly_concurrent_requests_to_slow_http2_server_with_low_max_concurrent_streams() {
+    use support::delay_server;
+
     let client = reqwest::Client::builder()
         .http2_prior_knowledge()
         .build()
@@ -480,9 +547,8 @@ async fn highly_concurrent_requests_to_slow_http2_server_with_low_max_concurrent
             assert_eq!(req.version(), http::Version::HTTP_2);
             http::Response::default()
         },
-        |mut http| {
-            http.http2_only(true).http2_max_concurrent_streams(1);
-            http
+        |http| {
+            http.http2().max_concurrent_streams(1);
         },
         std::time::Duration::from_secs(2),
     )

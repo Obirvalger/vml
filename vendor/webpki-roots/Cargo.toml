@@ -12,46 +12,49 @@
 [package]
 edition = "2018"
 name = "webpki-roots"
-version = "0.25.4"
+version = "0.26.3"
+build = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Mozilla's CA root certificates for use with webpki"
 homepage = "https://github.com/rustls/webpki-roots"
 readme = "README.md"
 license = "MPL-2.0"
 repository = "https://github.com/rustls/webpki-roots"
 
-[dev-dependencies.chrono]
-version = "0.4.26"
-features = ["clock"]
-default-features = false
+[lib]
+name = "webpki_roots"
+path = "src/lib.rs"
 
-[dev-dependencies.csv]
-version = "1.2.2"
+[[test]]
+name = "codegen"
+path = "tests/codegen.rs"
+
+[[test]]
+name = "verify"
+path = "tests/verify.rs"
+
+[dependencies.pki-types]
+version = "1"
+default-features = false
+package = "rustls-pki-types"
 
 [dev-dependencies.hex]
-version = "0.4.3"
-
-[dev-dependencies.num-bigint]
 version = "0.4.3"
 
 [dev-dependencies.percent-encoding]
 version = "2.3"
 
 [dev-dependencies.rcgen]
-version = "0.11.1"
-
-[dev-dependencies.reqwest]
-version = "0.11"
-features = ["rustls-tls-manual-roots"]
+version = "0.13"
 
 [dev-dependencies.ring]
-version = "0.16.20"
+version = "0.17.0"
 
-[dev-dependencies.rustls-pemfile]
-version = "1"
-
-[dev-dependencies.serde]
-version = "1.0.183"
-features = ["derive"]
+[dev-dependencies.rustls]
+version = "0.23"
 
 [dev-dependencies.tokio]
 version = "1"
@@ -61,11 +64,12 @@ features = [
 ]
 
 [dev-dependencies.webpki]
-version = "0.101.2"
+version = "0.102"
+features = ["alloc"]
 package = "rustls-webpki"
 
 [dev-dependencies.x509-parser]
-version = "0.15.1"
+version = "0.16.0"
 
 [dev-dependencies.yasna]
 version = "0.5.2"

@@ -1,11 +1,13 @@
-use crate::enums::{AlertDescription, ContentType, HandshakeType};
-use crate::msgs::handshake::KeyExchangeAlgorithm;
-use crate::rand;
-
-use std::error::Error as StdError;
-use std::fmt;
-use std::sync::Arc;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+#[cfg(feature = "std")]
 use std::time::SystemTimeError;
+
+use crate::enums::{AlertDescription, ContentType, HandshakeType};
+use crate::msgs::handshake::{EchConfigPayload, KeyExchangeAlgorithm};
+use crate::rand;
 
 /// rustls reports protocol errors using this type.
 #[non_exhaustive]
@@ -32,6 +34,9 @@ pub enum Error {
         /// What handshake type we received
         got_type: HandshakeType,
     },
+
+    /// An error occurred while handling Encrypted Client Hello (ECH).
+    InvalidEncryptedClientHello(EncryptedClientHelloError),
 
     /// The peer sent us a TLS message with invalid contents.
     InvalidMessage(InvalidMessage),
@@ -66,9 +71,6 @@ pub enum Error {
     /// implementation.
     InvalidCertificate(CertificateError),
 
-    /// The presented SCT(s) were invalid.
-    InvalidSct(sct::Error),
-
     /// A provided certificate revocation list (CRL) was invalid.
     InvalidCertRevocationList(CertRevocationListError),
 
@@ -94,6 +96,44 @@ pub enum Error {
     /// The `max_fragment_size` value supplied in configuration was too small,
     /// or too large.
     BadMaxFragmentSize,
+
+    /// Specific failure cases from [`keys_match`].
+    ///
+    /// [`keys_match`]: crate::crypto::signer::CertifiedKey::keys_match
+    InconsistentKeys(InconsistentKeys),
+
+    /// Any other error.
+    ///
+    /// This variant should only be used when the error is not better described by a more
+    /// specific variant. For example, if a custom crypto provider returns a
+    /// provider specific error.
+    ///
+    /// Enums holding this variant will never compare equal to each other.
+    Other(OtherError),
+}
+
+/// Specific failure cases from [`keys_match`].
+///
+/// [`keys_match`]: crate::crypto::signer::CertifiedKey::keys_match
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InconsistentKeys {
+    /// The public key returned by the [`SigningKey`] does not match the public key information in the certificate.
+    ///
+    /// [`SigningKey`]: crate::crypto::signer::SigningKey
+    KeyMismatch,
+
+    /// The [`SigningKey`] cannot produce its corresponding public key.
+    ///
+    /// [`SigningKey`]: crate::crypto::signer::SigningKey
+    Unknown,
+}
+
+impl From<InconsistentKeys> for Error {
+    #[inline]
+    fn from(e: InconsistentKeys) -> Self {
+        Self::InconsistentKeys(e)
+    }
 }
 
 /// A corrupt TLS message payload that resulted in an error.
@@ -101,6 +141,8 @@ pub enum Error {
 #[derive(Debug, Clone, Copy, PartialEq)]
 
 pub enum InvalidMessage {
+    /// A certificate payload exceeded rustls's 64KB limit
+    CertificatePayloadTooLarge,
     /// An advertised message was larger then expected.
     HandshakePayloadTooLarge,
     /// The peer sent us a syntactically incorrect ChangeCipherSpec payload.
@@ -184,12 +226,13 @@ pub enum PeerMisbehaved {
     IllegalHelloRetryRequestWithUnofferedNamedGroup,
     IllegalHelloRetryRequestWithUnsupportedVersion,
     IllegalHelloRetryRequestWithWrongSessionId,
+    IllegalHelloRetryRequestWithInvalidEch,
     IllegalMiddleboxChangeCipherSpec,
     IllegalTlsInnerPlaintext,
     IncorrectBinder,
+    InvalidCertCompression,
     InvalidMaxEarlyDataSize,
     InvalidKeyShare,
-    InvalidSctList,
     KeyEpochWithPendingFragment,
     KeyUpdateReceivedInQuicConnection,
     MessageInterleavedWithHandshakeMessage,
@@ -197,6 +240,7 @@ pub enum PeerMisbehaved {
     MissingKeyShare,
     MissingPskModesExtension,
     MissingQuicTransportParameters,
+    OfferedDuplicateCertificateCompressions,
     OfferedDuplicateKeyShares,
     OfferedEarlyDataWithOldProtocolVersion,
     OfferedEmptyApplicationProtocol,
@@ -213,6 +257,7 @@ pub enum PeerMisbehaved {
     SelectedInvalidPsk,
     SelectedTls12UsingTls13VersionExtension,
     SelectedUnofferedApplicationProtocol,
+    SelectedUnofferedCertCompression,
     SelectedUnofferedCipherSuite,
     SelectedUnofferedCompression,
     SelectedUnofferedKxGroup,
@@ -223,6 +268,10 @@ pub enum PeerMisbehaved {
     ServerNameMustContainOneHostName,
     SignedKxWithWrongAlgorithm,
     SignedHandshakeWithUnadvertisedSigScheme,
+    TooManyEmptyFragments,
+    TooManyKeyUpdateRequests,
+    TooManyRenegotiationRequests,
+    TooManyWarningAlertsReceived,
     TooMuchEarlyDataReceived,
     UnexpectedCleartextExtension,
     UnsolicitedCertExtension,
@@ -230,6 +279,7 @@ pub enum PeerMisbehaved {
     UnsolicitedSctList,
     UnsolicitedServerHelloExtension,
     WrongGroupForKeyShare,
+    UnsolicitedEchExtension,
 }
 
 impl From<PeerMisbehaved> for Error {
@@ -249,6 +299,7 @@ impl From<PeerMisbehaved> for Error {
 /// versions.
 pub enum PeerIncompatible {
     EcPointsExtensionRequired,
+    ExtendedMasterSecretExtensionRequired,
     KeyShareExtensionRequired,
     NamedGroupsExtensionRequired,
     NoCertificateRequestSignatureSchemesInCommon,
@@ -266,6 +317,7 @@ pub enum PeerIncompatible {
     Tls12NotOfferedOrEnabled,
     Tls13RequiredForQuic,
     UncompressedEcPointsRequired,
+    ServerRejectedEncryptedClientHello(Option<Vec<EchConfigPayload>>),
 }
 
 impl From<PeerIncompatible> for Error {
@@ -304,6 +356,12 @@ pub enum CertificateError {
     /// The certificate chain is not issued by a known root certificate.
     UnknownIssuer,
 
+    /// The certificate's revocation status could not be determined.
+    UnknownRevocationStatus,
+
+    /// The certificate's revocation status could not be determined, because the CRL is expired.
+    ExpiredRevocationList,
+
     /// A certificate is not correctly signed by the key of its alleged
     /// issuer.
     BadSignature,
@@ -329,7 +387,7 @@ pub enum CertificateError {
     /// not covered by the above common cases.
     ///
     /// Enums holding this variant will never compare equal to each other.
-    Other(Arc<dyn StdError + Send + Sync>),
+    Other(OtherError),
 }
 
 impl PartialEq<Self> for CertificateError {
@@ -347,6 +405,7 @@ impl PartialEq<Self> for CertificateError {
             (NotValidForName, NotValidForName) => true,
             (InvalidPurpose, InvalidPurpose) => true,
             (ApplicationVerificationFailure, ApplicationVerificationFailure) => true,
+            (ExpiredRevocationList, ExpiredRevocationList) => true,
             _ => false,
         }
     }
@@ -365,7 +424,9 @@ impl From<CertificateError> for AlertDescription {
             //  A certificate has expired or **is not currently valid**.
             Expired | NotValidYet => Self::CertificateExpired,
             Revoked => Self::CertificateRevoked,
-            UnknownIssuer => Self::UnknownCA,
+            // OpenSSL, BoringSSL and AWS-LC all generate an Unknown CA alert for
+            // the case where revocation status can not be determined, so we do the same here.
+            UnknownIssuer | UnknownRevocationStatus | ExpiredRevocationList => Self::UnknownCA,
             BadSignature => Self::DecryptError,
             InvalidPurpose => Self::UnsupportedCertificate,
             ApplicationVerificationFailure => Self::AccessDenied,
@@ -373,7 +434,7 @@ impl From<CertificateError> for AlertDescription {
             // certificate_unknown
             //  Some other (unspecified) issue arose in processing the
             //  certificate, rendering it unacceptable.
-            Other(_) => Self::CertificateUnknown,
+            Other(..) => Self::CertificateUnknown,
         }
     }
 }
@@ -404,7 +465,7 @@ pub enum CertRevocationListError {
     /// The CRL is invalid for some other reason.
     ///
     /// Enums holding this variant will never compare equal to each other.
-    Other(Arc<dyn StdError + Send + Sync>),
+    Other(OtherError),
 
     /// The CRL is not correctly encoded.
     ParseError,
@@ -449,32 +510,29 @@ impl PartialEq<Self> for CertRevocationListError {
     }
 }
 
-impl From<webpki::Error> for CertRevocationListError {
-    fn from(e: webpki::Error) -> Self {
-        use webpki::Error::*;
-        match e {
-            InvalidCrlSignatureForPublicKey
-            | UnsupportedCrlSignatureAlgorithm
-            | UnsupportedCrlSignatureAlgorithmForPublicKey => Self::BadSignature,
-            InvalidCrlNumber => Self::InvalidCrlNumber,
-            InvalidSerialNumber => Self::InvalidRevokedCertSerialNumber,
-            IssuerNotCrlSigner => Self::IssuerInvalidForCrl,
-            MalformedExtensions | BadDer | BadDerTime => Self::ParseError,
-            UnsupportedCriticalExtension => Self::UnsupportedCriticalExtension,
-            UnsupportedCrlVersion => Self::UnsupportedCrlVersion,
-            UnsupportedDeltaCrl => Self::UnsupportedDeltaCrl,
-            UnsupportedIndirectCrl => Self::UnsupportedIndirectCrl,
-            UnsupportedRevocationReason => Self::UnsupportedRevocationReason,
-
-            _ => Self::Other(Arc::new(e)),
-        }
-    }
-}
-
 impl From<CertRevocationListError> for Error {
     #[inline]
     fn from(e: CertRevocationListError) -> Self {
         Self::InvalidCertRevocationList(e)
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Eq, PartialEq)]
+/// An error that occurred while handling Encrypted Client Hello (ECH).
+pub enum EncryptedClientHelloError {
+    /// The provided ECH configuration list was invalid.
+    InvalidConfigList,
+    /// No compatible ECH configuration.
+    NoCompatibleConfig,
+    /// The client configuration has server name indication (SNI) disabled.
+    SniRequired,
+}
+
+impl From<EncryptedClientHelloError> for Error {
+    #[inline]
+    fn from(e: EncryptedClientHelloError) -> Self {
+        Self::InvalidEncryptedClientHello(e)
     }
 }
 
@@ -487,7 +545,7 @@ fn join<T: fmt::Debug>(items: &[T]) -> String {
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::InappropriateMessage {
                 ref expect_types,
@@ -522,21 +580,28 @@ impl fmt::Display for Error {
             Self::NoCertificatesPresented => write!(f, "peer sent no certificates"),
             Self::UnsupportedNameType => write!(f, "presented server name type wasn't supported"),
             Self::DecryptError => write!(f, "cannot decrypt peer's message"),
+            Self::InvalidEncryptedClientHello(ref err) => {
+                write!(f, "encrypted client hello failure: {:?}", err)
+            }
             Self::EncryptError => write!(f, "cannot encrypt message"),
             Self::PeerSentOversizedRecord => write!(f, "peer sent excess record size"),
             Self::HandshakeNotComplete => write!(f, "handshake not complete"),
             Self::NoApplicationProtocol => write!(f, "peer doesn't support any known protocol"),
-            Self::InvalidSct(ref err) => write!(f, "invalid certificate timestamp: {:?}", err),
             Self::FailedToGetCurrentTime => write!(f, "failed to get current time"),
             Self::FailedToGetRandomBytes => write!(f, "failed to get random bytes"),
             Self::BadMaxFragmentSize => {
                 write!(f, "the supplied max_fragment_size was too small or large")
             }
+            Self::InconsistentKeys(ref why) => {
+                write!(f, "keys may not be consistent: {:?}", why)
+            }
             Self::General(ref err) => write!(f, "unexpected error: {}", err),
+            Self::Other(ref err) => write!(f, "other error: {}", err),
         }
     }
 }
 
+#[cfg(feature = "std")]
 impl From<SystemTimeError> for Error {
     #[inline]
     fn from(_: SystemTimeError) -> Self {
@@ -544,7 +609,8 @@ impl From<SystemTimeError> for Error {
     }
 }
 
-impl StdError for Error {}
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
 
 impl From<rand::GetRandomFailed> for Error {
     fn from(_: rand::GetRandomFailed) -> Self {
@@ -552,10 +618,66 @@ impl From<rand::GetRandomFailed> for Error {
     }
 }
 
+mod other_error {
+    #[cfg(feature = "std")]
+    use alloc::sync::Arc;
+    use core::fmt;
+    #[cfg(feature = "std")]
+    use std::error::Error as StdError;
+
+    use super::Error;
+
+    /// Any other error that cannot be expressed by a more specific [`Error`] variant.
+    ///
+    /// For example, an `OtherError` could be produced by a custom crypto provider
+    /// exposing a provider specific error.
+    ///
+    /// Enums holding this type will never compare equal to each other.
+    #[derive(Debug, Clone)]
+    pub struct OtherError(#[cfg(feature = "std")] pub Arc<dyn StdError + Send + Sync>);
+
+    impl PartialEq<Self> for OtherError {
+        fn eq(&self, _other: &Self) -> bool {
+            false
+        }
+    }
+
+    impl From<OtherError> for Error {
+        fn from(value: OtherError) -> Self {
+            Self::Other(value)
+        }
+    }
+
+    impl fmt::Display for OtherError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            #[cfg(feature = "std")]
+            {
+                write!(f, "{}", self.0)
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                f.write_str("no further information available")
+            }
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl StdError for OtherError {
+        fn source(&self) -> Option<&(dyn StdError + 'static)> {
+            Some(self.0.as_ref())
+        }
+    }
+}
+
+pub use other_error::OtherError;
+
 #[cfg(test)]
 mod tests {
-    use super::{Error, InvalidMessage};
-    use crate::error::CertRevocationListError;
+    use std::prelude::v1::*;
+    use std::{println, vec};
+
+    use super::{Error, InconsistentKeys, InvalidMessage};
+    use crate::error::{CertRevocationListError, OtherError};
 
     #[test]
     fn certificate_error_equality() {
@@ -573,7 +695,10 @@ mod tests {
             ApplicationVerificationFailure,
             ApplicationVerificationFailure
         );
-        let other = Other(std::sync::Arc::from(Box::from("")));
+        let other = Other(OtherError(
+            #[cfg(feature = "std")]
+            alloc::sync::Arc::from(Box::from("")),
+        ));
         assert_ne!(other, other);
         assert_ne!(BadEncoding, Expired);
     }
@@ -594,67 +719,26 @@ mod tests {
         assert_eq!(UnsupportedDeltaCrl, UnsupportedDeltaCrl);
         assert_eq!(UnsupportedIndirectCrl, UnsupportedIndirectCrl);
         assert_eq!(UnsupportedRevocationReason, UnsupportedRevocationReason);
-        let other = Other(std::sync::Arc::from(Box::from("")));
+        let other = Other(OtherError(
+            #[cfg(feature = "std")]
+            alloc::sync::Arc::from(Box::from("")),
+        ));
         assert_ne!(other, other);
         assert_ne!(BadSignature, InvalidCrlNumber);
     }
 
     #[test]
-    fn crl_error_from_webpki() {
-        use super::CertRevocationListError::*;
-        let testcases = &[
-            (webpki::Error::InvalidCrlSignatureForPublicKey, BadSignature),
-            (
-                webpki::Error::UnsupportedCrlSignatureAlgorithm,
-                BadSignature,
-            ),
-            (
-                webpki::Error::UnsupportedCrlSignatureAlgorithmForPublicKey,
-                BadSignature,
-            ),
-            (webpki::Error::InvalidCrlNumber, InvalidCrlNumber),
-            (
-                webpki::Error::InvalidSerialNumber,
-                InvalidRevokedCertSerialNumber,
-            ),
-            (webpki::Error::IssuerNotCrlSigner, IssuerInvalidForCrl),
-            (webpki::Error::MalformedExtensions, ParseError),
-            (webpki::Error::BadDer, ParseError),
-            (webpki::Error::BadDerTime, ParseError),
-            (
-                webpki::Error::UnsupportedCriticalExtension,
-                UnsupportedCriticalExtension,
-            ),
-            (webpki::Error::UnsupportedCrlVersion, UnsupportedCrlVersion),
-            (webpki::Error::UnsupportedDeltaCrl, UnsupportedDeltaCrl),
-            (
-                webpki::Error::UnsupportedIndirectCrl,
-                UnsupportedIndirectCrl,
-            ),
-            (
-                webpki::Error::UnsupportedRevocationReason,
-                UnsupportedRevocationReason,
-            ),
-        ];
-        for t in testcases {
-            assert_eq!(
-                <webpki::Error as Into<CertRevocationListError>>::into(t.0),
-                t.1
-            );
-        }
-
-        assert!(matches!(
-            <webpki::Error as Into<CertRevocationListError>>::into(
-                webpki::Error::NameConstraintViolation
-            ),
-            Other(_)
-        ));
+    #[cfg(feature = "std")]
+    fn other_error_equality() {
+        let other_error = OtherError(alloc::sync::Arc::from(Box::from("")));
+        assert_ne!(other_error, other_error);
+        let other: Error = other_error.into();
+        assert_ne!(other, other);
     }
 
     #[test]
     fn smoke() {
         use crate::enums::{AlertDescription, ContentType, HandshakeType};
-        use sct;
 
         let all = vec![
             Error::InappropriateMessage {
@@ -672,7 +756,6 @@ mod tests {
             super::PeerMisbehaved::UnsolicitedCertExtension.into(),
             Error::AlertReceived(AlertDescription::ExportRestriction),
             super::CertificateError::Expired.into(),
-            Error::InvalidSct(sct::Error::MalformedSct),
             Error::General("undocumented error".to_string()),
             Error::FailedToGetCurrentTime,
             Error::FailedToGetRandomBytes,
@@ -680,7 +763,13 @@ mod tests {
             Error::PeerSentOversizedRecord,
             Error::NoApplicationProtocol,
             Error::BadMaxFragmentSize,
+            Error::InconsistentKeys(InconsistentKeys::KeyMismatch),
+            Error::InconsistentKeys(InconsistentKeys::Unknown),
             Error::InvalidCertRevocationList(CertRevocationListError::BadSignature),
+            Error::Other(OtherError(
+                #[cfg(feature = "std")]
+                alloc::sync::Arc::from(Box::from("")),
+            )),
         ];
 
         for err in all {
@@ -696,6 +785,7 @@ mod tests {
         assert_eq!(err, Error::FailedToGetRandomBytes);
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn time_error_mapping() {
         use std::time::SystemTime;

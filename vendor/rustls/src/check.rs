@@ -24,7 +24,6 @@ macro_rules! require_handshake_msg(
 );
 
 /// Like require_handshake_msg, but moves the payload out of $m.
-#[cfg(feature = "tls12")]
 macro_rules! require_handshake_msg_move(
   ( $m:expr, $handshake_type:path, $payload_type:path ) => (
     match $m.payload {
@@ -42,7 +41,7 @@ macro_rules! require_handshake_msg_move(
 );
 
 pub(crate) fn inappropriate_message(
-    payload: &MessagePayload,
+    payload: &MessagePayload<'_>,
     content_types: &[ContentType],
 ) -> Error {
     warn!(
@@ -57,7 +56,7 @@ pub(crate) fn inappropriate_message(
 }
 
 pub(crate) fn inappropriate_handshake_message(
-    payload: &MessagePayload,
+    payload: &MessagePayload<'_>,
     content_types: &[ContentType],
     handshake_types: &[HandshakeType],
 ) -> Error {

@@ -7,20 +7,26 @@
 //! ## Example
 //!
 //! ```no_run
+//! use bytes::Bytes;
+//! use http_body_util::Empty;
 //! use hyper_tls::HttpsConnector;
-//! use hyper::Client;
+//! use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 //!
 //! #[tokio::main(flavor = "current_thread")]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>>{
 //!     let https = HttpsConnector::new();
-//!     let client = Client::builder().build::<_, hyper::Body>(https);
+//!     let client = Client::builder(TokioExecutor::new()).build::<_, Empty<Bytes>>(https);
 //!
 //!     let res = client.get("https://hyper.rs".parse()?).await?;
 //!     assert_eq!(res.status(), 200);
 //!     Ok(())
 //! }
 //! ```
-#![doc(html_root_url = "https://docs.rs/hyper-tls/0.5.0")]
+//!
+//! ## Crate Features
+//!
+//! - `alpn`: Enables `native-tls/alpn`, and if `h2` is negotiated, tells hyper.
+#![doc(html_root_url = "https://docs.rs/hyper-tls/0.6.0")]
 #![cfg_attr(test, deny(warnings))]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]

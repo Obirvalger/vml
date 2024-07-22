@@ -1,12 +1,13 @@
-mod handshake;
-
-pub(crate) use handshake::{IoSession, MidHandshake};
-use rustls::{ConnectionCommon, SideData};
 use std::io::{self, IoSlice, Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use rustls::{ConnectionCommon, SideData};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+mod handshake;
+pub(crate) use handshake::{IoSession, MidHandshake};
 
 #[derive(Debug)]
 pub enum TlsState {
@@ -117,41 +118,7 @@ where
     }
 
     pub fn write_io(&mut self, cx: &mut Context) -> Poll<io::Result<usize>> {
-        struct Writer<'a, 'b, T> {
-            io: &'a mut T,
-            cx: &'a mut Context<'b>,
-        }
-
-        impl<'a, 'b, T: Unpin> Writer<'a, 'b, T> {
-            #[inline]
-            fn poll_with<U>(
-                &mut self,
-                f: impl FnOnce(Pin<&mut T>, &mut Context<'_>) -> Poll<io::Result<U>>,
-            ) -> io::Result<U> {
-                match f(Pin::new(self.io), self.cx) {
-                    Poll::Ready(result) => result,
-                    Poll::Pending => Err(io::ErrorKind::WouldBlock.into()),
-                }
-            }
-        }
-
-        impl<'a, 'b, T: AsyncWrite + Unpin> Write for Writer<'a, 'b, T> {
-            #[inline]
-            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                self.poll_with(|io, cx| io.poll_write(cx, buf))
-            }
-
-            #[inline]
-            fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-                self.poll_with(|io, cx| io.poll_write_vectored(cx, bufs))
-            }
-
-            fn flush(&mut self) -> io::Result<()> {
-                self.poll_with(|io, cx| io.poll_flush(cx))
-            }
-        }
-
-        let mut writer = Writer { io: self.io, cx };
+        let mut writer = SyncWriteAdapter { io: self.io, cx };
 
         match self.session.write_tls(&mut writer) {
             Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => Poll::Pending,
@@ -322,6 +289,43 @@ where
         Poll::Ready(Ok(pos))
     }
 
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        if bufs.iter().all(|buf| buf.is_empty()) {
+            return Poll::Ready(Ok(0));
+        }
+
+        loop {
+            let mut would_block = false;
+            let written = self.session.writer().write_vectored(bufs)?;
+
+            while self.session.wants_write() {
+                match self.write_io(cx) {
+                    Poll::Ready(Ok(0)) | Poll::Pending => {
+                        would_block = true;
+                        break;
+                    }
+                    Poll::Ready(Ok(_)) => (),
+                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                }
+            }
+
+            return match (written, would_block) {
+                (0, true) => Poll::Pending,
+                (0, false) => continue,
+                (n, _) => Poll::Ready(Ok(n)),
+            };
+        }
+    }
+
+    #[inline]
+    fn is_write_vectored(&self) -> bool {
+        true
+    }
+
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         self.session.writer().flush()?;
         while self.session.wants_write() {
@@ -334,7 +338,13 @@ where
         while self.session.wants_write() {
             ready!(self.write_io(cx))?;
         }
-        Pin::new(&mut self.io).poll_shutdown(cx)
+
+        Poll::Ready(match ready!(Pin::new(&mut self.io).poll_shutdown(cx)) {
+            Ok(()) => Ok(()),
+            // When trying to shutdown, not being connected seems fine
+            Err(err) if err.kind() == io::ErrorKind::NotConnected => Ok(()),
+            Err(err) => Err(err),
+        })
     }
 }
 
@@ -356,6 +366,44 @@ impl<'a, 'b, T: AsyncRead + Unpin> Read for SyncReadAdapter<'a, 'b, T> {
             Poll::Ready(Err(err)) => Err(err),
             Poll::Pending => Err(io::ErrorKind::WouldBlock.into()),
         }
+    }
+}
+
+/// An adapter that implements a [`Write`] interface for [`AsyncWrite`] types and an
+/// associated [`Context`].
+///
+/// Turns `Poll::Pending` into `WouldBlock`.
+pub struct SyncWriteAdapter<'a, 'b, T> {
+    pub io: &'a mut T,
+    pub cx: &'a mut Context<'b>,
+}
+
+impl<'a, 'b, T: Unpin> SyncWriteAdapter<'a, 'b, T> {
+    #[inline]
+    fn poll_with<U>(
+        &mut self,
+        f: impl FnOnce(Pin<&mut T>, &mut Context<'_>) -> Poll<io::Result<U>>,
+    ) -> io::Result<U> {
+        match f(Pin::new(self.io), self.cx) {
+            Poll::Ready(result) => result,
+            Poll::Pending => Err(io::ErrorKind::WouldBlock.into()),
+        }
+    }
+}
+
+impl<'a, 'b, T: AsyncWrite + Unpin> Write for SyncWriteAdapter<'a, 'b, T> {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.poll_with(|io, cx| io.poll_write(cx, buf))
+    }
+
+    #[inline]
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
+        self.poll_with(|io, cx| io.poll_write_vectored(cx, bufs))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.poll_with(|io, cx| io.poll_flush(cx))
     }
 }
 

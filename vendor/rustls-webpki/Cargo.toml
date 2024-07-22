@@ -11,16 +11,18 @@
 
 [package]
 edition = "2021"
-rust-version = "1.61"
+rust-version = "1.63"
 name = "rustls-webpki"
-version = "0.101.7"
+version = "0.102.6"
 include = [
     "Cargo.toml",
     "/LICENSE",
     "README.md",
+    "src/aws_lc_rs_algs.rs",
     "src/calendar.rs",
     "src/cert.rs",
-    "src/crl.rs",
+    "src/crl/mod.rs",
+    "src/crl/types.rs",
     "src/der.rs",
     "src/end_entity.rs",
     "src/error.rs",
@@ -32,6 +34,8 @@ include = [
     "src/name/verify.rs",
     "src/name/name.rs",
     "src/signed_data.rs",
+    "src/ring_algs.rs",
+    "src/alg_tests.rs",
     "src/time.rs",
     "src/trust_anchor.rs",
     "src/x509.rs",
@@ -48,6 +52,12 @@ categories = [
 ]
 license = "ISC"
 repository = "https://github.com/rustls/webpki"
+
+[package.metadata.cargo_check_external_types]
+allowed_external_types = [
+    "rustls_pki_types::*",
+    "rustls_pki_types",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -80,24 +90,40 @@ name = "benchmarks"
 path = "benches/benchmark.rs"
 harness = false
 
+[dependencies.aws-lc-rs]
+version = "1.8.1"
+features = ["aws-lc-sys"]
+optional = true
+default-features = false
+
+[dependencies.pki-types]
+version = "1.7"
+default-features = false
+package = "rustls-pki-types"
+
 [dependencies.ring]
 version = "0.17"
+optional = true
 default-features = false
 
 [dependencies.untrusted]
 version = "0.9"
 
 [dev-dependencies.base64]
-version = "0.21"
+version = "0.22"
 
 [dev-dependencies.bencher]
 version = "0.1.5"
+
+[dev-dependencies.bzip2]
+version = "0.4.4"
 
 [dev-dependencies.once_cell]
 version = "1.17.2"
 
 [dev-dependencies.rcgen]
-version = "0.11.3"
+version = "0.13"
+features = ["aws_lc_rs"]
 default-features = false
 
 [dev-dependencies.serde]
@@ -108,6 +134,17 @@ features = ["derive"]
 version = "1.0"
 
 [features]
-alloc = ["ring/alloc"]
-default = ["std"]
-std = ["alloc"]
+alloc = [
+    "ring?/alloc",
+    "pki-types/alloc",
+]
+aws_lc_rs = ["dep:aws-lc-rs"]
+default = [
+    "std",
+    "ring",
+]
+ring = ["dep:ring"]
+std = [
+    "alloc",
+    "pki-types/std",
+]

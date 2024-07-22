@@ -1,9 +1,10 @@
 mod utils {
-    use std::io::{BufReader, Cursor};
+    use std::io::{BufReader, Cursor, IoSlice};
     use std::sync::Arc;
 
-    use rustls::{ClientConfig, OwnedTrustAnchor, PrivateKey, RootCertStore, ServerConfig};
+    use rustls::{ClientConfig, RootCertStore, ServerConfig};
     use rustls_pemfile::{certs, rsa_private_keys};
+    use tokio::io::{self, AsyncWrite, AsyncWriteExt};
 
     #[allow(dead_code)]
     pub fn make_configs() -> (Arc<ServerConfig>, Arc<ClientConfig>) {
@@ -12,35 +13,52 @@ mod utils {
         const RSA: &str = include_str!("end.rsa");
 
         let cert = certs(&mut BufReader::new(Cursor::new(CERT)))
-            .unwrap()
-            .drain(..)
-            .map(rustls::Certificate)
+            .map(|result| result.unwrap())
             .collect();
-        let mut keys = rsa_private_keys(&mut BufReader::new(Cursor::new(RSA))).unwrap();
-        let mut keys = keys.drain(..).map(PrivateKey);
+        let key = rsa_private_keys(&mut BufReader::new(Cursor::new(RSA)))
+            .next()
+            .unwrap()
+            .unwrap();
         let sconfig = ServerConfig::builder()
-            .with_safe_defaults()
             .with_no_client_auth()
-            .with_single_cert(cert, keys.next().unwrap())
+            .with_single_cert(cert, key.into())
             .unwrap();
 
         let mut client_root_cert_store = RootCertStore::empty();
         let mut chain = BufReader::new(Cursor::new(CHAIN));
-        let certs = certs(&mut chain).unwrap();
-        client_root_cert_store.add_server_trust_anchors(certs.iter().map(|cert| {
-            let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
-            OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject,
-                ta.spki,
-                ta.name_constraints,
-            )
-        }));
+        for cert in certs(&mut chain) {
+            client_root_cert_store.add(cert.unwrap()).unwrap();
+        }
 
         let cconfig = ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(client_root_cert_store)
             .with_no_client_auth();
 
         (Arc::new(sconfig), Arc::new(cconfig))
+    }
+
+    #[allow(dead_code)]
+    pub async fn write<W: AsyncWrite + Unpin>(
+        w: &mut W,
+        data: &[u8],
+        vectored: bool,
+    ) -> io::Result<()> {
+        if !vectored {
+            return w.write_all(data).await;
+        }
+
+        let mut data = data;
+
+        while !data.is_empty() {
+            let chunk_size = (data.len() / 4).max(1);
+            let vectors = data
+                .chunks(chunk_size)
+                .map(IoSlice::new)
+                .collect::<Vec<_>>();
+            let written = w.write_vectored(&vectors).await?;
+            data = &data[written..];
+        }
+
+        Ok(())
     }
 }

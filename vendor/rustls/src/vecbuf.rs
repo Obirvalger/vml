@@ -1,7 +1,13 @@
-use std::cmp;
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+use core::cmp;
+#[cfg(feature = "std")]
 use std::io;
+#[cfg(feature = "std")]
 use std::io::Read;
+
+#[cfg(feature = "std")]
+use crate::msgs::message::OutboundChunks;
 
 /// This is a byte buffer that is built from a vector
 /// of byte vectors.  This avoids extra copies when
@@ -36,12 +42,6 @@ impl ChunkVecBuffer {
         self.chunks.is_empty()
     }
 
-    pub(crate) fn is_full(&self) -> bool {
-        self.limit
-            .map(|limit| self.len() > limit)
-            .unwrap_or_default()
-    }
-
     /// How many bytes we're storing
     pub(crate) fn len(&self) -> usize {
         let mut len = 0;
@@ -63,14 +63,6 @@ impl ChunkVecBuffer {
         }
     }
 
-    /// Append a copy of `bytes`, perhaps a prefix if
-    /// we're near the limit.
-    pub(crate) fn append_limited_copy(&mut self, bytes: &[u8]) -> usize {
-        let take = self.apply_limit(bytes.len());
-        self.append(bytes[..take].to_vec());
-        take
-    }
-
     /// Take and append the given `bytes`.
     pub(crate) fn append(&mut self, bytes: Vec<u8>) -> usize {
         let len = bytes.len();
@@ -86,6 +78,36 @@ impl ChunkVecBuffer {
     /// function panics if the object `is_empty`.
     pub(crate) fn pop(&mut self) -> Option<Vec<u8>> {
         self.chunks.pop_front()
+    }
+
+    #[cfg(read_buf)]
+    /// Read data out of this object, writing it into `cursor`.
+    pub(crate) fn read_buf(&mut self, mut cursor: core::io::BorrowedCursor<'_>) -> io::Result<()> {
+        while !self.is_empty() && cursor.capacity() > 0 {
+            let chunk = self.chunks[0].as_slice();
+            let used = cmp::min(chunk.len(), cursor.capacity());
+            cursor.append(&chunk[..used]);
+            self.consume(used);
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "std")]
+impl ChunkVecBuffer {
+    pub(crate) fn is_full(&self) -> bool {
+        self.limit
+            .map(|limit| self.len() > limit)
+            .unwrap_or_default()
+    }
+
+    /// Append a copy of `bytes`, perhaps a prefix if
+    /// we're near the limit.
+    pub(crate) fn append_limited_copy(&mut self, payload: OutboundChunks<'_>) -> usize {
+        let take = self.apply_limit(payload.len());
+        self.append(payload.split_at(take).0.to_vec());
+        take
     }
 
     /// Read data out of this object, writing it into `buf`
@@ -105,24 +127,11 @@ impl ChunkVecBuffer {
         Ok(offs)
     }
 
-    #[cfg(read_buf)]
-    /// Read data out of this object, writing it into `cursor`.
-    pub(crate) fn read_buf(&mut self, mut cursor: core::io::BorrowedCursor<'_>) -> io::Result<()> {
-        while !self.is_empty() && cursor.capacity() > 0 {
-            let chunk = self.chunks[0].as_slice();
-            let used = cmp::min(chunk.len(), cursor.capacity());
-            cursor.append(&chunk[..used]);
-            self.consume(used);
-        }
-
-        Ok(())
-    }
-
     fn consume(&mut self, mut used: usize) {
         while let Some(mut buf) = self.chunks.pop_front() {
             if used < buf.len() {
-                self.chunks
-                    .push_front(buf.split_off(used));
+                buf.drain(..used);
+                self.chunks.push_front(buf);
                 break;
             } else {
                 used -= buf.len();
@@ -147,17 +156,17 @@ impl ChunkVecBuffer {
     }
 }
 
-#[cfg(test)]
-mod test {
+#[cfg(all(test, feature = "std"))]
+mod tests {
     use super::ChunkVecBuffer;
 
     #[test]
     fn short_append_copy_with_limit() {
         let mut cvb = ChunkVecBuffer::new(Some(12));
-        assert_eq!(cvb.append_limited_copy(b"hello"), 5);
-        assert_eq!(cvb.append_limited_copy(b"world"), 5);
-        assert_eq!(cvb.append_limited_copy(b"hello"), 2);
-        assert_eq!(cvb.append_limited_copy(b"world"), 0);
+        assert_eq!(cvb.append_limited_copy(b"hello"[..].into()), 5);
+        assert_eq!(cvb.append_limited_copy(b"world"[..].into()), 5);
+        assert_eq!(cvb.append_limited_copy(b"hello"[..].into()), 2);
+        assert_eq!(cvb.append_limited_copy(b"world"[..].into()), 0);
 
         let mut buf = [0u8; 12];
         assert_eq!(cvb.read(&mut buf).unwrap(), 12);

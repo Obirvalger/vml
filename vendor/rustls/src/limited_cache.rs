@@ -1,7 +1,8 @@
-use std::borrow::Borrow;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
-use std::hash::Hash;
+use alloc::collections::VecDeque;
+use core::borrow::Borrow;
+use core::hash::Hash;
+
+use crate::hash_map::{Entry, HashMap};
 
 /// A HashMap-alike, which never gets larger than a specified
 /// capacity, and evicts the oldest insertion to maintain this.
@@ -20,17 +21,9 @@ pub(crate) struct LimitedCache<K: Clone + Hash + Eq, V> {
 
 impl<K, V> LimitedCache<K, V>
 where
-    K: Eq + Hash + Clone + std::fmt::Debug,
+    K: Eq + Hash + Clone + core::fmt::Debug,
     V: Default,
 {
-    /// Create a new LimitedCache with the given rough capacity.
-    pub(crate) fn new(capacity_order_of_magnitude: usize) -> Self {
-        Self {
-            map: HashMap::with_capacity(capacity_order_of_magnitude),
-            oldest: VecDeque::with_capacity(capacity_order_of_magnitude),
-        }
-    }
-
     pub(crate) fn get_or_insert_default_and_edit(&mut self, k: K, edit: impl FnOnce(&mut V)) {
         let inserted_new_item = match self.map.entry(k) {
             Entry::Occupied(value) => {
@@ -53,10 +46,31 @@ where
         }
     }
 
+    pub(crate) fn get_mut<Q: Hash + Eq + ?Sized>(&mut self, k: &Q) -> Option<&mut V>
+    where
+        K: Borrow<Q>,
+    {
+        self.map.get_mut(k)
+    }
+}
+
+impl<K, V> LimitedCache<K, V>
+where
+    K: Eq + Hash + Clone + core::fmt::Debug,
+    V: Default,
+{
+    /// Create a new LimitedCache with the given rough capacity.
+    pub(crate) fn new(capacity_order_of_magnitude: usize) -> Self {
+        Self {
+            map: HashMap::with_capacity(capacity_order_of_magnitude),
+            oldest: VecDeque::with_capacity(capacity_order_of_magnitude),
+        }
+    }
+
     pub(crate) fn insert(&mut self, k: K, v: V) {
         let inserted_new_item = match self.map.entry(k) {
             Entry::Occupied(mut old) => {
-                // nb. does not freshen entry in `oldest`
+                // Note: does not freshen entry in `oldest`
                 old.insert(v);
                 false
             }
@@ -84,13 +98,6 @@ where
         self.map.get(k)
     }
 
-    pub(crate) fn get_mut<Q: Hash + Eq + ?Sized>(&mut self, k: &Q) -> Option<&mut V>
-    where
-        K: Borrow<Q>,
-    {
-        self.map.get_mut(k)
-    }
-
     pub(crate) fn remove<Q: Hash + Eq + ?Sized>(&mut self, k: &Q) -> Option<V>
     where
         K: Borrow<Q>,
@@ -112,7 +119,9 @@ where
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+    use std::prelude::v1::*;
+
     type Test = super::LimitedCache<String, usize>;
 
     #[test]

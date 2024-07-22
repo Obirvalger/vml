@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::net::IpAddr;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "macos-system-configuration"))]
 use system_configuration::{
     core_foundation::{
         base::CFType,
@@ -947,7 +947,7 @@ fn get_from_platform_impl() -> Result<Option<String>, Box<dyn Error>> {
     Ok((proxy_enable == 1).then_some(proxy_server))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "macos-system-configuration"))]
 fn parse_setting_from_dynamic_store(
     proxies_map: &CFDictionary<CFString, CFType>,
     enabled_key: CFStringRef,
@@ -985,7 +985,7 @@ fn parse_setting_from_dynamic_store(
     None
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "macos-system-configuration"))]
 fn get_from_platform_impl() -> Result<Option<String>, Box<dyn Error>> {
     let store = SCDynamicStoreBuilder::new("reqwest").build();
 
@@ -1016,12 +1016,18 @@ fn get_from_platform_impl() -> Result<Option<String>, Box<dyn Error>> {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "macos", feature = "macos-system-configuration")
+))]
 fn get_from_platform() -> Option<String> {
     get_from_platform_impl().ok().flatten()
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "windows",
+    all(target_os = "macos", feature = "macos-system-configuration")
+)))]
 fn get_from_platform() -> Option<String> {
     None
 }
@@ -1977,11 +1983,6 @@ mod test {
                         "http://[56FE::2159:5BBC::6594]",
                         url::ParseError::InvalidIpv6Address,
                     );
-                }
-
-                #[test]
-                fn invalid_domain_character() {
-                    check_parse_error("http://abc 123/", url::ParseError::InvalidDomainCharacter);
                 }
             }
         }

@@ -1,14 +1,19 @@
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::mem;
+
+use crate::crypto::hash;
 use crate::msgs::codec::Codec;
+use crate::msgs::enums::HashAlgorithm;
 use crate::msgs::handshake::HandshakeMessagePayload;
 use crate::msgs::message::{Message, MessagePayload};
-use ring::digest;
-use std::mem;
 
 /// Early stage buffering of handshake payloads.
 ///
 /// Before we know the hash algorithm to use to verify the handshake, we just buffer the messages.
 /// During the handshake, we may restart the transcript due to a HelloRetryRequest, reverting
 /// from the `HandshakeHash` to a `HandshakeHashBuffer` again.
+#[derive(Clone)]
 pub(crate) struct HandshakeHashBuffer {
     buffer: Vec<u8>,
     client_auth_enabled: bool,
@@ -29,36 +34,37 @@ impl HandshakeHashBuffer {
     }
 
     /// Hash/buffer a handshake message.
-    pub(crate) fn add_message(&mut self, m: &Message) {
+    pub(crate) fn add_message(&mut self, m: &Message<'_>) {
         if let MessagePayload::Handshake { encoded, .. } = &m.payload {
             self.buffer
-                .extend_from_slice(&encoded.0);
+                .extend_from_slice(encoded.bytes());
         }
     }
 
     /// Hash or buffer a byte slice.
-    #[cfg(test)]
+    #[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs")))]
     fn update_raw(&mut self, buf: &[u8]) {
         self.buffer.extend_from_slice(buf);
     }
 
     /// Get the hash value if we were to hash `extra` too.
-    pub(crate) fn get_hash_given(
+    pub(crate) fn hash_given(
         &self,
-        hash: &'static digest::Algorithm,
+        provider: &'static dyn hash::Hash,
         extra: &[u8],
-    ) -> digest::Digest {
-        let mut ctx = digest::Context::new(hash);
+    ) -> hash::Output {
+        let mut ctx = provider.start();
         ctx.update(&self.buffer);
         ctx.update(extra);
         ctx.finish()
     }
 
     /// We now know what hash function the verify_data will use.
-    pub(crate) fn start_hash(self, alg: &'static digest::Algorithm) -> HandshakeHash {
-        let mut ctx = digest::Context::new(alg);
+    pub(crate) fn start_hash(self, provider: &'static dyn hash::Hash) -> HandshakeHash {
+        let mut ctx = provider.start();
         ctx.update(&self.buffer);
         HandshakeHash {
+            provider,
             ctx,
             client_auth: match self.client_auth_enabled {
                 true => Some(self.buffer),
@@ -76,8 +82,8 @@ impl HandshakeHashBuffer {
 /// For client auth, we also need to buffer all the messages.
 /// This is disabled in cases where client auth is not possible.
 pub(crate) struct HandshakeHash {
-    /// None before we know what hash function we're using
-    ctx: digest::Context,
+    provider: &'static dyn hash::Hash,
+    ctx: Box<dyn hash::Context>,
 
     /// buffer for client-auth.
     client_auth: Option<Vec<u8>>,
@@ -91,9 +97,9 @@ impl HandshakeHash {
     }
 
     /// Hash/buffer a handshake message.
-    pub(crate) fn add_message(&mut self, m: &Message) -> &mut Self {
+    pub(crate) fn add_message(&mut self, m: &Message<'_>) -> &mut Self {
         if let MessagePayload::Handshake { encoded, .. } = &m.payload {
-            self.update_raw(&encoded.0);
+            self.update_raw(encoded.bytes());
         }
         self
     }
@@ -111,8 +117,8 @@ impl HandshakeHash {
 
     /// Get the hash value if we were to hash `extra` too,
     /// using hash function `hash`.
-    pub(crate) fn get_hash_given(&self, extra: &[u8]) -> digest::Digest {
-        let mut ctx = self.ctx.clone();
+    pub(crate) fn hash_given(&self, extra: &[u8]) -> hash::Output {
+        let mut ctx = self.ctx.fork();
         ctx.update(extra);
         ctx.finish()
     }
@@ -134,7 +140,7 @@ impl HandshakeHash {
     pub(crate) fn rollup_for_hrr(&mut self) {
         let ctx = &mut self.ctx;
 
-        let old_ctx = mem::replace(ctx, digest::Context::new(ctx.algorithm()));
+        let old_ctx = mem::replace(ctx, self.provider.start());
         let old_hash = old_ctx.finish();
         let old_handshake_hash_msg =
             HandshakeMessagePayload::build_handshake_hash(old_hash.as_ref());
@@ -143,8 +149,8 @@ impl HandshakeHash {
     }
 
     /// Get the current hash value.
-    pub(crate) fn get_current_hash(&self) -> digest::Digest {
-        self.ctx.clone().finish()
+    pub(crate) fn current_hash(&self) -> hash::Output {
+        self.ctx.fork_finish()
     }
 
     /// Takes this object's buffer containing all handshake messages
@@ -155,26 +161,35 @@ impl HandshakeHash {
         self.client_auth.take()
     }
 
-    /// The digest algorithm
-    pub(crate) fn algorithm(&self) -> &'static digest::Algorithm {
-        self.ctx.algorithm()
+    /// The hashing algorithm
+    pub(crate) fn algorithm(&self) -> HashAlgorithm {
+        self.provider.algorithm()
     }
 }
 
-#[cfg(test)]
-mod test {
+impl Clone for HandshakeHash {
+    fn clone(&self) -> Self {
+        Self {
+            provider: self.provider,
+            ctx: self.ctx.fork(),
+            client_auth: self.client_auth.clone(),
+        }
+    }
+}
+
+test_for_each_provider! {
     use super::HandshakeHashBuffer;
-    use ring::digest;
+    use provider::hash::SHA256;
 
     #[test]
     fn hashes_correctly() {
         let mut hhb = HandshakeHashBuffer::new();
         hhb.update_raw(b"hello");
         assert_eq!(hhb.buffer.len(), 5);
-        let mut hh = hhb.start_hash(&digest::SHA256);
+        let mut hh = hhb.start_hash(&SHA256);
         assert!(hh.client_auth.is_none());
         hh.update_raw(b"world");
-        let h = hh.get_current_hash();
+        let h = hh.current_hash();
         let h = h.as_ref();
         assert_eq!(h[0], 0x93);
         assert_eq!(h[1], 0x6a);
@@ -189,7 +204,7 @@ mod test {
         hhb.set_client_auth_enabled();
         hhb.update_raw(b"hello");
         assert_eq!(hhb.buffer.len(), 5);
-        let mut hh = hhb.start_hash(&digest::SHA256);
+        let mut hh = hhb.start_hash(&SHA256);
         assert_eq!(
             hh.client_auth
                 .as_ref()
@@ -203,7 +218,7 @@ mod test {
                 .map(|buf| buf.len()),
             Some(10)
         );
-        let h = hh.get_current_hash();
+        let h = hh.current_hash();
         let h = h.as_ref();
         assert_eq!(h[0], 0x93);
         assert_eq!(h[1], 0x6a);
@@ -219,7 +234,7 @@ mod test {
         hhb.set_client_auth_enabled();
         hhb.update_raw(b"hello");
         assert_eq!(hhb.buffer.len(), 5);
-        let mut hh = hhb.start_hash(&digest::SHA256);
+        let mut hh = hhb.start_hash(&SHA256);
         assert_eq!(
             hh.client_auth
                 .as_ref()
@@ -230,11 +245,44 @@ mod test {
         assert_eq!(hh.client_auth, None);
         hh.update_raw(b"world");
         assert_eq!(hh.client_auth, None);
-        let h = hh.get_current_hash();
+        let h = hh.current_hash();
         let h = h.as_ref();
         assert_eq!(h[0], 0x93);
         assert_eq!(h[1], 0x6a);
         assert_eq!(h[2], 0x18);
         assert_eq!(h[3], 0x5c);
+    }
+
+    #[test]
+    fn clones_correctly() {
+        let mut hhb = HandshakeHashBuffer::new();
+        hhb.set_client_auth_enabled();
+        hhb.update_raw(b"hello");
+        assert_eq!(hhb.buffer.len(), 5);
+
+        // Cloning the HHB should result in the same buffer and client auth state.
+        let mut hhb_prime = hhb.clone();
+        assert_eq!(hhb_prime.buffer, hhb.buffer);
+        assert!(hhb_prime.client_auth_enabled);
+
+        // Updating the HHB clone shouldn't affect the original.
+        hhb_prime.update_raw(b"world");
+        assert_eq!(hhb_prime.buffer.len(), 10);
+        assert_ne!(hhb.buffer, hhb_prime.buffer);
+
+        let hh = hhb.start_hash(&SHA256);
+        let hh_hash = hh.current_hash();
+        let hh_hash = hh_hash.as_ref();
+
+        // Cloning the HH should result in the same current hash.
+        let mut hh_prime = hh.clone();
+        let hh_prime_hash = hh_prime.current_hash();
+        let hh_prime_hash = hh_prime_hash.as_ref();
+        assert_eq!(hh_hash, hh_prime_hash);
+
+        // Updating the HH clone shouldn't affect the original.
+        hh_prime.update_raw(b"goodbye");
+        assert_eq!(hh.current_hash().as_ref(), hh_hash);
+        assert_ne!(hh_prime.current_hash().as_ref(), hh_hash);
     }
 }
