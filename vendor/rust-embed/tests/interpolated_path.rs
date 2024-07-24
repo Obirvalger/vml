@@ -1,7 +1,7 @@
-use rust_embed::RustEmbed;
+use rust_embed::Embed;
 
 /// Test doc comment
-#[derive(RustEmbed)]
+#[derive(Embed)]
 #[folder = "$CARGO_MANIFEST_DIR/examples/public/"]
 struct Asset;
 
@@ -19,19 +19,19 @@ fn iter_works() {
     assert!(Asset::get(file.as_ref()).is_some());
     num_files += 1;
   }
-  assert_eq!(num_files, 6);
+  assert_eq!(num_files, 7);
 }
 
 #[test]
 fn trait_works_generic() {
   trait_works_generic_helper::<Asset>();
 }
-fn trait_works_generic_helper<E: rust_embed::RustEmbed>() {
+fn trait_works_generic_helper<E: rust_embed::Embed>() {
   let mut num_files = 0;
   for file in E::iter() {
     assert!(E::get(file.as_ref()).is_some());
     num_files += 1;
   }
-  assert_eq!(num_files, 6);
+  assert_eq!(num_files, 7);
   assert!(E::get("gg.html").is_none(), "gg.html should not exist");
 }

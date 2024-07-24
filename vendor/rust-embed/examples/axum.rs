@@ -1,10 +1,9 @@
 use axum::{
-  body::{boxed, Full},
   http::{header, StatusCode, Uri},
   response::{Html, IntoResponse, Response},
   routing::{get, Router},
 };
-use rust_embed::RustEmbed;
+use rust_embed::Embed;
 use std::net::SocketAddr;
 
 #[tokio::main]
@@ -19,7 +18,8 @@ async fn main() {
   // Start listening on the given address.
   let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
   println!("listening on {}", addr);
-  axum::Server::bind(&addr).serve(app.into_make_service()).await.unwrap();
+  let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+  axum::serve(listener, app.into_make_service()).await.unwrap();
 }
 
 // We use static route matchers ("/" and "/index.html") to serve our home
@@ -46,7 +46,7 @@ async fn not_found() -> Html<&'static str> {
   Html("<h1>404</h1><p>Not Found</p>")
 }
 
-#[derive(RustEmbed)]
+#[derive(Embed)]
 #[folder = "examples/public/"]
 struct Asset;
 
@@ -61,11 +61,10 @@ where
 
     match Asset::get(path.as_str()) {
       Some(content) => {
-        let body = boxed(Full::from(content.data));
         let mime = mime_guess::from_path(path).first_or_octet_stream();
-        Response::builder().header(header::CONTENT_TYPE, mime.as_ref()).body(body).unwrap()
+        ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
       }
-      None => Response::builder().status(StatusCode::NOT_FOUND).body(boxed(Full::from("404"))).unwrap(),
+      None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
     }
   }
 }

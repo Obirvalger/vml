@@ -12,47 +12,8 @@ pub struct FileEntry {
   pub full_canonical_path: String,
 }
 
-#[cfg(not(feature = "include-exclude"))]
-pub fn is_path_included(_path: &str, _includes: &[&str], _excludes: &[&str]) -> bool {
-  true
-}
-
-#[cfg(feature = "include-exclude")]
-pub fn is_path_included(rel_path: &str, includes: &[&str], excludes: &[&str]) -> bool {
-  use globset::Glob;
-
-  // ignore path matched by exclusion pattern
-  for exclude in excludes {
-    let pattern = Glob::new(exclude)
-      .unwrap_or_else(|_| panic!("invalid exclude pattern '{}'", exclude))
-      .compile_matcher();
-
-    if pattern.is_match(rel_path) {
-      return false;
-    }
-  }
-
-  // accept path if no includes provided
-  if includes.is_empty() {
-    return true;
-  }
-
-  // accept path if matched by inclusion pattern
-  for include in includes {
-    let pattern = Glob::new(include)
-      .unwrap_or_else(|_| panic!("invalid include pattern '{}'", include))
-      .compile_matcher();
-
-    if pattern.is_match(rel_path) {
-      return true;
-    }
-  }
-
-  false
-}
-
 #[cfg_attr(all(debug_assertions, not(feature = "debug-embed")), allow(unused))]
-pub fn get_files<'patterns>(folder_path: String, includes: &'patterns [&str], excludes: &'patterns [&str]) -> impl Iterator<Item = FileEntry> + 'patterns {
+pub fn get_files(folder_path: String, matcher: PathMatcher) -> impl Iterator<Item = FileEntry> {
   walkdir::WalkDir::new(&folder_path)
     .follow_links(true)
     .sort_by_file_name()
@@ -68,8 +29,7 @@ pub fn get_files<'patterns>(folder_path: String, includes: &'patterns [&str], ex
       } else {
         rel_path
       };
-
-      if is_path_included(&rel_path, includes, excludes) {
+      if matcher.is_path_included(&rel_path) {
         Some(FileEntry { rel_path, full_canonical_path })
       } else {
         None
@@ -78,27 +38,33 @@ pub fn get_files<'patterns>(folder_path: String, includes: &'patterns [&str], ex
 }
 
 /// A file embedded into the binary
+#[derive(Clone)]
 pub struct EmbeddedFile {
   pub data: Cow<'static, [u8]>,
   pub metadata: Metadata,
 }
 
 /// Metadata about an embedded file
+#[derive(Clone)]
 pub struct Metadata {
   hash: [u8; 32],
   last_modified: Option<u64>,
+  created: Option<u64>,
   #[cfg(feature = "mime-guess")]
   mimetype: Cow<'static, str>,
 }
 
 impl Metadata {
   #[doc(hidden)]
-  pub fn __rust_embed_new(hash: [u8; 32], last_modified: Option<u64>, #[cfg(feature = "mime-guess")] mimetype: &'static str) -> Self {
+  pub const fn __rust_embed_new(
+    hash: [u8; 32], last_modified: Option<u64>, created: Option<u64>, #[cfg(feature = "mime-guess")] mimetype: &'static str,
+  ) -> Self {
     Self {
       hash,
       last_modified,
+      created,
       #[cfg(feature = "mime-guess")]
-      mimetype: mimetype.into(),
+      mimetype: Cow::Borrowed(mimetype),
     }
   }
 
@@ -111,6 +77,12 @@ impl Metadata {
   /// platform/file-system does not support this, None is returned.
   pub fn last_modified(&self) -> Option<u64> {
     self.last_modified
+  }
+
+  /// The created data in seconds since the UNIX epoch. If the underlying
+  /// platform/file-system does not support this, None is returned.
+  pub fn created(&self) -> Option<u64> {
+    self.created
   }
 
   /// The mime type of the file
@@ -129,16 +101,22 @@ pub fn read_file_from_fs(file_path: &Path) -> io::Result<EmbeddedFile> {
   let hash: [u8; 32] = hasher.finalize().into();
 
   let source_date_epoch = match std::env::var("SOURCE_DATE_EPOCH") {
-    Ok(value) => value.parse::<u64>().map_or(None, |v| Some(v)),
+    Ok(value) => value.parse::<u64>().ok(),
     Err(_) => None,
   };
 
-  let last_modified = fs::metadata(file_path)?.modified().ok().map(|last_modified| {
-    last_modified
-      .duration_since(SystemTime::UNIX_EPOCH)
-      .expect("Time before the UNIX epoch is unsupported")
-      .as_secs()
-  });
+  let metadata = fs::metadata(file_path)?;
+  let last_modified = metadata
+    .modified()
+    .ok()
+    .and_then(|modified| modified.duration_since(SystemTime::UNIX_EPOCH).ok())
+    .map(|secs| secs.as_secs());
+
+  let created = metadata
+    .created()
+    .ok()
+    .and_then(|created| created.duration_since(SystemTime::UNIX_EPOCH).ok())
+    .map(|secs| secs.as_secs());
 
   #[cfg(feature = "mime-guess")]
   let mimetype = mime_guess::from_path(file_path).first_or_octet_stream().to_string();
@@ -148,6 +126,7 @@ pub fn read_file_from_fs(file_path: &Path) -> io::Result<EmbeddedFile> {
     metadata: Metadata {
       hash,
       last_modified: source_date_epoch.or(last_modified),
+      created: source_date_epoch.or(created),
       #[cfg(feature = "mime-guess")]
       mimetype: mimetype.into(),
     },
@@ -156,4 +135,51 @@ pub fn read_file_from_fs(file_path: &Path) -> io::Result<EmbeddedFile> {
 
 fn path_to_str<P: AsRef<std::path::Path>>(p: P) -> String {
   p.as_ref().to_str().expect("Path does not have a string representation").to_owned()
+}
+
+#[derive(Clone)]
+pub struct PathMatcher {
+  #[cfg(feature = "include-exclude")]
+  include_matcher: globset::GlobSet,
+  #[cfg(feature = "include-exclude")]
+  exclude_matcher: globset::GlobSet,
+}
+
+#[cfg(feature = "include-exclude")]
+impl PathMatcher {
+  pub fn new(includes: &[&str], excludes: &[&str]) -> Self {
+    let mut include_matcher = globset::GlobSetBuilder::new();
+    for include in includes {
+      include_matcher.add(globset::Glob::new(include).unwrap_or_else(|_| panic!("invalid include pattern '{}'", include)));
+    }
+    let include_matcher = include_matcher
+      .build()
+      .unwrap_or_else(|_| panic!("Could not compile included patterns matcher"));
+
+    let mut exclude_matcher = globset::GlobSetBuilder::new();
+    for exclude in excludes {
+      exclude_matcher.add(globset::Glob::new(exclude).unwrap_or_else(|_| panic!("invalid exclude pattern '{}'", exclude)));
+    }
+    let exclude_matcher = exclude_matcher
+      .build()
+      .unwrap_or_else(|_| panic!("Could not compile excluded patterns matcher"));
+
+    Self {
+      include_matcher,
+      exclude_matcher,
+    }
+  }
+  pub fn is_path_included(&self, path: &str) -> bool {
+    !self.exclude_matcher.is_match(path) && (self.include_matcher.is_empty() || self.include_matcher.is_match(path))
+  }
+}
+
+#[cfg(not(feature = "include-exclude"))]
+impl PathMatcher {
+  pub fn new(_includes: &[&str], _excludes: &[&str]) -> Self {
+    Self {}
+  }
+  pub fn is_path_included(&self, _path: &str) -> bool {
+    true
+  }
 }

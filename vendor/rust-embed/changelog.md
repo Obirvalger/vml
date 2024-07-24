@@ -6,9 +6,40 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 Thanks to [Mark Drobnak](https://github.com/AzureMarker) for the changelog.
+
+## [8.5.0] - 2024-07-09
+
+- Re-export RustEmbed as Embed [#246](https://github.com/pyrossh/rust-embed/pull/246). Thanks to [krant](https://github.com/krant)
+- Allow users to specify a custom path to the rust_embed crate in generated code[#232](https://github.com/pyrossh/rust-embed/pull/232). Thanks to [Wulf](https://github.com/Wulf)
+- Increase minimum rust-version to v1.7.0.0
+
+## [8.4.0] - 2024-05-11
+
+- Re-export RustEmbed as Embed [#245](https://github.com/pyrossh/rust-embed/pull/245/files). Thanks to [pyrossh](https://github.com/pyrossh)
+- Do not build glob matchers repeatedly when include-exclude feature is enabled [#244](https://github.com/pyrossh/rust-embed/pull/244/files). Thanks to [osiewicz](https://github.com/osiewicz)
+- Add `metadata_only` attribute [#241](https://github.com/pyrossh/rust-embed/pull/241/files). Thanks to [ddfisher](https://github.com/ddfisher)
+- Replace `expect` with a safer alternative that returns `None` instead [#240](https://github.com/pyrossh/rust-embed/pull/240/files). Thanks to [costinsin](https://github.com/costinsin)
+- Eliminate unnecessary `to_path` call [#239](https://github.com/pyrossh/rust-embed/pull/239/files). Thanks to [smoelius](https://github.com/smoelius)
+
+## [8.3.0] - 2024-02-26
+
+- Fix symbolic links in debug builds [#235](https://github.com/pyrossh/rust-embed/pull/235/files). Thanks to [Buckram123](https://github.com/Buckram123)
+
+## [8.2.0] - 2023-12-29
+
+- Fix naming collisions in macros [#230](https://github.com/pyrossh/rust-embed/pull/230/files). Thanks to [hwittenborn](https://github.com/hwittenborn)
+
+## [8.1.0] - 2023-12-08
+
+- Add created to file metadata. [#225](https://github.com/pyrossh/rust-embed/pull/225/files). Thanks to [ngalaiko](https://github.com/ngalaiko)
+
+## [8.0.0] - 2023-08-23
+
+- Store file contents statically and use binary search for lookup. [#217](https://github.com/pyrossh/rust-embed/pull/217/files). Thanks to [osiewicz](https://github.com/osiewicz)
+
 ## [6.8.1] - 2023-06-30
 
-- Fix failing compilation under compression feature [#182](https://github.com/pyrossh/rust-embed/issues/182). Thanks to [osiewicz](https://github.com/osiewicz)  
+- Fix failing compilation under compression feature [#182](https://github.com/pyrossh/rust-embed/issues/182). Thanks to [osiewicz](https://github.com/osiewicz)
 
 ## [6.8.0] - 2023-06-30
 
@@ -38,7 +69,6 @@ Thanks to [Mark Drobnak](https://github.com/AzureMarker) for the changelog.
 ## [6.4.0] - 2022-04-15
 
 - Order files by filename [#171](https://github.com/pyros2097/rust-embed/issues/171). Thanks to [apognu](https://github.com/apognu)
-
 
 ## [6.3.0] - 2021-11-28
 
