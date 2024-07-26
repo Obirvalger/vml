@@ -9,5 +9,5 @@
 
 arch="$(uname -m)"
 url="https://download.fedoraproject.org/pub/fedora/linux/development/rawhide/Cloud/$arch/images/"
-name="$(curl -sfL "$url" | sed -n -E 's/.*href="(.*\.qcow2)".*/\1/p' | sort -rV | head -1)"
+name="$(curl -sfL "$url" | sed -n -E 's/.*href="([^"]*Generic[^"]*\.qcow2)".*/\1/p' | sort -rV | head -1)"
 echo "$url$name"
