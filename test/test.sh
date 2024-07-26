@@ -1,6 +1,6 @@
 #!/bin/sh -eux
 
-IMAGES='alt alt-p10 arch fedora ubuntu'
+IMAGES='alt alt-p10 alt-p11 arch fedora ubuntu'
 
 LOG=test.log
 
