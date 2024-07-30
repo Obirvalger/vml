@@ -23,6 +23,7 @@ pub struct VMConfig {
     pub display: Option<String>,
     pub name: Option<String>,
     pub image_name: Option<String>,
+    #[serde(alias = "mem")]
     pub memory: Option<String>,
     pub minimum_disk_size: Option<Byte>,
     pub nic_model: Option<String>,

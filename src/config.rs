@@ -17,6 +17,7 @@ use crate::string_like::StringOrUint;
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct VMsDefault {
+    #[serde(alias = "mem")]
     pub memory: String,
     pub display: Option<String>,
     #[serde(default = "default_cpu_model")]
