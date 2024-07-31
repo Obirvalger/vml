@@ -53,6 +53,15 @@ change = ["update-all", "delete"]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
+[ubuntu-oracular]
+url = "https://cloud-images.ubuntu.com/oracular/current/oracular-server-cloudimg-{{arch}}.img"
+description = "Ubuntu 24.10 Oracular Oriole Daily Build"
+change = ["update-all", "delete"]
+
+[ubuntu-oracular.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-noble]
 url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 24.04 Noble Numbat"
