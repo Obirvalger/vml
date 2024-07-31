@@ -99,7 +99,7 @@ x86_64 = "amd64"
 aarch64 = "arm64"
 
 [debian]
-url = "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-{{arch}}.qcow2"
+url = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-{{arch}}.qcow2"
 description = "Debian stable"
 change = ["update-all", "delete"]
 
@@ -107,9 +107,27 @@ change = ["update-all", "delete"]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
+[debian-13]
+url = "https://cloud.debian.org/images/cloud/trixie/daily/latest/debian-13-genericcloud-{{arch}}-daily.qcow2"
+description = "Debian trixie (testing)"
+change = ["update-all", "delete"]
+
+[debian-13.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
+[debian-12]
+url = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-{{arch}}.qcow2"
+description = "Debian bookworm (stable)"
+change = ["update-all", "delete"]
+
+[debian-12.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [debian-11]
 url = "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-{{arch}}.qcow2"
-description = "Debian bullseye (stable)"
+description = "Debian bullseye (oldstable)"
 change = ["update-all", "delete"]
 
 [debian-11.arch-mapping]
@@ -118,7 +136,7 @@ aarch64 = "arm64"
 
 [debian-10]
 url = "https://cloud.debian.org/images/cloud/buster/latest/debian-10-genericcloud-{{arch}}.qcow2"
-description = "Debian buster (oldstable)"
+description = "Debian buster (oldoldstable)"
 change = ["update-all", "delete"]
 
 [debian-10.arch-mapping]
@@ -127,7 +145,7 @@ aarch64 = "arm64"
 
 [debian-9]
 url = "https://cdimage.debian.org/cdimage/openstack/current-9/debian-9-openstack-{{arch}}.qcow2"
-description = "Debian stretch (oldoldstable)"
+description = "Debian stretch (oldoldoldstable)"
 change = ["update-all", "delete"]
 
 [debian-9.arch-mapping]
