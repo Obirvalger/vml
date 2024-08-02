@@ -24,6 +24,12 @@ pub enum Error {
     GetWrongEmbeddedFile(String),
     #[error("image `{0}` does not exist")]
     ImageDoesNotExists(String),
+    #[error("pull html instead of qcow2 image (url could be moved)")]
+    PullHtmlImage,
+    #[error("pull image of unknown type")]
+    PullUnknownTypeImage,
+    #[error("pull image of unsupported type `{0}` (only qcow2 supported)")]
+    PullUsupportedTypeImage(String),
     #[error("try to remove running vm `{0}`")]
     RemoveRunningVM(String),
     #[error("try to store image to existing file `{0}`")]

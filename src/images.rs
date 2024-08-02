@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::{bail, Context, Result};
 use cmd_lib::run_fun;
 use file_lock::{FileLock, FileOptions};
+use infer;
 use log::info;
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +117,17 @@ impl<'a> Image<'a> {
 
         info!("Downloading image {} {}", &self.name, url);
         body.copy_to(&mut tmp).map_err(|e| Error::DownloadImage(e.to_string()))?;
+        if let Ok(Some(mtype)) = infer::get_from_path(tmp.path()) {
+            let mime_type = mtype.mime_type();
+            if mime_type == "text/html" {
+                bail!(Error::PullHtmlImage)
+            }
+            if mime_type != "application/x-qemu-disk" {
+                bail!(Error::PullUsupportedTypeImage(mime_type.to_string()))
+            }
+        } else {
+            bail!(Error::PullUnknownTypeImage)
+        }
 
         fs::rename(tmp.path(), &image_path)?;
 
