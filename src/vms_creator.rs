@@ -150,7 +150,7 @@ impl<'a> VMsCreator<'a> {
         let result_vms: Result<Vec<VM>> = if let Some(with_pid) = &self.with_pid {
             let mut with_pid_vms: HashSet<String> = HashSet::new();
             for proc in
-                process::all_processes().context("failed to read informatin from procfs")?
+                process::all_processes().context("failed to read information from procfs")?
             {
                 let proc = proc.context("failed to read informatin from procfs")?;
                 if let Ok(path) = proc.exe() {
