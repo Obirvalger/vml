@@ -3,6 +3,11 @@ url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/
 description = "ALT Linux Sisyphus"
 change = ["update-all", "delete"]
 
+[alt-dev]
+url = "http://ftp.altlinux.org/pub/people/obirvalger/cloud-images/alt-sisyphus-dev-x86_64.qcow2"
+description = "Unofficial ALT build for developnent and testing"
+change = ["update-all", "delete"]
+
 [alt-p11]
 url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p11/cloud/{{arch}}/alt-p11-cloud-{{arch}}.qcow2"
 description = "ALT Linux p11"
