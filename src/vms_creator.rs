@@ -149,16 +149,23 @@ impl<'a> VMsCreator<'a> {
 
         let result_vms: Result<Vec<VM>> = if let Some(with_pid) = &self.with_pid {
             let mut with_pid_vms: HashSet<String> = HashSet::new();
-            for proc in
-                process::all_processes().context("failed to read information from procfs")?
-            {
-                let proc = proc.context("failed to read informatin from procfs")?;
+            let procs =
+                process::all_processes().context("failed to read information from procfs")?;
+            for proc in procs {
+                let Ok(proc) = proc else {
+                    // process vanished
+                    continue;
+                };
                 if let Ok(path) = proc.exe() {
                     if let Some(file_name) = path.file_name() {
                         if file_name.to_string_lossy().starts_with("qemu-system") {
                             if let Ok(fds) = proc.fd() {
                                 for fd in fds {
-                                    if let FDTarget::Path(f) = fd?.target {
+                                    let Ok(fd) = fd else {
+                                        // process vanished
+                                        continue;
+                                    };
+                                    if let FDTarget::Path(f) = fd.target {
                                         if let Some(vm) = vms.get_mut(&f) {
                                             vm.set_pid(proc.pid);
                                             with_pid_vms.insert(vm.name.to_string());
