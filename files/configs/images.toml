@@ -41,8 +41,8 @@ get-url-prog = "vml-get-arch"
 change = ["update-all", "delete"]
 
 [ubuntu]
-url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-{{arch}}.img"
-description = "latest Ubuntu release (24.04)"
+url = "https://cloud-images.ubuntu.com/oracular/current/oracular-server-cloudimg-{{arch}}.img"
+description = "latest Ubuntu release (24.10)"
 change = ["update-all", "delete"]
 
 [ubuntu.arch-mapping]
@@ -60,7 +60,7 @@ aarch64 = "arm64"
 
 [ubuntu-oracular]
 url = "https://cloud-images.ubuntu.com/oracular/current/oracular-server-cloudimg-{{arch}}.img"
-description = "Ubuntu 24.10 Oracular Oriole Daily Build"
+description = "Ubuntu 24.10 Oracular Oriole"
 change = ["update-all", "delete"]
 
 [ubuntu-oracular.arch-mapping]
