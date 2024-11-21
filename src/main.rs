@@ -183,6 +183,7 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
     };
 
     vmc.with_pid(WithPid::Option);
+    vmc.error_on_empty();
 
     let mut vms = vmc.create()?;
     let mut freshly_started = true;
