@@ -25,6 +25,26 @@ The following programs (packages) should be installed:
 
 User running `vml` should be able to use kvm (.e.g be in `vmusers` group).
 
+## Build with docker
+To build vml with docker run the following commands:
+1) Build binary in image;
+```
+docker build -t vml-builder .
+```
+2) Run container with binary;
+```
+docker run --name vml-builder vml-builder
+```
+3) Copy binary from container to host directory (it should be in PATH);
+```
+docker cp vml-builder:/usr/src/vml/target/release/vml ~/bin/
+```
+4) Remove building container and image.
+```
+docker rm -f vml-builder
+docker rmi -f vml-builder
+```
+
 ## Run
 All needed files are copied with any command. For example list available to
 pull images.
