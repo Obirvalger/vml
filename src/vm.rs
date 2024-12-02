@@ -488,7 +488,7 @@ impl VM {
             if force {
                 kill(pid)?;
             } else {
-                self.monitor_command("quit")?;
+                self.monitor_command("system_powerdown")?;
             }
 
             let mut repeat = 900; // stop after 90 seconds
