@@ -649,11 +649,11 @@ impl VM {
             rsync.args(sources);
             if let Some(destination) = destination {
                 let destination = template::render(&context, destination, "rsync destination")?;
-                rsync.arg(&format!("{}:{}", user_host, destination));
+                rsync.arg(format!("{}:{}", user_host, destination));
             }
         } else {
             let sources = sources.join(" ");
-            rsync.arg(&format!("{}:{}", user_host, sources));
+            rsync.arg(format!("{}:{}", user_host, sources));
             if let Some(destination) = destination {
                 let destination = template::render(&context, destination, "rsync destination")?;
                 rsync.arg(destination);
@@ -718,7 +718,7 @@ impl VM {
     pub fn monitor(&self) -> Result<()> {
         Command::new("socat")
             .arg("-,echo=0,icanon=0")
-            .arg(&format!("unix-connect:{}", &self.monitor.to_string_lossy()))
+            .arg(format!("unix-connect:{}", &self.monitor.to_string_lossy()))
             .spawn()
             .context("failed to run executable socat")?
             .wait()?;

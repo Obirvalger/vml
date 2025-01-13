@@ -33,8 +33,8 @@ pub struct VMsCreator<'a> {
     with_pid: Option<WithPid>,
 }
 
-impl<'a> VMsCreator<'a> {
-    pub fn new(config: &'a Config) -> VMsCreator {
+impl VMsCreator<'_> {
+    pub fn new(config: &Config) -> VMsCreator {
         let all = false;
         let error_on_empty = false;
         let names = HashSet::new();

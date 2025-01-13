@@ -446,7 +446,7 @@ fn main() -> Result<()> {
                         } else {
                             vm.hyphenized()
                         };
-                        vm.store_disk(&config.images.directory.join(&image), force)?;
+                        vm.store_disk(config.images.directory.join(&image), force)?;
                     }
                 }
 
