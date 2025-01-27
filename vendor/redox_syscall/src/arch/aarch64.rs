@@ -1,8 +1,14 @@
-use core::{mem, slice};
-use core::ops::{Deref, DerefMut};
+use core::{
+    mem,
+    ops::{Deref, DerefMut},
+    slice,
+};
 
 use super::error::{Error, Result};
 
+pub const PAGE_SIZE: usize = 4096;
+
+#[cfg(feature = "userspace")]
 macro_rules! syscall {
     ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, )?)?)?)?)?);)+) => {
         $(
@@ -37,6 +43,7 @@ macro_rules! syscall {
     };
 }
 
+#[cfg(feature = "userspace")]
 syscall! {
     syscall0(a,);
     syscall1(a, b,);
@@ -49,13 +56,6 @@ syscall! {
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct IntRegisters {
-    pub elr_el1: usize,
-    pub tpidr_el0: usize,
-    pub tpidrro_el0: usize,
-    pub spsr_el1: usize,
-    pub esr_el1: usize,
-    pub sp_el0: usize,      // Shouldn't be used if interrupt occurred at EL1
-    pub padding: usize,     // To keep the struct even number aligned
     pub x30: usize,
     pub x29: usize,
     pub x28: usize,
@@ -86,14 +86,17 @@ pub struct IntRegisters {
     pub x3: usize,
     pub x2: usize,
     pub x1: usize,
-    pub x0: usize
+    pub x0: usize,
 }
 
 impl Deref for IntRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self as *const IntRegisters as *const u8, mem::size_of::<IntRegisters>())
+            slice::from_raw_parts(
+                self as *const IntRegisters as *const u8,
+                mem::size_of::<IntRegisters>(),
+            )
         }
     }
 }
@@ -101,24 +104,30 @@ impl Deref for IntRegisters {
 impl DerefMut for IntRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts_mut(self as *mut IntRegisters as *mut u8, mem::size_of::<IntRegisters>())
+            slice::from_raw_parts_mut(
+                self as *mut IntRegisters as *mut u8,
+                mem::size_of::<IntRegisters>(),
+            )
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct FloatRegisters {
     pub fp_simd_regs: [u128; 32],
     pub fpsr: u32,
-    pub fpcr: u32
+    pub fpcr: u32,
 }
 
 impl Deref for FloatRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self as *const FloatRegisters as *const u8, mem::size_of::<FloatRegisters>())
+            slice::from_raw_parts(
+                self as *const FloatRegisters as *const u8,
+                mem::size_of::<FloatRegisters>(),
+            )
         }
     }
 }
@@ -126,7 +135,39 @@ impl Deref for FloatRegisters {
 impl DerefMut for FloatRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts_mut(self as *mut FloatRegisters as *mut u8, mem::size_of::<FloatRegisters>())
+            slice::from_raw_parts_mut(
+                self as *mut FloatRegisters as *mut u8,
+                mem::size_of::<FloatRegisters>(),
+            )
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C, packed)]
+pub struct EnvRegisters {
+    pub tpidr_el0: usize,
+    pub tpidrro_el0: usize,
+}
+impl Deref for EnvRegisters {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        unsafe {
+            slice::from_raw_parts(
+                self as *const EnvRegisters as *const u8,
+                mem::size_of::<EnvRegisters>(),
+            )
+        }
+    }
+}
+
+impl DerefMut for EnvRegisters {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            slice::from_raw_parts_mut(
+                self as *mut EnvRegisters as *mut u8,
+                mem::size_of::<EnvRegisters>(),
+            )
         }
     }
 }

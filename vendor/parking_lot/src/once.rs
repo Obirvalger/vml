@@ -40,20 +40,14 @@ impl OnceState {
     /// indicate to future forced initialization routines that it is poisoned.
     #[inline]
     pub fn poisoned(self) -> bool {
-        match self {
-            OnceState::Poisoned => true,
-            _ => false,
-        }
+        matches!(self, OnceState::Poisoned)
     }
 
     /// Returns whether the associated `Once` has successfully executed a
     /// closure.
     #[inline]
     pub fn done(self) -> bool {
-        match self {
-            OnceState::Done => true,
-            _ => false,
-        }
+        matches!(self, OnceState::Done)
     }
 }
 
@@ -258,11 +252,11 @@ impl Once {
 
             // Park our thread until we are woken up by the thread that owns the
             // lock.
+            let addr = self as *const _ as usize;
+            let validate = || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
+            let before_sleep = || {};
+            let timed_out = |_, _| unreachable!();
             unsafe {
-                let addr = self as *const _ as usize;
-                let validate = || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
-                let before_sleep = || {};
-                let timed_out = |_, _| unreachable!();
                 parking_lot_core::park(
                     addr,
                     validate,
@@ -285,8 +279,8 @@ impl Once {
                 let once = self.0;
                 let state = once.0.swap(POISON_BIT, Ordering::Release);
                 if state & PARKED_BIT != 0 {
+                    let addr = once as *const _ as usize;
                     unsafe {
-                        let addr = once as *const _ as usize;
                         parking_lot_core::unpark_all(addr, DEFAULT_UNPARK_TOKEN);
                     }
                 }
@@ -307,8 +301,8 @@ impl Once {
         // Now unlock the state, set the done bit and unpark all threads
         let state = self.0.swap(DONE_BIT, Ordering::Release);
         if state & PARKED_BIT != 0 {
+            let addr = self as *const _ as usize;
             unsafe {
-                let addr = self as *const _ as usize;
                 parking_lot_core::unpark_all(addr, DEFAULT_UNPARK_TOKEN);
             }
         }

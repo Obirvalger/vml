@@ -6,7 +6,6 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::raw_rwlock::RawRwLock;
-use lock_api;
 
 /// A reader-writer lock
 ///
@@ -55,7 +54,7 @@ use lock_api;
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `RwLock` due to platform limitations.
-/// - Can be statically constructed (requires the `const_fn` nightly feature).
+/// - Can be statically constructed.
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.
@@ -408,6 +407,8 @@ mod tests {
                 write_result.is_none(),
                 "try_write should fail while read_guard is in scope"
             );
+            assert!(lock.is_locked());
+            assert!(!lock.is_locked_exclusive());
 
             drop(read_guard);
         }
@@ -419,6 +420,8 @@ mod tests {
                 write_result.is_none(),
                 "try_write should fail while upgrade_guard is in scope"
             );
+            assert!(lock.is_locked());
+            assert!(!lock.is_locked_exclusive());
 
             drop(upgrade_guard);
         }
@@ -430,6 +433,8 @@ mod tests {
                 write_result.is_none(),
                 "try_write should fail while write_guard is in scope"
             );
+            assert!(lock.is_locked());
+            assert!(lock.is_locked_exclusive());
 
             drop(write_guard);
         }
@@ -614,5 +619,41 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    #[test]
+    fn test_rw_write_is_locked() {
+        let lock = RwLock::new(0isize);
+        {
+            let _read_guard = lock.read();
+
+            assert!(lock.is_locked());
+            assert!(!lock.is_locked_exclusive());
+        }
+
+        {
+            let _write_guard = lock.write();
+
+            assert!(lock.is_locked());
+            assert!(lock.is_locked_exclusive());
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "arc_lock")]
+    fn test_issue_430() {
+        let lock = std::sync::Arc::new(RwLock::new(0));
+
+        let mut rl = lock.upgradable_read_arc();
+
+        rl.with_upgraded(|_| {
+            println!("lock upgrade");
+        });
+
+        rl.with_upgraded(|_| {
+            println!("lock upgrade");
+        });
+
+        drop(lock);
     }
 }

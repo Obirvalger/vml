@@ -11,7 +11,6 @@
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
-#![cfg_attr(feature = "nightly", feature(llvm_asm))]
 
 mod condvar;
 mod elision;
@@ -55,3 +54,6 @@ pub use self::rwlock::{
     RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
 pub use ::lock_api;
+
+#[cfg(feature = "arc_lock")]
+pub use self::lock_api::{ArcMutexGuard, ArcReentrantMutexGuard, ArcRwLockReadGuard, ArcRwLockUpgradableReadGuard, ArcRwLockWriteGuard};

@@ -25,25 +25,26 @@ fn main() {
 ```
 
 **NOTE:** The computed width values may not match the actual rendered column
-width. For example, the woman scientist emoji comprises of a woman emoji, a
-zero-width joiner and a microscope emoji. Such [emoji ZWJ sequences](https://www.unicode.org/reports/tr51/#Emoji_ZWJ_Sequences)
-are considered to have the sum of the widths of their constituent parts:
+width. For example, many Brahmic scripts like Devanagari have complex rendering rules
+which this crate does not currently handle (and will never fully handle, because
+the exact rendering depends on the font):
 
 ```rust
 extern crate unicode_width;
 use unicode_width::UnicodeWidthStr;
 
 fn main() {
-    assert_eq!("👩".width(), 2); // Woman
-    assert_eq!("🔬".width(), 2); // Microscope
-    assert_eq!("👩‍🔬".width(), 4); // Woman scientist
+    assert_eq!("क".width(), 1); // Devanagari letter Ka
+    assert_eq!("ष".width(), 1); // Devanagari letter Ssa
+    assert_eq!("क्ष".width(), 2); // Ka + Virama + Ssa
 }
 ```
 
 Additionally, [defective combining character sequences](https://unicode.org/glossary/#defective_combining_character_sequence)
 and nonstandard [Korean jamo](https://unicode.org/glossary/#jamo) sequences may
 be rendered with a different width than what this crate says. (This is not an
-exhaustive list.)
+exhaustive list.) For a list of what this crate *does* handle, see
+[docs.rs](https://docs.rs/unicode-width/latest/unicode_width/#rules-for-determining-width).
 
 ## crates.io
 
@@ -54,3 +55,16 @@ to your `Cargo.toml`:
 [dependencies]
 unicode-width = "0.1.11"
 ```
+
+
+## Changelog
+
+
+### 0.2.0
+
+ - Treat `\n` as width 1 (#60)
+ - Treat ambiguous `Modifier_Letter`s as narrow (#63)
+ - Support `Grapheme_Cluster_Break=Prepend` (#62)
+ - Support lots of ligatures (#53)
+
+Note: If you are using `unicode-width` for linebreaking, the change treating `\n` as width 1 _may cause behavior changes_. It is recommended that in such cases you feed already-line segmented text to `unicode-width`. In other words, please apply higher level control character based line breaking protocols before feeding text to `unicode-width`. Relying on any character producing a stable width in this crate is likely the sign of a bug.

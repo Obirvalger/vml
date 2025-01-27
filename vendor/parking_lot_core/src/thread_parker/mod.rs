@@ -1,5 +1,5 @@
 use cfg_if::cfg_if;
-use instant::Instant;
+use std::time::Instant;
 
 /// Trait for the platform thread parker implementation.
 ///
@@ -20,7 +20,7 @@ pub trait ThreadParkerT {
     unsafe fn prepare_park(&self);
 
     /// Checks if the park timed out. This should be called while holding the
-    /// queue lock after park_until has returned false.
+    /// queue lock after `park_until` has returned false.
     unsafe fn timed_out(&self) -> bool;
 
     /// Parks the thread until it is unparked. This should be called after it has
@@ -33,7 +33,7 @@ pub trait ThreadParkerT {
     unsafe fn park_until(&self, timeout: Instant) -> bool;
 
     /// Locks the parker to prevent the target thread from exiting. This is
-    /// necessary to ensure that thread-local ThreadData objects remain valid.
+    /// necessary to ensure that thread-local `ThreadData` objects remain valid.
     /// This should be called while holding the queue lock.
     unsafe fn unpark_lock(&self) -> Self::UnparkHandle;
 }
@@ -68,12 +68,12 @@ cfg_if! {
         mod imp;
     } else if #[cfg(all(
         feature = "nightly",
-        target_arch = "wasm32",
+        target_family = "wasm",
         target_feature = "atomics"
     ))] {
         #[path = "wasm_atomic.rs"]
         mod imp;
-    } else if #[cfg(target_arch = "wasm32")] {
+    } else if #[cfg(target_family = "wasm")] {
         #[path = "wasm.rs"]
         mod imp;
     } else {

@@ -14,10 +14,16 @@ edition = "2018"
 name = "infer"
 version = "0.16.0"
 authors = ["Bojan <dbojan@gmail.com>"]
+build = false
 exclude = [
     "/testdata",
     "/tests",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Small crate to infer file type based on magic number signatures"
 homepage = "https://github.com/bojand/infer"
 documentation = "https://docs.rs/infer"
@@ -31,6 +37,10 @@ keywords = [
 ]
 license = "MIT"
 repository = "https://github.com/bojand/infer"
+
+[lib]
+name = "infer"
+path = "src/lib.rs"
 
 [[example]]
 name = "file"

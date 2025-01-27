@@ -13,7 +13,7 @@ macro_rules! bitflags {
     ) => {
         // First, use the inner bitflags
         inner_bitflags! {
-            #[derive(Default)]
+            #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy, Default)]
             $(#[$outer])*
             pub struct $BitFlags: $T {
                 $(
@@ -23,24 +23,19 @@ macro_rules! bitflags {
             }
         }
 
+        impl $BitFlags {
+            #[deprecated = "use the safe `from_bits_retain` method instead"]
+            pub unsafe fn from_bits_unchecked(bits: $T) -> Self {
+                Self::from_bits_retain(bits)
+            }
+        }
+
         // Secondly, re-export all inner constants
         // (`pub use self::Struct::*` doesn't work)
         $(
             $(#[$inner $($args)*])*
             pub const $Flag: $BitFlags = $BitFlags::$Flag;
         )+
-    }
-}
-
-bitflags! {
-    pub struct CloneFlags: usize {
-        const CLONE_VM = 0x100;
-        const CLONE_FS = 0x200;
-        const CLONE_FILES = 0x400;
-        const CLONE_SIGHAND = 0x800;
-        const CLONE_VFORK = 0x4000;
-        const CLONE_THREAD = 0x10000;
-        const CLONE_STACK = 0x1000_0000;
     }
 }
 
@@ -66,9 +61,49 @@ pub const FUTEX_WAKE: usize = 1;
 pub const FUTEX_REQUEUE: usize = 2;
 pub const FUTEX_WAIT64: usize = 3;
 
+// packet.c = fd
+pub const SKMSG_FRETURNFD: usize = 0;
+
+// packet.uid:packet.gid = offset, packet.c = base address, packet.d = page count
+pub const SKMSG_PROVIDE_MMAP: usize = 1;
+
+// packet.id provides state, packet.c = dest fd or pointer to dest fd, packet.d = flags
+pub const SKMSG_FOBTAINFD: usize = 2;
+
+// TODO: Split SendFdFlags into caller flags and flags that the scheme receives?
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct SendFdFlags: usize {
+        /// If set, the kernel will enforce that the file descriptor is exclusively owned.
+        ///
+        /// That is, there will no longer exist any other reference to that FD when removed from
+        /// the file table (SYS_SENDFD always removes the FD from the file table, but without this
+        /// flag, it can be retained by SYS_DUPing it first).
+        const EXCLUSIVE = 1;
+    }
+}
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct FobtainFdFlags: usize {
+        /// If set, `packet.c` specifies the destination file descriptor slot, otherwise the lowest
+        /// available slot will be selected, and placed in the usize pointed to by `packet.c`.
+        const MANUAL_FD = 1;
+
+        // If set, the file descriptor received is guaranteed to be exclusively owned (by the file
+        // table the obtainer is running in).
+        const EXCLUSIVE = 2;
+
+        // No, cloexec won't be stored in the kernel in the future, when the stable ABI is moved to
+        // relibc, so no flag for that!
+    }
+}
+
 bitflags! {
     pub struct MapFlags: usize {
+        // TODO: Downgrade PROT_NONE to global constant? (bitflags specifically states zero flags
+        // can cause buggy behavior).
         const PROT_NONE = 0x0000_0000;
+
         const PROT_EXEC = 0x0001_0000;
         const PROT_WRITE = 0x0002_0000;
         const PROT_READ = 0x0004_0000;
@@ -76,9 +111,30 @@ bitflags! {
         const MAP_SHARED = 0x0001;
         const MAP_PRIVATE = 0x0002;
 
-        /// Only accepted for mmap2(2).
         const MAP_FIXED = 0x0004;
         const MAP_FIXED_NOREPLACE = 0x000C;
+
+        /// For *userspace-backed mmaps*, return from the mmap call before all pages have been
+        /// provided by the scheme. This requires the scheme to be trusted, as the current context
+        /// can block indefinitely, if the scheme does not respond to the page fault handler's
+        /// request, as it tries to map the page by requesting it from the scheme.
+        ///
+        /// In some cases however, such as the program loader, the data needs to be trusted as much
+        /// with or without MAP_LAZY, and if so, mapping lazily will not cause insecureness by
+        /// itself.
+        ///
+        /// For kernel-backed mmaps, this flag has no effect at all. It is unspecified whether
+        /// kernel mmaps are lazy or not.
+        const MAP_LAZY = 0x0010;
+    }
+}
+bitflags! {
+    pub struct MunmapFlags: usize {
+        /// Indicates whether the funmap call must implicitly do an msync, for the changes to
+        /// become visible later.
+        ///
+        /// This flag will currently be set if and only if MAP_SHARED | PROT_WRITE are set.
+        const NEEDS_SYNC = 1;
     }
 }
 
@@ -93,97 +149,24 @@ pub const MODE_PERM: u16 = 0x0FFF;
 pub const MODE_SETUID: u16 = 0o4000;
 pub const MODE_SETGID: u16 = 0o2000;
 
-pub const O_RDONLY: usize =     0x0001_0000;
-pub const O_WRONLY: usize =     0x0002_0000;
-pub const O_RDWR: usize =       0x0003_0000;
-pub const O_NONBLOCK: usize =   0x0004_0000;
-pub const O_APPEND: usize =     0x0008_0000;
-pub const O_SHLOCK: usize =     0x0010_0000;
-pub const O_EXLOCK: usize =     0x0020_0000;
-pub const O_ASYNC: usize =      0x0040_0000;
-pub const O_FSYNC: usize =      0x0080_0000;
-pub const O_CLOEXEC: usize =    0x0100_0000;
-pub const O_CREAT: usize =      0x0200_0000;
-pub const O_TRUNC: usize =      0x0400_0000;
-pub const O_EXCL: usize =       0x0800_0000;
-pub const O_DIRECTORY: usize =  0x1000_0000;
-pub const O_STAT: usize =       0x2000_0000;
-pub const O_SYMLINK: usize =    0x4000_0000;
-pub const O_NOFOLLOW: usize =   0x8000_0000;
-pub const O_ACCMODE: usize =    O_RDONLY | O_WRONLY | O_RDWR;
-
-bitflags! {
-    pub struct PhysmapFlags: usize {
-        const PHYSMAP_WRITE = 0x0000_0001;
-        const PHYSMAP_WRITE_COMBINE = 0x0000_0002;
-        const PHYSMAP_NO_CACHE = 0x0000_0004;
-    }
-}
-bitflags! {
-    /// Extra flags for [`physalloc2`] or [`physalloc3`].
-    ///
-    /// [`physalloc2`]: ../call/fn.physalloc2.html
-    /// [`physalloc3`]: ../call/fn.physalloc3.html
-    pub struct PhysallocFlags: usize {
-        /// Only allocate memory within the 32-bit physical memory space. This is necessary for
-        /// some devices may not support 64-bit memory.
-        const SPACE_32 =        0x0000_0001;
-
-        /// The frame that will be allocated, is going to reside anywhere in 64-bit space. This
-        /// flag is redundant for the most part, except when overriding some other default.
-        const SPACE_64 =        0x0000_0002;
-
-        /// Do a "partial allocation", which means that not all of the frames specified in the
-        /// frame count `size` actually have to be allocated. This means that if the allocator was
-        /// unable to find a physical memory range large enough, it can instead return whatever
-        /// range it decides is optimal. Thus, instead of letting one driver get an expensive
-        /// 128MiB physical memory range when the physical memory has become fragmented, and
-        /// failing, it can instead be given a more optimal range. If the device supports
-        /// scatter-gather lists, then the driver only has to allocate more ranges, and the device
-        /// will do vectored I/O.
-        ///
-        /// PARTIAL_ALLOC supports different allocation strategies, refer to
-        /// [`Optimal`], [`GreatestRange`].
-        ///
-        /// [`Optimal`]: ./enum.PartialAllocStrategy.html
-        /// [`GreatestRange`]: ./enum.PartialAllocStrategy.html
-        const PARTIAL_ALLOC =   0x0000_0004;
-    }
-}
-
-/// The bitmask of the partial allocation strategy. Currently four different strategies are
-/// supported. If [`PARTIAL_ALLOC`] is not set, this bitmask is no longer reserved.
-pub const PARTIAL_ALLOC_STRATEGY_MASK: usize = 0x0003_0000;
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[repr(usize)]
-pub enum PartialAllocStrategy {
-    /// The allocator decides itself the size of the memory range, based on e.g. free memory ranges
-    /// and other processes which require large physical memory chunks.
-    Optimal = 0x0001_0000,
-
-    /// The allocator returns the absolute greatest range it can find.
-    GreatestRange = 0x0002_0000,
-
-    /// The allocator returns the first range that fits the minimum count, without searching extra.
-    Greedy = 0x0003_0000,
-}
-impl Default for PartialAllocStrategy {
-    fn default() -> Self {
-        Self::Optimal
-    }
-}
-
-impl PartialAllocStrategy {
-    pub fn from_raw(raw: usize) -> Option<Self> {
-        match raw {
-            0x0001_0000 => Some(Self::Optimal),
-            0x0002_0000 => Some(Self::GreatestRange),
-            0x0003_0000 => Some(Self::Greedy),
-            _ => None,
-        }
-    }
-}
+pub const O_RDONLY: usize = 0x0001_0000;
+pub const O_WRONLY: usize = 0x0002_0000;
+pub const O_RDWR: usize = 0x0003_0000;
+pub const O_NONBLOCK: usize = 0x0004_0000;
+pub const O_APPEND: usize = 0x0008_0000;
+pub const O_SHLOCK: usize = 0x0010_0000;
+pub const O_EXLOCK: usize = 0x0020_0000;
+pub const O_ASYNC: usize = 0x0040_0000;
+pub const O_FSYNC: usize = 0x0080_0000;
+pub const O_CLOEXEC: usize = 0x0100_0000;
+pub const O_CREAT: usize = 0x0200_0000;
+pub const O_TRUNC: usize = 0x0400_0000;
+pub const O_EXCL: usize = 0x0800_0000;
+pub const O_DIRECTORY: usize = 0x1000_0000;
+pub const O_STAT: usize = 0x2000_0000;
+pub const O_SYMLINK: usize = 0x4000_0000;
+pub const O_NOFOLLOW: usize = 0x8000_0000;
+pub const O_ACCMODE: usize = O_RDONLY | O_WRONLY | O_RDWR;
 
 // The top 48 bits of PTRACE_* are reserved, for now
 
@@ -213,8 +196,10 @@ bitflags! {
         /// If you don't catch this, the child is started as normal.
         const PTRACE_EVENT_CLONE = 0x0000_0000_0000_0100;
 
-        const PTRACE_EVENT_MASK = 0x0000_0000_0000_0F00;
+        /// Sent when current-addrspace is changed, allowing the tracer to reopen the memory file.
+        const PTRACE_EVENT_ADDRSPACE_SWITCH = 0x0000_0000_0000_0200;
 
+        const PTRACE_EVENT_MASK = 0x0000_0000_0000_0F00;
 
         /// Special meaning, depending on the event. Usually, when fired before
         /// an action, it will skip performing that action.
@@ -228,10 +213,7 @@ impl Deref for PtraceFlags {
     fn deref(&self) -> &Self::Target {
         // Same as to_ne_bytes but in-place
         unsafe {
-            slice::from_raw_parts(
-                &self.bits as *const _ as *const u8,
-                mem::size_of::<u64>()
-            )
+            slice::from_raw_parts(&self.bits() as *const _ as *const u8, mem::size_of::<u64>())
         }
     }
 }
@@ -240,64 +222,37 @@ pub const SEEK_SET: usize = 0;
 pub const SEEK_CUR: usize = 1;
 pub const SEEK_END: usize = 2;
 
-pub const SIGHUP: usize =   1;
-pub const SIGINT: usize =   2;
-pub const SIGQUIT: usize =  3;
-pub const SIGILL: usize =   4;
-pub const SIGTRAP: usize =  5;
-pub const SIGABRT: usize =  6;
-pub const SIGBUS: usize =   7;
-pub const SIGFPE: usize =   8;
-pub const SIGKILL: usize =  9;
-pub const SIGUSR1: usize =  10;
-pub const SIGSEGV: usize =  11;
-pub const SIGUSR2: usize =  12;
-pub const SIGPIPE: usize =  13;
-pub const SIGALRM: usize =  14;
-pub const SIGTERM: usize =  15;
-pub const SIGSTKFLT: usize= 16;
-pub const SIGCHLD: usize =  17;
-pub const SIGCONT: usize =  18;
-pub const SIGSTOP: usize =  19;
-pub const SIGTSTP: usize =  20;
-pub const SIGTTIN: usize =  21;
-pub const SIGTTOU: usize =  22;
-pub const SIGURG: usize =   23;
-pub const SIGXCPU: usize =  24;
-pub const SIGXFSZ: usize =  25;
-pub const SIGVTALRM: usize= 26;
-pub const SIGPROF: usize =  27;
+pub const SIGHUP: usize = 1;
+pub const SIGINT: usize = 2;
+pub const SIGQUIT: usize = 3;
+pub const SIGILL: usize = 4;
+pub const SIGTRAP: usize = 5;
+pub const SIGABRT: usize = 6;
+pub const SIGBUS: usize = 7;
+pub const SIGFPE: usize = 8;
+pub const SIGKILL: usize = 9;
+pub const SIGUSR1: usize = 10;
+pub const SIGSEGV: usize = 11;
+pub const SIGUSR2: usize = 12;
+pub const SIGPIPE: usize = 13;
+pub const SIGALRM: usize = 14;
+pub const SIGTERM: usize = 15;
+pub const SIGSTKFLT: usize = 16;
+pub const SIGCHLD: usize = 17;
+pub const SIGCONT: usize = 18;
+pub const SIGSTOP: usize = 19;
+pub const SIGTSTP: usize = 20;
+pub const SIGTTIN: usize = 21;
+pub const SIGTTOU: usize = 22;
+pub const SIGURG: usize = 23;
+pub const SIGXCPU: usize = 24;
+pub const SIGXFSZ: usize = 25;
+pub const SIGVTALRM: usize = 26;
+pub const SIGPROF: usize = 27;
 pub const SIGWINCH: usize = 28;
-pub const SIGIO: usize =    29;
-pub const SIGPWR: usize =   30;
-pub const SIGSYS: usize =   31;
-
-pub const SIG_DFL: usize = 0;
-pub const SIG_IGN: usize = 1;
-
-pub const SIG_BLOCK: usize = 0;
-pub const SIG_UNBLOCK: usize = 1;
-pub const SIG_SETMASK: usize = 2;
-
-bitflags! {
-    pub struct SigActionFlags: usize {
-        const SA_NOCLDSTOP = 0x00000001;
-        const SA_NOCLDWAIT = 0x00000002;
-        const SA_SIGINFO =   0x00000004;
-        const SA_RESTORER =  0x04000000;
-        const SA_ONSTACK =   0x08000000;
-        const SA_RESTART =   0x10000000;
-        const SA_NODEFER =   0x40000000;
-        const SA_RESETHAND = 0x80000000;
-    }
-}
-
-// Auxiliery vector types
-pub const AT_NULL: usize = 0;
-pub const AT_PHDR: usize = 3;
-pub const AT_PHENT: usize = 4;
-pub const AT_PHNUM: usize = 5;
-pub const AT_ENTRY: usize = 9;
+pub const SIGIO: usize = 29;
+pub const SIGPWR: usize = 30;
+pub const SIGSYS: usize = 31;
 
 bitflags! {
     pub struct WaitFlags: usize {
@@ -306,6 +261,11 @@ bitflags! {
         const WCONTINUED = 0x08;
     }
 }
+
+pub const ADDRSPACE_OP_MMAP: usize = 0;
+pub const ADDRSPACE_OP_MUNMAP: usize = 1;
+pub const ADDRSPACE_OP_MPROTECT: usize = 2;
+pub const ADDRSPACE_OP_TRANSFER: usize = 3;
 
 /// True if status indicates the child is stopped.
 pub fn wifstopped(status: usize) -> bool {
@@ -345,4 +305,31 @@ pub fn wexitstatus(status: usize) -> usize {
 /// True if status indicates a core dump was created.
 pub fn wcoredump(status: usize) -> bool {
     (status & 0x80) != 0
+}
+
+bitflags! {
+    pub struct MremapFlags: usize {
+        const FIXED = 1;
+        const FIXED_REPLACE = 3;
+        /// Alias's memory region at `old_address` to `new_address` such that both regions share
+        /// the same frames.
+        const KEEP_OLD = 1 << 2;
+        // TODO: MAYMOVE, DONTUNMAP
+    }
+}
+bitflags! {
+    pub struct RwFlags: u32 {
+        const NONBLOCK = 1;
+        const APPEND = 2;
+        // TODO: sync/dsync
+        // TODO: O_DIRECT?
+    }
+}
+bitflags! {
+    pub struct SigcontrolFlags: usize {
+        /// Prevents the kernel from jumping the context to the signal trampoline, but otherwise
+        /// has absolutely no effect on which signals are blocked etc. Meant to be used for
+        /// short-lived critical sections inside libc.
+        const INHIBIT_DELIVERY = 1;
+    }
 }

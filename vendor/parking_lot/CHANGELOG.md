@@ -1,3 +1,85 @@
+## parking_lot 0.12.3 (2024-05-24)
+
+- Export types provided by arc_lock feature (#442)
+
+## parking_lot 0.12.2, parking_lot_core 0.9.10, lock_api 0.4.12 (2024-04-15)
+
+- Fixed panic when calling `with_upgraded` twice on a `ArcRwLockUpgradableReadGuard` (#431)
+- Fixed `RwLockUpgradeableReadGuard::with_upgraded` 
+- Added lock_api::{Mutex, ReentrantMutex, RwLock}::from_raw methods (#429)
+- Added Apple visionOS support (#433)
+
+## parking_lot_core 0.9.9, lock_api 0.4.11 (2023-10-18)
+
+- Fixed `RwLockUpgradeableReadGuard::with_upgraded`. (#393)
+- Fixed `ReentrantMutex::bump` lock count. (#390)
+- Added methods to unsafely create a lock guard out of thin air. (#403)
+- Added support for Apple tvOS. (#405)
+
+## parking_lot_core 0.9.8, lock_api 0.4.10 (2023-06-05)
+
+- Mark guards with `#[clippy::has_significant_drop]` (#369, #371)
+- Removed windows-sys dependency (#374, #378)
+- Add `atomic_usize` default feature to support platforms without atomics. (#380)
+- Add with_upgraded API to upgradable read locks (#386)
+- Make RwLock guards Sync again (#370)
+
+## parking_lot_core 0.9.7 (2023-02-01)
+
+- Update windows-sys dependency to 0.45. (#368)
+
+## parking_lot_core 0.9.6 (2023-01-11)
+
+- Add support for watchOS. (#367)
+
+## parking_lot_core 0.9.5 (2022-11-29)
+
+- Update use of `libc::timespec` to prepare for future libc version (#363)
+
+## parking_lot_core 0.9.4 (2022-10-18)
+
+- Bump windows-sys dependency to 0.42. (#356)
+
+## lock_api 0.4.9 (2022-09-20)
+
+- Fixed `ReentrantMutexGuard::try_map` signature (#355)
+
+## lock_api 0.4.8 (2022-08-28)
+
+- Fixed unsound `Sync`/`Send` impls for `ArcMutexGuard`. (#349)
+- Added `ArcMutexGuard::into_arc`. (#350)
+
+## parking_lot 0.12.1 (2022-05-31)
+
+- Fixed incorrect memory ordering in `RwLock`. (#344)
+- Added `Condvar::wait_while` convenience methods (#343)
+
+## parking_lot_core 0.9.3 (2022-04-30)
+
+- Bump windows-sys dependency to 0.36. (#339)
+
+## parking_lot_core 0.9.2, lock_api 0.4.7 (2022-03-25)
+
+- Enable const new() on lock types on stable. (#325)
+- Added `MutexGuard::leak` function. (#333)
+- Bump windows-sys dependency to 0.34. (#331)
+- Bump petgraph dependency to 0.6. (#326)
+- Don't use pthread attributes on the espidf platform. (#319)
+
+## parking_lot_core 0.9.1 (2022-02-06)
+
+- Bump windows-sys dependency to 0.32. (#316)
+
+## parking_lot 0.12.0, parking_lot_core 0.9.0, lock_api 0.4.6 (2022-01-28)
+
+- The MSRV is bumped to 1.49.0.
+- Disabled eventual fairness on wasm32-unknown-unknown. (#302)
+- Added a rwlock method to report if lock is held exclusively. (#303)
+- Use new `asm!` macro. (#304)
+- Use windows-rs instead of winapi for faster builds. (#311)
+- Moved hardware lock elision support to a separate Cargo feature. (#313)
+- Removed used of deprecated `spin_loop_hint`. (#314)
+
 ## parking_lot 0.11.2, parking_lot_core 0.8.4, lock_api 0.4.5 (2021-08-28)
 
 - Fixed incorrect memory orderings on `RwLock` and `WordLock`. (#294, #292)

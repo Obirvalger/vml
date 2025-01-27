@@ -1,14 +1,17 @@
-use core::{mem, slice};
-use core::arch::asm;
-use core::ops::{Deref, DerefMut};
+use core::{
+    mem,
+    ops::{Deref, DerefMut},
+    slice,
+};
 
-use super::error::{Error, Result};
+pub const PAGE_SIZE: usize = 4096;
 
+#[cfg(feature = "userspace")]
 macro_rules! syscall {
     ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, )?)?)?)?)?);)+) => {
         $(
-            pub unsafe fn $name(mut $a: usize, $($b: usize, $($c: usize, $($d: usize, $($e: usize, $($f: usize)?)?)?)?)?) -> Result<usize> {
-                asm!(
+            pub unsafe fn $name(mut $a: usize, $($b: usize, $($c: usize, $($d: usize, $($e: usize, $($f: usize)?)?)?)?)?) -> crate::error::Result<usize> {
+                core::arch::asm!(
                     "syscall",
                     inout("rax") $a,
                     $(
@@ -31,12 +34,13 @@ macro_rules! syscall {
                     options(nostack),
                 );
 
-                Error::demux($a)
+                crate::error::Error::demux($a)
             }
         )+
     };
 }
 
+#[cfg(feature = "userspace")]
 syscall! {
     syscall0(a,);
     syscall1(a, b,);
@@ -49,8 +53,6 @@ syscall! {
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct IntRegisters {
-    // TODO: Some of these don't get set by Redox yet. Should they?
-
     pub r15: usize,
     pub r14: usize,
     pub r13: usize,
@@ -66,39 +68,28 @@ pub struct IntRegisters {
     pub rdx: usize,
     pub rsi: usize,
     pub rdi: usize,
-    // pub orig_rax: usize,
     pub rip: usize,
     pub cs: usize,
     pub rflags: usize,
     pub rsp: usize,
     pub ss: usize,
-    // pub fs_base: usize,
-    // pub gs_base: usize,
-    // pub ds: usize,
-    // pub es: usize,
-    pub fs: usize,
-    // pub gs: usize
 }
 
 impl Deref for IntRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        unsafe {
-            slice::from_raw_parts(self as *const IntRegisters as *const u8, mem::size_of::<IntRegisters>())
-        }
+        unsafe { slice::from_raw_parts(self as *const Self as *const u8, mem::size_of::<Self>()) }
     }
 }
 
 impl DerefMut for IntRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            slice::from_raw_parts_mut(self as *mut IntRegisters as *mut u8, mem::size_of::<IntRegisters>())
-        }
+        unsafe { slice::from_raw_parts_mut(self as *mut Self as *mut u8, mem::size_of::<Self>()) }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct FloatRegisters {
     pub fcw: u16,
     pub fsw: u16,
@@ -118,7 +109,10 @@ impl Deref for FloatRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self as *const FloatRegisters as *const u8, mem::size_of::<FloatRegisters>())
+            slice::from_raw_parts(
+                self as *const FloatRegisters as *const u8,
+                mem::size_of::<FloatRegisters>(),
+            )
         }
     }
 }
@@ -126,12 +120,15 @@ impl Deref for FloatRegisters {
 impl DerefMut for FloatRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts_mut(self as *mut FloatRegisters as *mut u8, mem::size_of::<FloatRegisters>())
+            slice::from_raw_parts_mut(
+                self as *mut FloatRegisters as *mut u8,
+                mem::size_of::<FloatRegisters>(),
+            )
         }
     }
 }
 #[derive(Clone, Copy, Debug, Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct EnvRegisters {
     pub fsbase: u64,
     pub gsbase: u64,
@@ -141,7 +138,10 @@ impl Deref for EnvRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self as *const EnvRegisters as *const u8, mem::size_of::<EnvRegisters>())
+            slice::from_raw_parts(
+                self as *const EnvRegisters as *const u8,
+                mem::size_of::<EnvRegisters>(),
+            )
         }
     }
 }
@@ -149,7 +149,10 @@ impl Deref for EnvRegisters {
 impl DerefMut for EnvRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts_mut(self as *mut EnvRegisters as *mut u8, mem::size_of::<EnvRegisters>())
+            slice::from_raw_parts_mut(
+                self as *mut EnvRegisters as *mut u8,
+                mem::size_of::<EnvRegisters>(),
+            )
         }
     }
 }

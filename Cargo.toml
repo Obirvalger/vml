@@ -17,18 +17,21 @@ cmd_lib = "1.3.0"
 comfy-table = "< 5.0.1"
 env_logger = "0.11.2"
 file-lock = "2.1.10"
+futures-util = "0.3.30"
+indicatif = "0.17.9"
 infer = { git = "https://github.com/Obirvalger/infer" }
 json = "0.12.4"
 log = { version = "0.4.20", features = ["serde"] }
 procfs = "0.16.0"
 rand = "0.8.5"
-reqwest = { version = "0.12.5", default-features = false, features = ["blocking"] }
+reqwest = { version = "0.12.5", default-features = false, features = ["stream"] }
 rust-embed = "8.5.0"
 serde = { version = "1.0.145", features = ["derive"] }
 shellexpand = "3.1.0"
 tempfile = "3.3.0"
 tera = "1.17.1"
 thiserror = "1.0.37"
+tokio = { version = "1.13.0", features = ["full"] }
 toml = "0.8.15"
 urlencoding = "2.1.2"
 walkdir = "2.3.2"
