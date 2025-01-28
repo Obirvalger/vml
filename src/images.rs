@@ -1,18 +1,22 @@
 use std::borrow::Cow;
+use std::cmp::min;
 use std::cmp::Ordering;
 use std::collections::btree_map;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::env::consts::ARCH;
 use std::fs;
-use std::io::prelude::*;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{bail, Context, Result};
 use cmd_lib::run_fun;
 use file_lock::{FileLock, FileOptions};
+use futures_util::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use infer;
 use log::info;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Images as ConfigImages;
@@ -107,16 +111,15 @@ impl<'a> Image<'a> {
         url
     }
 
-    pub fn pull(&self) -> Result<PathBuf> {
+    pub async fn pull(&self, show_pb: bool) -> Result<PathBuf> {
         let url = &self.url();
-        let mut body =
-            reqwest::blocking::get(url).map_err(|e| Error::DownloadImage(e.to_string()))?;
         let image_path = self.path();
         let images_dir = &self.config.directory;
         let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;
 
         info!("Downloading image {} {}", &self.name, url);
-        body.copy_to(&mut tmp).map_err(|e| Error::DownloadImage(e.to_string()))?;
+        download_file(url, &mut tmp, show_pb).await.unwrap();
+
         if let Ok(Some(mtype)) = infer::get_from_path(tmp.path()) {
             let mime_type = mtype.mime_type();
             if mime_type == "text/html" {
@@ -518,11 +521,11 @@ pub fn add(builder: &ImageBuilder) -> Result<()> {
     Ok(())
 }
 
-pub fn pull(config: &ConfigImages, builder: &ImageBuilder) -> Result<()> {
+pub async fn pull(config: &ConfigImages, builder: &ImageBuilder, show_pb: bool) -> Result<()> {
     let name = builder.name.to_string();
     let image = DeserializeImage::from_builder(builder.to_owned());
     let image = Image::from_deserialize(image, name, config);
-    image.pull()?;
+    image.pull(show_pb).await?;
 
     Ok(())
 }
@@ -530,5 +533,38 @@ pub fn pull(config: &ConfigImages, builder: &ImageBuilder) -> Result<()> {
 pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {
     let image_path = images_dir.join(image_name);
     fs::remove_file(image_path)?;
+    Ok(())
+}
+
+async fn download_file<F: Write>(url: &str, file: &mut F, show_pb: bool) -> Result<()> {
+    let res = Client::new().get(url).send().await?;
+    let total_size = res.content_length().unwrap_or(0);
+
+    let pb = if show_pb && total_size != 0 {
+        ProgressBar::new(total_size)
+    } else {
+        ProgressBar::hidden()
+    };
+
+    pb.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] {wide_bar:.green/.white} {bytes}/{total_bytes} \
+             ({bytes_per_sec}, ~{eta})",
+        )
+        .expect("Bad progress bar style template")
+        .progress_chars("\u{2588}\u{2588}\u{2591}"),
+    );
+
+    let mut downloaded: u64 = 0;
+    let mut stream = res.bytes_stream();
+
+    while let Some(item) = stream.next().await {
+        let chunk = item?;
+        file.write_all(&chunk)?;
+        let new = min(downloaded + (chunk.len() as u64), total_size);
+        downloaded = new;
+        pb.set_position(new);
+    }
+
     Ok(())
 }

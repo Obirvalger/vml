@@ -38,13 +38,14 @@ pub fn exists<S: AsRef<str>>(config: &Config, name: S) -> bool {
     vml_path.exists()
 }
 
-pub fn create<S: AsRef<str>>(
+pub async fn create<S: AsRef<str>>(
     config: &Config,
     vm_config: &VMConfig,
     name: S,
     image: Option<&str>,
     exists_action: CreateExistsAction,
-    available_images: &Images,
+    available_images: &Images<'_>,
+    show_pb: bool,
 ) -> Result<()> {
     let name = name.as_ref();
     if exists(config, name) {
@@ -68,7 +69,7 @@ pub fn create<S: AsRef<str>>(
                     if let Some(image) = available_images.get(image_name) {
                         if image.outdate() {
                             info!("Update {} image", &image.name);
-                            image.pull()?;
+                            image.pull(show_pb).await?;
                         }
                     }
                 }
@@ -79,7 +80,7 @@ pub fn create<S: AsRef<str>>(
                     matches!(error.downcast_ref::<Error>(), Some(Error::ImageDoesNotExists(_)));
                 if image_does_not_exist && config.commands.create.pull {
                     let image = available_images.get_result(image_name)?;
-                    image.pull()?
+                    image.pull(show_pb).await?
                 } else {
                     bail!(error);
                 }

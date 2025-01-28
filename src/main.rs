@@ -45,7 +45,7 @@ fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<B
     Ok(names)
 }
 
-fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
+async fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
     let names: Vec<&str> = if create_matches.is_present("names") {
         create_matches.values_of("names").unwrap().collect()
     } else if let Some(name) = create_matches.value_of("name-same-image") {
@@ -140,8 +140,11 @@ fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
 
     let available_images = vml::images::available(&config.images).unwrap_or_default();
 
+    let show_pb = !create_matches.is_present("no-progress-bar");
+
     for name in names {
-        vml::create_vm(config, &vm_config, name, image, exists, &available_images)?;
+        vml::create_vm(config, &vm_config, name, image, exists, &available_images, show_pb)
+            .await?;
     }
 
     Ok(())
@@ -324,7 +327,8 @@ fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
     }
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     files::install_main_config()?;
     let matches = cli::build_cli().get_matches();
     let config = Config::new()?;
@@ -411,9 +415,11 @@ fn main() -> Result<()> {
                         && !add_image_matches.is_present("no-pull")
                         || add_image_matches.is_present("pull");
 
+                    let show_pb = !add_image_matches.is_present("no-progress-bar");
+
                     vml::images::add(&builder)?;
                     if pull {
-                        vml::images::pull(&config.images, &builder)?;
+                        vml::images::pull(&config.images, &builder, show_pb).await?;
                     }
                 }
 
@@ -466,8 +472,10 @@ fn main() -> Result<()> {
                         panic!("Unknown image pull options {:?}", &pull_images_matches)
                     };
 
+                    let show_pb = !pull_images_matches.is_present("no-progress-bar");
+
                     for image in images {
-                        image.pull()?;
+                        image.pull(show_pb).await?;
                     }
                 }
                 _ => error!("Unexpected images command"),
@@ -492,12 +500,12 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(("create", create_matches)) => create(&config, create_matches)?,
+        Some(("create", create_matches)) => create(&config, create_matches).await?,
 
         Some(("start", start_matches)) => start(&config, start_matches, &mut vmc)?,
 
         Some(("run", run_matches)) => {
-            create(&config, run_matches)?;
+            create(&config, run_matches).await?;
             start(&config, run_matches, &mut vmc)?;
         }
 
