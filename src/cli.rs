@@ -108,7 +108,11 @@ pub fn build_cli() -> clap::Command<'static> {
                         )
                         .arg(Arg::new("pull").long("pull"))
                         .arg(Arg::new("no-pull").long("no-pull"))
-                        .arg(Arg::new("no-progress-bar").long("no-progress-bar"))
+                        .arg(
+                            Arg::new("no-progress-bar")
+                                .long("no-progress-bar")
+                                .help("do not show progress bar"),
+                        )
                         .group(ArgGroup::new("pull-group").args(&["pull", "no-pull"])),
                 )
                 .subcommand(
@@ -148,7 +152,11 @@ pub fn build_cli() -> clap::Command<'static> {
                                 .short('o')
                                 .help("pull all outdate images"),
                         )
-                        .arg(Arg::new("no-progress-bar").long("no-progress-bar"))
+                        .arg(
+                            Arg::new("no-progress-bar")
+                                .long("no-progress-bar")
+                                .help("do not show progress bar"),
+                        )
                         .group(
                             ArgGroup::new("specified_by")
                                 .args(&["IMAGES", "available", "exists", "outdate"])
@@ -273,7 +281,11 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("exists-fail").long("exists-fail"))
                 .arg(Arg::new("exists-ignore").long("exists-ignore"))
                 .arg(Arg::new("exists-replace").long("exists-replace"))
-                .arg(Arg::new("no-progress-bar").long("no-progress-bar"))
+                .arg(
+                    Arg::new("no-progress-bar")
+                        .long("no-progress-bar")
+                        .help("do not show progress bar"),
+                )
                 .group(ArgGroup::new("net").args(&["net-tap", "net-none", "net-user"]))
                 .group(ArgGroup::new("cloud-init-group").args(&["cloud-init", "no-cloud-init"]))
                 .group(ArgGroup::new("display").args(&[
@@ -440,7 +452,11 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("exists-fail").long("exists-fail"))
                 .arg(Arg::new("exists-ignore").long("exists-ignore"))
                 .arg(Arg::new("exists-replace").long("exists-replace"))
-                .arg(Arg::new("no-progress-bar").long("no-progress-bar"))
+                .arg(
+                    Arg::new("no-progress-bar")
+                        .long("no-progress-bar")
+                        .help("do not show progress bar"),
+                )
                 .group(ArgGroup::new("net").args(&["net-tap", "net-none", "net-user"]))
                 .group(ArgGroup::new("display").args(&[
                     "display-gtk",
