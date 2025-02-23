@@ -30,6 +30,7 @@ pub struct Image<'a> {
     pub description: Option<String>,
     pub name: String,
     pub properties: BTreeSet<String>,
+    arch: String,
     url: String,
     get_url_prog: Option<PathBuf>,
     config: &'a ConfigImages,
@@ -50,13 +51,14 @@ impl<'a> Image<'a> {
         }
 
         let mut url = image.url;
-        let context = template::create_context(&[("arch".to_string(), arch)]);
+        let context = template::create_context(&[("arch".to_string(), arch.to_string())]);
         if let Ok(rendered_url) = template::render(&context, &url, "read image url") {
             url = rendered_url;
         }
 
         Image {
             name: name.as_ref().to_string(),
+            arch,
             url,
             get_url_prog: image.get_url_prog,
             description: image.description,
@@ -101,7 +103,9 @@ impl<'a> Image<'a> {
                 config_dir().join("get-url-progs").join(get_url_prog)
             };
 
-            if let Ok(output) = run_fun!($prog $name) {
+            let arch = &self.arch;
+
+            if let Ok(output) = run_fun!(ARCH=$arch $prog $name) {
                 if !output.is_empty() {
                     url = output
                 }

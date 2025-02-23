@@ -7,7 +7,6 @@
 # apropriate item. Do not forget to update `change` section to keep
 # `get-url-prog` from updating.
 
-arch="$(uname -m)"
-url="https://download.fedoraproject.org/pub/fedora/linux/development/rawhide/Cloud/$arch/images/"
+url="https://download.fedoraproject.org/pub/fedora/linux/development/rawhide/Cloud/$ARCH/images/"
 name="$(curl -sfL "$url" | sed -n -E 's/.*href="([^"]*Generic[^"]*\.qcow2)".*/\1/p' | sort -rV | head -1)"
 echo "$url$name"
