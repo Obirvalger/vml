@@ -218,8 +218,10 @@ pub fn build_cli() -> clap::Command<'static> {
                 )
                 .arg(
                     Arg::new("name-same-image")
+                        .help("use this value as image and as vm name")
                         .long("name-same-image")
                         .short('N')
+                        .value_name("name")
                         .takes_value(true),
                 )
                 .arg(Arg::new("image").long("image").short('i').takes_value(true))
@@ -227,43 +229,58 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("memory").long("memory").short('m').takes_value(true))
                 .arg(
                     Arg::new("minimum-disk-size")
+                        .help("increase vm disk size to this value")
                         .long("minimum-disk-size")
                         .takes_value(true)
+                        .value_name("size")
                         .validator(|s| Byte::from_str(s).map(|b| b.to_string())),
                 )
-                .arg(Arg::new("ssh-user").long("ssh-user").takes_value(true))
-                .arg(Arg::new("ssh-key").long("ssh-key").takes_value(true))
+                .arg(Arg::new("ssh-user").long("ssh-user").takes_value(true).value_name("user"))
+                .arg(Arg::new("ssh-key").long("ssh-key").takes_value(true).value_name("key"))
                 .arg(
                     Arg::new("properties")
+                        .help("set image specific properties such as gui")
                         .long("properties")
                         .takes_value(true)
                         .multiple_values(true),
                 )
-                .arg(Arg::new("net-tap").long("net-tap").takes_value(true))
+                .arg(
+                    Arg::new("net-tap")
+                        .help("use qemu tap network with specified tap")
+                        .long("net-tap")
+                        .value_name("tap")
+                        .takes_value(true),
+                )
                 .arg(
                     Arg::new("net-address")
+                        .help("vm ip address, used for qemu tap network")
                         .long("net-address")
                         .takes_value(true)
+                        .value_name("address")
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
                 .arg(
                     Arg::new("net-gateway")
+                        .help("vm gateway, used for qemu tap network")
                         .long("net-gateway")
                         .takes_value(true)
+                        .value_name("gateway")
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
                 .arg(
                     Arg::new("net-nameservers")
+                        .help("vm nameservers, used for qemu tap network")
                         .long("net-nameservers")
                         .takes_value(true)
                         .multiple_values(true)
+                        .value_name("nameservers")
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
-                .arg(Arg::new("net-none").long("net-none"))
-                .arg(Arg::new("net-user").long("net-user"))
+                .arg(Arg::new("net-none").help("do not use network").long("net-none"))
+                .arg(Arg::new("net-user").help("use qemu user network").long("net-user"))
                 .arg(Arg::new("nic-model").long("nic-model").takes_value(true))
                 .arg(
                     Arg::new("cloud-init-image")
@@ -276,11 +293,23 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(
                     Arg::new("display-console").long("display-console").help("use qemu nographic"),
                 )
-                .arg(Arg::new("display-gtk").long("display-gtk"))
-                .arg(Arg::new("display-none").long("display-none"))
-                .arg(Arg::new("exists-fail").long("exists-fail"))
-                .arg(Arg::new("exists-ignore").long("exists-ignore"))
-                .arg(Arg::new("exists-replace").long("exists-replace"))
+                .arg(Arg::new("display-gtk").help("use qemu gtk display").long("display-gtk"))
+                .arg(Arg::new("display-none").help("does not use display").long("display-none"))
+                .arg(
+                    Arg::new("exists-fail")
+                        .help("return error on creation if vm already exists")
+                        .long("exists-fail"),
+                )
+                .arg(
+                    Arg::new("exists-ignore")
+                        .help("skip creation if vm already exists")
+                        .long("exists-ignore"),
+                )
+                .arg(
+                    Arg::new("exists-replace")
+                        .help("replace disk if vm already exists")
+                        .long("exists-replace"),
+                )
                 .arg(
                     Arg::new("no-progress-bar")
                         .long("no-progress-bar")
@@ -315,8 +344,8 @@ pub fn build_cli() -> clap::Command<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
-                .arg(Arg::new("ssh").long("ssh"))
-                .arg(Arg::new("no-ssh").long("no-ssh"))
+                .arg(Arg::new("ssh").help("ssh to vm after start").long("ssh"))
+                .arg(Arg::new("no-ssh").help("do not ssh to vm after start").long("no-ssh"))
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
@@ -324,11 +353,24 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(
                     Arg::new("snapshot")
                         .long("snapshot")
-                        .help("Discard changes created during this start"),
+                        .help("discard changes created during this start"),
                 )
-                .arg(Arg::new("running-fail").long("running-fail"))
-                .arg(Arg::new("running-ignore").long("running-ignore"))
-                .arg(Arg::new("running-restart").long("running-restart").alias("running-stop"))
+                .arg(
+                    Arg::new("running-fail")
+                        .help("return error on starting if vm already running")
+                        .long("running-fail"),
+                )
+                .arg(
+                    Arg::new("running-ignore")
+                        .help("skip starting if vm already running")
+                        .long("running-ignore"),
+                )
+                .arg(
+                    Arg::new("running-restart")
+                        .help("restart vm if it is running already")
+                        .long("running-restart")
+                        .alias("running-stop"),
+                )
                 .arg(
                     Arg::new("drives")
                         .long("drives")
@@ -372,12 +414,14 @@ pub fn build_cli() -> clap::Command<'static> {
                 )
                 .arg(
                     Arg::new("name-same-image")
+                        .help("use this value as image and as vm name")
                         .long("name-same-image")
                         .short('N')
+                        .value_name("name")
                         .takes_value(true),
                 )
-                .arg(Arg::new("ssh").long("ssh"))
-                .arg(Arg::new("no-ssh").long("no-ssh"))
+                .arg(Arg::new("ssh").help("ssh to vm after start").long("ssh"))
+                .arg(Arg::new("no-ssh").help("do not ssh to vm after start").long("no-ssh"))
                 .arg(Arg::new("wait-ssh").long("wait-ssh"))
                 .arg(Arg::new("no-wait-ssh").long("no-wait-ssh"))
                 .arg(
@@ -391,7 +435,7 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(
                     Arg::new("snapshot")
                         .long("snapshot")
-                        .help("Discard changes created during this start"),
+                        .help("discard changes created during this start"),
                 )
                 .arg(
                     Arg::new("drives")
@@ -405,53 +449,95 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("memory").long("memory").short('m').takes_value(true))
                 .arg(
                     Arg::new("minimum-disk-size")
+                        .help("increase vm disk size to this value")
                         .long("minimum-disk-size")
                         .takes_value(true)
+                        .value_name("size")
                         .validator(|s| Byte::from_str(s).map(|b| b.to_string())),
                 )
-                .arg(Arg::new("ssh-user").long("ssh-user").takes_value(true))
-                .arg(Arg::new("ssh-key").long("ssh-key").takes_value(true))
+                .arg(Arg::new("ssh-user").long("ssh-user").takes_value(true).value_name("user"))
+                .arg(Arg::new("ssh-key").long("ssh-key").takes_value(true).value_name("key"))
                 .arg(
                     Arg::new("properties")
+                        .help("set image specific properties such as gui")
                         .long("properties")
                         .takes_value(true)
                         .multiple_values(true),
                 )
-                .arg(Arg::new("net-tap").long("net-tap").takes_value(true))
+                .arg(
+                    Arg::new("net-tap")
+                        .help("use qemu tap network with specified tap")
+                        .long("net-tap")
+                        .value_name("tap")
+                        .takes_value(true),
+                )
                 .arg(
                     Arg::new("net-address")
+                        .help("vm ip address, used for qemu tap network")
                         .long("net-address")
                         .takes_value(true)
+                        .value_name("address")
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
                 .arg(
                     Arg::new("net-gateway")
+                        .help("vm gateway, used for qemu tap network")
                         .long("net-gateway")
                         .takes_value(true)
+                        .value_name("gateway")
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
                 .arg(
                     Arg::new("net-nameservers")
+                        .help("vm nameservers, used for qemu tap network")
                         .long("net-nameservers")
                         .takes_value(true)
                         .multiple_values(true)
+                        .value_name("nameservers")
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
-                .arg(Arg::new("running-fail").long("running-fail"))
-                .arg(Arg::new("running-ignore").long("running-ignore"))
-                .arg(Arg::new("running-restart").long("running-restart").alias("running-stop"))
-                .arg(Arg::new("net-none").long("net-none"))
-                .arg(Arg::new("net-user").long("net-user"))
+                .arg(
+                    Arg::new("running-fail")
+                        .help("return error on starting if vm already running")
+                        .long("running-fail"),
+                )
+                .arg(
+                    Arg::new("running-ignore")
+                        .help("skip starting if vm already running")
+                        .long("running-ignore"),
+                )
+                .arg(
+                    Arg::new("running-restart")
+                        .help("restart vm if it is running already")
+                        .long("running-restart")
+                        .alias("running-stop"),
+                )
+                .arg(Arg::new("net-none").help("do not use network").long("net-none"))
+                .arg(Arg::new("net-user").help("use qemu user network").long("net-user"))
                 .arg(Arg::new("nic-model").long("nic-model").takes_value(true))
-                .arg(Arg::new("display-console").long("display-console"))
-                .arg(Arg::new("display-gtk").long("display-gtk"))
-                .arg(Arg::new("display-none").long("display-none"))
-                .arg(Arg::new("exists-fail").long("exists-fail"))
-                .arg(Arg::new("exists-ignore").long("exists-ignore"))
-                .arg(Arg::new("exists-replace").long("exists-replace"))
+                .arg(
+                    Arg::new("display-console").long("display-console").help("use qemu nographic"),
+                )
+                .arg(Arg::new("display-gtk").help("use qemu gtk display").long("display-gtk"))
+                .arg(Arg::new("display-none").help("does not use display").long("display-none"))
+                .arg(
+                    Arg::new("exists-fail")
+                        .help("return error on creation if vm already exists")
+                        .long("exists-fail"),
+                )
+                .arg(
+                    Arg::new("exists-ignore")
+                        .help("skip creation if vm already exists")
+                        .long("exists-ignore"),
+                )
+                .arg(
+                    Arg::new("exists-replace")
+                        .help("replace disk if vm already exists")
+                        .long("exists-replace"),
+                )
                 .arg(
                     Arg::new("no-progress-bar")
                         .long("no-progress-bar")
@@ -908,7 +994,7 @@ pub fn build_cli() -> clap::Command<'static> {
                 .about("show embedded file")
                 .arg(Arg::new("path").required(true)),
         )
-        .subcommand(Command::new("completion").arg(
+        .subcommand(Command::new("completion").about("show completion for specified shell").arg(
             Arg::new("SHELL").help("generate completions").required(true).possible_values([
                 "bash",
                 "elvish",
