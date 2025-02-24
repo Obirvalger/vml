@@ -56,7 +56,7 @@ fn default_qemu_arch_options() -> Vec<String> {
             "-M".to_string(),
             "virt,gic-version=3".to_string(),
             "-bios".to_string(),
-            "/usr/share/AAVMF/AAVMF_CODE.fd".to_string(),
+            "/usr/share/AAVMF/QEMU_EFI.silent.fd".to_string(),
         ]
     } else {
         vec![]
