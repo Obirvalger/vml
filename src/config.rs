@@ -33,6 +33,8 @@ pub struct VMsDefault {
     pub qemu_binary: String,
     #[serde(default = "default_qemu_arch_options")]
     pub qemu_arch_options: Vec<String>,
+    #[serde(default = "default_qemu_bios")]
+    pub qemu_bios: String,
     pub minimum_disk_size: Option<Byte>,
     pub cloud_init: bool,
     pub cloud_init_image: Option<PathBuf>,
@@ -55,8 +57,6 @@ fn default_qemu_arch_options() -> Vec<String> {
         vec![
             "-M".to_string(),
             "virt,gic-version=3".to_string(),
-            "-bios".to_string(),
-            "/usr/share/AAVMF/QEMU_EFI.silent.fd".to_string(),
         ]
     } else {
         vec![]
@@ -65,6 +65,19 @@ fn default_qemu_arch_options() -> Vec<String> {
 
 fn default_qemu_binary() -> String {
     format!("qemu-system-{}", ARCH)
+}
+
+fn default_qemu_bios() -> String {
+    let efi = config_dir().join("efis").join(ARCH).join("code.fd");
+    if efi.exists() {
+        efi.to_string_lossy().to_string()
+    } else {
+        if ARCH == "aarch64" {
+            "/usr/share/AAVMF/QEMU_EFI.silent.fd".to_string()
+        } else {
+            "/usr/share/OVMF/OVMF_CODE.fd".to_string()
+        }
+    }
 }
 
 fn default_clean_program() -> PathBuf {

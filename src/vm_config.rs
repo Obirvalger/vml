@@ -31,6 +31,7 @@ pub struct VMConfig {
     pub properties: Option<BTreeSet<String>>,
     pub qemu_arch_options: Option<Vec<String>>,
     pub qemu_binary: Option<String>,
+    pub qemu_bios: Option<String>,
     pub tags: Option<HashSet<String>>,
     // inset table values at the end
     pub gui: Option<ConfigGui>,
@@ -85,6 +86,7 @@ impl VMConfig {
             ref mut properties,
             ref mut qemu_binary,
             ref mut qemu_arch_options,
+            ref mut qemu_bios,
             ref mut ssh,
             ref mut tags,
         } = self;
@@ -144,6 +146,9 @@ impl VMConfig {
         }
         if qemu_arch_options.is_none() {
             other.qemu_arch_options.clone_into(qemu_arch_options);
+        }
+        if qemu_bios.is_none() {
+            other.qemu_bios.clone_into(qemu_bios);
         }
         match ssh {
             None => other.ssh.clone_into(ssh),

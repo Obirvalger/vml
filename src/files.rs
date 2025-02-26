@@ -21,6 +21,14 @@ struct AssetConfigs;
 struct AssetGetUrlProgs;
 
 #[derive(RustEmbed)]
+#[folder = "files/efis/x86_64"]
+struct AssetEfisX86_64;
+
+#[derive(RustEmbed)]
+#[folder = "files/efis/aarch64"]
+struct AssetEfisAarch64;
+
+#[derive(RustEmbed)]
 #[folder = "files/scripts"]
 struct AssetScripts;
 
@@ -68,6 +76,29 @@ fn install_get_url_progs() -> Result<()> {
 
 fn install_scripts() -> Result<()> {
     install_executables_in_config_dir(&AssetScripts, "scripts")
+}
+
+fn install_files_in_config_dir<E: RustEmbed, S: AsRef<str>>(
+    _assert: &E,
+    files: S,
+) -> Result<()> {
+    let directory = config_dir().join(files.as_ref());
+    fs::create_dir_all(&directory)?;
+
+    for filename in E::iter() {
+        let filename = filename.as_ref();
+        let filepath = directory.join(filename);
+        let content = E::get(filename).unwrap();
+        lock_write(&filepath, content.data)?;
+    }
+
+    Ok(())
+}
+
+fn install_efis() -> Result<()> {
+    install_files_in_config_dir(&AssetEfisX86_64, "efis/x86_64")?;
+    install_files_in_config_dir(&AssetEfisAarch64, "efis/aarch64")?;
+    Ok(())
 }
 
 fn install_config(filename: &str) -> Result<()> {
@@ -125,6 +156,7 @@ fn install_other_files() -> Result<()> {
         install_config("images.toml")?;
         install_get_url_progs()?;
         install_scripts()?;
+        install_efis()?;
 
         let last = config_dir().join(".last");
         fs::write(last, "")?;

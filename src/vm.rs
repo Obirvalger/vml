@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::env::consts::ARCH;
 use std::ffi::OsStr;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -121,6 +122,15 @@ fn get_available_port() -> Option<String> {
         .map(|a| a.to_string())
 }
 
+fn bios_options<S: AsRef<str>>(bios: S, efi: bool) -> Vec<String> {
+    if ARCH != "aarch64" && !efi {
+        vec![]
+    } else {
+        vec!["-bios".to_string(), bios.as_ref().to_string()]
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub struct VM {
     cache: Cache,
@@ -147,6 +157,7 @@ pub struct VM {
     openssh_config: PathBuf,
     qemu_binary: String,
     qemu_arch_options: Vec<String>,
+    qemu_bios_options: Vec<String>,
     ssh: Option<Ssh>,
     tags: HashSet<String>,
     vml_directory: PathBuf,
@@ -237,6 +248,11 @@ impl VM {
             .qemu_arch_options
             .unwrap_or_else(|| config.default.qemu_arch_options.to_owned());
 
+        let qemu_bios =
+            vm_config.qemu_bios.unwrap_or_else(|| config.default.qemu_bios.to_string());
+
+        let qemu_bios_options = bios_options(qemu_bios, properties.contains("efi"));
+
         let ssh_config = match vm_config.ssh {
             None => config.default.ssh.to_owned(),
             Some(ssh) => ssh.updated(&config.default.ssh),
@@ -269,6 +285,7 @@ impl VM {
             openssh_config,
             qemu_binary,
             qemu_arch_options,
+            qemu_bios_options,
             specified_by,
             ssh,
             tags,
@@ -328,6 +345,7 @@ impl VM {
         qemu.args(["-m", &self.memory])
             .arg("--enable-kvm")
             .args(&self.qemu_arch_options)
+            .args(&self.qemu_bios_options)
             .args(["-cpu", &self.cpu_model])
             .args(["-smp", &self.nproc])
             .args(["-drive", &format!("file={},if=virtio", self.disk.to_string_lossy())])
