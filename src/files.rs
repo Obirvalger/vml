@@ -107,6 +107,32 @@ fn install_openssh_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
+fn is_new_build() -> Result<bool> {
+    let last = config_dir().join(".last");
+    let exe = std::env::current_exe()?;
+
+    if last.exists() {
+        let last_time = fs::metadata(&last)?.modified()?;
+        let exe_time = fs::metadata(&exe)?.modified()?;
+        Ok(last_time.cmp(&exe_time).is_lt())
+    } else {
+        Ok(true)
+    }
+}
+
+fn install_other_files() -> Result<()> {
+    if is_new_build()? {
+        install_config("images.toml")?;
+        install_get_url_progs()?;
+        install_scripts()?;
+
+        let last = config_dir().join(".last");
+        fs::write(last, "")?;
+    }
+
+    Ok(())
+}
+
 pub fn install_all(config: &Config) -> Result<()> {
     if !config.vms_dir.exists() {
         fs::create_dir_all(&config.vms_dir)?;
@@ -114,12 +140,10 @@ pub fn install_all(config: &Config) -> Result<()> {
     if !config.images.directory.exists() {
         fs::create_dir_all(&config.images.directory)?;
     }
-    install_config("images.toml")?;
 
     install_openssh_config(config)?;
 
-    install_get_url_progs()?;
-    install_scripts()?;
+    install_other_files()?;
 
     Ok(())
 }
