@@ -287,8 +287,7 @@ impl ImageBuilder {
     }
 
     pub fn properties(&mut self, properties: &[String]) -> &Self {
-        self.fields.properties =
-            properties.iter().cloned().map(String::from).collect::<BTreeSet<_>>();
+        self.fields.properties = properties.iter().cloned().collect::<BTreeSet<_>>();
         self
     }
 

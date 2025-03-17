@@ -130,7 +130,6 @@ fn bios_options<S: AsRef<str>>(bios: S, efi: bool) -> Vec<String> {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct VM {
     cache: Cache,

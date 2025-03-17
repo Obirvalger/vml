@@ -54,10 +54,7 @@ fn default_nic_model() -> String {
 
 fn default_qemu_arch_options() -> Vec<String> {
     if ARCH == "aarch64" {
-        vec![
-            "-M".to_string(),
-            "virt,gic-version=3".to_string(),
-        ]
+        vec!["-M".to_string(), "virt,gic-version=3".to_string()]
     } else {
         vec![]
     }
@@ -71,12 +68,10 @@ fn default_qemu_bios() -> String {
     let efi = config_dir().join("efis").join(ARCH).join("code.fd");
     if efi.exists() {
         efi.to_string_lossy().to_string()
+    } else if ARCH == "aarch64" {
+        "/usr/share/AAVMF/QEMU_EFI.silent.fd".to_string()
     } else {
-        if ARCH == "aarch64" {
-            "/usr/share/AAVMF/QEMU_EFI.silent.fd".to_string()
-        } else {
-            "/usr/share/OVMF/OVMF_CODE.fd".to_string()
-        }
+        "/usr/share/OVMF/OVMF_CODE.fd".to_string()
     }
 }
 

@@ -78,10 +78,7 @@ fn install_scripts() -> Result<()> {
     install_executables_in_config_dir(&AssetScripts, "scripts")
 }
 
-fn install_files_in_config_dir<E: RustEmbed, S: AsRef<str>>(
-    _assert: &E,
-    files: S,
-) -> Result<()> {
+fn install_files_in_config_dir<E: RustEmbed, S: AsRef<str>>(_assert: &E, files: S) -> Result<()> {
     let directory = config_dir().join(files.as_ref());
     fs::create_dir_all(&directory)?;
 
