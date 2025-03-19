@@ -188,20 +188,22 @@ description = "Rocky Linux 8"
 change = ["update-all", "delete"]
 
 [centos]
-url = ""
-get-url-prog = "vml-get-centos"
-description = "CentOS latest stream (9)"
+url = "https://cloud.centos.org/centos/10-stream/{{ arch }}/images/CentOS-Stream-GenericCloud-10-latest.{{ arch }}.qcow2"
+description = "CentOS latest stream (10)"
 change = ["update-all", "delete"]
 
 [centos-stream]
-url = ""
-get-url-prog = "vml-get-centos"
-description = "CentOS latest stream (9)"
+url = "https://cloud.centos.org/centos/10-stream/{{ arch }}/images/CentOS-Stream-GenericCloud-10-latest.{{ arch }}.qcow2"
+description = "CentOS latest stream (10)"
+change = ["update-all", "delete"]
+
+[centos-10-stream]
+url = "https://cloud.centos.org/centos/10-stream/{{ arch }}/images/CentOS-Stream-GenericCloud-10-latest.{{ arch }}.qcow2"
+description = "CentOS 10-stream"
 change = ["update-all", "delete"]
 
 [centos-9-stream]
-url = ""
-get-url-prog = "vml-get-centos"
+url = "https://cloud.centos.org/centos/9-stream/{{ arch }}/images/CentOS-Stream-GenericCloud-9-latest.{{ arch }}.qcow2"
 description = "CentOS 9-stream"
 change = ["update-all", "delete"]
 
