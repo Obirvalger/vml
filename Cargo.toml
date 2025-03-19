@@ -1,6 +1,6 @@
 [package]
 name = "vml"
-version = "0.1.10"
+version = "0.1.11"
 rust-version = "1.75"
 authors = ["Mikhail Gordeev <obirvalger@altlinux.org>"]
 edition = "2021"
