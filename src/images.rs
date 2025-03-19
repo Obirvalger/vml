@@ -540,7 +540,8 @@ pub fn remove(images_dir: &Path, image_name: &str) -> Result<()> {
 }
 
 async fn download_file<F: Write>(url: &str, file: &mut F, show_pb: bool) -> Result<()> {
-    let res = Client::new().get(url).send().await?;
+    let client = Client::builder().user_agent("vml").build()?;
+    let res = client.get(url).send().await?;
     let total_size = res.content_length().unwrap_or(0);
 
     let pb = if show_pb && total_size != 0 {
