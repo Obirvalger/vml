@@ -225,14 +225,19 @@ description = "CentOS 7"
 change = ["update-all", "delete"]
 
 [fedora]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/{{arch}}/images/Fedora-Cloud-Base-Generic-41-1.4.{{arch}}.qcow2"
-description = "latest Fedora release (41)"
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/{{arch}}/images/Fedora-Cloud-Base-Generic-42-1.1.{{arch}}.qcow2"
+description = "latest Fedora release (42)"
 change = ["update-all", "delete"]
 
 [fedora-rawhide]
 url = ""
 get-url-prog = "vml-get-fedora-rawhide"
 description = "Fedora Rawhide"
+change = ["update-all", "delete"]
+
+[fedora-42]
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/{{arch}}/images/Fedora-Cloud-Base-Generic-42-1.1.{{arch}}.qcow2"
+description = "Fedora 42"
 change = ["update-all", "delete"]
 
 [fedora-41]
