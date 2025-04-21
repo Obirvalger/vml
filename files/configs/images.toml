@@ -41,8 +41,8 @@ get-url-prog = "vml-get-arch"
 change = ["update-all", "delete"]
 
 [ubuntu]
-url = "https://cloud-images.ubuntu.com/oracular/current/oracular-server-cloudimg-{{arch}}.img"
-description = "latest Ubuntu release (24.10)"
+url = "https://cloud-images.ubuntu.com/plucky/current/plucky-server-cloudimg-{{arch}}.img"
+description = "latest Ubuntu release (25.04)"
 change = ["update-all", "delete"]
 
 [ubuntu.arch-mapping]
@@ -55,6 +55,15 @@ description = "latest LTS Ubuntu release (24.04)"
 change = ["update-all", "delete"]
 
 [ubuntu-lts.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
+[ubuntu-plucky]
+url = "https://cloud-images.ubuntu.com/plucky/current/plucky-server-cloudimg-{{arch}}.img"
+description = "Ubuntu 25.04 Plucky Puffin"
+change = ["update-all", "delete"]
+
+[ubuntu-plucky.arch-mapping]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
