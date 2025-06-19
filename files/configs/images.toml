@@ -182,8 +182,13 @@ description = "AlmaLinux 8"
 change = ["update-all", "delete"]
 
 [rocky]
-url = "https://dl.rockylinux.org/pub/rocky/9/images/{{arch}}/Rocky-9-GenericCloud.latest.{{arch}}.qcow2"
-description = "Rocky Linux latest (9)"
+url = "https://dl.rockylinux.org/pub/rocky/10/images/{{arch}}/Rocky-10-GenericCloud-Base.latest.{{arch}}.qcow2"
+description = "Rocky Linux latest (10)"
+change = ["update-all", "delete"]
+
+[rocky-10]
+url = "https://dl.rockylinux.org/pub/rocky/10/images/{{arch}}/Rocky-10-GenericCloud-Base.latest.{{arch}}.qcow2"
+description = "Rocky Linux 10"
 change = ["update-all", "delete"]
 
 [rocky-9]
