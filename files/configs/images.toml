@@ -167,13 +167,18 @@ x86_64 = "amd64"
 aarch64 = "arm64"
 
 [alma]
-url = "https://repo.almalinux.org/almalinux/9/cloud/{{arch}}/images/AlmaLinux-9-GenericCloud-latest.{{arch}}.qcow2"
-description = "AlmaLinux latest (9)"
+url = "https://repo.almalinux.org/almalinux/10/cloud/{{arch}}/images/AlmaLinux-10-GenericCloud-latest.{{arch}}.qcow2"
+description = "AlmaLinux latest (10)"
+change = ["update-all", "delete"]
+
+[alma-10]
+url = "https://repo.almalinux.org/almalinux/10/cloud/{{arch}}/images/AlmaLinux-10-GenericCloud-latest.{{arch}}.qcow2"
+description = "AlmaLinux 10"
 change = ["update-all", "delete"]
 
 [alma-9]
 url = "https://repo.almalinux.org/almalinux/9/cloud/{{arch}}/images/AlmaLinux-9-GenericCloud-latest.{{arch}}.qcow2"
-description = "AlmaLinux"
+description = "AlmaLinux 9"
 change = ["update-all", "delete"]
 
 [alma-8]
