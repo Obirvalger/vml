@@ -41,8 +41,8 @@ get-url-prog = "vml-get-arch"
 change = ["update-all", "delete"]
 
 [ubuntu]
-url = "https://cloud-images.ubuntu.com/plucky/current/plucky-server-cloudimg-{{arch}}.img"
-description = "latest Ubuntu release (25.04)"
+url = "https://cloud-images.ubuntu.com/questing/current/questing-server-cloudimg-{{arch}}.img"
+description = "latest Ubuntu release (25.10)"
 change = ["update-all", "delete"]
 
 [ubuntu.arch-mapping]
@@ -55,6 +55,15 @@ description = "latest LTS Ubuntu release (24.04)"
 change = ["update-all", "delete"]
 
 [ubuntu-lts.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
+[ubuntu-questing]
+url = "https://cloud-images.ubuntu.com/questing/current/questing-server-cloudimg-{{arch}}.img"
+description = "Ubuntu 25.10 Questing Quokka"
+change = ["update-all", "delete"]
+
+[ubuntu-questing.arch-mapping]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
