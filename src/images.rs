@@ -122,7 +122,7 @@ impl<'a> Image<'a> {
         let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;
 
         info!("Downloading image {} {}", &self.name, url);
-        download_file(url, &mut tmp, show_pb).await.unwrap();
+        download_file(url, &mut tmp, show_pb).await?;
 
         if let Ok(Some(mtype)) = infer::get_from_path(tmp.path()) {
             let mime_type = mtype.mime_type();
