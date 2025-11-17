@@ -288,7 +288,7 @@ fn matches_valid_value<S: AsRef<str>>(matches: &ArgMatches, key: S) -> Option<&s
     }
 }
 
-fn matches_valid_values<S: AsRef<str>>(matches: &ArgMatches, key: S) -> Option<Values> {
+fn matches_valid_values<S: AsRef<str>>(matches: &ArgMatches, key: S) -> Option<Values<'_>> {
     if matches.is_valid_arg(key.as_ref()) {
         matches.values_of(key.as_ref())
     } else {

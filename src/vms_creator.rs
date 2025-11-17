@@ -34,7 +34,7 @@ pub struct VMsCreator<'a> {
 }
 
 impl VMsCreator<'_> {
-    pub fn new(config: &Config) -> VMsCreator {
+    pub fn new(config: &Config) -> VMsCreator<'_> {
         let all = false;
         let error_on_empty = false;
         let names = HashSet::new();

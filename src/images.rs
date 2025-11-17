@@ -188,11 +188,11 @@ impl Images<'_> {
         self.0.keys().map(|name| name.to_string()).collect()
     }
 
-    pub fn get(&self, name: impl AsRef<str>) -> Option<&Image> {
+    pub fn get(&self, name: impl AsRef<str>) -> Option<&Image<'_>> {
         self.0.get(name.as_ref())
     }
 
-    pub fn get_result(&self, name: impl AsRef<str>) -> Result<&Image> {
+    pub fn get_result(&self, name: impl AsRef<str>) -> Result<&Image<'_>> {
         self.0
             .get(name.as_ref())
             .ok_or_else(|| Error::UnknownImage(name.as_ref().to_string()).into())
@@ -490,7 +490,7 @@ pub fn list(images_dirs: &[&PathBuf]) -> Result<Vec<String>> {
     Ok(images.into_iter().collect())
 }
 
-pub fn available(config: &ConfigImages) -> Result<Images> {
+pub fn available(config: &ConfigImages) -> Result<Images<'_>> {
     let images = parse(&images_file_path())?.0;
     let images = images
         .into_iter()
