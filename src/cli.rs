@@ -351,6 +351,11 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("cloud-init").long("cloud-init").short('c'))
                 .arg(Arg::new("no-cloud-init").long("no-cloud-init"))
                 .arg(
+                    Arg::new("display-console").long("display-console").help("use qemu nographic"),
+                )
+                .arg(Arg::new("display-gtk").help("use qemu gtk display").long("display-gtk"))
+                .arg(Arg::new("display-none").help("does not use display").long("display-none"))
+                .arg(
                     Arg::new("snapshot")
                         .long("snapshot")
                         .help("discard changes created during this start"),
@@ -394,6 +399,11 @@ pub fn build_cli() -> clap::Command<'static> {
                 )
                 .group(ArgGroup::new("ssh-group").args(&["ssh", "no-ssh"]))
                 .group(ArgGroup::new("wait-ssh-group").args(&["wait-ssh", "no-wait-ssh"]))
+                .group(ArgGroup::new("display").args(&[
+                    "display-gtk",
+                    "display-none",
+                    "display-console",
+                ]))
                 .group(ArgGroup::new("running-group").args(&[
                     "running-fail",
                     "running-ignore",

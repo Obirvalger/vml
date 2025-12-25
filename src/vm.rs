@@ -330,6 +330,7 @@ impl VM {
         &self,
         cloud_init: Option<bool>,
         snapshot: bool,
+        display_overwrite: &Option<String>,
         drives: &[S],
     ) -> Result<()> {
         debug!("Start vm {:?}", self.name);
@@ -351,7 +352,8 @@ impl VM {
             .args(["-monitor", &format!("unix:{},server,nowait", self.monitor.to_string_lossy())])
             .current_dir(&self.directory);
 
-        if let Some(display) = &self.display {
+        let display = display_overwrite.as_ref().or(self.display.as_ref());
+        if let Some(display) = display {
             if display == "console" {
                 qemu.args(["-nographic", "-serial", "mon:stdio"]);
             } else {

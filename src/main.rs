@@ -185,6 +185,16 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
         config.commands.start.running
     };
 
+    let display = if start_matches.is_present("display-console") {
+        Some("console".to_string())
+    } else if start_matches.is_present("display-gtk") {
+        Some("gtk".to_string())
+    } else if start_matches.is_present("display-none") {
+        Some("none".to_string())
+    } else {
+        None
+    };
+
     vmc.with_pid(WithPid::Option);
     vmc.error_on_empty();
 
@@ -202,12 +212,12 @@ fn start(config: &Config, start_matches: &ArgMatches, vmc: &mut VMsCreator) -> R
                 }
                 StartRunningAction::Restart => {
                     vm.stop(false)?;
-                    vm.start(cloud_init, snapshot, &drives)?;
+                    vm.start(cloud_init, snapshot, &display, &drives)?;
                     openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
                 }
             };
         } else {
-            vm.start(cloud_init, snapshot, &drives)?;
+            vm.start(cloud_init, snapshot, &display, &drives)?;
             openssh_config::add(&config.openssh_config.vm_configs_dir, vm)?;
         }
     }
