@@ -55,6 +55,7 @@ nproc = 2
 
 ssh.options = [
     "StrictHostKeyChecking=no",
+    "ControlMaster=no",
     "UserKnownHostsFile=/dev/null",
     "LogLevel=ERROR",
 ]
