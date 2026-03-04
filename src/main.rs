@@ -819,6 +819,7 @@ async fn main() -> Result<()> {
                 remove_matches.is_present("interactive") || config.commands.remove.interactive;
 
             vmc.with_pid(WithPid::Option);
+            vmc.error_on_empty();
 
             for mut vm in vmc.create()? {
                 let vm_name = vm.name.to_string();
