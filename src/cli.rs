@@ -886,7 +886,6 @@ pub fn build_cli() -> clap::Command<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
-                .arg(Arg::new("all").long("all").short('a'))
                 .arg(Arg::new("format-debug").long("format-debug").short('d'))
                 .arg(Arg::new("format-json").long("format-json").short('j'))
                 .arg(Arg::new("format-table").long("format-table"))
@@ -904,7 +903,10 @@ pub fn build_cli() -> clap::Command<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
+                .arg(Arg::new("all").long("all").short('a'))
                 .arg(Arg::new("running").long("running").short('r'))
+                .arg(Arg::new("stopped").long("stopped").short('s'))
+                .group(ArgGroup::new("state").args(&["all", "running", "stopped"]))
                 .group(ArgGroup::new("format").args(&["format-debug", "format-json"])),
         )
         .subcommand(Command::new("scp").about("show how to use scp with vml vms"))

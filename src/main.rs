@@ -708,10 +708,14 @@ async fn main() -> Result<()> {
         Some(("show", show_matches)) => {
             vmc.all();
 
-            if !show_matches.is_present("all") {
-                vmc.with_pid(WithPid::Filter);
-            } else {
+            if show_matches.is_present("all") {
                 vmc.with_pid(WithPid::Option);
+            }
+            if show_matches.is_present("running") {
+                vmc.with_pid(WithPid::Filter);
+            }
+            if show_matches.is_present("stopped") {
+                vmc.with_pid(WithPid::Without);
             }
 
             let format_debug = show_matches.is_present("format-debug");
