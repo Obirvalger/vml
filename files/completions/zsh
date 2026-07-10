@@ -1,0 +1,696 @@
+#compdef vml
+
+autoload -U is-at-least
+
+(( $+functions[_vml_vm_names_all] )) ||
+_vml_vm_names_all() {
+    local -a vms expl
+
+    vms=("${(@f)$(_call_program vms vml ls -a 2>/dev/null)}")
+    vms=("${(@u)vms:#}")
+
+    _wanted vms expl "virtual machine" compadd "$@" "${expl[@]}" -a vms
+}
+
+(( $+functions[_vml_vm_names_running] )) ||
+_vml_vm_names_running() {
+    local -a vms expl
+
+    vms=("${(@f)$(_call_program vms vml ls -r 2>/dev/null)}")
+    vms=("${(@u)vms:#}")
+
+    _wanted vms expl "running virtual machine" compadd "$@" "${expl[@]}" -a vms
+}
+
+(( $+functions[_vml_vm_names_stopped] )) ||
+_vml_vm_names_stopped() {
+    local -a vms expl
+
+    vms=("${(@f)$(_call_program vms vml ls -s 2>/dev/null)}")
+    vms=("${(@u)vms:#}")
+
+    _wanted vms expl "stopped virtual machine" compadd "$@" "${expl[@]}" -a vms
+}
+
+(( $+functions[_vml_image_names_available] )) ||
+_vml_image_names_available() {
+    local line
+    local -a images expl
+
+    for line in "${(@f)$(_call_program images vml image available 2>/dev/null)}"; do
+        images+=("${line%%[[:space:]]*}")
+    done
+    images=("${(@u)images:#}")
+
+    _wanted images expl "available image" compadd "$@" "${expl[@]}" -a images
+}
+
+(( $+functions[_vml_image_names_stored] )) ||
+_vml_image_names_stored() {
+    local -a images expl
+
+    images=("${(@f)$(_call_program images vml image list 2>/dev/null)}")
+    images=("${(@u)images:#}")
+
+    _wanted images expl "stored image" compadd "$@" "${expl[@]}" -a images
+}
+
+(( $+functions[_vml_image_names_all] )) ||
+_vml_image_names_all() {
+    local line
+    local -a images expl
+
+    images=("${(@f)$(_call_program images vml image list 2>/dev/null)}")
+    for line in "${(@f)$(_call_program images vml image available 2>/dev/null)}"; do
+        images+=("${line%%[[:space:]]*}")
+    done
+    images=("${(@u)images:#}")
+
+    _wanted images expl "image" compadd "$@" "${expl[@]}" -a images
+}
+
+_vml() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" \
+'--log-level=[Set log level]: :(off error warn info debug trace)' \
+'-H+[Run vml command on host]: : ' \
+'--host=[Run vml command on host]: : ' \
+'--vm-config=[Path to vm config replacement (use tera templates)]: :_files' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'-V[Print version information]' \
+'--version[Print version information]' \
+'--all-vms[Specify all vms]' \
+'--minimal-vm-config[Replace vm config with minimal one]' \
+":: :_vml_commands" \
+"*::: :->vml" \
+&& ret=0
+    case $state in
+    (vml)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:vml-command-$line[1]:"
+        case $line[1] in
+            (image)
+_arguments "${_arguments_options[@]}" \
+'-h[Print help information]' \
+'--help[Print help information]' \
+":: :_vml__image_commands" \
+"*::: :->image" \
+&& ret=0
+
+    case $state in
+    (image)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:vml-image-command-$line[1]:"
+        case $line[1] in
+            (available)
+_arguments "${_arguments_options[@]}" \
+'-h[Print help information]' \
+'--help[Print help information]' \
+&& ret=0
+;;
+(add)
+_arguments "${_arguments_options[@]}" \
+'-n+[]: : ' \
+'--name=[]: : ' \
+'-u+[]: : ' \
+'--url=[]: : ' \
+'--change=[]: : ' \
+'--properties=[]: : ' \
+'-d+[]: : ' \
+'--description=[]: : ' \
+'--update-after-days=[]: : ' \
+'--pull[]' \
+'--no-pull[]' \
+'--no-progress-bar[do not show progress bar]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+&& ret=0
+;;
+(remove|rm)
+_arguments "${_arguments_options[@]}" \
+'-i[]: :_vml_image_names_stored' \
+'--images=[]: :_vml_image_names_stored' \
+'-a[]' \
+'--all[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::IMAGE:_vml_image_names_stored' \
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" \
+'-h[Print help information]' \
+'--help[Print help information]' \
+&& ret=0
+;;
+(pull)
+_arguments "${_arguments_options[@]}" \
+'-a[pull all available images]' \
+'--available[pull all available images]' \
+'-e[pull all existing in images directory images]' \
+'--exists[pull all existing in images directory images]' \
+'-o[pull all outdate images]' \
+'--outdate[pull all outdate images]' \
+'--no-progress-bar[do not show progress bar]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'*::IMAGES:_vml_image_names_available' \
+&& ret=0
+;;
+(store)
+_arguments "${_arguments_options[@]}" \
+'-i+[stored image name (allow templates) \[hyphenized vm name\]]: : ' \
+'--image=[stored image name (allow templates) \[hyphenized vm name\]]: : ' \
+'-n[]: :_vml_vm_names_stopped' \
+'--names=[]: :_vml_vm_names_stopped' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-f[rewrite existing image]' \
+'--force[rewrite existing image]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+':NAME:_vml_vm_names_stopped' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+'*::subcommand -- The subcommand whose help message to display:' \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(create)
+_arguments "${_arguments_options[@]}" \
+'-n+[]: : ' \
+'--names=[]: : ' \
+'-N+[use this value as image and as vm name]:name: ' \
+'--name-same-image=[use this value as image and as vm name]:name: ' \
+'-i[]: :_vml_image_names_all' \
+'--image=[]: :_vml_image_names_all' \
+'--nproc=[]: : ' \
+'-m+[]: : ' \
+'--memory=[]: : ' \
+'--minimum-disk-size=[increase vm disk size to this value]:size: ' \
+'--ssh-user=[]:user: ' \
+'--ssh-key=[]:key: ' \
+'--properties=[set image specific properties such as gui]: : ' \
+'--net-tap=[use qemu tap network with specified tap]:tap: ' \
+'(--net-user --net-none)--net-address=[vm ip address, used for qemu tap network]:address: ' \
+'(--net-user --net-none)--net-gateway=[vm gateway, used for qemu tap network]:gateway: ' \
+'(--net-user --net-none)--net-nameservers=[vm nameservers, used for qemu tap network]:nameservers: ' \
+'--nic-model=[]: : ' \
+'--cloud-init-image=[]: :_files' \
+'--net-none[do not use network]' \
+'--net-user[use qemu user network]' \
+'--cloud-init[]' \
+'--no-cloud-init[]' \
+'--display-console[use qemu nographic]' \
+'--display-gtk[use qemu gtk display]' \
+'--display-none[does not use display]' \
+'--exists-fail[return error on creation if vm already exists]' \
+'--exists-ignore[skip creation if vm already exists]' \
+'--exists-replace[replace disk if vm already exists]' \
+'--no-progress-bar[do not show progress bar]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:' \
+&& ret=0
+;;
+(start)
+_arguments "${_arguments_options[@]}" \
+'-n[]: :_vml_vm_names_stopped' \
+'--names=[]: :_vml_vm_names_stopped' \
+'-d+[]: : ' \
+'--drives=[]: : ' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'--ssh[ssh to vm after start]' \
+'--no-ssh[do not ssh to vm after start]' \
+'--wait-ssh[]' \
+'--no-wait-ssh[]' \
+'-c[]' \
+'--cloud-init[]' \
+'--no-cloud-init[]' \
+'--display-console[use qemu nographic]' \
+'--display-gtk[use qemu gtk display]' \
+'--display-none[does not use display]' \
+'--snapshot[discard changes created during this start]' \
+'--running-fail[return error on starting if vm already running]' \
+'--running-ignore[skip starting if vm already running]' \
+'--running-restart[restart vm if it is running already]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_stopped' \
+&& ret=0
+;;
+(run)
+_arguments "${_arguments_options[@]}" \
+'-n+[]: : ' \
+'--names=[]: : ' \
+'-N+[use this value as image and as vm name]:name: ' \
+'--name-same-image=[use this value as image and as vm name]:name: ' \
+'--cloud-init-image=[]: :_files' \
+'-d+[]: : ' \
+'--drives=[]: : ' \
+'-i[]: :_vml_image_names_all' \
+'--image=[]: :_vml_image_names_all' \
+'--nproc=[]: : ' \
+'-m+[]: : ' \
+'--memory=[]: : ' \
+'--minimum-disk-size=[increase vm disk size to this value]:size: ' \
+'--ssh-user=[]:user: ' \
+'--ssh-key=[]:key: ' \
+'--properties=[set image specific properties such as gui]: : ' \
+'--net-tap=[use qemu tap network with specified tap]:tap: ' \
+'(--net-user --net-none)--net-address=[vm ip address, used for qemu tap network]:address: ' \
+'(--net-user --net-none)--net-gateway=[vm gateway, used for qemu tap network]:gateway: ' \
+'(--net-user --net-none)--net-nameservers=[vm nameservers, used for qemu tap network]:nameservers: ' \
+'--nic-model=[]: : ' \
+'--ssh[ssh to vm after start]' \
+'--no-ssh[do not ssh to vm after start]' \
+'--wait-ssh[]' \
+'--no-wait-ssh[]' \
+'-c[]' \
+'--cloud-init[]' \
+'--no-cloud-init[]' \
+'--snapshot[discard changes created during this start]' \
+'--running-fail[return error on starting if vm already running]' \
+'--running-ignore[skip starting if vm already running]' \
+'--running-restart[restart vm if it is running already]' \
+'--net-none[do not use network]' \
+'--net-user[use qemu user network]' \
+'--display-console[use qemu nographic]' \
+'--display-gtk[use qemu gtk display]' \
+'--display-none[does not use display]' \
+'--exists-fail[return error on creation if vm already exists]' \
+'--exists-ignore[skip creation if vm already exists]' \
+'--exists-replace[replace disk if vm already exists]' \
+'--no-progress-bar[do not show progress bar]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:' \
+&& ret=0
+;;
+(clean)
+_arguments "${_arguments_options[@]}" \
+'--program=[cleanup program]: :_files' \
+'-n[]: :_vml_vm_names_stopped' \
+'--names=[]: :_vml_vm_names_stopped' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-a[]' \
+'--all[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_stopped' \
+&& ret=0
+;;
+(stop)
+_arguments "${_arguments_options[@]}" \
+'-n[]: :_vml_vm_names_running' \
+'--names=[]: :_vml_vm_names_running' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-f[]' \
+'--force[]' \
+'-a[]' \
+'--all[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_running' \
+&& ret=0
+;;
+(ssh)
+_arguments "${_arguments_options[@]}" \
+'--ssh-options=[]: : ' \
+'-n[]: :_vml_vm_names_running' \
+'--names=[]: :_vml_vm_names_running' \
+'-L+[same as -L ssh option]:address: ' \
+'-R+[same as -R ssh option]:address: ' \
+'-W+[same as -W ssh option]:host_port: ' \
+'-c+[]: :_cmdstring' \
+'--cmd=[]: :_cmdstring' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-u+[]: :_users' \
+'--user=[]: :_users' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'--rm[remove vm after ssh]' \
+'-A[pass -A to ssh command]' \
+'-N[pass -N to ssh command]' \
+'-Y[pass -Y to ssh command]' \
+'-f[pass -f to ssh command]' \
+'--check[fail on first command with non zero return code]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_running' \
+&& ret=0
+;;
+(rsync-to)
+_arguments "${_arguments_options[@]}" \
+'-n[]: :_vml_vm_names_running' \
+'--names=[]: :_vml_vm_names_running' \
+'--rsync-options=[]: : ' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-u+[]: :_users' \
+'--user=[]: :_users' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-d+[]: :_files' \
+'--destination=[]: :_files' \
+'-s+[]: :_files' \
+'--sources=[]: :_files' \
+'--template=[]: :_files' \
+'-a[pass --archive to rsync command]' \
+'--archive[pass --archive to rsync command]' \
+'-v[pass --verbose to rsync command]' \
+'--verbose[pass --verbose to rsync command]' \
+'--check[fail on rsync error]' \
+'--no-check[do not fail on rsync error]' \
+'-P[pass -P to rsync command]' \
+'-l[]' \
+'--list[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_running' \
+&& ret=0
+;;
+(rsync-from)
+_arguments "${_arguments_options[@]}" \
+'-n[]: :_vml_vm_names_running' \
+'--names=[]: :_vml_vm_names_running' \
+'--rsync-options=[]: : ' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-u+[]: :_users' \
+'--user=[]: :_users' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-d+[]: :_files' \
+'--destination=[]: :_files' \
+'-s+[]: :_files' \
+'--sources=[]: :_files' \
+'-a[pass --archive to rsync command]' \
+'--archive[pass --archive to rsync command]' \
+'-v[pass --verbose to rsync command]' \
+'--verbose[pass --verbose to rsync command]' \
+'-P[pass -P to rsync command]' \
+'--check[fail on rsync error]' \
+'--no-check[do not fail on rsync error]' \
+'-l[]' \
+'--list[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_running' \
+&& ret=0
+;;
+(show)
+_arguments "${_arguments_options[@]}" \
+'-n[]: :_vml_vm_names_all' \
+'--names=[]: :_vml_vm_names_all' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-a[]' \
+'--all[]' \
+'-d[]' \
+'--format-debug[]' \
+'-j[]' \
+'--format-json[]' \
+'--format-table[]' \
+'-r[]' \
+'--running[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_all' \
+&& ret=0
+;;
+(scp)
+_arguments "${_arguments_options[@]}" \
+'-h[Print help information]' \
+'--help[Print help information]' \
+&& ret=0
+;;
+(list|ls)
+_arguments "${_arguments_options[@]}" \
+'-n[]: :_vml_vm_names_all' \
+'--names=[]: :_vml_vm_names_all' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-f[]' \
+'--fold[]' \
+'-u[]' \
+'--unfold[]' \
+'-a[]' \
+'--all[]' \
+'-r[]' \
+'--running[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_all' \
+&& ret=0
+;;
+(monitor)
+_arguments "${_arguments_options[@]}" \
+'-c+[]: : ' \
+'--command=[]: : ' \
+'-n[]: :_vml_vm_names_running' \
+'--names=[]: :_vml_vm_names_running' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_running' \
+&& ret=0
+;;
+(remove|rm)
+_arguments "${_arguments_options[@]}" \
+'-n[]: :_vml_vm_names_all' \
+'--names=[]: :_vml_vm_names_all' \
+'-p+[]: : ' \
+'--parents=[]: : ' \
+'-t+[]: : ' \
+'--tags=[]: : ' \
+'-f[]' \
+'--force[]' \
+'-v[]' \
+'--verbose[]' \
+'-i[]' \
+'--interactive[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+'::NAME:_vml_vm_names_all' \
+&& ret=0
+;;
+(get-file)
+_arguments "${_arguments_options[@]}" \
+'-h[Print help information]' \
+'--help[Print help information]' \
+':path:' \
+&& ret=0
+;;
+(completion)
+_arguments "${_arguments_options[@]}" \
+'--raw[]' \
+'-h[Print help information]' \
+'--help[Print help information]' \
+':SHELL -- generate completions:(bash elvish fish powershell zsh)' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" \
+'*::subcommand -- The subcommand whose help message to display:' \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+}
+
+(( $+functions[_vml_commands] )) ||
+_vml_commands() {
+    local commands; commands=(
+'image:command to work with vm images' \
+'create:create virtual machine' \
+'start:start virtual machines' \
+'run:shortcut to create and start' \
+'clean:clean virtual machines' \
+'stop:stop virtual machines' \
+'ssh:ssh to a virtual machine' \
+'rsync-to:rsync to a virtual machine, default destination is home' \
+'rsync-from:rsync from a virtual machine, default destination is CWD' \
+'show:show virtual machines' \
+'scp:show how to use scp with vml vms' \
+'list:list virtual machines' \
+'ls:list virtual machines' \
+'monitor:acces to qemu monitor' \
+'remove:remove virtual machines' \
+'rm:remove virtual machines' \
+'get-file:show embedded file' \
+'completion:show completion for specified shell' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'vml commands' commands "$@"
+}
+(( $+functions[_vml__image__add_commands] )) ||
+_vml__image__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml image add commands' commands "$@"
+}
+(( $+functions[_vml__image__available_commands] )) ||
+_vml__image__available_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml image available commands' commands "$@"
+}
+(( $+functions[_vml__clean_commands] )) ||
+_vml__clean_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml clean commands' commands "$@"
+}
+(( $+functions[_vml__completion_commands] )) ||
+_vml__completion_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml completion commands' commands "$@"
+}
+(( $+functions[_vml__create_commands] )) ||
+_vml__create_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml create commands' commands "$@"
+}
+(( $+functions[_vml__get-file_commands] )) ||
+_vml__get-file_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml get-file commands' commands "$@"
+}
+(( $+functions[_vml__help_commands] )) ||
+_vml__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml help commands' commands "$@"
+}
+(( $+functions[_vml__image__help_commands] )) ||
+_vml__image__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml image help commands' commands "$@"
+}
+(( $+functions[_vml__image_commands] )) ||
+_vml__image_commands() {
+    local commands; commands=(
+'available:list available to pull vm images' \
+'add:add image' \
+'remove:remove images' \
+'rm:remove images' \
+'list:list vm images' \
+'ls:list vm images' \
+'pull:pull vm images' \
+'store:store vm disk as image' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'vml image commands' commands "$@"
+}
+(( $+functions[_vml__image__list_commands] )) ||
+_vml__image__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml image list commands' commands "$@"
+}
+(( $+functions[_vml__list_commands] )) ||
+_vml__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml list commands' commands "$@"
+}
+(( $+functions[_vml__monitor_commands] )) ||
+_vml__monitor_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml monitor commands' commands "$@"
+}
+(( $+functions[_vml__image__pull_commands] )) ||
+_vml__image__pull_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml image pull commands' commands "$@"
+}
+(( $+functions[_vml__image__remove_commands] )) ||
+_vml__image__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml image remove commands' commands "$@"
+}
+(( $+functions[_vml__remove_commands] )) ||
+_vml__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml remove commands' commands "$@"
+}
+(( $+functions[_vml__rsync-from_commands] )) ||
+_vml__rsync-from_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml rsync-from commands' commands "$@"
+}
+(( $+functions[_vml__rsync-to_commands] )) ||
+_vml__rsync-to_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml rsync-to commands' commands "$@"
+}
+(( $+functions[_vml__run_commands] )) ||
+_vml__run_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml run commands' commands "$@"
+}
+(( $+functions[_vml__scp_commands] )) ||
+_vml__scp_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml scp commands' commands "$@"
+}
+(( $+functions[_vml__show_commands] )) ||
+_vml__show_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml show commands' commands "$@"
+}
+(( $+functions[_vml__ssh_commands] )) ||
+_vml__ssh_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml ssh commands' commands "$@"
+}
+(( $+functions[_vml__start_commands] )) ||
+_vml__start_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml start commands' commands "$@"
+}
+(( $+functions[_vml__stop_commands] )) ||
+_vml__stop_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml stop commands' commands "$@"
+}
+(( $+functions[_vml__image__store_commands] )) ||
+_vml__image__store_commands() {
+    local commands; commands=()
+    _describe -t commands 'vml image store commands' commands "$@"
+}
+
+_vml "$@"

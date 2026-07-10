@@ -6,14 +6,20 @@ use byte_unit::Byte;
 use clap::{crate_version, value_parser, Arg, ArgEnum, ArgGroup, Command, ValueHint};
 use clap_complete::{generate, Generator, Shell};
 
+use crate::files;
+
 fn print_completions<G: Generator>(gen: G, app: &mut Command) {
     generate(gen, app, app.get_name().to_string(), &mut io::stdout());
 }
 
-pub fn completion(shell: &str) -> Result<()> {
+pub fn completion(shell: &str, raw: bool) -> Result<()> {
     let mut app = build_cli();
     if let Ok(gen) = Shell::from_str(shell, true) {
-        print_completions(gen, &mut app)
+        if !raw && (shell == "bash" || shell == "zsh") {
+            files::show_file(format!("completions/{}", shell))?
+        } else {
+            print_completions(gen, &mut app)
+        }
     } else {
         bail!("Unknown shell `{}` for completion", shell)
     }
@@ -1007,13 +1013,15 @@ pub fn build_cli() -> clap::Command<'static> {
                 .about("show embedded file")
                 .arg(Arg::new("path").required(true)),
         )
-        .subcommand(Command::new("completion").about("show completion for specified shell").arg(
-            Arg::new("SHELL").help("generate completions").required(true).possible_values([
-                "bash",
-                "elvish",
-                "fish",
-                "powershell",
-                "zsh",
-            ]),
-        ))
+        .subcommand(
+            Command::new("completion")
+                .about("show completion for specified shell")
+                .arg(
+                    Arg::new("SHELL")
+                        .help("generate completions")
+                        .required(true)
+                        .possible_values(["bash", "elvish", "fish", "powershell", "zsh"]),
+                )
+                .arg(Arg::new("raw").long("raw")),
+        )
 }

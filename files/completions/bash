@@ -1,0 +1,1098 @@
+_vml_vm_names_all() {
+    vml ls -u -a 2>/dev/null
+}
+
+_vml_vm_names_running() {
+    vml ls -u -r 2>/dev/null
+}
+
+_vml_vm_names_stopped() {
+    vml ls -u -s 2>/dev/null
+}
+
+_vml_image_names_available() {
+    local name
+
+    while read -r name _; do
+        [[ -n ${name} ]] && printf '%s\n' "${name}"
+    done < <(vml image available 2>/dev/null)
+}
+
+_vml_image_names_stored() {
+    vml image list 2>/dev/null
+}
+
+_vml_image_names_all() {
+    {
+        _vml_image_names_stored
+        _vml_image_names_available
+    } | awk 'NF && !seen[$0]++'
+}
+
+_vml() {
+    local i cur prev opts cmds vm_names image_names positional_candidates
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    cmd=""
+    opts=""
+
+    for i in ${COMP_WORDS[@]}
+    do
+        case "${i}" in
+            "$1")
+                cmd="vml"
+                ;;
+            add)
+                cmd+="__add"
+                ;;
+            available)
+                cmd+="__available"
+                ;;
+            clean)
+                cmd+="__clean"
+                ;;
+            completion)
+                cmd+="__completion"
+                ;;
+            create)
+                cmd+="__create"
+                ;;
+            get-file)
+                cmd+="__get__file"
+                ;;
+            help)
+                cmd+="__help"
+                ;;
+            image)
+                cmd+="__image"
+                ;;
+            list|ls)
+                cmd+="__list"
+                ;;
+            monitor)
+                cmd+="__monitor"
+                ;;
+            pull)
+                cmd+="__pull"
+                ;;
+            remove|rm)
+                cmd+="__remove"
+                ;;
+            rsync-from)
+                cmd+="__rsync__from"
+                ;;
+            rsync-to)
+                cmd+="__rsync__to"
+                ;;
+            run)
+                cmd+="__run"
+                ;;
+            scp)
+                cmd+="__scp"
+                ;;
+            show)
+                cmd+="__show"
+                ;;
+            ssh)
+                cmd+="__ssh"
+                ;;
+            start)
+                cmd+="__start"
+                ;;
+            stop)
+                cmd+="__stop"
+                ;;
+            store)
+                cmd+="__store"
+                ;;
+            *)
+                ;;
+        esac
+    done
+
+    case "${cmd}" in
+        vml__image__store|vml__start|vml__clean)
+            vm_names="$(_vml_vm_names_stopped)"
+            positional_candidates="${vm_names}"
+            ;;
+        vml__stop|vml__ssh|vml__rsync__to|vml__rsync__from|vml__monitor)
+            vm_names="$(_vml_vm_names_running)"
+            positional_candidates="${vm_names}"
+            ;;
+        vml__show|vml__list|vml__remove)
+            vm_names="$(_vml_vm_names_all)"
+            positional_candidates="${vm_names}"
+            ;;
+        vml__image__pull)
+            image_names="$(_vml_image_names_available)"
+            positional_candidates="${image_names}"
+            ;;
+        vml__image__remove)
+            image_names="$(_vml_image_names_stored)"
+            positional_candidates="${image_names}"
+            ;;
+        vml__create|vml__run)
+            image_names="$(_vml_image_names_all)"
+            ;;
+    esac
+
+    case "${cmd}" in
+        vml)
+            opts="-h -V -H --help --version --log-level --all-vms --host --vm-config --minimal-vm-config image create start run clean stop ssh rsync-to rsync-from show scp list ls monitor remove rm get-file completion help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --log-level)
+                    COMPREPLY=($(compgen -W "off error warn info debug trace" -- "${cur}"))
+                    return 0
+                    ;;
+                --host)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -H)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --vm-config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__clean)
+            opts="-n -a -p -t -h --program --names --all --parents --tags --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --program)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__completion)
+            opts="-h --raw --help bash elvish fish powershell zsh"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__create)
+            opts="-n -N -i -m -h --names --name-same-image --image --nproc --memory --minimum-disk-size --ssh-user --ssh-key --properties --net-tap --net-address --net-gateway --net-nameservers --net-none --net-user --nic-model --cloud-init-image --cloud-init --no-cloud-init --display-console --display-gtk --display-none --exists-fail --exists-ignore --exists-replace --no-progress-bar --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --name-same-image)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -N)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --image)
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -i)
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --nproc)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --memory)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --minimum-disk-size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ssh-user)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ssh-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --properties)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --net-tap)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --net-address)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --net-gateway)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --net-nameservers)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --nic-model)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-init-image)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__get__file)
+            opts="-h --help <path>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__help)
+            opts="<SUBCOMMAND>..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__image)
+            opts="-h --help available add remove rm list ls pull store help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__image__add)
+            opts="-n -u -d -h --name --url --change --properties --description --update-after-days --pull --no-pull --no-progress-bar --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --name)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --change)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --properties)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --description)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --update-after-days)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__image__available)
+            opts="-h --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__image__help)
+            opts="<SUBCOMMAND>..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__image__list)
+            opts="-h --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__image__pull)
+            opts="-a -e -o -h --available --exists --outdate --no-progress-bar --help <IMAGES>..."
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__image__remove)
+            opts="-a -i -h --all --images --help <IMAGE>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --images)
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -i)
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__image__store)
+            opts="-i -f -n -p -t -h --image --force --names --parents --tags --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --image)
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -i)
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__list)
+            opts="-n -f -u -a -r -s -p -t -h --names --fold --unfold --all --running --stopped --parents --tags --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__monitor)
+            opts="-c -n -p -t -h --command --names --parents --tags --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --command)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__remove)
+            opts="-f -v -i -n -p -t -h --force --verbose --interactive --names --parents --tags --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__rsync__from)
+            opts="-n -a -v -P -p -u -t -d -l -s -h --names --rsync-options --archive --verbose --parents --check --no-check --user --tags --destination --list --sources --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --rsync-options)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --destination)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sources)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__rsync__to)
+            opts="-n -a -v -P -p -u -t -d -l -s -h --names --rsync-options --archive --verbose --check --no-check --parents --user --tags --destination --list --sources --template --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --rsync-options)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --destination)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sources)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --template)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__run)
+            opts="-n -N -c -d -i -m -h --names --name-same-image --ssh --no-ssh --wait-ssh --no-wait-ssh --cloud-init-image --cloud-init --no-cloud-init --snapshot --drives --image --nproc --memory --minimum-disk-size --ssh-user --ssh-key --properties --net-tap --net-address --net-gateway --net-nameservers --running-fail --running-ignore --running-restart --net-none --net-user --nic-model --display-console --display-gtk --display-none --exists-fail --exists-ignore --exists-replace --no-progress-bar --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --name-same-image)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -N)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-init-image)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --drives)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --image)
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -i)
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --nproc)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --memory)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --minimum-disk-size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ssh-user)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ssh-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --properties)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --net-tap)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --net-address)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --net-gateway)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --net-nameservers)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --nic-model)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__scp)
+            opts="-h --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__show)
+            opts="-n -d -j -p -t -a -r -s -h --names --format-debug --format-json --format-table --parents --tags --all --running --stopped --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__ssh)
+            opts="-n -A -N -Y -f -L -R -W -c -p -u -t -h --ssh-options --names --rm --check --cmd --parents --user --tags --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --ssh-options)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -L)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -R)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -W)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cmd)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__start)
+            opts="-n -c -d -p -t -h --names --ssh --no-ssh --wait-ssh --no-wait-ssh --cloud-init --no-cloud-init --display-console --display-gtk --display-none --snapshot --running-fail --running-ignore --running-restart --drives --parents --tags --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --drives)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+        vml__stop)
+            opts="-f -n -a -p -t -h --force --names --all --parents --tags --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --names)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -W "${vm_names}" -- "${cur}"))
+                    return 0
+                    ;;
+                --parents)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tags)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts} ${positional_candidates}" -- "${cur}") )
+            return 0
+            ;;
+    esac
+}
+
+complete -F _vml -o bashdefault -o default vml

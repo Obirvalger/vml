@@ -857,9 +857,10 @@ async fn main() -> Result<()> {
             files::show_file(get_file_matches.value_of("path").unwrap())?
         }
 
-        Some(("completion", completion_matches)) => {
-            cli::completion(completion_matches.value_of("SHELL").unwrap())?
-        }
+        Some(("completion", completion_matches)) => cli::completion(
+            completion_matches.value_of("SHELL").unwrap(),
+            completion_matches.is_present("raw"),
+        )?,
 
         Some((ext, sub_matches)) => {
             let args =

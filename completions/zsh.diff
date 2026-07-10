@@ -1,0 +1,345 @@
+@@ -2,6 +2,73 @@
+
+ autoload -U is-at-least
+
++(( $+functions[_vml_vm_names_all] )) ||
++_vml_vm_names_all() {
++    local -a vms expl
++
++    vms=("${(@f)$(_call_program vms vml ls -a 2>/dev/null)}")
++    vms=("${(@u)vms:#}")
++
++    _wanted vms expl "virtual machine" compadd "$@" "${expl[@]}" -a vms
++}
++
++(( $+functions[_vml_vm_names_running] )) ||
++_vml_vm_names_running() {
++    local -a vms expl
++
++    vms=("${(@f)$(_call_program vms vml ls -r 2>/dev/null)}")
++    vms=("${(@u)vms:#}")
++
++    _wanted vms expl "running virtual machine" compadd "$@" "${expl[@]}" -a vms
++}
++
++(( $+functions[_vml_vm_names_stopped] )) ||
++_vml_vm_names_stopped() {
++    local -a vms expl
++
++    vms=("${(@f)$(_call_program vms vml ls -s 2>/dev/null)}")
++    vms=("${(@u)vms:#}")
++
++    _wanted vms expl "stopped virtual machine" compadd "$@" "${expl[@]}" -a vms
++}
++
++(( $+functions[_vml_image_names_available] )) ||
++_vml_image_names_available() {
++    local line
++    local -a images expl
++
++    for line in "${(@f)$(_call_program images vml image available 2>/dev/null)}"; do
++        images+=("${line%%[[:space:]]*}")
++    done
++    images=("${(@u)images:#}")
++
++    _wanted images expl "available image" compadd "$@" "${expl[@]}" -a images
++}
++
++(( $+functions[_vml_image_names_stored] )) ||
++_vml_image_names_stored() {
++    local -a images expl
++
++    images=("${(@f)$(_call_program images vml image list 2>/dev/null)}")
++    images=("${(@u)images:#}")
++
++    _wanted images expl "stored image" compadd "$@" "${expl[@]}" -a images
++}
++
++(( $+functions[_vml_image_names_all] )) ||
++_vml_image_names_all() {
++    local line
++    local -a images expl
++
++    images=("${(@f)$(_call_program images vml image list 2>/dev/null)}")
++    for line in "${(@f)$(_call_program images vml image available 2>/dev/null)}"; do
++        images+=("${line%%[[:space:]]*}")
++    done
++    images=("${(@u)images:#}")
++
++    _wanted images expl "image" compadd "$@" "${expl[@]}" -a images
++}
++
+ _vml() {
+     typeset -A opt_args
+     typeset -a _arguments_options
+@@ -72,15 +139,15 @@
+ '--help[Print help information]' \
+ && ret=0
+ ;;
+-(remove)
++(remove|rm)
+ _arguments "${_arguments_options[@]}" \
+-'-i+[]: : ' \
+-'--images=[]: : ' \
++'-i[]: :_vml_image_names_stored' \
++'--images=[]: :_vml_image_names_stored' \
+ '-a[]' \
+ '--all[]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::IMAGE:' \
++'::IMAGE:_vml_image_names_stored' \
+ && ret=0
+ ;;
+ (list)
+@@ -100,15 +167,15 @@
+ '--no-progress-bar[do not show progress bar]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'*::IMAGES:' \
++'*::IMAGES:_vml_image_names_available' \
+ && ret=0
+ ;;
+ (store)
+ _arguments "${_arguments_options[@]}" \
+ '-i+[stored image name (allow templates) \[hyphenized vm name\]]: : ' \
+ '--image=[stored image name (allow templates) \[hyphenized vm name\]]: : ' \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_stopped' \
++'--names=[]: :_vml_vm_names_stopped' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+ '-t+[]: : ' \
+@@ -117,7 +184,7 @@
+ '--force[rewrite existing image]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-':NAME:' \
++':NAME:_vml_vm_names_stopped' \
+ && ret=0
+ ;;
+ (help)
+@@ -135,8 +202,8 @@
+ '--names=[]: : ' \
+ '-N+[use this value as image and as vm name]:name: ' \
+ '--name-same-image=[use this value as image and as vm name]:name: ' \
+-'-i+[]: : ' \
+-'--image=[]: : ' \
++'-i[]: :_vml_image_names_all' \
++'--image=[]: :_vml_image_names_all' \
+ '--nproc=[]: : ' \
+ '-m+[]: : ' \
+ '--memory=[]: : ' \
+@@ -168,8 +235,8 @@
+ ;;
+ (start)
+ _arguments "${_arguments_options[@]}" \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_stopped' \
++'--names=[]: :_vml_vm_names_stopped' \
+ '-d+[]: : ' \
+ '--drives=[]: : ' \
+ '-p+[]: : ' \
+@@ -192,7 +259,7 @@
+ '--running-restart[restart vm if it is running already]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_stopped' \
+ && ret=0
+ ;;
+ (run)
+@@ -204,8 +271,8 @@
+ '--cloud-init-image=[]: :_files' \
+ '-d+[]: : ' \
+ '--drives=[]: : ' \
+-'-i+[]: : ' \
+-'--image=[]: : ' \
++'-i[]: :_vml_image_names_all' \
++'--image=[]: :_vml_image_names_all' \
+ '--nproc=[]: : ' \
+ '-m+[]: : ' \
+ '--memory=[]: : ' \
+@@ -246,8 +313,8 @@
+ (clean)
+ _arguments "${_arguments_options[@]}" \
+ '--program=[cleanup program]: :_files' \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_stopped' \
++'--names=[]: :_vml_vm_names_stopped' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+ '-t+[]: : ' \
+@@ -256,13 +323,13 @@
+ '--all[]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_stopped' \
+ && ret=0
+ ;;
+ (stop)
+ _arguments "${_arguments_options[@]}" \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_running' \
++'--names=[]: :_vml_vm_names_running' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+ '-t+[]: : ' \
+@@ -273,14 +340,14 @@
+ '--all[]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_running' \
+ && ret=0
+ ;;
+ (ssh)
+ _arguments "${_arguments_options[@]}" \
+ '--ssh-options=[]: : ' \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_running' \
++'--names=[]: :_vml_vm_names_running' \
+ '-L+[same as -L ssh option]:address: ' \
+ '-R+[same as -R ssh option]:address: ' \
+ '-W+[same as -W ssh option]:host_port: ' \
+@@ -300,13 +367,13 @@
+ '--check[fail on first command with non zero return code]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_running' \
+ && ret=0
+ ;;
+ (rsync-to)
+ _arguments "${_arguments_options[@]}" \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_running' \
++'--names=[]: :_vml_vm_names_running' \
+ '--rsync-options=[]: : ' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+@@ -330,13 +397,13 @@
+ '--list[]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_running' \
+ && ret=0
+ ;;
+ (rsync-from)
+ _arguments "${_arguments_options[@]}" \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_running' \
++'--names=[]: :_vml_vm_names_running' \
+ '--rsync-options=[]: : ' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+@@ -359,31 +426,29 @@
+ '--list[]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_running' \
+ && ret=0
+ ;;
+ (show)
+ _arguments "${_arguments_options[@]}" \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_all' \
++'--names=[]: :_vml_vm_names_all' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+ '-t+[]: : ' \
+ '--tags=[]: : ' \
++'-a[]' \
++'--all[]' \
+ '-d[]' \
+ '--format-debug[]' \
+ '-j[]' \
+ '--format-json[]' \
+ '--format-table[]' \
+-'-a[]' \
+-'--all[]' \
+ '-r[]' \
+ '--running[]' \
+-'-s[]' \
+-'--stopped[]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_all' \
+ && ret=0
+ ;;
+ (scp)
+@@ -392,10 +457,10 @@
+ '--help[Print help information]' \
+ && ret=0
+ ;;
+-(list)
++(list|ls)
+ _arguments "${_arguments_options[@]}" \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_all' \
++'--names=[]: :_vml_vm_names_all' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+ '-t+[]: : ' \
+@@ -408,32 +473,30 @@
+ '--all[]' \
+ '-r[]' \
+ '--running[]' \
+-'-s[]' \
+-'--stopped[]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_all' \
+ && ret=0
+ ;;
+ (monitor)
+ _arguments "${_arguments_options[@]}" \
+ '-c+[]: : ' \
+ '--command=[]: : ' \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_running' \
++'--names=[]: :_vml_vm_names_running' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+ '-t+[]: : ' \
+ '--tags=[]: : ' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_running' \
+ && ret=0
+ ;;
+-(remove)
++(remove|rm)
+ _arguments "${_arguments_options[@]}" \
+-'-n+[]: : ' \
+-'--names=[]: : ' \
++'-n[]: :_vml_vm_names_all' \
++'--names=[]: :_vml_vm_names_all' \
+ '-p+[]: : ' \
+ '--parents=[]: : ' \
+ '-t+[]: : ' \
+@@ -446,7 +509,7 @@
+ '--interactive[]' \
+ '-h[Print help information]' \
+ '--help[Print help information]' \
+-'::NAME:' \
++'::NAME:_vml_vm_names_all' \
+ && ret=0
+ ;;
+ (get-file)
