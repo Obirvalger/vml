@@ -452,7 +452,8 @@ async fn main() -> Result<()> {
 
                 Some(("store", store_images_matches)) => {
                     set_specifications(&mut vmc, store_images_matches);
-                    vmc.with_pid(WithPid::Without);
+                    vmc.with_pid(WithPid::Option);
+                    vmc.error_on_empty();
                     let image_template = store_images_matches.value_of("image");
                     let force = store_images_matches.is_present("force");
 
