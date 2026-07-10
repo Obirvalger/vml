@@ -771,6 +771,10 @@ async fn main() -> Result<()> {
                 vmc.with_pid(WithPid::Filter);
             }
 
+            if list_matches.is_present("stopped") {
+                vmc.with_pid(WithPid::Without);
+            }
+
             set_specifications(&mut vmc, list_matches);
 
             let names = list(

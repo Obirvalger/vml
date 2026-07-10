@@ -925,6 +925,7 @@ pub fn build_cli() -> clap::Command<'static> {
                 .arg(Arg::new("unfold").long("unfold").short('u'))
                 .arg(Arg::new("all").long("all").short('a'))
                 .arg(Arg::new("running").long("running").short('r'))
+                .arg(Arg::new("stopped").long("stopped").short('s'))
                 .arg(
                     Arg::new("parents")
                         .long("parents")
@@ -939,7 +940,7 @@ pub fn build_cli() -> clap::Command<'static> {
                         .takes_value(true)
                         .multiple_values(true),
                 )
-                .group(ArgGroup::new("all_running").args(&["all", "running"]))
+                .group(ArgGroup::new("state").args(&["all", "running", "stopped"]))
                 .group(ArgGroup::new("fold_group").args(&["fold", "unfold"])),
         )
         .subcommand(
