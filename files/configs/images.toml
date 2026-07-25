@@ -76,24 +76,6 @@ change = ["update-all", "delete"]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
-[ubuntu-plucky]
-url = "https://cloud-images.ubuntu.com/plucky/current/plucky-server-cloudimg-{{arch}}.img"
-description = "Ubuntu 25.04 Plucky Puffin"
-change = ["update-all", "delete"]
-
-[ubuntu-plucky.arch-mapping]
-x86_64 = "amd64"
-aarch64 = "arm64"
-
-[ubuntu-oracular]
-url = "https://cloud-images.ubuntu.com/oracular/current/oracular-server-cloudimg-{{arch}}.img"
-description = "Ubuntu 24.10 Oracular Oriole"
-change = ["update-all", "delete"]
-
-[ubuntu-oracular.arch-mapping]
-x86_64 = "amd64"
-aarch64 = "arm64"
-
 [ubuntu-noble]
 url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 24.04 Noble Numbat"
@@ -290,26 +272,6 @@ change = ["update-all", "delete"]
 [fedora-41]
 url = "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/{{arch}}/images/Fedora-Cloud-Base-Generic-41-1.4.{{arch}}.qcow2"
 description = "Fedora 41"
-change = ["update-all", "delete"]
-
-[fedora-40]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/{{arch}}/images/Fedora-Cloud-Base-Generic.{{arch}}-40-1.14.qcow2"
-description = "Fedora 40"
-change = ["update-all", "delete"]
-
-[fedora-39]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/{{arch}}/images/Fedora-Cloud-Base-39-1.5.{{arch}}.qcow2"
-description = "Fedora 39"
-change = ["update-all", "delete"]
-
-[fedora-38]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/38/Cloud/{{arch}}/images/Fedora-Cloud-Base-38-1.6.{{arch}}.qcow2"
-description = "Fedora 38"
-change = ["update-all", "delete"]
-
-[fedora-37]
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/37/Cloud/{{arch}}/images/Fedora-Cloud-Base-37-1.7.{{arch}}.qcow2"
-description = "Fedora 37"
 change = ["update-all", "delete"]
 
 [opensuse]
