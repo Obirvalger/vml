@@ -14,5 +14,5 @@ fi
 arch="$(uname -m)"
 version="${name##centos-}"
 url="https://cloud.centos.org/centos/$version/$arch/images/"
-name="$(curl "$url" | sed -n -E 's/.*href="(.*GenericCloud.*\.qcow2)".*/\1/p' | sort -rV | head -1)"
+name="$(curl -sfL "$url" | sed -n -E 's/.*href="(.*GenericCloud.*\.qcow2)".*/\1/p' | sort -rV | head -1)"
 echo "$url$name"

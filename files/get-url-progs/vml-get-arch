@@ -8,5 +8,5 @@
 # `get-url-prog` from updating.
 
 url="https://geo.mirror.pkgbuild.com/images/latest/"
-name="$(curl "$url" | sed -n -E 's/.*href="(.*cloudimg.*\.qcow2)".*/\1/p' | sort -rV | head -1)"
+name="$(curl -sfL "$url" | sed -n -E 's/.*href="(.*cloudimg.*\.qcow2)".*/\1/p' | sort -rV | head -1)"
 echo "$url$name"
