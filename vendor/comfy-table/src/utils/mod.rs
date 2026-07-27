@@ -1,12 +1,13 @@
-mod arrangement;
-mod formatting;
-
-use crate::style::{CellAlignment, ColumnConstraint};
-use crate::{Column, Table};
+pub mod arrangement;
+pub mod formatting;
 
 use arrangement::arrange_content;
-use formatting::borders::draw_borders;
-use formatting::content_format::format_content;
+use formatting::{borders::draw_borders, content_format::format_content};
+
+use crate::{
+    Column, Table,
+    style::{CellAlignment, ColumnConstraint},
+};
 
 /// This struct is ONLY used when table.to_string() is called.
 /// It's purpose is to store intermediate results, information on how to
@@ -31,7 +32,7 @@ impl ColumnDisplayInfo {
         if content_width == 0 {
             content_width = 1;
         }
-        ColumnDisplayInfo {
+        Self {
             padding: column.padding,
             delimiter: column.delimiter,
             content_width,
@@ -41,12 +42,14 @@ impl ColumnDisplayInfo {
     }
 
     pub fn width(&self) -> u16 {
-        self.content_width + self.padding.0 + self.padding.1
+        self.content_width
+            .saturating_add(self.padding.0)
+            .saturating_add(self.padding.1)
     }
 }
 
 pub fn build_table(table: &Table) -> impl Iterator<Item = String> {
     let display_info = arrange_content(table);
     let content = format_content(table, &display_info);
-    draw_borders(table, content, &display_info).into_iter()
+    draw_borders(table, &content, &display_info).into_iter()
 }

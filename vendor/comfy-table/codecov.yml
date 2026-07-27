@@ -3,7 +3,16 @@ ignore:
   - "examples"
   - "proptest_regressions"
   - "tests"
-  - "README.md"
-  - "LICENSE"
+  - "CHANGELOG.md"
   - "Cargo.lock"
   - "Cargo.toml"
+  - "FAQ.md"
+  - "LICENSE"
+  - "README.md"
+
+codecov:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%

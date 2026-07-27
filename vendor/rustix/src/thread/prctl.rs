@@ -1,12 +1,11 @@
 //! Linux `prctl` wrappers.
 //!
-//! Rustix wraps variadic/dynamic-dispatch functions like `prctl` in
-//! type-safe wrappers.
+//! Rustix wraps variadic/dynamic-dispatch functions like `prctl` in type-safe
+//! wrappers.
 //!
 //! # Safety
 //!
-//! The inner `prctl` calls are dynamically typed and must be called
-//! correctly.
+//! The inner `prctl` calls are dynamically typed and must be called correctly.
 #![allow(unsafe_code)]
 
 use core::mem::MaybeUninit;
@@ -17,17 +16,19 @@ use core::sync::atomic::AtomicU8;
 
 use bitflags::bitflags;
 
-use crate::backend::c::{c_int, c_uint, c_void};
 use crate::backend::prctl::syscalls;
-use crate::ffi::CStr;
 #[cfg(feature = "alloc")]
 use crate::ffi::CString;
+use crate::ffi::{c_int, c_uint, c_void, CStr};
 use crate::io;
+use crate::io::Errno;
 use crate::pid::Pid;
-use crate::prctl::{
-    prctl_1arg, prctl_2args, prctl_3args, prctl_get_at_arg2_optional, PointerAuthenticationKeys,
-};
+#[cfg(linux_raw_dep)]
+use crate::prctl::PointerAuthenticationKeys;
+use crate::prctl::{prctl_1arg, prctl_2args, prctl_3args, prctl_get_at_arg2_optional};
 use crate::utils::as_ptr;
+
+use super::CapabilitySet;
 
 //
 // PR_GET_KEEPCAPS/PR_SET_KEEPCAPS
@@ -38,9 +39,9 @@ const PR_GET_KEEPCAPS: c_int = 7;
 /// Get the current state of the calling thread's `keep capabilities` flag.
 ///
 /// # References
-///  - [`prctl(PR_GET_KEEPCAPS,...)`]
+///  - [`prctl(PR_GET_KEEPCAPS,…)`]
 ///
-/// [`prctl(PR_GET_KEEPCAPS,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_GET_KEEPCAPS,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn get_keep_capabilities() -> io::Result<bool> {
     unsafe { prctl_1arg(PR_GET_KEEPCAPS) }.map(|r| r != 0)
@@ -51,9 +52,9 @@ const PR_SET_KEEPCAPS: c_int = 8;
 /// Set the state of the calling thread's `keep capabilities` flag.
 ///
 /// # References
-///  - [`prctl(PR_SET_KEEPCAPS,...)`]
+///  - [`prctl(PR_SET_KEEPCAPS,…)`]
 ///
-/// [`prctl(PR_SET_KEEPCAPS,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_KEEPCAPS,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn set_keep_capabilities(enable: bool) -> io::Result<()> {
     unsafe { prctl_2args(PR_SET_KEEPCAPS, usize::from(enable) as *mut _) }.map(|_r| ())
@@ -69,11 +70,12 @@ const PR_GET_NAME: c_int = 16;
 /// Get the name of the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_GET_NAME,...)`]
+///  - [`prctl(PR_GET_NAME,…)`]
 ///
-/// [`prctl(PR_GET_NAME,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_GET_NAME,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub fn name() -> io::Result<CString> {
     let mut buffer = [0_u8; 16];
     unsafe { prctl_2args(PR_GET_NAME, buffer.as_mut_ptr().cast())? };
@@ -90,9 +92,9 @@ const PR_SET_NAME: c_int = 15;
 /// 16 bytes, as the Linux syscall does.
 ///
 /// # References
-///  - [`prctl(PR_SET_NAME,...)`]
+///  - [`prctl(PR_SET_NAME,…)`]
 ///
-/// [`prctl(PR_SET_NAME,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_NAME,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn set_name(name: &CStr) -> io::Result<()> {
     unsafe { prctl_2args(PR_SET_NAME, name.as_ptr() as *mut _) }.map(|_r| ())
@@ -102,13 +104,13 @@ pub fn set_name(name: &CStr) -> io::Result<()> {
 // PR_GET_SECCOMP/PR_SET_SECCOMP
 //
 
-//const PR_GET_SECCOMP: c_int = 21;
+const PR_GET_SECCOMP: c_int = 21;
 
 const SECCOMP_MODE_DISABLED: i32 = 0;
 const SECCOMP_MODE_STRICT: i32 = 1;
 const SECCOMP_MODE_FILTER: i32 = 2;
 
-/// `SECCOMP_MODE_*`.
+/// `SECCOMP_MODE_*`
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(i32)]
 pub enum SecureComputingMode {
@@ -133,31 +135,30 @@ impl TryFrom<i32> for SecureComputingMode {
     }
 }
 
-/*
 /// Get the secure computing mode of the calling thread.
 ///
 /// If the caller is not in secure computing mode, this returns
 /// [`SecureComputingMode::Disabled`]. If the caller is in strict secure
-/// computing mode, then this call will cause a [`Signal::Kill`] signal to be
+/// computing mode, then this call will cause a [`Signal::KILL`] signal to be
 /// sent to the process. If the caller is in filter mode, and this system call
 /// is allowed by the seccomp filters, it returns
 /// [`SecureComputingMode::Filter`]; otherwise, the process is killed with a
-/// [`Signal::Kill`] signal.
+/// [`Signal::KILL`] signal.
 ///
 /// Since Linux 3.8, the Seccomp field of the `/proc/[pid]/status` file
 /// provides a method of obtaining the same information, without the risk that
 /// the process is killed; see [the `proc` manual page].
 ///
 /// # References
-///  - [`prctl(PR_GET_SECCOMP,...)`]
+///  - [`prctl(PR_GET_SECCOMP,…)`]
 ///
-/// [`prctl(PR_GET_SECCOMP,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`Signal::KILL`]: crate::signal::Signal::KILL
+/// [`prctl(PR_GET_SECCOMP,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 /// [the `proc` manual page]: https://man7.org/linux/man-pages/man5/proc.5.html
 #[inline]
 pub fn secure_computing_mode() -> io::Result<SecureComputingMode> {
     unsafe { prctl_1arg(PR_GET_SECCOMP) }.and_then(TryInto::try_into)
 }
-*/
 
 const PR_SET_SECCOMP: c_int = 22;
 
@@ -165,9 +166,9 @@ const PR_SET_SECCOMP: c_int = 22;
 /// available system calls.
 ///
 /// # References
-///  - [`prctl(PR_SET_SECCOMP,...)`]
+///  - [`prctl(PR_SET_SECCOMP,…)`]
 ///
-/// [`prctl(PR_SET_SECCOMP,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_SECCOMP,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn set_secure_computing_mode(mode: SecureComputingMode) -> io::Result<()> {
     unsafe { prctl_2args(PR_SET_SECCOMP, mode as usize as *mut _) }.map(|_r| ())
@@ -180,8 +181,10 @@ pub fn set_secure_computing_mode(mode: SecureComputingMode) -> io::Result<()> {
 const PR_CAPBSET_READ: c_int = 23;
 
 /// Linux per-thread capability.
+#[deprecated(since = "1.1.0", note = "Use CapabilitySet with a single bit instead")]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
+#[non_exhaustive]
 pub enum Capability {
     /// In a system with the `_POSIX_CHOWN_RESTRICTED` option defined, this
     /// overrides the restriction of changing file ownership and group
@@ -197,15 +200,15 @@ pub enum Capability {
     DACReadSearch = linux_raw_sys::general::CAP_DAC_READ_SEARCH,
     /// Overrides all restrictions about allowed operations on files, where
     /// file owner ID must be equal to the user ID, except where
-    /// [`Capability::FileSetID`] is applicable. It doesn't override MAC
-    /// and DAC restrictions.
+    /// [`Capability::FileSetID`] is applicable. It doesn't override MAC and
+    /// DAC restrictions.
     FileOwner = linux_raw_sys::general::CAP_FOWNER,
     /// Overrides the following restrictions that the effective user ID shall
-    /// match the file owner ID when setting the `S_ISUID` and `S_ISGID`
-    /// bits on that file; that the effective group ID (or one of the
-    /// supplementary group IDs) shall match the file owner ID when setting the
-    /// `S_ISGID` bit on that file; that the `S_ISUID` and `S_ISGID` bits are
-    /// cleared on successful return from `chown` (not implemented).
+    /// match the file owner ID when setting the `S_ISUID` and `S_ISGID` bits
+    /// on that file; that the effective group ID (or one of the supplementary
+    /// group IDs) shall match the file owner ID when setting the `S_ISGID` bit
+    /// on that file; that the `S_ISUID` and `S_ISGID` bits are cleared on
+    /// successful return from `chown` (not implemented).
     FileSetID = linux_raw_sys::general::CAP_FSETID,
     /// Overrides the restriction that the real or effective user ID of a
     /// process sending a signal must match the real or effective user ID of
@@ -326,14 +329,14 @@ pub enum Capability {
     SetFileCapabilities = linux_raw_sys::general::CAP_SETFCAP,
     /// Override MAC access. The base kernel enforces no MAC policy. An LSM may
     /// enforce a MAC policy, and if it does and it chooses to implement
-    /// capability based overrides of that policy, this is the capability
-    /// it should use to do so.
+    /// capability based overrides of that policy, this is the capability it
+    /// should use to do so.
     MACOverride = linux_raw_sys::general::CAP_MAC_OVERRIDE,
     /// Allow MAC configuration or state changes. The base kernel requires no
-    /// MAC configuration. An LSM may enforce a MAC policy, and if it does
-    /// and it chooses to implement capability based
-    /// checks on modifications to that policy or the data required to maintain
-    /// it, this is the capability it should use to do so.
+    /// MAC configuration. An LSM may enforce a MAC policy, and if it does and
+    /// it chooses to implement capability based checks on modifications to
+    /// that policy or the data required to maintain it, this is the capability
+    /// it should use to do so.
     MACAdmin = linux_raw_sys::general::CAP_MAC_ADMIN,
     /// Allow configuring the kernel's `syslog` (`printk` behaviour).
     SystemLog = linux_raw_sys::general::CAP_SYSLOG,
@@ -367,7 +370,7 @@ pub enum Capability {
     ///  - `bpf_probe_read` to read arbitrary kernel memory is allowed
     ///  - `bpf_trace_printk` to print kernel memory is allowed
     ///
-    /// [`Capability::SystemAdmin`] is required to use bpf_probe_write_user.
+    /// [`Capability::SystemAdmin`] is required to use `bpf_probe_write_user`.
     ///
     /// [`Capability::SystemAdmin`] is required to iterate system-wide loaded
     /// programs, maps, links, and BTFs, and convert their IDs to file
@@ -384,16 +387,92 @@ pub enum Capability {
     CheckpointRestore = linux_raw_sys::general::CAP_CHECKPOINT_RESTORE,
 }
 
+mod private {
+    pub trait Sealed {}
+    pub struct Token;
+
+    #[allow(deprecated)]
+    impl Sealed for crate::thread::Capability {}
+    impl Sealed for crate::thread::CapabilitySet {}
+}
+/// Compatibility trait to keep existing code that uses the deprecated [`Capability`] type working.
+///
+/// This trait and its methods are sealed. It must not be used downstream.
+pub trait CompatCapability: private::Sealed + Copy {
+    #[doc(hidden)]
+    fn as_capability_set(self, _: private::Token) -> CapabilitySet;
+}
+#[allow(deprecated)]
+impl CompatCapability for Capability {
+    fn as_capability_set(self, _: private::Token) -> CapabilitySet {
+        match self {
+            Self::ChangeOwnership => CapabilitySet::CHOWN,
+            Self::DACOverride => CapabilitySet::DAC_OVERRIDE,
+            Self::DACReadSearch => CapabilitySet::DAC_READ_SEARCH,
+            Self::FileOwner => CapabilitySet::FOWNER,
+            Self::FileSetID => CapabilitySet::FSETID,
+            Self::Kill => CapabilitySet::KILL,
+            Self::SetGroupID => CapabilitySet::SETGID,
+            Self::SetUserID => CapabilitySet::SETUID,
+            Self::SetPermittedCapabilities => CapabilitySet::SETPCAP,
+            Self::LinuxImmutable => CapabilitySet::LINUX_IMMUTABLE,
+            Self::NetBindService => CapabilitySet::NET_BIND_SERVICE,
+            Self::NetBroadcast => CapabilitySet::NET_BROADCAST,
+            Self::NetAdmin => CapabilitySet::NET_ADMIN,
+            Self::NetRaw => CapabilitySet::NET_RAW,
+            Self::IPCLock => CapabilitySet::IPC_LOCK,
+            Self::IPCOwner => CapabilitySet::IPC_OWNER,
+            Self::SystemModule => CapabilitySet::SYS_MODULE,
+            Self::SystemRawIO => CapabilitySet::SYS_RAWIO,
+            Self::SystemChangeRoot => CapabilitySet::SYS_CHROOT,
+            Self::SystemProcessTrace => CapabilitySet::SYS_PTRACE,
+            Self::SystemProcessAccounting => CapabilitySet::SYS_PACCT,
+            Self::SystemAdmin => CapabilitySet::SYS_ADMIN,
+            Self::SystemBoot => CapabilitySet::SYS_BOOT,
+            Self::SystemNice => CapabilitySet::SYS_NICE,
+            Self::SystemResource => CapabilitySet::SYS_RESOURCE,
+            Self::SystemTime => CapabilitySet::SYS_TIME,
+            Self::SystemTTYConfig => CapabilitySet::SYS_TTY_CONFIG,
+            Self::MakeNode => CapabilitySet::MKNOD,
+            Self::Lease => CapabilitySet::LEASE,
+            Self::AuditWrite => CapabilitySet::AUDIT_WRITE,
+            Self::AuditControl => CapabilitySet::AUDIT_CONTROL,
+            Self::SetFileCapabilities => CapabilitySet::SETFCAP,
+            Self::MACOverride => CapabilitySet::MAC_OVERRIDE,
+            Self::MACAdmin => CapabilitySet::MAC_ADMIN,
+            Self::SystemLog => CapabilitySet::SYSLOG,
+            Self::WakeAlarm => CapabilitySet::WAKE_ALARM,
+            Self::BlockSuspend => CapabilitySet::BLOCK_SUSPEND,
+            Self::AuditRead => CapabilitySet::AUDIT_READ,
+            Self::PerformanceMonitoring => CapabilitySet::PERFMON,
+            Self::BerkeleyPacketFilters => CapabilitySet::BPF,
+            Self::CheckpointRestore => CapabilitySet::CHECKPOINT_RESTORE,
+        }
+    }
+}
+impl CompatCapability for CapabilitySet {
+    fn as_capability_set(self, _: private::Token) -> CapabilitySet {
+        self
+    }
+}
+
 /// Check if the specified capability is in the calling thread's capability
 /// bounding set.
 ///
 /// # References
-///  - [`prctl(PR_CAPBSET_READ,...)`]
+///  - [`prctl(PR_CAPBSET_READ,…)`]
 ///
-/// [`prctl(PR_CAPBSET_READ,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_CAPBSET_READ,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
-pub fn capability_is_in_bounding_set(capability: Capability) -> io::Result<bool> {
-    unsafe { prctl_2args(PR_CAPBSET_READ, capability as usize as *mut _) }.map(|r| r != 0)
+pub fn capability_is_in_bounding_set(capability: impl CompatCapability) -> io::Result<bool> {
+    let capset = capability.as_capability_set(private::Token).bits();
+    if capset.count_ones() != 1 {
+        return Err(Errno::INVAL);
+    }
+    let cap = capset.trailing_zeros();
+
+    // as *mut _ should be ptr::without_provenance_mut but our MSRV does not allow it.
+    unsafe { prctl_2args(PR_CAPBSET_READ, cap as usize as *mut _) }.map(|r| r != 0)
 }
 
 const PR_CAPBSET_DROP: c_int = 24;
@@ -403,12 +482,19 @@ const PR_CAPBSET_DROP: c_int = 24;
 /// from the thread's capability bounding set.
 ///
 /// # References
-///  - [`prctl(PR_CAPBSET_DROP,...)`]
+///  - [`prctl(PR_CAPBSET_DROP,…)`]
 ///
-/// [`prctl(PR_CAPBSET_DROP,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_CAPBSET_DROP,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
-pub fn remove_capability_from_bounding_set(capability: Capability) -> io::Result<()> {
-    unsafe { prctl_2args(PR_CAPBSET_DROP, capability as usize as *mut _) }.map(|_r| ())
+pub fn remove_capability_from_bounding_set(capability: impl CompatCapability) -> io::Result<()> {
+    let capset = capability.as_capability_set(private::Token).bits();
+    if capset.count_ones() != 1 {
+        return Err(Errno::INVAL);
+    }
+    let cap = capset.trailing_zeros();
+
+    // as *mut _ should be ptr::without_provenance_mut but our MSRV does not allow it.
+    unsafe { prctl_2args(PR_CAPBSET_DROP, cap as usize as *mut _) }.map(|_r| ())
 }
 
 //
@@ -418,15 +504,17 @@ pub fn remove_capability_from_bounding_set(capability: Capability) -> io::Result
 const PR_GET_SECUREBITS: c_int = 27;
 
 bitflags! {
-    /// `SECBIT_*`.
+    /// `SECBIT_*`
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct CapabilitiesSecureBits: u32 {
         /// If this bit is set, then the kernel does not grant capabilities
         /// when a `set-user-ID-root` program is executed, or when a process
-        /// with an effective or real UID of 0 calls `execve`.
+        /// with an effective or real UID of [`Uid::ROOT`] calls `execve`.
         const NO_ROOT = 1_u32 << 0;
         /// Set [`NO_ROOT`] irreversibly.
+        ///
+        /// [`NO_ROOT`]: Self::NO_ROOT
         const NO_ROOT_LOCKED = 1_u32 << 1;
         /// Setting this flag stops the kernel from adjusting the process'
         /// permitted, effective, and ambient capability sets when the thread's
@@ -434,17 +522,23 @@ bitflags! {
         /// values.
         const NO_SETUID_FIXUP = 1_u32 << 2;
         /// Set [`NO_SETUID_FIXUP`] irreversibly.
+        ///
+        /// [`NO_SETUID_FIXUP`]: Self::NO_SETUID_FIXUP
         const NO_SETUID_FIXUP_LOCKED = 1_u32 << 3;
         /// Setting this flag allows a thread that has one or more 0 UIDs to
         /// retain capabilities in its permitted set when it switches all of
         /// its UIDs to nonzero values.
         const KEEP_CAPS = 1_u32 << 4;
         /// Set [`KEEP_CAPS`] irreversibly.
+        ///
+        /// [`KEEP_CAPS`]: Self::KEEP_CAPS
         const KEEP_CAPS_LOCKED = 1_u32 << 5;
         /// Setting this flag disallows raising ambient capabilities via the
         /// `prctl`'s `PR_CAP_AMBIENT_RAISE` operation.
         const NO_CAP_AMBIENT_RAISE = 1_u32 << 6;
         /// Set [`NO_CAP_AMBIENT_RAISE`] irreversibly.
+        ///
+        /// [`NO_CAP_AMBIENT_RAISE`]: Self::NO_CAP_AMBIENT_RAISE
         const NO_CAP_AMBIENT_RAISE_LOCKED = 1_u32 << 7;
 
         /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
@@ -455,9 +549,9 @@ bitflags! {
 /// Get the `securebits` flags of the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_GET_SECUREBITS,...)`]
+///  - [`prctl(PR_GET_SECUREBITS,…)`]
 ///
-/// [`prctl(PR_GET_SECUREBITS,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_GET_SECUREBITS,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn capabilities_secure_bits() -> io::Result<CapabilitiesSecureBits> {
     let r = unsafe { prctl_1arg(PR_GET_SECUREBITS)? } as c_uint;
@@ -469,9 +563,9 @@ const PR_SET_SECUREBITS: c_int = 28;
 /// Set the `securebits` flags of the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_SET_SECUREBITS,...)`]
+///  - [`prctl(PR_SET_SECUREBITS,…)`]
 ///
-/// [`prctl(PR_SET_SECUREBITS,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_SECUREBITS,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn set_capabilities_secure_bits(bits: CapabilitiesSecureBits) -> io::Result<()> {
     unsafe { prctl_2args(PR_SET_SECUREBITS, bits.bits() as usize as *mut _) }.map(|_r| ())
@@ -486,9 +580,9 @@ const PR_GET_TIMERSLACK: c_int = 30;
 /// Get the `current` timer slack value of the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_GET_TIMERSLACK,...)`]
+///  - [`prctl(PR_GET_TIMERSLACK,…)`]
 ///
-/// [`prctl(PR_GET_TIMERSLACK,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_GET_TIMERSLACK,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn current_timer_slack() -> io::Result<u64> {
     unsafe { prctl_1arg(PR_GET_TIMERSLACK) }.map(|r| r as u64)
@@ -499,9 +593,9 @@ const PR_SET_TIMERSLACK: c_int = 29;
 /// Sets the `current` timer slack value for the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_SET_TIMERSLACK,...)`]
+///  - [`prctl(PR_SET_TIMERSLACK,…)`]
 ///
-/// [`prctl(PR_SET_TIMERSLACK,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_TIMERSLACK,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn set_current_timer_slack(value: Option<NonZeroU64>) -> io::Result<()> {
     let value = usize::try_from(value.map_or(0, NonZeroU64::get)).map_err(|_r| io::Errno::RANGE)?;
@@ -517,9 +611,9 @@ const PR_GET_NO_NEW_PRIVS: c_int = 39;
 /// Get the value of the `no_new_privs` attribute for the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_GET_NO_NEW_PRIVS,...)`]
+///  - [`prctl(PR_GET_NO_NEW_PRIVS,…)`]
 ///
-/// [`prctl(PR_GET_NO_NEW_PRIVS,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_GET_NO_NEW_PRIVS,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn no_new_privs() -> io::Result<bool> {
     unsafe { prctl_1arg(PR_GET_NO_NEW_PRIVS) }.map(|r| r != 0)
@@ -530,9 +624,9 @@ const PR_SET_NO_NEW_PRIVS: c_int = 38;
 /// Set the calling thread's `no_new_privs` attribute.
 ///
 /// # References
-///  - [`prctl(PR_SET_NO_NEW_PRIVS,...)`]
+///  - [`prctl(PR_SET_NO_NEW_PRIVS,…)`]
 ///
-/// [`prctl(PR_SET_NO_NEW_PRIVS,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_NO_NEW_PRIVS,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn set_no_new_privs(no_new_privs: bool) -> io::Result<()> {
     unsafe { prctl_2args(PR_SET_NO_NEW_PRIVS, usize::from(no_new_privs) as *mut _) }.map(|_r| ())
@@ -548,9 +642,9 @@ const PR_GET_TID_ADDRESS: c_int = 40;
 /// and `clone`'s `CLONE_CHILD_CLEARTID` flag.
 ///
 /// # References
-///  - [`prctl(PR_GET_TID_ADDRESS,...)`]
+///  - [`prctl(PR_GET_TID_ADDRESS,…)`]
 ///
-/// [`prctl(PR_GET_TID_ADDRESS,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_GET_TID_ADDRESS,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn get_clear_child_tid_address() -> io::Result<Option<NonNull<c_void>>> {
     unsafe { prctl_get_at_arg2_optional::<*mut c_void>(PR_GET_TID_ADDRESS) }.map(NonNull::new)
@@ -565,9 +659,9 @@ const PR_GET_THP_DISABLE: c_int = 42;
 /// Get the current setting of the `THP disable` flag for the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_GET_THP_DISABLE,...)`]
+///  - [`prctl(PR_GET_THP_DISABLE,…)`]
 ///
-/// [`prctl(PR_GET_THP_DISABLE,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_GET_THP_DISABLE,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn transparent_huge_pages_are_disabled() -> io::Result<bool> {
     unsafe { prctl_1arg(PR_GET_THP_DISABLE) }.map(|r| r != 0)
@@ -578,9 +672,9 @@ const PR_SET_THP_DISABLE: c_int = 41;
 /// Set the state of the `THP disable` flag for the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_SET_THP_DISABLE,...)`]
+///  - [`prctl(PR_SET_THP_DISABLE,…)`]
 ///
-/// [`prctl(PR_SET_THP_DISABLE,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_THP_DISABLE,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn disable_transparent_huge_pages(thp_disable: bool) -> io::Result<()> {
     unsafe { prctl_2args(PR_SET_THP_DISABLE, usize::from(thp_disable) as *mut _) }.map(|_r| ())
@@ -597,13 +691,26 @@ const PR_CAP_AMBIENT_IS_SET: usize = 1;
 /// Check if the specified capability is in the ambient set.
 ///
 /// # References
-///  - [`prctl(PR_CAP_AMBIENT,PR_CAP_AMBIENT_IS_SET,...)`]
+///  - [`prctl(PR_CAP_AMBIENT,PR_CAP_AMBIENT_IS_SET,…)`]
 ///
-/// [`prctl(PR_CAP_AMBIENT,PR_CAP_AMBIENT_IS_SET,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_CAP_AMBIENT,PR_CAP_AMBIENT_IS_SET,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
-pub fn capability_is_in_ambient_set(capability: Capability) -> io::Result<bool> {
-    let cap = capability as usize as *mut _;
-    unsafe { prctl_3args(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET as *mut _, cap) }.map(|r| r != 0)
+pub fn capability_is_in_ambient_set(capability: impl CompatCapability) -> io::Result<bool> {
+    let capset = capability.as_capability_set(private::Token).bits();
+    if capset.count_ones() != 1 {
+        return Err(Errno::INVAL);
+    }
+    let cap = capset.trailing_zeros();
+
+    unsafe {
+        prctl_3args(
+            PR_CAP_AMBIENT,
+            PR_CAP_AMBIENT_IS_SET as *mut _,
+            // as *mut _ should be ptr::without_provenance_mut but our MSRV does not allow it.
+            cap as usize as *mut _,
+        )
+    }
+    .map(|r| r != 0)
 }
 
 const PR_CAP_AMBIENT_CLEAR_ALL: usize = 4;
@@ -611,9 +718,9 @@ const PR_CAP_AMBIENT_CLEAR_ALL: usize = 4;
 /// Remove all capabilities from the ambient set.
 ///
 /// # References
-///  - [`prctl(PR_CAP_AMBIENT,PR_CAP_AMBIENT_CLEAR_ALL,...)`]
+///  - [`prctl(PR_CAP_AMBIENT,PR_CAP_AMBIENT_CLEAR_ALL,…)`]
 ///
-/// [`prctl(PR_CAP_AMBIENT,PR_CAP_AMBIENT_CLEAR_ALL,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_CAP_AMBIENT,PR_CAP_AMBIENT_CLEAR_ALL,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn clear_ambient_capability_set() -> io::Result<()> {
     unsafe { prctl_2args(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL as *mut _) }.map(|_r| ())
@@ -625,19 +732,34 @@ const PR_CAP_AMBIENT_LOWER: usize = 3;
 /// Add or remove the specified capability to the ambient set.
 ///
 /// # References
-///  - [`prctl(PR_CAP_AMBIENT,...)`]
+///  - [`prctl(PR_CAP_AMBIENT,…)`]
 ///
-/// [`prctl(PR_CAP_AMBIENT,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_CAP_AMBIENT,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
-pub fn configure_capability_in_ambient_set(capability: Capability, enable: bool) -> io::Result<()> {
+pub fn configure_capability_in_ambient_set(
+    capability: impl CompatCapability,
+    enable: bool,
+) -> io::Result<()> {
     let sub_operation = if enable {
         PR_CAP_AMBIENT_RAISE
     } else {
         PR_CAP_AMBIENT_LOWER
     };
-    let cap = capability as usize as *mut _;
+    let capset = capability.as_capability_set(private::Token).bits();
+    if capset.count_ones() != 1 {
+        return Err(Errno::INVAL);
+    }
+    let cap = capset.trailing_zeros();
 
-    unsafe { prctl_3args(PR_CAP_AMBIENT, sub_operation as *mut _, cap) }.map(|_r| ())
+    unsafe {
+        prctl_3args(
+            PR_CAP_AMBIENT,
+            sub_operation as *mut _,
+            // as *mut _ should be ptr::without_provenance_mut but our MSRV does not allow it.
+            cap as usize as *mut _,
+        )
+    }
+    .map(|_r| ())
 }
 
 //
@@ -661,9 +783,9 @@ pub struct SVEVectorLengthConfig {
 /// Get the thread's current SVE vector length configuration.
 ///
 /// # References
-///  - [`prctl(PR_SVE_GET_VL,...)`]
+///  - [`prctl(PR_SVE_GET_VL,…)`]
 ///
-/// [`prctl(PR_SVE_GET_VL,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SVE_GET_VL,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn sve_vector_length_configuration() -> io::Result<SVEVectorLengthConfig> {
     let bits = unsafe { prctl_1arg(PR_SVE_GET_VL)? } as c_uint;
@@ -680,14 +802,14 @@ const PR_SVE_SET_VL_ONEXEC: u32 = 1_u32 << 18;
 /// Configure the thread's vector length of Scalable Vector Extension.
 ///
 /// # References
-///  - [`prctl(PR_SVE_SET_VL,...)`]
+///  - [`prctl(PR_SVE_SET_VL,…)`]
 ///
 /// # Safety
 ///
 /// Please ensure the conditions necessary to safely call this function,
 /// as detailed in the references above.
 ///
-/// [`prctl(PR_SVE_SET_VL,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SVE_SET_VL,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub unsafe fn set_sve_vector_length_configuration(
     vector_length_in_bytes: usize,
@@ -720,15 +842,16 @@ const PR_PAC_RESET_KEYS: c_int = 54;
 /// values generated by the kernel.
 ///
 /// # References
-///  - [`prctl(PR_PAC_RESET_KEYS,...)`]
+///  - [`prctl(PR_PAC_RESET_KEYS,…)`]
 ///
 /// # Safety
 ///
 /// Please ensure the conditions necessary to safely call this function,
 /// as detailed in the references above.
 ///
-/// [`prctl(PR_PAC_RESET_KEYS,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_PAC_RESET_KEYS,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
+#[cfg(linux_raw_dep)]
 pub unsafe fn reset_pointer_authentication_keys(
     keys: Option<PointerAuthenticationKeys>,
 ) -> io::Result<()> {
@@ -767,9 +890,9 @@ bitflags! {
 /// Get the current tagged address mode for the calling thread.
 ///
 /// # References
-///  - [`prctl(PR_GET_TAGGED_ADDR_CTRL,...)`]
+///  - [`prctl(PR_GET_TAGGED_ADDR_CTRL,…)`]
 ///
-/// [`prctl(PR_GET_TAGGED_ADDR_CTRL,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_GET_TAGGED_ADDR_CTRL,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub fn current_tagged_address_mode() -> io::Result<(Option<TaggedAddressMode>, u32)> {
     let r = unsafe { prctl_1arg(PR_GET_TAGGED_ADDR_CTRL)? } as c_uint;
@@ -783,14 +906,14 @@ const PR_SET_TAGGED_ADDR_CTRL: c_int = 55;
 /// Controls support for passing tagged user-space addresses to the kernel.
 ///
 /// # References
-///  - [`prctl(PR_SET_TAGGED_ADDR_CTRL,...)`]
+///  - [`prctl(PR_SET_TAGGED_ADDR_CTRL,…)`]
 ///
 /// # Safety
 ///
 /// Please ensure the conditions necessary to safely call this function, as
 /// detailed in the references above.
 ///
-/// [`prctl(PR_SET_TAGGED_ADDR_CTRL,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_TAGGED_ADDR_CTRL,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub unsafe fn set_current_tagged_address_mode(
     mode: Option<TaggedAddressMode>,
@@ -812,14 +935,14 @@ const PR_SYS_DISPATCH_OFF: usize = 0;
 /// Disable Syscall User Dispatch mechanism.
 ///
 /// # References
-///  - [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_OFF,...)`]
+///  - [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_OFF,…)`]
 ///
 /// # Safety
 ///
 /// Please ensure the conditions necessary to safely call this function, as
 /// detailed in the references above.
 ///
-/// [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_OFF,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_OFF,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub unsafe fn disable_syscall_user_dispatch() -> io::Result<()> {
     prctl_2args(PR_SET_SYSCALL_USER_DISPATCH, PR_SYS_DISPATCH_OFF as *mut _).map(|_r| ())
@@ -858,14 +981,14 @@ impl TryFrom<u8> for SysCallUserDispatchFastSwitch {
 /// Enable Syscall User Dispatch mechanism.
 ///
 /// # References
-///  - [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_ON,...)`]
+///  - [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_ON,…)`]
 ///
 /// # Safety
 ///
 /// Please ensure the conditions necessary to safely call this function, as
 /// detailed in the references above.
 ///
-/// [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_ON,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
+/// [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_ON,…)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
 pub unsafe fn enable_syscall_user_dispatch(
     always_allowed_region: &[u8],
@@ -893,7 +1016,7 @@ const PR_SCHED_CORE_SCOPE_THREAD: u32 = 0;
 const PR_SCHED_CORE_SCOPE_THREAD_GROUP: u32 = 1;
 const PR_SCHED_CORE_SCOPE_PROCESS_GROUP: u32 = 2;
 
-/// `PR_SCHED_CORE_SCOPE_*`.
+/// `PR_SCHED_CORE_SCOPE_*`
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum CoreSchedulingScope {
@@ -922,9 +1045,9 @@ impl TryFrom<u32> for CoreSchedulingScope {
 /// Get core scheduling cookie of a process.
 ///
 /// # References
-///  - [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_GET,...)`]
+///  - [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_GET,…)`]
 ///
-/// [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_GET,...)`]: https://www.kernel.org/doc/html/v5.18/admin-guide/hw-vuln/core-scheduling.html
+/// [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_GET,…)`]: https://www.kernel.org/doc/html/v6.13/admin-guide/hw-vuln/core-scheduling.html
 #[inline]
 pub fn core_scheduling_cookie(pid: Pid, scope: CoreSchedulingScope) -> io::Result<u64> {
     let mut value: MaybeUninit<u64> = MaybeUninit::uninit();
@@ -945,9 +1068,9 @@ const PR_SCHED_CORE_CREATE: usize = 1;
 /// Create unique core scheduling cookie.
 ///
 /// # References
-///  - [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_CREATE,...)`]
+///  - [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_CREATE,…)`]
 ///
-/// [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_CREATE,...)`]: https://www.kernel.org/doc/html/v5.18/admin-guide/hw-vuln/core-scheduling.html
+/// [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_CREATE,…)`]: https://www.kernel.org/doc/html/v6.13/admin-guide/hw-vuln/core-scheduling.html
 #[inline]
 pub fn create_core_scheduling_cookie(pid: Pid, scope: CoreSchedulingScope) -> io::Result<()> {
     unsafe {
@@ -967,9 +1090,9 @@ const PR_SCHED_CORE_SHARE_TO: usize = 2;
 /// Push core scheduling cookie to a process.
 ///
 /// # References
-///  - [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_SHARE_TO,...)`]
+///  - [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_SHARE_TO,…)`]
 ///
-/// [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_SHARE_TO,...)`]: https://www.kernel.org/doc/html/v5.18/admin-guide/hw-vuln/core-scheduling.html
+/// [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_SHARE_TO,…)`]: https://www.kernel.org/doc/html/v6.13/admin-guide/hw-vuln/core-scheduling.html
 #[inline]
 pub fn push_core_scheduling_cookie(pid: Pid, scope: CoreSchedulingScope) -> io::Result<()> {
     unsafe {
@@ -989,9 +1112,9 @@ const PR_SCHED_CORE_SHARE_FROM: usize = 3;
 /// Pull core scheduling cookie from a process.
 ///
 /// # References
-///  - [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_SHARE_FROM,...)`]
+///  - [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_SHARE_FROM,…)`]
 ///
-/// [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_SHARE_FROM,...)`]: https://www.kernel.org/doc/html/v5.18/admin-guide/hw-vuln/core-scheduling.html
+/// [`prctl(PR_SCHED_CORE,PR_SCHED_CORE_SHARE_FROM,…)`]: https://www.kernel.org/doc/html/v6.13/admin-guide/hw-vuln/core-scheduling.html
 #[inline]
 pub fn pull_core_scheduling_cookie(pid: Pid, scope: CoreSchedulingScope) -> io::Result<()> {
     unsafe {

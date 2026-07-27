@@ -1,4 +1,5 @@
 use std::{
+    io,
     pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -12,9 +13,7 @@ use std::{
 
 use futures_core::stream::Stream;
 
-use crate::Result;
-
-use super::{
+use crate::event::{
     filter::EventFilter, lock_internal_event_reader, poll_internal, read_internal, sys::Waker,
     Event, InternalEvent,
 };
@@ -24,8 +23,8 @@ use super::{
 /// **This type is not available by default. You have to use the `event-stream` feature flag
 /// to make it available.**
 ///
-/// It implements the [`futures::stream::Stream`](https://docs.rs/futures/0.3.1/futures/stream/trait.Stream.html)
-/// trait and allows you to receive `Event`s with [`async-std`](https://crates.io/crates/async-std)
+/// It implements the [Stream](futures_core::stream::Stream)
+/// trait and allows you to receive [`Event`]s with [`async-std`](https://crates.io/crates/async-std)
 /// or [`tokio`](https://crates.io/crates/tokio) crates.
 ///
 /// Check the [examples](https://github.com/crossterm-rs/crossterm/tree/master/examples) folder to see how to use
@@ -100,7 +99,7 @@ struct Task {
 // We have to wake up the poll_internal (force it to return Ok(false)) and quit
 // the thread before we drop.
 impl Stream for EventStream {
-    type Item = Result<Event>;
+    type Item = io::Result<Event>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let result = match poll_internal(Some(Duration::from_secs(0)), &EventFilter) {

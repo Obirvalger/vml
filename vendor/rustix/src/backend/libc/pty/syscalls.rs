@@ -6,12 +6,18 @@ use crate::fd::BorrowedFd;
 use crate::io;
 #[cfg(all(
     feature = "alloc",
-    any(apple, linux_like, target_os = "freebsd", target_os = "fuchsia")
+    any(
+        apple,
+        linux_like,
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos"
+    )
 ))]
 use {
     crate::ffi::{CStr, CString},
     crate::path::SMALL_PATH_BUFFER_SIZE,
-    alloc::borrow::ToOwned,
+    alloc::borrow::ToOwned as _,
     alloc::vec::Vec,
 };
 
@@ -26,7 +32,13 @@ pub(crate) fn openpt(flags: OpenptFlags) -> io::Result<OwnedFd> {
 
 #[cfg(all(
     feature = "alloc",
-    any(apple, linux_like, target_os = "freebsd", target_os = "fuchsia")
+    any(
+        apple,
+        linux_like,
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos"
+    )
 ))]
 #[inline]
 pub(crate) fn ptsname(fd: BorrowedFd<'_>, mut buffer: Vec<u8>) -> io::Result<CString> {
@@ -38,7 +50,7 @@ pub(crate) fn ptsname(fd: BorrowedFd<'_>, mut buffer: Vec<u8>) -> io::Result<CSt
 
     loop {
         // On platforms with `ptsname_r`, use it.
-        #[cfg(any(linux_like, target_os = "fuchsia"))]
+        #[cfg(any(linux_like, target_os = "fuchsia", target_os = "illumos"))]
         let r = unsafe { c::ptsname_r(borrowed_fd(fd), buffer.as_mut_ptr().cast(), buffer.len()) };
 
         // FreeBSD 12 doesn't have `ptsname_r`.
@@ -54,7 +66,7 @@ pub(crate) fn ptsname(fd: BorrowedFd<'_>, mut buffer: Vec<u8>) -> io::Result<CSt
             if let Some(func) = ptsname_r.get() {
                 func(borrowed_fd(fd), buffer.as_mut_ptr().cast(), buffer.len())
             } else {
-                libc::ENOSYS
+                c::ENOSYS
             }
         };
 
@@ -73,7 +85,7 @@ pub(crate) fn ptsname(fd: BorrowedFd<'_>, mut buffer: Vec<u8>) -> io::Result<CSt
                 match c::ioctl(borrowed_fd(fd), c::TIOCPTYGNAME as _, &mut name) {
                     0 => {
                         let len = CStr::from_ptr(name.as_ptr().cast()).to_bytes().len();
-                        std::ptr::copy_nonoverlapping(name.as_ptr(), buffer.as_mut_ptr(), len + 1);
+                        core::ptr::copy_nonoverlapping(name.as_ptr(), buffer.as_mut_ptr(), len + 1);
                         0
                     }
                     _ => libc_errno::errno().0,

@@ -11,7 +11,18 @@
 /// ```
 pub const ASCII_FULL: &str = "||--+==+|-+||++++++";
 
-/// Default style without any borders.
+/// Just like ASCII_FULL, but without dividers between rows.
+///
+/// ```text
+/// +-------+-------+
+/// | Hello | there |
+/// +===============+
+/// | a     | b     |
+/// | c     | d     |
+/// +-------+-------+
+pub const ASCII_FULL_CONDENSED: &str = "||--+==+|    ++++++";
+
+/// Just like ASCII_FULL, but without any borders.
 ///
 /// ```text
 ///  Hello | there
@@ -84,6 +95,18 @@ pub const ASCII_MARKDOWN: &str = "||  |-|||           ";
 /// ```
 pub const UTF8_FULL: &str = "││──╞═╪╡┆╌┼├┤┬┴┌┐└┘";
 
+/// Default UTF8 style, but without dividers between rows.
+///
+/// ```text
+/// ┌───────┬───────┐
+/// │ Hello ┆ there │
+/// ╞═══════╪═══════╡
+/// │ a     ┆ b     │
+/// │ c     ┆ d     │
+/// └───────┴───────┘
+/// ```
+pub const UTF8_FULL_CONDENSED: &str = "││──╞═╪╡┆    ┬┴┌┐└┘";
+
 /// Default UTF8 style, but without any borders.
 ///
 /// ```text
@@ -95,7 +118,7 @@ pub const UTF8_FULL: &str = "││──╞═╪╡┆╌┼├┤┬┴┌┐
 /// ```
 pub const UTF8_NO_BORDERS: &str = "     ═╪ ┆╌┼        ";
 
-/// Just like the UTF8 FULL version, but without vertical/horizontal middle lines.
+/// Just like the UTF8_FULL style, but without vertical/horizontal middle lines.
 ///
 /// ```text
 /// ┌───────────────┐

@@ -17,8 +17,17 @@ Add `bitflags` to your `Cargo.toml`:
 
 ```toml
 [dependencies.bitflags]
-version = "2.6.0"
+version = "2.13.1"
 ```
+
+## Crate features
+
+The `bitflags` library defines a few Cargo features that you can opt-in to:
+
+- `std`: Implement the `Error` trait on error types used by `bitflags`.
+- `serde`: Support deriving `serde` traits on generated flags types.
+- `arbitrary`: Support deriving `arbitrary` traits on generated flags types.
+- `bytemuck`: Support deriving `bytemuck` traits on generated flags types.
 
 ## Generating flags types
 
@@ -71,10 +80,10 @@ You can derive some traits on generated flags types if you enable Cargo features
 libraries are currently supported:
 
 - `serde`: Support `#[derive(Serialize, Deserialize)]`, using text for human-readable formats,
-and a raw number for binary formats.
+  and a raw number for binary formats.
 - `arbitrary`: Support `#[derive(Arbitrary)]`, only generating flags values with known bits.
 - `bytemuck`: Support `#[derive(Pod, Zeroable)]`, for casting between flags values and their
-underlying bits values.
+  underlying bits values.
 
 You can also define your own flags type outside of the [`bitflags`] macro and then use it to generate methods.
 This can be useful if you need a custom `#[derive]` attribute for a library that `bitflags` doesn't
@@ -120,6 +129,28 @@ impl Flags {
     }
 }
 ```
+
+### Renaming flags
+
+The [`bitflags`] macro recognizes a special `#[bitflags(flag_name = "<value>")]` attribute on flags values to rename them:
+
+```rust
+# use bitflags::bitflags;
+bitflags! {
+    pub struct Flags: u32 {
+        // Add the attribute to a flag to change its name
+        #[bitflags(flag_name = "a")]
+        const A = 0b00000001;
+        #[bitflags(flag_name = "b")]
+        const B = 0b00000010;
+        #[bitflags(flag_name = "c")]
+        const C = 0b00000100;
+    }
+}
+```
+
+When applied to a flag value, instead of using its identifier, like `A` as the name, it'll use the given string. This
+doesn't affect the identifier of the constant itself, just the name recognized when parsing and formatting.
 
 ## Working with flags values
 
@@ -463,16 +494,6 @@ macro_rules! bitflags {
             $vis struct $BitFlags
         }
 
-        // Workaround for: https://github.com/bitflags/bitflags/issues/320
-        $crate::__impl_public_bitflags_consts! {
-            $BitFlags: $T {
-                $(
-                    $(#[$inner $($args)*])*
-                    const $Flag = $value;
-                )*
-            }
-        }
-
         #[allow(
             dead_code,
             deprecated,
@@ -481,6 +502,7 @@ macro_rules! bitflags {
             unused_mut,
             unused_imports,
             non_upper_case_globals,
+            clippy::min_ident_chars,
             clippy::assign_op_pattern,
             clippy::indexing_slicing,
             clippy::same_name_method,
@@ -491,6 +513,15 @@ macro_rules! bitflags {
             // These types don't appear in the end-user's API
             $crate::__declare_internal_bitflags! {
                 $vis struct InternalBitFlags: $T
+            }
+
+            $crate::__impl_public_bitflags_consts! {
+                $BitFlags: $T {
+                    $(
+                        $(#[$inner $($args)*])*
+                        const $Flag = $value;
+                    )*
+                }
             }
 
             $crate::__impl_internal_bitflags! {
@@ -540,15 +571,6 @@ macro_rules! bitflags {
 
         $($t:tt)*
     ) => {
-        $crate::__impl_public_bitflags_consts! {
-            $BitFlags: $T {
-                $(
-                    $(#[$inner $($args)*])*
-                    const $Flag = $value;
-                )*
-            }
-        }
-
         #[allow(
             dead_code,
             deprecated,
@@ -557,10 +579,20 @@ macro_rules! bitflags {
             unused_mut,
             unused_imports,
             non_upper_case_globals,
+            clippy::min_ident_chars,
             clippy::assign_op_pattern,
             clippy::iter_without_into_iter,
         )]
         const _: () = {
+            $crate::__impl_public_bitflags_consts! {
+                $BitFlags: $T {
+                    $(
+                        $(#[$inner $($args)*])*
+                        const $Flag = $value;
+                    )*
+                }
+            }
+
             $crate::__impl_public_bitflags! {
                 $(#[$outer])*
                 $BitFlags: $T, $BitFlags {
@@ -595,301 +627,264 @@ macro_rules! bitflags {
 #[doc(hidden)]
 macro_rules! __impl_bitflags {
     (
+        // These param names must be passed in to make the macro work.
+        // Just use `params: self, bits, name, other, value;`.
+        params: $self:ident, $bits:ident, $name:ident, $other:ident, $value:ident;
         $(#[$outer:meta])*
         $PublicBitFlags:ident: $T:ty {
-            fn empty() $empty:block
-            fn all() $all:block
-            fn bits($bits0:ident) $bits:block
-            fn from_bits($from_bits0:ident) $from_bits:block
-            fn from_bits_truncate($from_bits_truncate0:ident) $from_bits_truncate:block
-            fn from_bits_retain($from_bits_retain0:ident) $from_bits_retain:block
-            fn from_name($from_name0:ident) $from_name:block
-            fn is_empty($is_empty0:ident) $is_empty:block
-            fn is_all($is_all0:ident) $is_all:block
-            fn intersects($intersects0:ident, $intersects1:ident) $intersects:block
-            fn contains($contains0:ident, $contains1:ident) $contains:block
-            fn insert($insert0:ident, $insert1:ident) $insert:block
-            fn remove($remove0:ident, $remove1:ident) $remove:block
-            fn toggle($toggle0:ident, $toggle1:ident) $toggle:block
-            fn set($set0:ident, $set1:ident, $set2:ident) $set:block
-            fn intersection($intersection0:ident, $intersection1:ident) $intersection:block
-            fn union($union0:ident, $union1:ident) $union:block
-            fn difference($difference0:ident, $difference1:ident) $difference:block
-            fn symmetric_difference($symmetric_difference0:ident, $symmetric_difference1:ident) $symmetric_difference:block
-            fn complement($complement0:ident) $complement:block
+            fn empty() $empty_body:block
+            fn all() $all_body:block
+            fn bits(&self) $bits_body:block
+            fn from_bits(bits) $from_bits_body:block
+            fn from_bits_truncate(bits) $from_bits_truncate_body:block
+            fn from_bits_retain(bits) $from_bits_retain_body:block
+            fn from_name(name) $from_name_body:block
+            fn is_empty(&self) $is_empty_body:block
+            fn is_all(&self) $is_all_body:block
+            fn intersects(&self, other) $intersects_body:block
+            fn contains(&self, other) $contains_body:block
+            fn insert(&mut self, other) $insert_body:block
+            fn remove(&mut self, other) $remove_body:block
+            fn toggle(&mut self, other) $toggle_body:block
+            fn set(&mut self, other, value) $set_body:block
+            fn intersection(self, other) $intersection_body:block
+            fn union(self, other) $union_body:block
+            fn difference(self, other) $difference_body:block
+            fn symmetric_difference(self, other) $symmetric_difference_body:block
+            fn complement(self) $complement_body:block
         }
     ) => {
-        #[allow(dead_code, deprecated, unused_attributes)]
         $(#[$outer])*
         impl $PublicBitFlags {
             /// Get a flags value with all bits unset.
             #[inline]
-            pub const fn empty() -> Self {
-                $empty
-            }
+            pub const fn empty() -> Self
+                $empty_body
 
             /// Get a flags value with all known bits set.
             #[inline]
-            pub const fn all() -> Self {
-                $all
-            }
+            pub const fn all() -> Self
+                $all_body
 
             /// Get the underlying bits value.
             ///
             /// The returned value is exactly the bits set in this flags value.
             #[inline]
-            pub const fn bits(&self) -> $T {
-                let $bits0 = self;
-                $bits
-            }
+            pub const fn bits(&$self) -> $T
+                $bits_body
 
             /// Convert from a bits value.
             ///
             /// This method will return `None` if any unknown bits are set.
             #[inline]
-            pub const fn from_bits(bits: $T) -> $crate::__private::core::option::Option<Self> {
-                let $from_bits0 = bits;
-                $from_bits
-            }
+            pub const fn from_bits($bits: $T) -> $crate::__private::core::option::Option<Self>
+                $from_bits_body
 
             /// Convert from a bits value, unsetting any unknown bits.
             #[inline]
-            pub const fn from_bits_truncate(bits: $T) -> Self {
-                let $from_bits_truncate0 = bits;
-                $from_bits_truncate
-            }
+            pub const fn from_bits_truncate($bits: $T) -> Self
+                $from_bits_truncate_body
 
             /// Convert from a bits value exactly.
             #[inline]
-            pub const fn from_bits_retain(bits: $T) -> Self {
-                let $from_bits_retain0 = bits;
-                $from_bits_retain
-            }
+            pub const fn from_bits_retain($bits: $T) -> Self
+                $from_bits_retain_body
 
             /// Get a flags value with the bits of a flag with the given name set.
             ///
             /// This method will return `None` if `name` is empty or doesn't
             /// correspond to any named flag.
             #[inline]
-            pub fn from_name(name: &str) -> $crate::__private::core::option::Option<Self> {
-                let $from_name0 = name;
-                $from_name
-            }
+            pub fn from_name($name: &str) -> $crate::__private::core::option::Option<Self>
+                $from_name_body
 
-            /// Whether all bits in this flags value are unset.
+            /// Whether all bits in `self` are unset.
             #[inline]
-            pub const fn is_empty(&self) -> bool {
-                let $is_empty0 = self;
-                $is_empty
-            }
+            pub const fn is_empty(&$self) -> bool
+                $is_empty_body
 
             /// Whether all known bits in this flags value are set.
             #[inline]
-            pub const fn is_all(&self) -> bool {
-                let $is_all0 = self;
-                $is_all
-            }
+            pub const fn is_all(&$self) -> bool
+                $is_all_body
 
-            /// Whether any set bits in a source flags value are also set in a target flags value.
+            /// Whether any set bits in `other` are also set in `self`.
             #[inline]
-            pub const fn intersects(&self, other: Self) -> bool {
-                let $intersects0 = self;
-                let $intersects1 = other;
-                $intersects
-            }
+            pub const fn intersects(&$self, $other: Self) -> bool
+                $intersects_body
 
-            /// Whether all set bits in a source flags value are also set in a target flags value.
+            /// Whether all set bits in `other` are also set in `self`.
             #[inline]
-            pub const fn contains(&self, other: Self) -> bool {
-                let $contains0 = self;
-                let $contains1 = other;
-                $contains
-            }
+            pub const fn contains(&$self, $other: Self) -> bool
+                $contains_body
 
-            /// The bitwise or (`|`) of the bits in two flags values.
+            /// The bitwise or (`|`) of the bits in `self` and `other`.
             #[inline]
-            pub fn insert(&mut self, other: Self) {
-                let $insert0 = self;
-                let $insert1 = other;
-                $insert
-            }
+            pub fn insert(&mut $self, $other: Self)
+                $insert_body
 
-            /// The intersection of a source flags value with the complement of a target flags value (`&!`).
+            /// The intersection of `self` with the complement of `other` (`&!`).
             ///
             /// This method is not equivalent to `self & !other` when `other` has unknown bits set.
             /// `remove` won't truncate `other`, but the `!` operator will.
             #[inline]
-            pub fn remove(&mut self, other: Self) {
-                let $remove0 = self;
-                let $remove1 = other;
-                $remove
-            }
+            pub fn remove(&mut $self, $other: Self)
+                $remove_body
 
-            /// The bitwise exclusive-or (`^`) of the bits in two flags values.
+            /// The bitwise exclusive-or (`^`) of the bits in `self` and `other`.
             #[inline]
-            pub fn toggle(&mut self, other: Self) {
-                let $toggle0 = self;
-                let $toggle1 = other;
-                $toggle
-            }
+            pub fn toggle(&mut $self, $other: Self)
+                $toggle_body
 
             /// Call `insert` when `value` is `true` or `remove` when `value` is `false`.
             #[inline]
-            pub fn set(&mut self, other: Self, value: bool) {
-                let $set0 = self;
-                let $set1 = other;
-                let $set2 = value;
-                $set
-            }
+            pub fn set(&mut $self, $other: Self, $value: bool)
+                $set_body
 
-            /// The bitwise and (`&`) of the bits in two flags values.
+            /// The bitwise and (`&`) of the bits in `self` and `other`.
             #[inline]
             #[must_use]
-            pub const fn intersection(self, other: Self) -> Self {
-                let $intersection0 = self;
-                let $intersection1 = other;
-                $intersection
-            }
+            pub const fn intersection($self, $other: Self) -> Self
+                $intersection_body
 
-            /// The bitwise or (`|`) of the bits in two flags values.
+            /// The bitwise or (`|`) of the bits in `self` and `other`.
             #[inline]
             #[must_use]
-            pub const fn union(self, other: Self) -> Self {
-                let $union0 = self;
-                let $union1 = other;
-                $union
-            }
+            pub const fn union($self, $other: Self) -> Self
+                $union_body
 
-            /// The intersection of a source flags value with the complement of a target flags value (`&!`).
+            /// The intersection of `self` with the complement of `other` (`&!`).
             ///
             /// This method is not equivalent to `self & !other` when `other` has unknown bits set.
             /// `difference` won't truncate `other`, but the `!` operator will.
             #[inline]
             #[must_use]
-            pub const fn difference(self, other: Self) -> Self {
-                let $difference0 = self;
-                let $difference1 = other;
-                $difference
-            }
+            pub const fn difference($self, $other: Self) -> Self
+                $difference_body
 
-            /// The bitwise exclusive-or (`^`) of the bits in two flags values.
+            /// The bitwise exclusive-or (`^`) of the bits in `self` and `other`.
             #[inline]
             #[must_use]
-            pub const fn symmetric_difference(self, other: Self) -> Self {
-                let $symmetric_difference0 = self;
-                let $symmetric_difference1 = other;
-                $symmetric_difference
-            }
+            pub const fn symmetric_difference($self, $other: Self) -> Self
+                $symmetric_difference_body
 
-            /// The bitwise negation (`!`) of the bits in a flags value, truncating the result.
+            /// The bitwise negation (`!`) of the bits in `self`, truncating the result.
             #[inline]
             #[must_use]
-            pub const fn complement(self) -> Self {
-                let $complement0 = self;
-                $complement
-            }
+            pub const fn complement($self) -> Self
+                $complement_body
         }
     };
 }
 
-/// A macro that processed the input to `bitflags!` and shuffles attributes around
-/// based on whether or not they're "expression-safe".
+/// A macro that matches flags values, similar to Rust's `match` statement.
 ///
-/// This macro is a token-tree muncher that works on 2 levels:
+/// In a regular `match` statement, the syntax `Flag::A | Flag::B` is interpreted as an or-pattern,
+/// instead of the bitwise-or of `Flag::A` and `Flag::B`. This can be surprising when combined with flags types
+/// because `Flag::A | Flag::B` won't match the pattern `Flag::A | Flag::B`. This macro is an alternative to
+/// `match` for flags values that doesn't have this issue.
 ///
-/// For each attribute, we explicitly match on its identifier, like `cfg` to determine
-/// whether or not it should be considered expression-safe.
+/// # Syntax
 ///
-/// If you find yourself with an attribute that should be considered expression-safe
-/// and isn't, it can be added here.
+/// ```ignore
+/// bitflags_match!(expression, {
+///     pattern1 => result1,
+///     pattern2 => result2,
+///     ..
+///     _ => default_result,
+/// })
+/// ```
+///
+/// The final `_ => default_result` arm is required, otherwise the macro will fail to compile.
+///
+/// # Examples
+///
+/// ```rust
+/// use bitflags::{bitflags, bitflags_match};
+///
+/// bitflags! {
+///     #[derive(PartialEq)]
+///     struct Flags: u8 {
+///         const A = 1 << 0;
+///         const B = 1 << 1;
+///         const C = 1 << 2;
+///     }
+/// }
+///
+/// let flags = Flags::A | Flags::B;
+///
+/// // Prints `the value is A and B`
+/// bitflags_match!(flags, {
+///     Flags::A | Flags::B => println!("the value is A and B"),
+///     _ => println!("the value is not A and B"),
+/// });
+///
+/// // Prints `the value is not A`
+/// bitflags_match!(flags, {
+///     Flags::A => println!("the value is A"),
+///     _ => println!("the value is not A"),
+/// });
+/// ```
+///
+/// # How it works
+///
+/// The macro expands to a series of `if` statements, **checking equality** between the input expression
+/// and each pattern. This allows for correct matching of bitflag combinations, which is not possible
+/// with a regular match expression due to the way bitflags are implemented.
+///
+/// Patterns are evaluated in the order they appear in the macro.
+#[macro_export]
+macro_rules! bitflags_match {
+    ($operation:expr, {
+        $($t:tt)*
+    }) => {
+        // Expand to a closure so we can use `return`
+        // This makes it possible to apply attributes to the "match arms"
+        (|| {
+            $crate::__bitflags_match!($operation, { $($t)* })
+        })()
+    };
+}
+
+/// Expand the `bitflags_match` macro
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __bitflags_expr_safe_attrs {
-    // Entrypoint: Move all flags and all attributes into `unprocessed` lists
-    // where they'll be munched one-at-a-time
-    (
-        $(#[$inner:ident $($args:tt)*])*
-        { $e:expr }
-    ) => {
-        $crate::__bitflags_expr_safe_attrs! {
-            expr: { $e },
-            attrs: {
-                // All attributes start here
-                unprocessed: [$(#[$inner $($args)*])*],
-                // Attributes that are safe on expressions go here
-                processed: [],
-            },
+macro_rules! __bitflags_match {
+    // Eat an optional `,` following a block match arm
+    ($operation:expr, { $pattern:expr => { $($body:tt)* } , $($t:tt)+ }) => {
+        $crate::__bitflags_match!($operation, { $pattern => { $($body)* } $($t)+ })
+    };
+    // Expand a block match arm `A => { .. }`
+    ($operation:expr, { $pattern:expr => { $($body:tt)* } $($t:tt)+ }) => {
+        {
+            if $operation == $pattern {
+                return {
+                    $($body)*
+                };
+            }
+
+            $crate::__bitflags_match!($operation, { $($t)+ })
         }
     };
-    // Process the next attribute on the current flag
-    // `cfg`: The next flag should be propagated to expressions
-    // NOTE: You can copy this rules block and replace `cfg` with
-    // your attribute name that should be considered expression-safe
-    (
-        expr: { $e:expr },
-            attrs: {
-            unprocessed: [
-                // cfg matched here
-                #[cfg $($args:tt)*]
-                $($attrs_rest:tt)*
-            ],
-            processed: [$($expr:tt)*],
-        },
-    ) => {
-        $crate::__bitflags_expr_safe_attrs! {
-            expr: { $e },
-            attrs: {
-                unprocessed: [
-                    $($attrs_rest)*
-                ],
-                processed: [
-                    $($expr)*
-                    // cfg added here
-                    #[cfg $($args)*]
-                ],
-            },
+    // Expand an expression match arm `A => x,`
+    ($operation:expr, { $pattern:expr => $body:expr , $($t:tt)+ }) => {
+        {
+            if $operation == $pattern {
+                return $body;
+            }
+
+            $crate::__bitflags_match!($operation, { $($t)+ })
         }
     };
-    // Process the next attribute on the current flag
-    // `$other`: The next flag should not be propagated to expressions
-    (
-        expr: { $e:expr },
-            attrs: {
-            unprocessed: [
-                // $other matched here
-                #[$other:ident $($args:tt)*]
-                $($attrs_rest:tt)*
-            ],
-            processed: [$($expr:tt)*],
-        },
-    ) => {
-        $crate::__bitflags_expr_safe_attrs! {
-            expr: { $e },
-                attrs: {
-                unprocessed: [
-                    $($attrs_rest)*
-                ],
-                processed: [
-                    // $other not added here
-                    $($expr)*
-                ],
-            },
-        }
-    };
-    // Once all attributes on all flags are processed, generate the actual code
-    (
-        expr: { $e:expr },
-        attrs: {
-            unprocessed: [],
-            processed: [$(#[$expr:ident $($exprargs:tt)*])*],
-        },
-    ) => {
-        $(#[$expr $($exprargs)*])*
-        { $e }
+    // Expand the default case
+    ($operation:expr, { _ => $default:expr $(,)? }) => {
+        $default
     }
 }
 
 /// Implement a flag, which may be a wildcard `_`.
+///
+/// Named flags will emit the `named` block, and unnamed flags will emit the `unnamed` block.
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __bitflags_flag {
@@ -911,6 +906,298 @@ macro_rules! __bitflags_flag {
     ) => {
         $($named)*
     };
+}
+
+/*
+Attribute inspection macros
+
+The following macros all use the same pattern for searching for specific attributes and transforming
+a target token tree. They're implementations of _token-tree munchers_, where each token from a source
+set is matched one-at-a-time until the input is exhausted, at which point the final result is emitted.
+
+The first match is the entrypoint for the macro with user syntax.
+
+Subsequent matches pull tokens from `unprocessed` and do something with them. That might be moving
+them into `processed` to be emitted later, or manipulating a target item/expression. The logic of
+the macro is implemented in these middle matches.
+
+The final match is the exitpoint, where `unprocessed` is empty.
+*/
+
+/// A macro that processes the input to `bitflags!` and shuffles attributes around
+/// based on whether or not they're "expression-safe".
+///
+/// This macro is a token-tree muncher that works on 2 levels:
+///
+/// For each attribute, we explicitly match on its identifier, like `cfg` to determine
+/// whether or not it should be considered expression-safe.
+///
+/// If you find yourself with an attribute that should be considered expression-safe
+/// and isn't, it can be added here.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __bitflags_expr_safe_attrs {
+    (
+        $(#[$inner:ident $($args:tt)*])*
+        { $e:expr }
+    ) => {
+        $crate::__bitflags_expr_safe_attrs! {
+            expr: { $e },
+            attrs: {
+                // All attributes start here
+                unprocessed: [$(#[$inner $($args)*])*],
+                // Attributes that are safe on expressions go here
+                processed: [],
+            },
+        }
+    };
+    // `cfg`: propagate
+    (
+        expr: { $e:expr },
+        attrs: {
+            unprocessed: [
+                #[cfg $($args:tt)*]
+                $($attrs_rest:tt)*
+            ],
+            processed: [$($expr:tt)*],
+        },
+    ) => {
+        $crate::__bitflags_expr_safe_attrs! {
+            expr: { $e },
+            attrs: {
+                unprocessed: [
+                    $($attrs_rest)*
+                ],
+                processed: [
+                    $($expr)*
+                    #[cfg $($args)*]
+                ],
+            },
+        }
+    };
+    // Other: discard
+    (
+        expr: { $e:expr },
+        attrs: {
+            unprocessed: [
+                #[$other:ident $($args:tt)*]
+                $($attrs_rest:tt)*
+            ],
+            processed: [$($expr:tt)*],
+        },
+    ) => {
+        $crate::__bitflags_expr_safe_attrs! {
+            expr: { $e },
+                attrs: {
+                unprocessed: [
+                    $($attrs_rest)*
+                ],
+                processed: [
+                    $($expr)*
+                ],
+            },
+        }
+    };
+    // Finished
+    (
+        expr: { $e:expr },
+        attrs: {
+            unprocessed: [],
+            processed: [$(#[$expr:ident $($exprargs:tt)*])*],
+        },
+    ) => {
+        $(#[$expr $($exprargs)*])*
+        { $e }
+    }
+}
+
+/// A macro that processes the input to `bitflags!` and shuffles attributes around
+/// based on whether or not they're "item-safe".
+///
+/// This macro follows the same pattern as expr-safe above, but assumes all attributes
+/// are safe on items. It only filters out any `bitflags`-defined attributes.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __bitflags_item_safe_attrs {
+    (
+        $(#[$inner:ident $($args:tt)*])*
+        { $i:item }
+    ) => {
+        $crate::__bitflags_item_safe_attrs! {
+            item: { $i },
+            attrs: {
+                // All attributes start here
+                unprocessed: [$(#[$inner $($args)*])*],
+                // Attributes that are safe on items go here
+                processed: [],
+            },
+        }
+    };
+    // `bitflags`: discard
+    (
+        item: { $i:item },
+        attrs: {
+            unprocessed: [
+                #[bitflags $($args:tt)*]
+                $($attrs_rest:tt)*
+            ],
+            processed: [$($item:tt)*],
+        },
+    ) => {
+        $crate::__bitflags_item_safe_attrs! {
+            item: { $i },
+            attrs: {
+                unprocessed: [
+                    $($attrs_rest)*
+                ],
+                processed: [
+                    $($item)*
+                ],
+            },
+        }
+    };
+    // Other: propagate
+    (
+        item: { $i:item },
+        attrs: {
+            unprocessed: [
+                // $other matched here
+                #[$other:ident $($args:tt)*]
+                $($attrs_rest:tt)*
+            ],
+            processed: [$($item:tt)*],
+        },
+    ) => {
+        $crate::__bitflags_item_safe_attrs! {
+            item: { $i },
+                attrs: {
+                unprocessed: [
+                    $($attrs_rest)*
+                ],
+                processed: [
+                    $($item)*
+                    #[$other $($args)*]
+                ],
+            },
+        }
+    };
+    // Finished
+    (
+        item: { $i:item },
+        attrs: {
+            unprocessed: [],
+            processed: [$(#[$item:ident $($itemargs:tt)*])*],
+        },
+    ) => {
+        $(#[$item $($itemargs)*])*
+        $i
+    }
+}
+
+/// Determine the name to assign to a flag.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __bitflags_flag_name {
+    // Unnamed
+    (
+        $(#[$inner:ident $($args:tt)*])*
+        { $vis:vis const _ = _ }
+    ) => {
+
+    };
+    (
+        $(#[$inner:ident $($args:tt)*])*
+        { $vis:vis const $binding:ident = $name:expr }
+    ) => {
+        $crate::__bitflags_flag_name! {
+            item: { $vis const $binding = $crate::__private::core::stringify!($name) },
+            attrs: {
+                // All attributes start here
+                unprocessed: [$(#[$inner $($args)*])*],
+                // Attributes that are safe on the flag name go here
+                processed: [],
+            },
+        }
+    };
+    // `bitflags(flag_name)`: set the name
+    (
+        item: { $vis:vis const $binding:ident = $name:expr },
+        attrs: {
+            unprocessed: [
+                #[bitflags(flag_name = $flag_name:expr)]
+                $($attrs_rest:tt)*
+            ],
+            processed: [$($item:tt)*],
+        },
+    ) => {
+        $crate::__bitflags_flag_name! {
+            item: { $vis const $binding = $flag_name },
+            attrs: {
+                unprocessed: [
+                    $($attrs_rest)*
+                ],
+                processed: [
+                    $($item)*
+                ],
+            },
+        }
+    };
+    // `cfg`: propagate
+    (
+        item: { $vis:vis const $binding:ident = $name:expr },
+        attrs: {
+            unprocessed: [
+                #[cfg $($args:tt)*]
+                $($attrs_rest:tt)*
+            ],
+            processed: [$($item:tt)*],
+        },
+    ) => {
+        $crate::__bitflags_flag_name! {
+            item: { $vis const $binding = $name },
+            attrs: {
+                unprocessed: [
+                    $($attrs_rest)*
+                ],
+                processed: [
+                    $($item)*
+                    #[cfg $($args)*]
+                ],
+            },
+        }
+    };
+    // Other: discard
+    (
+        item: { $vis:vis const $binding:ident = $name:expr },
+        attrs: {
+            unprocessed: [
+                #[$other:ident $($args:tt)*]
+                $($attrs_rest:tt)*
+            ],
+            processed: [$($item:tt)*],
+        },
+    ) => {
+        $crate::__bitflags_flag_name! {
+            item: { $vis const $binding = $name },
+            attrs: {
+                unprocessed: [
+                    $($attrs_rest)*
+                ],
+                processed: [$($item)*],
+            },
+        }
+    };
+    // Finished
+    (
+        item: { $vis:vis const $binding:ident = $name:expr },
+        attrs: {
+            unprocessed: [],
+            processed: [$(#[$item:ident $($itemargs:tt)*])*],
+        },
+    ) => {
+        $(#[$item $($itemargs)*])*
+        $vis const $binding: &'static str = $name;
+    }
 }
 
 #[macro_use]

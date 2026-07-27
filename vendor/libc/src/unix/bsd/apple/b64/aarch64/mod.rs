@@ -1,14 +1,15 @@
-pub type boolean_t = ::c_int;
+use crate::prelude::*;
+
+pub type boolean_t = c_int;
 
 s! {
     pub struct malloc_zone_t {
-        __private: [::uintptr_t; 18], // FIXME: needs arm64 auth pointers support
+        __private: [crate::uintptr_t; 18], // FIXME(macos): needs arm64 auth pointers support
     }
 }
 
-cfg_if! {
-    if #[cfg(libc_align)] {
-        mod align;
-        pub use self::align::*;
+s_no_extra_traits! {
+    pub struct max_align_t {
+        priv_: f64,
     }
 }

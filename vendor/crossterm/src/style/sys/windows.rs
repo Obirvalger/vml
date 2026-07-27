@@ -4,8 +4,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use crossterm_winapi::{Console, Handle, HandleType, ScreenBuffer};
 use winapi::um::wincon;
 
-use crate::Result;
-
 use super::super::{Color, Colored};
 
 const FG_GREEN: u16 = wincon::FOREGROUND_GREEN;
@@ -18,7 +16,7 @@ const BG_RED: u16 = wincon::BACKGROUND_RED;
 const BG_BLUE: u16 = wincon::BACKGROUND_BLUE;
 const BG_INTENSITY: u16 = wincon::BACKGROUND_INTENSITY;
 
-pub(crate) fn set_foreground_color(fg_color: Color) -> Result<()> {
+pub(crate) fn set_foreground_color(fg_color: Color) -> std::io::Result<()> {
     init_console_color()?;
 
     let color_value: u16 = Colored::ForegroundColor(fg_color).into();
@@ -28,22 +26,21 @@ pub(crate) fn set_foreground_color(fg_color: Color) -> Result<()> {
 
     // Notice that the color values are stored in wAttribute.
     // So we need to use bitwise operators to check if the values exists or to get current console colors.
-    let mut color: u16;
     let attrs = csbi.attributes();
     let bg_color = attrs & 0x0070;
-    color = color_value | bg_color;
+    let mut color = color_value | bg_color;
 
     // background intensity is a separate value in attrs,
-    // wee need to check if this was applied to the current bg color.
-    if (attrs & wincon::BACKGROUND_INTENSITY as u16) != 0 {
-        color |= wincon::BACKGROUND_INTENSITY as u16;
+    // we need to check if this was applied to the current bg color.
+    if (attrs & wincon::BACKGROUND_INTENSITY) != 0 {
+        color |= wincon::BACKGROUND_INTENSITY;
     }
 
     Console::from(screen_buffer.handle().clone()).set_text_attribute(color)?;
     Ok(())
 }
 
-pub(crate) fn set_background_color(bg_color: Color) -> Result<()> {
+pub(crate) fn set_background_color(bg_color: Color) -> std::io::Result<()> {
     init_console_color()?;
 
     let color_value: u16 = Colored::BackgroundColor(bg_color).into();
@@ -52,23 +49,22 @@ pub(crate) fn set_background_color(bg_color: Color) -> Result<()> {
     let csbi = screen_buffer.info()?;
 
     // Notice that the color values are stored in wAttribute.
-    // So wee need to use bitwise operators to check if the values exists or to get current console colors.
-    let mut color: u16;
+    // So we need to use bitwise operators to check if the values exists or to get current console colors.
     let attrs = csbi.attributes();
     let fg_color = attrs & 0x0007;
-    color = fg_color | color_value;
+    let mut color = fg_color | color_value;
 
     // Foreground intensity is a separate value in attrs,
     // So we need to check if this was applied to the current fg color.
-    if (attrs & wincon::FOREGROUND_INTENSITY as u16) != 0 {
-        color |= wincon::FOREGROUND_INTENSITY as u16;
+    if (attrs & wincon::FOREGROUND_INTENSITY) != 0 {
+        color |= wincon::FOREGROUND_INTENSITY;
     }
 
     Console::from(screen_buffer.handle().clone()).set_text_attribute(color)?;
     Ok(())
 }
 
-pub(crate) fn reset() -> Result<()> {
+pub(crate) fn reset() -> std::io::Result<()> {
     if let Ok(original_color) = u16::try_from(ORIGINAL_CONSOLE_COLOR.load(Ordering::Relaxed)) {
         Console::from(Handle::new(HandleType::CurrentOutputHandle)?)
             .set_text_attribute(original_color)?;
@@ -78,7 +74,7 @@ pub(crate) fn reset() -> Result<()> {
 }
 
 /// Initializes the default console color. It will will be skipped if it has already been initialized.
-pub(crate) fn init_console_color() -> Result<()> {
+pub(crate) fn init_console_color() -> std::io::Result<()> {
     if ORIGINAL_CONSOLE_COLOR.load(Ordering::Relaxed) == u32::MAX {
         let screen_buffer = ScreenBuffer::current()?;
         let attr = screen_buffer.info()?.attributes();
@@ -169,6 +165,7 @@ impl From<Colored> for u16 {
                     Color::AnsiValue(_val) => 0,
                 }
             }
+            Colored::UnderlineColor(_) => 0,
         }
     }
 }

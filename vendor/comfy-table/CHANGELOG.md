@@ -1,7 +1,217 @@
 # Changelog
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [7.2.3] - unreleased
+
+### Fix
+
+## [7.2.2] - 2026-01-13
+
+### Fix
+
+- Minor performance improvements
+- Fixed an edge-case, where multiple LowerBoundary constraints weren't uphold.
+- Fixed an issue where tables were misformatted when no vertical border styling was specified. [#198](https://github.com/Nukesor/comfy-table/pull/198)
+
+## [7.2.1] - 2025-09-11
+
+### Misc
+
+- Adjust a single test case to not fail in `0x0` sized tty-environments. [!186](https://github.com/Nukesor/comfy-table/pull/186)
+
+## [7.2.0] - 2025-08-25
+
+### Chore
+
+- Switch to Rust 2024 edition. This bumps the MSRV to `1.85` and thereby no longer supports the [`wasm32-wasi` target](https://blog.rust-lang.org/2024/04/09/updates-to-rusts-wasi-targets.html).
+
+### Fix
+
+- Also update the crossterm dependency to 0.29 for windows [!181](https://github.com/Nukesor/comfy-table/pull/181).
+
+## [7.1.4] - 2025-02-07
+
+### Fix
+
+- Handle UTF-8 graphemes when truncating cells. [#167](https://github.com/Nukesor/comfy-table/pull/167)
+- Respect UTF-8 zero-width joiner and variation selection characters when splitting words. [#168](https://github.com/Nukesor/comfy-table/pull/168) by [tisonkun](https://github.com/tisonkun)
+
+### Change
+
+- Remove strum dependency. [#169](https://github.com/Nukesor/comfy-table/pull/169) by [tisonkun](https://github.com/tisonkun)
+- Introduce the `unicode-segmentation` library in the scope of #167 and #168.
+- The new changes for correct UTF-8 handling have a performance hit of up to ~67%.
+  However, this will most likely unnoticable for most people.
+  The benchmark table with 10 columns and 500 rows slowed down from 15ms to 25ms.
+  For "normal" tables, the performance hit is negligible.
+
+## Chore
+
+- Bump ansi-str
+
+## [7.1.3] - 2024-11-24
+
+### Fix
+
+- Bump `crossterm` to `0.28` on Windows as well
+
+## [7.1.2] - 2024-11-24
+
+### Chore
+
+- Bump `crossterm` to `0.28`
+- Bump `unicode-width` to `0.2`
+
+## [7.1.1] - 2024-04-05
+
+## Fix
+
+- Fix string width calculation with ANSI escape sequences by switching to the `ansi-str` crate.
+  The previous implementation didn't respect OSC 8 hyperlink style ANSI sequences.
+  Implemented by [dsully](https://github.com/dsully) in [#137](https://github.com/Nukesor/comfy-table/pull/137).
+- `custom_styling` feature now requires `tty` feature as it should.
+
+## [7.1.0] - 2023-10-21
+
+### Added
+
+- Add helper methods `(col,row)_count` and `is_empty`. The first set of methods return the number of columns and rows
+  respectively. The method `is_empty` returns if the table is empty (contains no data rows). Implemented by
+  [Techassi](https://github.com/Techassi) in [#119](https://github.com/Nukesor/comfy-table/pull/119).
+
+### Chore
+
+- Bump crossterm dependency
+
+## [7.0.1] - 2023-06-16
+
+## Fix
+
+- Fix a panic when working with extreme paddings, where `(padding.left + padding.right) > u16::MAX`.
+- Fix a panic when working with extremely long content, where `(content_width + padding) > u16::MAX`.
+- Properly enforce lower boundary constraints.
+  Previously, "normal" columns were allocated before lower boundaries were respected.
+  This could lead to scenarios, where the table would grow beyond the specified size, when there was a lower boundary.
+- Fix calculation of column widths for empty columns.
+  The minimum content width for a column is `1` char, but the `column_max_content_widths` function on the table returned a `0` width for fully empty columns.
+  This resulted in tables becoming larger than specified if there were any empty columns.
+
+## Misc
+
+- Extend property tests, which lead to the discovery some bugs.
+
+## [7.0.0] - 2023-06-06
+
+### Breaking
+
+- The `Color` and `Attribute` enum are no longer re-exported from crossterm by default.
+  Previously, when updating comfy-table, crossterm needed to be upgraded as well, since the compile would otherwise fail due to type incompatibilities.
+
+  To fix this, these enums are now mirrored and internally mapped to their crossterm equivalents, which allows us to safely bump crossterm whenever a new version is released.
+  This change will only affect you if your projects explicitly use crossterm and comfy-table at the same time **and** feed crossterm's native types into comfy-table.
+
+  If one wants the old behavior for convenience reasons, this can be enabled via a feature flag.
+  However, **this is also a opt-in to potential breaking changes on minor/patch versions**.
+
+- Bump minimum version to v1.64
+
+### Added
+
+- `reexport_crossterm` feature flag to enable old crossterm re-export.
+
+## [6.2.0] - 2023-05-26
+
+### Added
+
+- Add support for custom ansi styling inside of cells. This feature is hidden behind the feature flag `custom_styling`. Implemented by [blueforesticarus](https://github.com/blueforesticarus) in [#93](https://github.com/Nukesor/comfy-table/pull/93).
+- Add helper functions `add_row[s]_if`, which filtering of rows by a predicate. Implemented by [Techassi](https://github.com/Techassi) in [#106](https://github.com/Nukesor/comfy-table/pull/106).
+
+### Maintenance
+
+- Bump dependencies
+
+## [6.1.4] - 2022-12-31
+
+### Added
+
+- New preset `ASCII_FULL_CONDENSED` [#97](https://github.com/Nukesor/comfy-table/pull/97)
+
+## [6.1.3] - 2022-11-21
+
+### Fixed
+
+- Disable unneeded crossterm `bracketed-paste` feature.
+
+## [6.1.2] - 2022-10-27
+
+### Fixed
+
+- `Table::row_iter` no longer requires a `&mut self`, but only `&self`.
+
+## [6.1.1] - 2022-10-22
+
+### Fixed
+
+- Fixed an issue where dynamic arrangement failed when setting the table to the exact width of the content [#90](https://github.com/Nukesor/comfy-table/issues/90).
+- The header size is now properly respected in the final optimization step [#90](https://github.com/Nukesor/comfy-table/issues/90).
+  Previously, this wasn't the case and lead to weird formatting behavior when both of the following were true
+  - Dynamic content adjustment was active.
+  - The table didn't fit into the the available space.
+  - The header of a row was longer than its content.
+- Fix wrong LowerBoundary calculation. This was introduced in commit bee764d, when this logic was refactored. [#90](https://github.com/Nukesor/comfy-table/issues/90).
+- `Table::column_iter` no longer requires a `&mut self`, but only `&self`.
+
+### Added
+
+- Expose current ContentArrangement for table via `table.content_arrangement`.
+
+## [6.1.0] - 2022-08-28
+
+### Added
+
+- Add `Table::add_rows` to add multiple rows at the same time.
+
+### Misc
+
+- Update crossterm to `v0.24`
+
+## [6.0.0] - 2022-05-31
+
+### Added
+
+- Add `Table::style_text_only()`, which prevents non-delimiter whitespaces in cells to be styled.
+- Add the `Table::discover_columns` function and add info on when to use it to `Row::add_cell`.
+
+### Breaking Changes
+
+- Renaming of several functions to be Rust idiomatic:
+  - `Cell::get_content` -> `Cell::content`
+  - `Column::get_padding_width` -> `Column::padding_width`
+  - `Column::get_constraint` -> `Column::constraint`
+  - `Table::get_header` -> `Table::header`
+  - `Table::get_table_width` -> `Table::width`
+  - `Table::set_table_width` -> `Table::set_width`
+  - `Table::set_style` -> `Table::style`
+  - `Table::get_column` -> `Table::column`
+  - `Table::get_column_mut` -> `Table::column_mut`
+  - `Table::get_row` -> `Table::row`
+  - `Table::get_row_mut` -> `Table::row_mut`
+- `Column::get_max_width` and `Column::get_max_content_width` have been removed as we cannot guarantee that these numbers are always correct.
+  Use `Table::column_max_content_widths` instead
+
+### Changed
+
+- `Table::column_max_content_widths` now performs a full scan of the table's content when called.
+- Don't include `Table::is_tty`, `Table::force_no_tty` and `Table::should_style` if `tty` feature isn't enabled.
+
+## [5.0.1] - 2022-02-18
+
+### Updates
+
+- All dependencies have been bumped.
 
 ## [5.0.0] - 2021-11-07
 
@@ -23,10 +233,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - `tty` feature flag, which enables tty related functionality.
-    This includes styling and terminal-width detection.
-    The `tty` feature flag is enabled by default.
-    Implemented by [roee88](https://github.com/roee88) in [#47](https://github.com/Nukesor/comfy-table/pull/47).
-
+  This includes styling and terminal-width detection.
+  The `tty` feature flag is enabled by default.
+  Implemented by [roee88](https://github.com/roee88) in [#47](https://github.com/Nukesor/comfy-table/pull/47).
 
 ## [4.1.0] - 2021-08-09
 
@@ -39,7 +248,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Several preset examples weren't correct.
 - Multi-character UTF8 symbols are now handled correctly in most situations.
-    Table-layout might still break for 1-character columns.
+  Table-layout might still break for 1-character columns.
 - Mid-word splitting now takes multi-character utf8 characters into account.
 
 ### Changed
@@ -68,13 +277,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Run space optimization under all circumstances.
 - Percentage constraints with values of >100 will now be capped to 100.
 - The MinConstraint would be ignored when:
-    * The content was larger than the min constraint
-    * There was less space available than specified in the constraint.
+  - The content was larger than the min constraint
+  - There was less space available than specified in the constraint.
 
 ### Changed
 
 - The way ColumnConstraints are initialized has been changed.
-    There is now
+  There is now
 
 ```
 enum ColumnConstraints {
@@ -98,6 +307,7 @@ pub enum Width {
 ```
 
 Instead of the old
+
 ```
 enum ColumnConstraints {
     ...,
@@ -115,17 +325,15 @@ enum ColumnConstraints {
 ### Breaking changes
 
 - Remove most custom traits and replace them with std's generic `From` trait. \
-    Check the docs on the trait implementations for Cell, Row and Cells
+   Check the docs on the trait implementations for Cell, Row and Cells
 - Add the `Cells` type, to allow super generic `Iterator -> Row` conversions.
-
 
 ## [2.1.0] - 2021-01-26
 
 ### Added
 
 - `DynamicFullWidth` arrangement.
-    This mode is basically the same as the `Dynamic` arrangement mode, but it will always use the full available width, even if there isn't enough content to fill the space.
-
+  This mode is basically the same as the `Dynamic` arrangement mode, but it will always use the full available width, even if there isn't enough content to fill the space.
 
 ## [2.0.0] - 2021-01-16
 
@@ -134,15 +342,15 @@ enum ColumnConstraints {
 **Dynamic arrangement**
 
 A new logic to optimize space usage after splitting content has been added.\
-If there is a lot of unused space after the content has been arranged, this space will now be redistributed ot the remaining columns.
+If there is a lot of unused space after the content has been arranged, this space will now be redistributed to the remaining columns.
 Or it will be removed if there are no other columns.
 
 **This is considered a breaking change, since this can result in different table layouts!!**
 
 This process is far from perfect, but the behavior is better than before.
 
-
 Old behavior:
+
 ```
 +-----------------------------------+-----------------------------------+------+
 | Header1                           | Header2                           | Head |
@@ -153,6 +361,7 @@ Old behavior:
 ```
 
 New behavior:
+
 ```
 +-----------------------------------------+-----------------------------+------+
 | Header1                                 | Header2                     | Head |
@@ -163,6 +372,7 @@ New behavior:
 ```
 
 Old behavior:
+
 ```
 +------------------------------------------------+
 | Header1                                        |
@@ -173,6 +383,7 @@ Old behavior:
 ```
 
 New behavior:
+
 ```
 +-------------------------------+
 | Header1                       |
@@ -208,7 +419,7 @@ New behavior:
 
 ### Added
 
-- New ColumConstraint for hiding columns
+- New ColumnConstraint for hiding columns
 
 ## [1.2.0] - 2020-10-27
 

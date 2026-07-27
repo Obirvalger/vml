@@ -1,4 +1,4 @@
-use crate::backend::c;
+use crate::ffi;
 use bitflags::bitflags;
 
 bitflags! {
@@ -105,6 +105,8 @@ bitflags! {
         /// `MAP_UNINITIALIZED`
         #[cfg(not(any(target_arch = "mips", target_arch = "mips32r6", target_arch = "mips64", target_arch = "mips64r6")))]
         const UNINITIALIZED = linux_raw_sys::general::MAP_UNINITIALIZED;
+        /// `MAP_DROPPABLE`
+        const DROPPABLE = linux_raw_sys::general::MAP_DROPPABLE;
 
         /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
         const _ = !0;
@@ -252,7 +254,7 @@ bitflags! {
     /// [`userfaultfd`]: crate::mm::userfaultfd
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-    pub struct UserfaultfdFlags: c::c_uint {
+    pub struct UserfaultfdFlags: ffi::c_uint {
         /// `O_CLOEXEC`
         const CLOEXEC = linux_raw_sys::general::O_CLOEXEC;
         /// `O_NONBLOCK`

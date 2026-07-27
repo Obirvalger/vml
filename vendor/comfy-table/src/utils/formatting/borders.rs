@@ -1,18 +1,25 @@
-use crate::style::TableComponent;
-use crate::table::Table;
-use crate::utils::ColumnDisplayInfo;
+use crate::{style::TableComponent, table::Table, utils::ColumnDisplayInfo};
 
 pub(crate) fn draw_borders(
     table: &Table,
-    rows: Vec<Vec<Vec<String>>>,
+    rows: &[Vec<Vec<String>>],
     display_info: &[ColumnDisplayInfo],
 ) -> Vec<String> {
-    let mut lines = Vec::new();
+    // We know how many lines there should be. Initialize the vector with the rough correct amount.
+    // We might over allocate a bit, but that's better than under allocating.
+    let mut lines = if let Some(capacity) = rows.first().map(|lines| lines.len()) {
+        // Lines * 2 -> Lines + delimiters
+        // + 5 -> header delimiters + header + bottom/top borders
+        Vec::with_capacity(capacity * 2 + 5)
+    } else {
+        Vec::new()
+    };
+
     if should_draw_top_border(table) {
         lines.push(draw_top_border(table, display_info));
     }
 
-    lines.append(&mut draw_rows(rows, table, display_info));
+    draw_rows(&mut lines, rows, table, display_info);
 
     if should_draw_bottom_border(table) {
         lines.push(draw_bottom_border(table, display_info));
@@ -56,11 +63,11 @@ fn draw_top_border(table: &Table, display_info: &[ColumnDisplayInfo]) -> String 
 }
 
 fn draw_rows(
-    rows: Vec<Vec<Vec<String>>>,
+    lines: &mut Vec<String>,
+    rows: &[Vec<Vec<String>>],
     table: &Table,
     display_info: &[ColumnDisplayInfo],
-) -> Vec<String> {
-    let mut lines = Vec::new();
+) {
     // Iterate over all rows
     let mut row_iter = rows.iter().enumerate().peekable();
     while let Some((row_index, row)) = row_iter.next() {
@@ -82,8 +89,6 @@ fn draw_rows(
             lines.push(draw_horizontal_lines(table, display_info, false));
         }
     }
-
-    lines
 }
 
 // Takes the parts of a single line, surrounds them with borders and adds vertical lines.
@@ -100,10 +105,10 @@ fn embed_line(line_parts: &[String], table: &Table) -> String {
     let mut part_iter = line_parts.iter().peekable();
     while let Some(part) = part_iter.next() {
         line += part;
-        if should_draw_vertical_lines(table) && part_iter.peek().is_some() {
-            line += &vertical_lines;
-        } else if should_draw_right_border(table) && part_iter.peek().is_none() {
+        if part_iter.peek().is_none() && should_draw_right_border(table) {
             line += &right_border;
+        } else if part_iter.peek().is_some() && should_draw_vertical_lines(table) {
+            line += &vertical_lines;
         }
     }
 
@@ -139,13 +144,15 @@ fn draw_horizontal_lines(
         line += &left_intersection;
     }
 
+    let draw_vertical_lines = should_draw_vertical_lines(table);
+
     // Append the middle lines depending on the columns' widths.
     // Also add the middle intersections.
     let mut first = true;
     for info in display_info.iter() {
         // Only add something, if the column isn't hidden
         if !info.is_hidden {
-            if !first {
+            if !first && draw_vertical_lines {
                 line += &middle_intersection;
             }
             line += &horizontal_lines.repeat(info.width().into());

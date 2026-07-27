@@ -1,16 +1,7 @@
-// This module contains bindings to the native Haiku API. The Haiku API
-// originates from BeOS, and it was the original way to perform low level
-// system and IO operations. The POSIX API was in that era was like a
-// compatibility layer. In current Haiku development, both the POSIX API and
-// the Haiku API are considered to be co-equal status. However, they are not
-// integrated like they are on other UNIX platforms, which means that for many
-// low level concepts there are two versions, like processes (POSIX) and
-// teams (Haiku), or pthreads and native threads.
-//
-// Both the POSIX API and the Haiku API live in libroot.so, the library that is
-// linked to any binary by default.
-//
-// This file follows the Haiku API for Haiku R1 beta 2. It is organized by the
+use crate::off_t;
+use crate::prelude::*;
+
+// This file follows the Haiku API for Haiku R1 beta 5. It is organized by the
 // C/C++ header files in which the concepts can be found, while adhering to the
 // style guide for this crate.
 
@@ -38,208 +29,208 @@ pub type sem_id = i32;
 pub type team_id = i32;
 pub type thread_id = i32;
 
-pub type thread_func = extern "C" fn(*mut ::c_void) -> status_t;
+pub type thread_func = extern "C" fn(*mut c_void) -> status_t;
 
 // kernel/image.h
 pub type image_id = i32;
 
-e! {
+c_enum! {
     // kernel/OS.h
     pub enum thread_state {
-        B_THREAD_RUNNING = 1,
-        B_THREAD_READY,
-        B_THREAD_RECEIVING,
-        B_THREAD_ASLEEP,
-        B_THREAD_SUSPENDED,
-        B_THREAD_WAITING
+        pub B_THREAD_RUNNING = 1,
+        pub B_THREAD_READY,
+        pub B_THREAD_RECEIVING,
+        pub B_THREAD_ASLEEP,
+        pub B_THREAD_SUSPENDED,
+        pub B_THREAD_WAITING,
     }
 
     // kernel/image.h
     pub enum image_type {
-        B_APP_IMAGE = 1,
-        B_LIBRARY_IMAGE,
-        B_ADD_ON_IMAGE,
-        B_SYSTEM_IMAGE
+        pub B_APP_IMAGE = 1,
+        pub B_LIBRARY_IMAGE,
+        pub B_ADD_ON_IMAGE,
+        pub B_SYSTEM_IMAGE,
     }
 
     // kernel/scheduler.h
 
     pub enum be_task_flags {
-        B_DEFAULT_MEDIA_PRIORITY = 0x000,
-        B_OFFLINE_PROCESSING = 0x001,
-        B_STATUS_RENDERING = 0x002,
-        B_USER_INPUT_HANDLING = 0x004,
-        B_LIVE_VIDEO_MANIPULATION = 0x008,
-        B_VIDEO_PLAYBACK = 0x010,
-        B_VIDEO_RECORDING = 0x020,
-        B_LIVE_AUDIO_MANIPULATION = 0x040,
-        B_AUDIO_PLAYBACK = 0x080,
-        B_AUDIO_RECORDING = 0x100,
-        B_LIVE_3D_RENDERING = 0x200,
-        B_NUMBER_CRUNCHING = 0x400,
-        B_MIDI_PROCESSING = 0x800,
+        pub B_DEFAULT_MEDIA_PRIORITY = 0x000,
+        pub B_OFFLINE_PROCESSING = 0x001,
+        pub B_STATUS_RENDERING = 0x002,
+        pub B_USER_INPUT_HANDLING = 0x004,
+        pub B_LIVE_VIDEO_MANIPULATION = 0x008,
+        pub B_VIDEO_PLAYBACK = 0x010,
+        pub B_VIDEO_RECORDING = 0x020,
+        pub B_LIVE_AUDIO_MANIPULATION = 0x040,
+        pub B_AUDIO_PLAYBACK = 0x080,
+        pub B_AUDIO_RECORDING = 0x100,
+        pub B_LIVE_3D_RENDERING = 0x200,
+        pub B_NUMBER_CRUNCHING = 0x400,
+        pub B_MIDI_PROCESSING = 0x800,
     }
 
     pub enum schduler_mode {
-        SCHEDULER_MODE_LOW_LATENCY,
-        SCHEDULER_MODE_POWER_SAVING,
+        pub SCHEDULER_MODE_LOW_LATENCY,
+        pub SCHEDULER_MODE_POWER_SAVING,
     }
 
     // FindDirectory.h
     pub enum path_base_directory {
-        B_FIND_PATH_INSTALLATION_LOCATION_DIRECTORY,
-        B_FIND_PATH_ADD_ONS_DIRECTORY,
-        B_FIND_PATH_APPS_DIRECTORY,
-        B_FIND_PATH_BIN_DIRECTORY,
-        B_FIND_PATH_BOOT_DIRECTORY,
-        B_FIND_PATH_CACHE_DIRECTORY,
-        B_FIND_PATH_DATA_DIRECTORY,
-        B_FIND_PATH_DEVELOP_DIRECTORY,
-        B_FIND_PATH_DEVELOP_LIB_DIRECTORY,
-        B_FIND_PATH_DOCUMENTATION_DIRECTORY,
-        B_FIND_PATH_ETC_DIRECTORY,
-        B_FIND_PATH_FONTS_DIRECTORY,
-        B_FIND_PATH_HEADERS_DIRECTORY,
-        B_FIND_PATH_LIB_DIRECTORY,
-        B_FIND_PATH_LOG_DIRECTORY,
-        B_FIND_PATH_MEDIA_NODES_DIRECTORY,
-        B_FIND_PATH_PACKAGES_DIRECTORY,
-        B_FIND_PATH_PREFERENCES_DIRECTORY,
-        B_FIND_PATH_SERVERS_DIRECTORY,
-        B_FIND_PATH_SETTINGS_DIRECTORY,
-        B_FIND_PATH_SOUNDS_DIRECTORY,
-        B_FIND_PATH_SPOOL_DIRECTORY,
-        B_FIND_PATH_TRANSLATORS_DIRECTORY,
-        B_FIND_PATH_VAR_DIRECTORY,
-        B_FIND_PATH_IMAGE_PATH = 1000,
-        B_FIND_PATH_PACKAGE_PATH,
+        pub B_FIND_PATH_INSTALLATION_LOCATION_DIRECTORY,
+        pub B_FIND_PATH_ADD_ONS_DIRECTORY,
+        pub B_FIND_PATH_APPS_DIRECTORY,
+        pub B_FIND_PATH_BIN_DIRECTORY,
+        pub B_FIND_PATH_BOOT_DIRECTORY,
+        pub B_FIND_PATH_CACHE_DIRECTORY,
+        pub B_FIND_PATH_DATA_DIRECTORY,
+        pub B_FIND_PATH_DEVELOP_DIRECTORY,
+        pub B_FIND_PATH_DEVELOP_LIB_DIRECTORY,
+        pub B_FIND_PATH_DOCUMENTATION_DIRECTORY,
+        pub B_FIND_PATH_ETC_DIRECTORY,
+        pub B_FIND_PATH_FONTS_DIRECTORY,
+        pub B_FIND_PATH_HEADERS_DIRECTORY,
+        pub B_FIND_PATH_LIB_DIRECTORY,
+        pub B_FIND_PATH_LOG_DIRECTORY,
+        pub B_FIND_PATH_MEDIA_NODES_DIRECTORY,
+        pub B_FIND_PATH_PACKAGES_DIRECTORY,
+        pub B_FIND_PATH_PREFERENCES_DIRECTORY,
+        pub B_FIND_PATH_SERVERS_DIRECTORY,
+        pub B_FIND_PATH_SETTINGS_DIRECTORY,
+        pub B_FIND_PATH_SOUNDS_DIRECTORY,
+        pub B_FIND_PATH_SPOOL_DIRECTORY,
+        pub B_FIND_PATH_TRANSLATORS_DIRECTORY,
+        pub B_FIND_PATH_VAR_DIRECTORY,
+        pub B_FIND_PATH_IMAGE_PATH = 1000,
+        pub B_FIND_PATH_PACKAGE_PATH,
     }
 
     pub enum directory_which {
-        B_DESKTOP_DIRECTORY = 0,
-        B_TRASH_DIRECTORY,
-        B_SYSTEM_DIRECTORY = 1000,
-        B_SYSTEM_ADDONS_DIRECTORY = 1002,
-        B_SYSTEM_BOOT_DIRECTORY,
-        B_SYSTEM_FONTS_DIRECTORY,
-        B_SYSTEM_LIB_DIRECTORY,
-        B_SYSTEM_SERVERS_DIRECTORY,
-        B_SYSTEM_APPS_DIRECTORY,
-        B_SYSTEM_BIN_DIRECTORY,
-        B_SYSTEM_DOCUMENTATION_DIRECTORY = 1010,
-        B_SYSTEM_PREFERENCES_DIRECTORY,
-        B_SYSTEM_TRANSLATORS_DIRECTORY,
-        B_SYSTEM_MEDIA_NODES_DIRECTORY,
-        B_SYSTEM_SOUNDS_DIRECTORY,
-        B_SYSTEM_DATA_DIRECTORY,
-        B_SYSTEM_DEVELOP_DIRECTORY,
-        B_SYSTEM_PACKAGES_DIRECTORY,
-        B_SYSTEM_HEADERS_DIRECTORY,
-        B_SYSTEM_ETC_DIRECTORY = 2008,
-        B_SYSTEM_SETTINGS_DIRECTORY = 2010,
-        B_SYSTEM_LOG_DIRECTORY = 2012,
-        B_SYSTEM_SPOOL_DIRECTORY,
-        B_SYSTEM_TEMP_DIRECTORY,
-        B_SYSTEM_VAR_DIRECTORY,
-        B_SYSTEM_CACHE_DIRECTORY = 2020,
-        B_SYSTEM_NONPACKAGED_DIRECTORY = 2023,
-        B_SYSTEM_NONPACKAGED_ADDONS_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_TRANSLATORS_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_MEDIA_NODES_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_BIN_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_DATA_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_FONTS_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_SOUNDS_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_DOCUMENTATION_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_LIB_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_HEADERS_DIRECTORY,
-        B_SYSTEM_NONPACKAGED_DEVELOP_DIRECTORY,
-        B_USER_DIRECTORY = 3000,
-        B_USER_CONFIG_DIRECTORY,
-        B_USER_ADDONS_DIRECTORY,
-        B_USER_BOOT_DIRECTORY,
-        B_USER_FONTS_DIRECTORY,
-        B_USER_LIB_DIRECTORY,
-        B_USER_SETTINGS_DIRECTORY,
-        B_USER_DESKBAR_DIRECTORY,
-        B_USER_PRINTERS_DIRECTORY,
-        B_USER_TRANSLATORS_DIRECTORY,
-        B_USER_MEDIA_NODES_DIRECTORY,
-        B_USER_SOUNDS_DIRECTORY,
-        B_USER_DATA_DIRECTORY,
-        B_USER_CACHE_DIRECTORY,
-        B_USER_PACKAGES_DIRECTORY,
-        B_USER_HEADERS_DIRECTORY,
-        B_USER_NONPACKAGED_DIRECTORY,
-        B_USER_NONPACKAGED_ADDONS_DIRECTORY,
-        B_USER_NONPACKAGED_TRANSLATORS_DIRECTORY,
-        B_USER_NONPACKAGED_MEDIA_NODES_DIRECTORY,
-        B_USER_NONPACKAGED_BIN_DIRECTORY,
-        B_USER_NONPACKAGED_DATA_DIRECTORY,
-        B_USER_NONPACKAGED_FONTS_DIRECTORY,
-        B_USER_NONPACKAGED_SOUNDS_DIRECTORY,
-        B_USER_NONPACKAGED_DOCUMENTATION_DIRECTORY,
-        B_USER_NONPACKAGED_LIB_DIRECTORY,
-        B_USER_NONPACKAGED_HEADERS_DIRECTORY,
-        B_USER_NONPACKAGED_DEVELOP_DIRECTORY,
-        B_USER_DEVELOP_DIRECTORY,
-        B_USER_DOCUMENTATION_DIRECTORY,
-        B_USER_SERVERS_DIRECTORY,
-        B_USER_APPS_DIRECTORY,
-        B_USER_BIN_DIRECTORY,
-        B_USER_PREFERENCES_DIRECTORY,
-        B_USER_ETC_DIRECTORY,
-        B_USER_LOG_DIRECTORY,
-        B_USER_SPOOL_DIRECTORY,
-        B_USER_VAR_DIRECTORY,
-        B_APPS_DIRECTORY = 4000,
-        B_PREFERENCES_DIRECTORY,
-        B_UTILITIES_DIRECTORY,
-        B_PACKAGE_LINKS_DIRECTORY,
+        pub B_DESKTOP_DIRECTORY = 0,
+        pub B_TRASH_DIRECTORY,
+        pub B_SYSTEM_DIRECTORY = 1000,
+        pub B_SYSTEM_ADDONS_DIRECTORY = 1002,
+        pub B_SYSTEM_BOOT_DIRECTORY,
+        pub B_SYSTEM_FONTS_DIRECTORY,
+        pub B_SYSTEM_LIB_DIRECTORY,
+        pub B_SYSTEM_SERVERS_DIRECTORY,
+        pub B_SYSTEM_APPS_DIRECTORY,
+        pub B_SYSTEM_BIN_DIRECTORY,
+        pub B_SYSTEM_DOCUMENTATION_DIRECTORY = 1010,
+        pub B_SYSTEM_PREFERENCES_DIRECTORY,
+        pub B_SYSTEM_TRANSLATORS_DIRECTORY,
+        pub B_SYSTEM_MEDIA_NODES_DIRECTORY,
+        pub B_SYSTEM_SOUNDS_DIRECTORY,
+        pub B_SYSTEM_DATA_DIRECTORY,
+        pub B_SYSTEM_DEVELOP_DIRECTORY,
+        pub B_SYSTEM_PACKAGES_DIRECTORY,
+        pub B_SYSTEM_HEADERS_DIRECTORY,
+        pub B_SYSTEM_ETC_DIRECTORY = 2008,
+        pub B_SYSTEM_SETTINGS_DIRECTORY = 2010,
+        pub B_SYSTEM_LOG_DIRECTORY = 2012,
+        pub B_SYSTEM_SPOOL_DIRECTORY,
+        pub B_SYSTEM_TEMP_DIRECTORY,
+        pub B_SYSTEM_VAR_DIRECTORY,
+        pub B_SYSTEM_CACHE_DIRECTORY = 2020,
+        pub B_SYSTEM_NONPACKAGED_DIRECTORY = 2023,
+        pub B_SYSTEM_NONPACKAGED_ADDONS_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_TRANSLATORS_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_MEDIA_NODES_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_BIN_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_DATA_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_FONTS_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_SOUNDS_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_DOCUMENTATION_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_LIB_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_HEADERS_DIRECTORY,
+        pub B_SYSTEM_NONPACKAGED_DEVELOP_DIRECTORY,
+        pub B_USER_DIRECTORY = 3000,
+        pub B_USER_CONFIG_DIRECTORY,
+        pub B_USER_ADDONS_DIRECTORY,
+        pub B_USER_BOOT_DIRECTORY,
+        pub B_USER_FONTS_DIRECTORY,
+        pub B_USER_LIB_DIRECTORY,
+        pub B_USER_SETTINGS_DIRECTORY,
+        pub B_USER_DESKBAR_DIRECTORY,
+        pub B_USER_PRINTERS_DIRECTORY,
+        pub B_USER_TRANSLATORS_DIRECTORY,
+        pub B_USER_MEDIA_NODES_DIRECTORY,
+        pub B_USER_SOUNDS_DIRECTORY,
+        pub B_USER_DATA_DIRECTORY,
+        pub B_USER_CACHE_DIRECTORY,
+        pub B_USER_PACKAGES_DIRECTORY,
+        pub B_USER_HEADERS_DIRECTORY,
+        pub B_USER_NONPACKAGED_DIRECTORY,
+        pub B_USER_NONPACKAGED_ADDONS_DIRECTORY,
+        pub B_USER_NONPACKAGED_TRANSLATORS_DIRECTORY,
+        pub B_USER_NONPACKAGED_MEDIA_NODES_DIRECTORY,
+        pub B_USER_NONPACKAGED_BIN_DIRECTORY,
+        pub B_USER_NONPACKAGED_DATA_DIRECTORY,
+        pub B_USER_NONPACKAGED_FONTS_DIRECTORY,
+        pub B_USER_NONPACKAGED_SOUNDS_DIRECTORY,
+        pub B_USER_NONPACKAGED_DOCUMENTATION_DIRECTORY,
+        pub B_USER_NONPACKAGED_LIB_DIRECTORY,
+        pub B_USER_NONPACKAGED_HEADERS_DIRECTORY,
+        pub B_USER_NONPACKAGED_DEVELOP_DIRECTORY,
+        pub B_USER_DEVELOP_DIRECTORY,
+        pub B_USER_DOCUMENTATION_DIRECTORY,
+        pub B_USER_SERVERS_DIRECTORY,
+        pub B_USER_APPS_DIRECTORY,
+        pub B_USER_BIN_DIRECTORY,
+        pub B_USER_PREFERENCES_DIRECTORY,
+        pub B_USER_ETC_DIRECTORY,
+        pub B_USER_LOG_DIRECTORY,
+        pub B_USER_SPOOL_DIRECTORY,
+        pub B_USER_VAR_DIRECTORY,
+        pub B_APPS_DIRECTORY = 4000,
+        pub B_PREFERENCES_DIRECTORY,
+        pub B_UTILITIES_DIRECTORY,
+        pub B_PACKAGE_LINKS_DIRECTORY,
     }
 
     // kernel/OS.h
 
     pub enum topology_level_type {
-        B_TOPOLOGY_UNKNOWN,
-        B_TOPOLOGY_ROOT,
-        B_TOPOLOGY_SMT,
-        B_TOPOLOGY_CORE,
-        B_TOPOLOGY_PACKAGE,
+        pub B_TOPOLOGY_UNKNOWN,
+        pub B_TOPOLOGY_ROOT,
+        pub B_TOPOLOGY_SMT,
+        pub B_TOPOLOGY_CORE,
+        pub B_TOPOLOGY_PACKAGE,
     }
 
     pub enum cpu_platform {
-        B_CPU_UNKNOWN,
-        B_CPU_x86,
-        B_CPU_x86_64,
-        B_CPU_PPC,
-        B_CPU_PPC_64,
-        B_CPU_M68K,
-        B_CPU_ARM,
-        B_CPU_ARM_64,
-        B_CPU_ALPHA,
-        B_CPU_MIPS,
-        B_CPU_SH,
-        B_CPU_SPARC,
-        B_CPU_RISC_V
+        pub B_CPU_UNKNOWN,
+        pub B_CPU_x86,
+        pub B_CPU_x86_64,
+        pub B_CPU_PPC,
+        pub B_CPU_PPC_64,
+        pub B_CPU_M68K,
+        pub B_CPU_ARM,
+        pub B_CPU_ARM_64,
+        pub B_CPU_ALPHA,
+        pub B_CPU_MIPS,
+        pub B_CPU_SH,
+        pub B_CPU_SPARC,
+        pub B_CPU_RISC_V,
     }
 
     pub enum cpu_vendor {
-        B_CPU_VENDOR_UNKNOWN,
-        B_CPU_VENDOR_AMD,
-        B_CPU_VENDOR_CYRIX,
-        B_CPU_VENDOR_IDT,
-        B_CPU_VENDOR_INTEL,
-        B_CPU_VENDOR_NATIONAL_SEMICONDUCTOR,
-        B_CPU_VENDOR_RISE,
-        B_CPU_VENDOR_TRANSMETA,
-        B_CPU_VENDOR_VIA,
-        B_CPU_VENDOR_IBM,
-        B_CPU_VENDOR_MOTOROLA,
-        B_CPU_VENDOR_NEC,
-        B_CPU_VENDOR_HYGON,
-        B_CPU_VENDOR_SUN,
-        B_CPU_VENDOR_FUJITSU
+        pub B_CPU_VENDOR_UNKNOWN,
+        pub B_CPU_VENDOR_AMD,
+        pub B_CPU_VENDOR_CYRIX,
+        pub B_CPU_VENDOR_IDT,
+        pub B_CPU_VENDOR_INTEL,
+        pub B_CPU_VENDOR_NATIONAL_SEMICONDUCTOR,
+        pub B_CPU_VENDOR_RISE,
+        pub B_CPU_VENDOR_TRANSMETA,
+        pub B_CPU_VENDOR_VIA,
+        pub B_CPU_VENDOR_IBM,
+        pub B_CPU_VENDOR_MOTOROLA,
+        pub B_CPU_VENDOR_NEC,
+        pub B_CPU_VENDOR_HYGON,
+        pub B_CPU_VENDOR_SUN,
+        pub B_CPU_VENDOR_FUJITSU,
     }
 }
 
@@ -247,7 +238,7 @@ s! {
     // kernel/OS.h
     pub struct area_info {
         pub area: area_id,
-        pub name: [::c_char; B_OS_NAME_LENGTH],
+        pub name: [c_char; B_OS_NAME_LENGTH],
         pub size: usize,
         pub lock: u32,
         pub protection: u32,
@@ -256,23 +247,23 @@ s! {
         pub copy_count: u32,
         pub in_count: u32,
         pub out_count: u32,
-        pub address: *mut ::c_void
+        pub address: *mut c_void,
     }
 
     pub struct port_info {
         pub port: port_id,
         pub team: team_id,
-        pub name: [::c_char; B_OS_NAME_LENGTH],
+        pub name: [c_char; B_OS_NAME_LENGTH],
         pub capacity: i32,
         pub queue_count: i32,
         pub total_count: i32,
     }
 
     pub struct port_message_info {
-        pub size: ::size_t,
-        pub sender: ::uid_t,
-        pub sender_group: ::gid_t,
-        pub sender_team: ::team_id
+        pub size: size_t,
+        pub sender: crate::uid_t,
+        pub sender_group: crate::gid_t,
+        pub sender_team: crate::team_id,
     }
 
     pub struct team_info {
@@ -283,41 +274,41 @@ s! {
         pub debugger_nub_thread: thread_id,
         pub debugger_nub_port: port_id,
         pub argc: i32,
-        pub args: [::c_char; 64],
-        pub uid: ::uid_t,
-        pub gid: ::gid_t
+        pub args: [c_char; 64],
+        pub uid: crate::uid_t,
+        pub gid: crate::gid_t,
     }
 
     pub struct sem_info {
         pub sem: sem_id,
         pub team: team_id,
-        pub name: [::c_char; B_OS_NAME_LENGTH],
+        pub name: [c_char; B_OS_NAME_LENGTH],
         pub count: i32,
-        pub latest_holder: thread_id
+        pub latest_holder: thread_id,
     }
 
     pub struct team_usage_info {
         pub user_time: bigtime_t,
-        pub kernel_time: bigtime_t
+        pub kernel_time: bigtime_t,
     }
 
     pub struct thread_info {
         pub thread: thread_id,
         pub team: team_id,
-        pub name: [::c_char; B_OS_NAME_LENGTH],
+        pub name: [c_char; B_OS_NAME_LENGTH],
         pub state: thread_state,
         pub priority: i32,
         pub sem: sem_id,
         pub user_time: bigtime_t,
         pub kernel_time: bigtime_t,
-        pub stack_base: *mut ::c_void,
-        pub stack_end: *mut ::c_void
+        pub stack_base: *mut c_void,
+        pub stack_end: *mut c_void,
     }
 
     pub struct cpu_info {
         pub active_time: bigtime_t,
         pub enabled: bool,
-        pub current_frequency: u64
+        pub current_frequency: u64,
     }
 
     pub struct system_info {
@@ -341,17 +332,17 @@ s! {
         pub used_threads: u32,
         pub max_teams: u32,
         pub used_teams: u32,
-        pub kernel_name: [::c_char; B_FILE_NAME_LENGTH],
-        pub kernel_build_date: [::c_char; B_OS_NAME_LENGTH],
-        pub kernel_build_time: [::c_char; B_OS_NAME_LENGTH],
+        pub kernel_name: [c_char; B_FILE_NAME_LENGTH],
+        pub kernel_build_date: [c_char; B_OS_NAME_LENGTH],
+        pub kernel_build_time: [c_char; B_OS_NAME_LENGTH],
         pub kernel_version: i64,
-        pub abi: u32
+        pub abi: u32,
     }
 
     pub struct object_wait_info {
         pub object: i32,
         pub type_: u16,
-        pub events: u16
+        pub events: u16,
     }
 
     pub struct cpu_topology_root_info {
@@ -370,57 +361,60 @@ s! {
     // kernel/fs_attr.h
     pub struct attr_info {
         pub type_: u32,
-        pub size: ::off_t
+        pub size: off_t,
     }
 
     // kernel/fs_index.h
     pub struct index_info {
         pub type_: u32,
-        pub size: ::off_t,
-        pub modification_time: ::time_t,
-        pub creation_time: ::time_t,
-        pub uid: ::uid_t,
-        pub gid: ::gid_t
+        pub size: off_t,
+        pub modification_time: crate::time_t,
+        pub creation_time: crate::time_t,
+        pub uid: crate::uid_t,
+        pub gid: crate::gid_t,
     }
 
     //kernel/fs_info.h
     pub struct fs_info {
-        pub dev: ::dev_t,
-        pub root: ::ino_t,
+        pub dev: crate::dev_t,
+        pub root: crate::ino_t,
         pub flags: u32,
-        pub block_size: ::off_t,
-        pub io_size: ::off_t,
-        pub total_blocks: ::off_t,
-        pub free_blocks: ::off_t,
-        pub total_nodes: ::off_t,
-        pub free_nodes: ::off_t,
-        pub device_name: [::c_char; 128],
-        pub volume_name: [::c_char; B_FILE_NAME_LENGTH],
-        pub fsh_name: [::c_char; B_OS_NAME_LENGTH]
+        pub block_size: off_t,
+        pub io_size: off_t,
+        pub total_blocks: off_t,
+        pub free_blocks: off_t,
+        pub total_nodes: off_t,
+        pub free_nodes: off_t,
+        pub device_name: [c_char; 128],
+        pub volume_name: [c_char; B_FILE_NAME_LENGTH],
+        pub fsh_name: [c_char; B_OS_NAME_LENGTH],
     }
 
     // kernel/image.h
+    // FIXME(1.0): This should not implement `PartialEq`
+    #[allow(unpredictable_function_pointer_comparisons)]
     pub struct image_info {
         pub id: image_id,
-        pub image_type: ::c_int,
+        pub image_type: c_int,
         pub sequence: i32,
         pub init_order: i32,
+        // FIXME(1.0): these should be made optional
         pub init_routine: extern "C" fn(),
         pub term_routine: extern "C" fn(),
-        pub device: ::dev_t,
-        pub node: ::ino_t,
-        pub name: [::c_char; ::PATH_MAX as usize],
-        pub text: *mut ::c_void,
-        pub data: *mut ::c_void,
+        pub device: crate::dev_t,
+        pub node: crate::ino_t,
+        pub name: [c_char; crate::PATH_MAX as usize],
+        pub text: *mut c_void,
+        pub data: *mut c_void,
         pub text_size: i32,
         pub data_size: i32,
         pub api_version: i32,
-        pub abi: i32
+        pub abi: i32,
     }
 
     pub struct __c_anonymous_eax_0 {
         pub max_eax: u32,
-        pub vendor_id: [::c_char; 12],
+        pub vendor_id: [c_char; 12],
     }
 
     pub struct __c_anonymous_eax_1 {
@@ -428,10 +422,10 @@ s! {
         pub model: u32,
         pub family: u32,
         pub tpe: u32,
-        __reserved_0: u32,
+        __reserved_0: Padding<u32>,
         pub extended_model: u32,
         pub extended_family: u32,
-        __reserved_1: u32,
+        __reserved_1: Padding<u32>,
         pub brand_index: u32,
         pub clflush: u32,
         pub logical_cpus: u32,
@@ -446,7 +440,7 @@ s! {
     }
 
     pub struct __c_anonymous_eax_3 {
-        __reserved: [u32; 2],
+        __reserved: Padding<[u32; 2]>,
         pub serial_number_high: u32,
         pub serial_number_low: u32,
     }
@@ -457,111 +451,66 @@ s! {
         pub edx: u32,
         pub ecx: u32,
     }
-}
-
-s_no_extra_traits! {
-    #[cfg(libc_union)]
-    pub union cpuid_info {
-        pub eax_0: __c_anonymous_eax_0,
-        pub eax_1: __c_anonymous_eax_1,
-        pub eax_2: __c_anonymous_eax_2,
-        pub eax_3: __c_anonymous_eax_3,
-        pub as_chars: [::c_char; 16],
-        pub regs: __c_anonymous_regs,
-    }
-
-    #[cfg(libc_union)]
-    pub union __c_anonymous_cpu_topology_info_data {
-        pub root: cpu_topology_root_info,
-        pub package: cpu_topology_package_info,
-        pub core: cpu_topology_core_info,
-    }
 
     pub struct cpu_topology_node_info {
         pub id: u32,
         pub type_: topology_level_type,
         pub level: u32,
-        #[cfg(libc_union)]
         pub data: __c_anonymous_cpu_topology_info_data,
-        #[cfg(not(libc_union))]
-        pub data: cpu_topology_core_info,
+    }
+}
+
+s_no_extra_traits! {
+    pub union cpuid_info {
+        pub eax_0: __c_anonymous_eax_0,
+        pub eax_1: __c_anonymous_eax_1,
+        pub eax_2: __c_anonymous_eax_2,
+        pub eax_3: __c_anonymous_eax_3,
+        pub as_chars: [c_char; 16],
+        pub regs: __c_anonymous_regs,
+    }
+
+    pub union __c_anonymous_cpu_topology_info_data {
+        pub root: cpu_topology_root_info,
+        pub package: cpu_topology_package_info,
+        pub core: cpu_topology_core_info,
     }
 }
 
 cfg_if! {
     if #[cfg(feature = "extra_traits")] {
-        #[cfg(libc_union)]
         impl PartialEq for cpuid_info {
             fn eq(&self, other: &cpuid_info) -> bool {
                 unsafe {
-                self.eax_0 == other.eax_0
-                    || self.eax_1 == other.eax_1
-                    || self.eax_2 == other.eax_2
-                    || self.eax_3 == other.eax_3
-                    || self.as_chars == other.as_chars
-                    || self.regs == other.regs
+                    self.eax_0 == other.eax_0
+                        || self.eax_1 == other.eax_1
+                        || self.eax_2 == other.eax_2
+                        || self.eax_3 == other.eax_3
+                        || self.as_chars == other.as_chars
+                        || self.regs == other.regs
                 }
             }
         }
-        #[cfg(libc_union)]
         impl Eq for cpuid_info {}
-        #[cfg(libc_union)]
-        impl ::fmt::Debug for cpuid_info {
-            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
-                unsafe {
-                f.debug_struct("cpuid_info")
-                    .field("eax_0", &self.eax_0)
-                    .field("eax_1", &self.eax_1)
-                    .field("eax_2", &self.eax_2)
-                    .field("eax_3", &self.eax_3)
-                    .field("as_chars", &self.as_chars)
-                    .field("regs", &self.regs)
-                    .finish()
-                }
+        impl hash::Hash for cpuid_info {
+            fn hash<H: hash::Hasher>(&self, _state: &mut H) {
+                unimplemented!("traits");
             }
         }
 
-        #[cfg(libc_union)]
         impl PartialEq for __c_anonymous_cpu_topology_info_data {
             fn eq(&self, other: &__c_anonymous_cpu_topology_info_data) -> bool {
                 unsafe {
-                self.root == other.root
-                    || self.package == other.package
-                    || self.core == other.core
+                    self.root == other.root
+                        || self.package == other.package
+                        || self.core == other.core
                 }
             }
         }
-        #[cfg(libc_union)]
         impl Eq for __c_anonymous_cpu_topology_info_data {}
-        #[cfg(libc_union)]
-        impl ::fmt::Debug for __c_anonymous_cpu_topology_info_data {
-            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
-                unsafe {
-                f.debug_struct("__c_anonymous_cpu_topology_info_data")
-                    .field("root", &self.root)
-                    .field("package", &self.package)
-                    .field("core", &self.core)
-                    .finish()
-                }
-            }
-        }
-
-        impl PartialEq for cpu_topology_node_info {
-            fn eq(&self, other: &cpu_topology_node_info) -> bool {
-                self.id == other.id
-                    && self.type_ == other.type_
-                    && self.level == other.level
-            }
-        }
-
-        impl Eq for cpu_topology_node_info {}
-        impl ::fmt::Debug for cpu_topology_node_info {
-            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
-                f.debug_struct("cpu_topology_node_info")
-                    .field("id", &self.id)
-                    .field("type", &self.type_)
-                    .field("level", &self.level)
-                    .finish()
+        impl hash::Hash for __c_anonymous_cpu_topology_info_data {
+            fn hash<H: hash::Hasher>(&self, _state: &mut H) {
+                unimplemented!("traits");
             }
         }
     }
@@ -570,7 +519,7 @@ cfg_if! {
 // kernel/OS.h
 pub const B_OS_NAME_LENGTH: usize = 32;
 pub const B_PAGE_SIZE: usize = 4096;
-pub const B_INFINITE_TIMEOUT: usize = 9223372036854775807;
+pub const B_INFINITE_TIMEOUT: c_longlong = 0x7FFFFFFFFFFFFFFF;
 
 pub const B_RELATIVE_TIMEOUT: u32 = 0x8;
 pub const B_ABSOLUTE_TIMEOUT: u32 = 0x10;
@@ -679,21 +628,21 @@ pub const B_SYMBOL_TYPE_ANY: i32 = 0x5;
 
 // storage/StorageDefs.h
 pub const B_DEV_NAME_LENGTH: usize = 128;
-pub const B_FILE_NAME_LENGTH: usize = ::FILENAME_MAX as usize;
-pub const B_PATH_NAME_LENGTH: usize = ::PATH_MAX as usize;
+pub const B_FILE_NAME_LENGTH: usize = crate::FILENAME_MAX as usize;
+pub const B_PATH_NAME_LENGTH: usize = crate::PATH_MAX as usize;
 pub const B_ATTR_NAME_LENGTH: usize = B_FILE_NAME_LENGTH - 1;
 pub const B_MIME_TYPE_LENGTH: usize = B_ATTR_NAME_LENGTH - 15;
 pub const B_MAX_SYMLINKS: usize = 16;
 
 // Haiku open modes in BFile are passed as u32
-pub const B_READ_ONLY: u32 = ::O_RDONLY as u32;
-pub const B_WRITE_ONLY: u32 = ::O_WRONLY as u32;
-pub const B_READ_WRITE: u32 = ::O_RDWR as u32;
+pub const B_READ_ONLY: u32 = crate::O_RDONLY as u32;
+pub const B_WRITE_ONLY: u32 = crate::O_WRONLY as u32;
+pub const B_READ_WRITE: u32 = crate::O_RDWR as u32;
 
-pub const B_FAIL_IF_EXISTS: u32 = ::O_EXCL as u32;
-pub const B_CREATE_FILE: u32 = ::O_CREAT as u32;
-pub const B_ERASE_FILE: u32 = ::O_TRUNC as u32;
-pub const B_OPEN_AT_END: u32 = ::O_APPEND as u32;
+pub const B_FAIL_IF_EXISTS: u32 = crate::O_EXCL as u32;
+pub const B_CREATE_FILE: u32 = crate::O_CREAT as u32;
+pub const B_ERASE_FILE: u32 = crate::O_TRUNC as u32;
+pub const B_OPEN_AT_END: u32 = crate::O_APPEND as u32;
 
 pub const B_FILE_NODE: u32 = 0x01;
 pub const B_SYMLINK_NODE: u32 = 0x02;
@@ -804,12 +753,12 @@ pub const B_PARTIAL_READ: status_t = B_STORAGE_ERROR_BASE + 16;
 pub const B_PARTIAL_WRITE: status_t = B_STORAGE_ERROR_BASE + 17;
 
 // Mapped posix errors
-pub const B_BUFFER_OVERFLOW: status_t = ::EOVERFLOW;
-pub const B_TOO_MANY_ARGS: status_t = ::E2BIG;
-pub const B_FILE_TOO_LARGE: status_t = ::EFBIG;
-pub const B_RESULT_NOT_REPRESENTABLE: status_t = ::ERANGE;
-pub const B_DEVICE_NOT_FOUND: status_t = ::ENODEV;
-pub const B_NOT_SUPPORTED: status_t = ::EOPNOTSUPP;
+pub const B_BUFFER_OVERFLOW: status_t = crate::EOVERFLOW;
+pub const B_TOO_MANY_ARGS: status_t = crate::E2BIG;
+pub const B_FILE_TOO_LARGE: status_t = crate::EFBIG;
+pub const B_RESULT_NOT_REPRESENTABLE: status_t = crate::ERANGE;
+pub const B_DEVICE_NOT_FOUND: status_t = crate::ENODEV;
+pub const B_NOT_SUPPORTED: status_t = crate::EOPNOTSUPP;
 
 // Media kit errors
 pub const B_STREAM_NOT_FOUND: status_t = B_MEDIA_ERROR_BASE + 0;
@@ -956,26 +905,27 @@ pub const B_XATTR_TYPE: u32 = haiku_constant!('X', 'A', 'T', 'R');
 pub const B_NETWORK_ADDRESS_TYPE: u32 = haiku_constant!('N', 'W', 'A', 'D');
 pub const B_MIME_STRING_TYPE: u32 = haiku_constant!('M', 'I', 'M', 'S');
 pub const B_ASCII_TYPE: u32 = haiku_constant!('T', 'E', 'X', 'T');
+pub const B_APP_IMAGE_SYMBOL: *const c_void = ptr::null();
 
 extern "C" {
     // kernel/OS.h
     pub fn create_area(
-        name: *const ::c_char,
-        startAddress: *mut *mut ::c_void,
+        name: *const c_char,
+        startAddress: *mut *mut c_void,
         addressSpec: u32,
         size: usize,
         lock: u32,
         protection: u32,
     ) -> area_id;
     pub fn clone_area(
-        name: *const ::c_char,
-        destAddress: *mut *mut ::c_void,
+        name: *const c_char,
+        destAddress: *mut *mut c_void,
         addressSpec: u32,
         protection: u32,
         source: area_id,
     ) -> area_id;
-    pub fn find_area(name: *const ::c_char) -> area_id;
-    pub fn area_for(address: *mut ::c_void) -> area_id;
+    pub fn find_area(name: *const c_char) -> area_id;
+    pub fn area_for(address: *mut c_void) -> area_id;
     pub fn delete_area(id: area_id) -> status_t;
     pub fn resize_area(id: area_id, newSize: usize) -> status_t;
     pub fn set_area_protection(id: area_id, newProtection: u32) -> status_t;
@@ -987,59 +937,59 @@ extern "C" {
         size: usize,
     ) -> status_t;
 
-    pub fn create_port(capacity: i32, name: *const ::c_char) -> port_id;
-    pub fn find_port(name: *const ::c_char) -> port_id;
+    pub fn create_port(capacity: i32, name: *const c_char) -> port_id;
+    pub fn find_port(name: *const c_char) -> port_id;
     pub fn read_port(
         port: port_id,
         code: *mut i32,
-        buffer: *mut ::c_void,
-        bufferSize: ::size_t,
-    ) -> ::ssize_t;
+        buffer: *mut c_void,
+        bufferSize: size_t,
+    ) -> ssize_t;
     pub fn read_port_etc(
         port: port_id,
         code: *mut i32,
-        buffer: *mut ::c_void,
-        bufferSize: ::size_t,
+        buffer: *mut c_void,
+        bufferSize: size_t,
         flags: u32,
         timeout: bigtime_t,
-    ) -> ::ssize_t;
+    ) -> ssize_t;
     pub fn write_port(
         port: port_id,
         code: i32,
-        buffer: *const ::c_void,
-        bufferSize: ::size_t,
+        buffer: *const c_void,
+        bufferSize: size_t,
     ) -> status_t;
     pub fn write_port_etc(
         port: port_id,
         code: i32,
-        buffer: *const ::c_void,
-        bufferSize: ::size_t,
+        buffer: *const c_void,
+        bufferSize: size_t,
         flags: u32,
         timeout: bigtime_t,
     ) -> status_t;
     pub fn close_port(port: port_id) -> status_t;
     pub fn delete_port(port: port_id) -> status_t;
-    pub fn port_buffer_size(port: port_id) -> ::ssize_t;
-    pub fn port_buffer_size_etc(port: port_id, flags: u32, timeout: bigtime_t) -> ::ssize_t;
-    pub fn port_count(port: port_id) -> ::ssize_t;
+    pub fn port_buffer_size(port: port_id) -> ssize_t;
+    pub fn port_buffer_size_etc(port: port_id, flags: u32, timeout: bigtime_t) -> ssize_t;
+    pub fn port_count(port: port_id) -> ssize_t;
     pub fn set_port_owner(port: port_id, team: team_id) -> status_t;
 
-    pub fn _get_port_info(port: port_id, buf: *mut port_info, portInfoSize: ::size_t) -> status_t;
+    pub fn _get_port_info(port: port_id, buf: *mut port_info, portInfoSize: size_t) -> status_t;
     pub fn _get_next_port_info(
         port: port_id,
         cookie: *mut i32,
         portInfo: *mut port_info,
-        portInfoSize: ::size_t,
+        portInfoSize: size_t,
     ) -> status_t;
     pub fn _get_port_message_info_etc(
         port: port_id,
         info: *mut port_message_info,
-        infoSize: ::size_t,
+        infoSize: size_t,
         flags: u32,
         timeout: bigtime_t,
     ) -> status_t;
 
-    pub fn create_sem(count: i32, name: *const ::c_char) -> sem_id;
+    pub fn create_sem(count: i32, name: *const c_char) -> sem_id;
     pub fn delete_sem(id: sem_id) -> status_t;
     pub fn acquire_sem(id: sem_id) -> status_t;
     pub fn acquire_sem_etc(id: sem_id, count: i32, flags: u32, timeout: bigtime_t) -> status_t;
@@ -1055,42 +1005,42 @@ extern "C" {
     ) -> status_t;
     pub fn get_sem_count(id: sem_id, threadCount: *mut i32) -> status_t;
     pub fn set_sem_owner(id: sem_id, team: team_id) -> status_t;
-    pub fn _get_sem_info(id: sem_id, info: *mut sem_info, infoSize: ::size_t) -> status_t;
+    pub fn _get_sem_info(id: sem_id, info: *mut sem_info, infoSize: size_t) -> status_t;
     pub fn _get_next_sem_info(
         team: team_id,
         cookie: *mut i32,
         info: *mut sem_info,
-        infoSize: ::size_t,
+        infoSize: size_t,
     ) -> status_t;
 
     pub fn kill_team(team: team_id) -> status_t;
-    pub fn _get_team_info(team: team_id, info: *mut team_info, size: ::size_t) -> status_t;
-    pub fn _get_next_team_info(cookie: *mut i32, info: *mut team_info, size: ::size_t) -> status_t;
+    pub fn _get_team_info(team: team_id, info: *mut team_info, size: size_t) -> status_t;
+    pub fn _get_next_team_info(cookie: *mut i32, info: *mut team_info, size: size_t) -> status_t;
 
     pub fn spawn_thread(
         func: thread_func,
-        name: *const ::c_char,
+        name: *const c_char,
         priority: i32,
-        data: *mut ::c_void,
+        data: *mut c_void,
     ) -> thread_id;
     pub fn kill_thread(thread: thread_id) -> status_t;
     pub fn resume_thread(thread: thread_id) -> status_t;
     pub fn suspend_thread(thread: thread_id) -> status_t;
 
-    pub fn rename_thread(thread: thread_id, newName: *const ::c_char) -> status_t;
+    pub fn rename_thread(thread: thread_id, newName: *const c_char) -> status_t;
     pub fn set_thread_priority(thread: thread_id, newPriority: i32) -> status_t;
     pub fn suggest_thread_priority(
         what: u32,
         period: i32,
-        jitter: ::bigtime_t,
-        length: ::bigtime_t,
+        jitter: crate::bigtime_t,
+        length: crate::bigtime_t,
     ) -> i32;
-    pub fn estimate_max_scheduling_latency(th: ::thread_id) -> ::bigtime_t;
+    pub fn estimate_max_scheduling_latency(th: crate::thread_id) -> crate::bigtime_t;
     pub fn exit_thread(status: status_t);
     pub fn wait_for_thread(thread: thread_id, returnValue: *mut status_t) -> status_t;
-    pub fn on_exit_thread(callback: extern "C" fn(*mut ::c_void), data: *mut ::c_void) -> status_t;
+    pub fn on_exit_thread(callback: extern "C" fn(*mut c_void), data: *mut c_void) -> status_t;
 
-    pub fn find_thread(name: *const ::c_char) -> thread_id;
+    pub fn find_thread(name: *const c_char) -> thread_id;
 
     pub fn get_scheduler_mode() -> i32;
     pub fn set_scheduler_mode(mode: i32) -> status_t;
@@ -1098,270 +1048,252 @@ extern "C" {
     pub fn send_data(
         thread: thread_id,
         code: i32,
-        buffer: *const ::c_void,
-        bufferSize: ::size_t,
+        buffer: *const c_void,
+        bufferSize: size_t,
     ) -> status_t;
-    pub fn receive_data(sender: *mut thread_id, buffer: *mut ::c_void, bufferSize: ::size_t)
-        -> i32;
+    pub fn receive_data(sender: *mut thread_id, buffer: *mut c_void, bufferSize: size_t) -> i32;
     pub fn has_data(thread: thread_id) -> bool;
 
     pub fn snooze(amount: bigtime_t) -> status_t;
-    pub fn snooze_etc(amount: bigtime_t, timeBase: ::c_int, flags: u32) -> status_t;
-    pub fn snooze_until(time: bigtime_t, timeBase: ::c_int) -> status_t;
+    pub fn snooze_etc(amount: bigtime_t, timeBase: c_int, flags: u32) -> status_t;
+    pub fn snooze_until(time: bigtime_t, timeBase: c_int) -> status_t;
 
-    pub fn _get_thread_info(id: thread_id, info: *mut thread_info, size: ::size_t) -> status_t;
+    pub fn _get_thread_info(id: thread_id, info: *mut thread_info, size: size_t) -> status_t;
     pub fn _get_next_thread_info(
         team: team_id,
         cookie: *mut i32,
         info: *mut thread_info,
-        size: ::size_t,
+        size: size_t,
     ) -> status_t;
 
-    pub fn get_pthread_thread_id(thread: ::pthread_t) -> thread_id;
+    pub fn get_pthread_thread_id(thread: crate::pthread_t) -> thread_id;
 
     pub fn _get_team_usage_info(
         team: team_id,
         who: i32,
         info: *mut team_usage_info,
-        size: ::size_t,
+        size: size_t,
     ) -> status_t;
 
-    pub fn real_time_clock() -> ::c_ulong;
-    pub fn set_real_time_clock(secsSinceJan1st1970: ::c_ulong);
+    pub fn real_time_clock() -> c_ulong;
+    pub fn set_real_time_clock(secsSinceJan1st1970: c_ulong);
     pub fn real_time_clock_usecs() -> bigtime_t;
     pub fn system_time() -> bigtime_t;
     pub fn system_time_nsecs() -> nanotime_t;
     // set_timezone() is deprecated and a no-op
 
     pub fn set_alarm(when: bigtime_t, flags: u32) -> bigtime_t;
-    pub fn debugger(message: *const ::c_char);
-    pub fn disable_debugger(state: ::c_int) -> ::c_int;
+    pub fn debugger(message: *const c_char);
+    pub fn disable_debugger(state: c_int) -> c_int;
 
     pub fn get_system_info(info: *mut system_info) -> status_t;
     pub fn _get_cpu_info_etc(
         firstCPU: u32,
         cpuCount: u32,
         info: *mut cpu_info,
-        size: ::size_t,
+        size: size_t,
     ) -> status_t;
     pub fn get_cpu_topology_info(
         topologyInfos: *mut cpu_topology_node_info,
         topologyInfoCount: *mut u32,
     ) -> status_t;
     pub fn is_computer_on() -> i32;
-    pub fn is_computer_on_fire() -> ::c_double;
-    pub fn send_signal(threadID: thread_id, signal: ::c_uint) -> ::c_int;
-    pub fn set_signal_stack(base: *mut ::c_void, size: ::size_t);
+    pub fn is_computer_on_fire() -> c_double;
+    pub fn send_signal(threadID: thread_id, signal: c_uint) -> c_int;
+    pub fn set_signal_stack(base: *mut c_void, size: size_t);
 
-    pub fn wait_for_objects(infos: *mut object_wait_info, numInfos: ::c_int) -> ::ssize_t;
+    pub fn wait_for_objects(infos: *mut object_wait_info, numInfos: c_int) -> ssize_t;
     pub fn wait_for_objects_etc(
         infos: *mut object_wait_info,
-        numInfos: ::c_int,
+        numInfos: c_int,
         flags: u32,
         timeout: bigtime_t,
-    ) -> ::ssize_t;
+    ) -> ssize_t;
 
     // kernel/fs_attr.h
     pub fn fs_read_attr(
-        fd: ::c_int,
-        attribute: *const ::c_char,
+        fd: c_int,
+        attribute: *const c_char,
         type_: u32,
-        pos: ::off_t,
-        buffer: *mut ::c_void,
-        readBytes: ::size_t,
-    ) -> ::ssize_t;
+        pos: off_t,
+        buffer: *mut c_void,
+        readBytes: size_t,
+    ) -> ssize_t;
     pub fn fs_write_attr(
-        fd: ::c_int,
-        attribute: *const ::c_char,
+        fd: c_int,
+        attribute: *const c_char,
         type_: u32,
-        pos: ::off_t,
-        buffer: *const ::c_void,
-        writeBytes: ::size_t,
-    ) -> ::ssize_t;
-    pub fn fs_remove_attr(fd: ::c_int, attribute: *const ::c_char) -> ::c_int;
-    pub fn fs_stat_attr(
-        fd: ::c_int,
-        attribute: *const ::c_char,
-        attrInfo: *mut attr_info,
-    ) -> ::c_int;
+        pos: off_t,
+        buffer: *const c_void,
+        writeBytes: size_t,
+    ) -> ssize_t;
+    pub fn fs_remove_attr(fd: c_int, attribute: *const c_char) -> c_int;
+    pub fn fs_stat_attr(fd: c_int, attribute: *const c_char, attrInfo: *mut attr_info) -> c_int;
 
     pub fn fs_open_attr(
-        path: *const ::c_char,
-        attribute: *const ::c_char,
+        path: *const c_char,
+        attribute: *const c_char,
         type_: u32,
-        openMode: ::c_int,
-    ) -> ::c_int;
-    pub fn fs_fopen_attr(
-        fd: ::c_int,
-        attribute: *const ::c_char,
-        type_: u32,
-        openMode: ::c_int,
-    ) -> ::c_int;
-    pub fn fs_close_attr(fd: ::c_int) -> ::c_int;
+        openMode: c_int,
+    ) -> c_int;
+    pub fn fs_fopen_attr(fd: c_int, attribute: *const c_char, type_: u32, openMode: c_int)
+        -> c_int;
+    pub fn fs_close_attr(fd: c_int) -> c_int;
 
-    pub fn fs_open_attr_dir(path: *const ::c_char) -> *mut ::DIR;
-    pub fn fs_lopen_attr_dir(path: *const ::c_char) -> *mut ::DIR;
-    pub fn fs_fopen_attr_dir(fd: ::c_int) -> *mut ::DIR;
-    pub fn fs_close_attr_dir(dir: *mut ::DIR) -> ::c_int;
-    pub fn fs_read_attr_dir(dir: *mut ::DIR) -> *mut ::dirent;
-    pub fn fs_rewind_attr_dir(dir: *mut ::DIR);
+    pub fn fs_open_attr_dir(path: *const c_char) -> *mut crate::DIR;
+    pub fn fs_lopen_attr_dir(path: *const c_char) -> *mut crate::DIR;
+    pub fn fs_fopen_attr_dir(fd: c_int) -> *mut crate::DIR;
+    pub fn fs_close_attr_dir(dir: *mut crate::DIR) -> c_int;
+    pub fn fs_read_attr_dir(dir: *mut crate::DIR) -> *mut crate::dirent;
+    pub fn fs_rewind_attr_dir(dir: *mut crate::DIR);
 
     // kernel/fs_image.h
     pub fn fs_create_index(
-        device: ::dev_t,
-        name: *const ::c_char,
+        device: crate::dev_t,
+        name: *const c_char,
         type_: u32,
         flags: u32,
-    ) -> ::c_int;
-    pub fn fs_remove_index(device: ::dev_t, name: *const ::c_char) -> ::c_int;
+    ) -> c_int;
+    pub fn fs_remove_index(device: crate::dev_t, name: *const c_char) -> c_int;
     pub fn fs_stat_index(
-        device: ::dev_t,
-        name: *const ::c_char,
+        device: crate::dev_t,
+        name: *const c_char,
         indexInfo: *mut index_info,
-    ) -> ::c_int;
+    ) -> c_int;
 
-    pub fn fs_open_index_dir(device: ::dev_t) -> *mut ::DIR;
-    pub fn fs_close_index_dir(indexDirectory: *mut ::DIR) -> ::c_int;
-    pub fn fs_read_index_dir(indexDirectory: *mut ::DIR) -> *mut ::dirent;
-    pub fn fs_rewind_index_dir(indexDirectory: *mut ::DIR);
+    pub fn fs_open_index_dir(device: crate::dev_t) -> *mut crate::DIR;
+    pub fn fs_close_index_dir(indexDirectory: *mut crate::DIR) -> c_int;
+    pub fn fs_read_index_dir(indexDirectory: *mut crate::DIR) -> *mut crate::dirent;
+    pub fn fs_rewind_index_dir(indexDirectory: *mut crate::DIR);
 
     // kernel/fs_info.h
-    pub fn dev_for_path(path: *const ::c_char) -> ::dev_t;
-    pub fn next_dev(pos: *mut i32) -> ::dev_t;
-    pub fn fs_stat_dev(dev: ::dev_t, info: *mut fs_info) -> ::c_int;
+    pub fn dev_for_path(path: *const c_char) -> crate::dev_t;
+    pub fn next_dev(pos: *mut i32) -> crate::dev_t;
+    pub fn fs_stat_dev(dev: crate::dev_t, info: *mut fs_info) -> c_int;
 
     // kernel/fs_query.h
-    pub fn fs_open_query(device: ::dev_t, query: *const ::c_char, flags: u32) -> *mut ::DIR;
+    pub fn fs_open_query(device: crate::dev_t, query: *const c_char, flags: u32)
+        -> *mut crate::DIR;
     pub fn fs_open_live_query(
-        device: ::dev_t,
-        query: *const ::c_char,
+        device: crate::dev_t,
+        query: *const c_char,
         flags: u32,
         port: port_id,
         token: i32,
-    ) -> *mut ::DIR;
-    pub fn fs_close_query(d: *mut ::DIR) -> ::c_int;
-    pub fn fs_read_query(d: *mut ::DIR) -> *mut ::dirent;
-    pub fn get_path_for_dirent(dent: *mut ::dirent, buf: *mut ::c_char, len: ::size_t) -> status_t;
+    ) -> *mut crate::DIR;
+    pub fn fs_close_query(d: *mut crate::DIR) -> c_int;
+    pub fn fs_read_query(d: *mut crate::DIR) -> *mut crate::dirent;
+    pub fn get_path_for_dirent(dent: *mut crate::dirent, buf: *mut c_char, len: size_t)
+        -> status_t;
 
     // kernel/fs_volume.h
     pub fn fs_mount_volume(
-        where_: *const ::c_char,
-        device: *const ::c_char,
-        filesystem: *const ::c_char,
+        where_: *const c_char,
+        device: *const c_char,
+        filesystem: *const c_char,
         flags: u32,
-        parameters: *const ::c_char,
-    ) -> ::dev_t;
-    pub fn fs_unmount_volume(path: *const ::c_char, flags: u32) -> status_t;
+        parameters: *const c_char,
+    ) -> crate::dev_t;
+    pub fn fs_unmount_volume(path: *const c_char, flags: u32) -> status_t;
 
     // kernel/image.h
     pub fn load_image(
         argc: i32,
-        argv: *mut *const ::c_char,
-        environ: *mut *const ::c_char,
+        argv: *mut *const c_char,
+        environ: *mut *const c_char,
     ) -> thread_id;
-    pub fn load_add_on(path: *const ::c_char) -> image_id;
+    pub fn load_add_on(path: *const c_char) -> image_id;
     pub fn unload_add_on(image: image_id) -> status_t;
     pub fn get_image_symbol(
         image: image_id,
-        name: *const ::c_char,
+        name: *const c_char,
         symbolType: i32,
-        symbolLocation: *mut *mut ::c_void,
+        symbolLocation: *mut *mut c_void,
     ) -> status_t;
     pub fn get_nth_image_symbol(
         image: image_id,
         n: i32,
-        nameBuffer: *mut ::c_char,
+        nameBuffer: *mut c_char,
         nameLength: *mut i32,
         symbolType: *mut i32,
-        symbolLocation: *mut *mut ::c_void,
+        symbolLocation: *mut *mut c_void,
     ) -> status_t;
-    pub fn clear_caches(address: *mut ::c_void, length: ::size_t, flags: u32);
-    pub fn _get_image_info(image: image_id, info: *mut image_info, size: ::size_t) -> status_t;
+    pub fn clear_caches(address: *mut c_void, length: size_t, flags: u32);
+    pub fn _get_image_info(image: image_id, info: *mut image_info, size: size_t) -> status_t;
     pub fn _get_next_image_info(
         team: team_id,
         cookie: *mut i32,
         info: *mut image_info,
-        size: ::size_t,
+        size: size_t,
     ) -> status_t;
     pub fn find_path(
-        codePointer: *const ::c_void,
+        codePointer: *const c_void,
         baseDirectory: path_base_directory,
-        subPath: *const ::c_char,
-        pathBuffer: *mut ::c_char,
+        subPath: *const c_char,
+        pathBuffer: *mut c_char,
         bufferSize: usize,
     ) -> status_t;
     pub fn find_path_etc(
-        codePointer: *const ::c_void,
-        dependency: *const ::c_char,
-        architecture: *const ::c_char,
+        codePointer: *const c_void,
+        dependency: *const c_char,
+        architecture: *const c_char,
         baseDirectory: path_base_directory,
-        subPath: *const ::c_char,
+        subPath: *const c_char,
         flags: u32,
-        pathBuffer: *mut ::c_char,
-        bufferSize: ::size_t,
+        pathBuffer: *mut c_char,
+        bufferSize: size_t,
     ) -> status_t;
     pub fn find_path_for_path(
-        path: *const ::c_char,
+        path: *const c_char,
         baseDirectory: path_base_directory,
-        subPath: *const ::c_char,
-        pathBuffer: *mut ::c_char,
-        bufferSize: ::size_t,
+        subPath: *const c_char,
+        pathBuffer: *mut c_char,
+        bufferSize: size_t,
     ) -> status_t;
     pub fn find_path_for_path_etc(
-        path: *const ::c_char,
-        dependency: *const ::c_char,
-        architectur: *const ::c_char,
+        path: *const c_char,
+        dependency: *const c_char,
+        architecture: *const c_char,
         baseDirectory: path_base_directory,
-        subPath: *const ::c_char,
+        subPath: *const c_char,
         flags: u32,
-        pathBuffer: *mut ::c_char,
-        bufferSize: ::size_t,
+        pathBuffer: *mut c_char,
+        bufferSize: size_t,
     ) -> status_t;
     pub fn find_paths(
         baseDirectory: path_base_directory,
-        subPath: *const ::c_char,
-        _paths: *mut *mut *mut ::c_char,
-        pathCount: *mut ::size_t,
+        subPath: *const c_char,
+        _paths: *mut *mut *mut c_char,
+        pathCount: *mut size_t,
     ) -> status_t;
     pub fn find_paths_etc(
-        architecture: *const ::c_char,
+        architecture: *const c_char,
         baseDirectory: path_base_directory,
-        subPath: *const ::c_char,
+        subPath: *const c_char,
         flags: u32,
-        _paths: *mut *mut *mut ::c_char,
-        pathCount: *mut ::size_t,
+        _paths: *mut *mut *mut c_char,
+        pathCount: *mut size_t,
     ) -> status_t;
     pub fn find_directory(
         which: directory_which,
-        volume: ::dev_t,
+        volume: crate::dev_t,
         createIt: bool,
-        pathString: *mut ::c_char,
+        pathString: *mut c_char,
         length: i32,
     ) -> status_t;
-}
 
-cfg_if! {
-    if #[cfg(libc_union)] {
-        extern "C" {
-            pub fn get_cpuid(info: *mut cpuid_info, eaxRegister: u32, cpuNum: u32) -> status_t;
-        }
-    }
+    pub fn get_cpuid(info: *mut cpuid_info, eaxRegister: u32, cpuNum: u32) -> status_t;
 }
 
 // The following functions are defined as macros in C/C++
 #[inline]
 pub unsafe fn get_cpu_info(firstCPU: u32, cpuCount: u32, info: *mut cpu_info) -> status_t {
-    _get_cpu_info_etc(
-        firstCPU,
-        cpuCount,
-        info,
-        core::mem::size_of::<cpu_info>() as ::size_t,
-    )
+    _get_cpu_info_etc(firstCPU, cpuCount, info, size_of::<cpu_info>() as size_t)
 }
 
 #[inline]
 pub unsafe fn get_area_info(id: area_id, info: *mut area_info) -> status_t {
-    _get_area_info(id, info, core::mem::size_of::<area_info>() as usize)
+    _get_area_info(id, info, size_of::<area_info>() as usize)
 }
 
 #[inline]
@@ -1370,17 +1302,12 @@ pub unsafe fn get_next_area_info(
     cookie: *mut isize,
     info: *mut area_info,
 ) -> status_t {
-    _get_next_area_info(
-        team,
-        cookie,
-        info,
-        core::mem::size_of::<area_info>() as usize,
-    )
+    _get_next_area_info(team, cookie, info, size_of::<area_info>() as usize)
 }
 
 #[inline]
 pub unsafe fn get_port_info(port: port_id, buf: *mut port_info) -> status_t {
-    _get_port_info(port, buf, core::mem::size_of::<port_info>() as ::size_t)
+    _get_port_info(port, buf, size_of::<port_info>() as size_t)
 }
 
 #[inline]
@@ -1389,12 +1316,7 @@ pub unsafe fn get_next_port_info(
     cookie: *mut i32,
     portInfo: *mut port_info,
 ) -> status_t {
-    _get_next_port_info(
-        port,
-        cookie,
-        portInfo,
-        core::mem::size_of::<port_info>() as ::size_t,
-    )
+    _get_next_port_info(port, cookie, portInfo, size_of::<port_info>() as size_t)
 }
 
 #[inline]
@@ -1407,7 +1329,7 @@ pub unsafe fn get_port_message_info_etc(
     _get_port_message_info_etc(
         port,
         info,
-        core::mem::size_of::<port_message_info>() as ::size_t,
+        size_of::<port_message_info>() as size_t,
         flags,
         timeout,
     )
@@ -1415,42 +1337,32 @@ pub unsafe fn get_port_message_info_etc(
 
 #[inline]
 pub unsafe fn get_sem_info(id: sem_id, info: *mut sem_info) -> status_t {
-    _get_sem_info(id, info, core::mem::size_of::<sem_info>() as ::size_t)
+    _get_sem_info(id, info, size_of::<sem_info>() as size_t)
 }
 
 #[inline]
 pub unsafe fn get_next_sem_info(team: team_id, cookie: *mut i32, info: *mut sem_info) -> status_t {
-    _get_next_sem_info(
-        team,
-        cookie,
-        info,
-        core::mem::size_of::<sem_info>() as ::size_t,
-    )
+    _get_next_sem_info(team, cookie, info, size_of::<sem_info>() as size_t)
 }
 
 #[inline]
 pub unsafe fn get_team_info(team: team_id, info: *mut team_info) -> status_t {
-    _get_team_info(team, info, core::mem::size_of::<team_info>() as ::size_t)
+    _get_team_info(team, info, size_of::<team_info>() as size_t)
 }
 
 #[inline]
 pub unsafe fn get_next_team_info(cookie: *mut i32, info: *mut team_info) -> status_t {
-    _get_next_team_info(cookie, info, core::mem::size_of::<team_info>() as ::size_t)
+    _get_next_team_info(cookie, info, size_of::<team_info>() as size_t)
 }
 
 #[inline]
 pub unsafe fn get_team_usage_info(team: team_id, who: i32, info: *mut team_usage_info) -> status_t {
-    _get_team_usage_info(
-        team,
-        who,
-        info,
-        core::mem::size_of::<team_usage_info>() as ::size_t,
-    )
+    _get_team_usage_info(team, who, info, size_of::<team_usage_info>() as size_t)
 }
 
 #[inline]
 pub unsafe fn get_thread_info(id: thread_id, info: *mut thread_info) -> status_t {
-    _get_thread_info(id, info, core::mem::size_of::<thread_info>() as ::size_t)
+    _get_thread_info(id, info, size_of::<thread_info>() as size_t)
 }
 
 #[inline]
@@ -1459,18 +1371,13 @@ pub unsafe fn get_next_thread_info(
     cookie: *mut i32,
     info: *mut thread_info,
 ) -> status_t {
-    _get_next_thread_info(
-        team,
-        cookie,
-        info,
-        core::mem::size_of::<thread_info>() as ::size_t,
-    )
+    _get_next_thread_info(team, cookie, info, size_of::<thread_info>() as size_t)
 }
 
 // kernel/image.h
 #[inline]
 pub unsafe fn get_image_info(image: image_id, info: *mut image_info) -> status_t {
-    _get_image_info(image, info, core::mem::size_of::<image_info>() as ::size_t)
+    _get_image_info(image, info, size_of::<image_info>() as size_t)
 }
 
 #[inline]
@@ -1479,10 +1386,5 @@ pub unsafe fn get_next_image_info(
     cookie: *mut i32,
     info: *mut image_info,
 ) -> status_t {
-    _get_next_image_info(
-        team,
-        cookie,
-        info,
-        core::mem::size_of::<image_info>() as ::size_t,
-    )
+    _get_next_image_info(team, cookie, info, size_of::<image_info>() as size_t)
 }

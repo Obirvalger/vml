@@ -2,19 +2,28 @@
 //!
 //! # Safety
 //!
-//! These access the file descriptors by absolute index value, and nothing
-//! prevents them from being closed and reused. They should only be used in
-//! `main` or other situations where one is in control of the process'
-//! stdio streams.
+//! Some of the functions in this module can cause the process' stdio file
+//! descriptors to be closed, which breaks the assumption made in Rust's std
+//! that these file descriptors are always open.
+//!
+//! And in no-std mode, some of the functions in this module similarly assume
+//! that the process' stdio file descriptors are open, which we don't take as
+//! given in no-std mode because we don't have std also making that assumption.
+//!
+//! See the individual functions' safety comments for more details.
 #![allow(unsafe_code)]
 
 use crate::backend;
 use crate::fd::OwnedFd;
 use backend::c;
-use backend::fd::{BorrowedFd, FromRawFd, RawFd};
+use backend::fd::{BorrowedFd, FromRawFd as _, RawFd};
 
 #[cfg(not(any(windows, target_os = "wasi")))]
-use {crate::io, backend::fd::AsFd, core::mem::forget};
+use {
+    crate::io,
+    backend::fd::{AsFd, AsRawFd as _},
+    core::mem::ManuallyDrop,
+};
 
 /// `STDIN_FILENO`—Standard input, borrowed.
 ///
@@ -38,14 +47,14 @@ use {crate::io, backend::fd::AsFd, core::mem::forget};
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdin.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stdin.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stdin.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stdin&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stdin.4
 /// [OpenBSD]: https://man.openbsd.org/stdin.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stdin&section=4
 /// [illumos]: https://illumos.org/man/4FS/stdin
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stdin
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stdin
 #[cfg(feature = "std")]
 #[doc(alias = "STDIN_FILENO")]
 #[inline]
@@ -63,10 +72,10 @@ pub const fn stdin() -> BorrowedFd<'static> {
 ///
 /// # Safety
 ///
-/// In `no_std` configurations, the stdin file descriptor can be closed,
-/// potentially on other threads, in which case the file descriptor index
-/// value could be dynamically reused for other purposes, potentially on
-/// different threads.
+/// In `no_std` configurations, the process' stdin file descriptor can be
+/// closed, potentially on other threads, in which case the file descriptor
+/// index number (`STDIN_FILENO`) could be dynamically reused for other
+/// purposes, potentially on different threads.
 ///
 /// # Warning
 ///
@@ -84,14 +93,14 @@ pub const fn stdin() -> BorrowedFd<'static> {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdin.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stdin.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stdin.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stdin&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stdin.4
 /// [OpenBSD]: https://man.openbsd.org/stdin.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stdin&section=4
 /// [illumos]: https://illumos.org/man/4FS/stdin
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stdin
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stdin
 #[cfg(not(feature = "std"))]
 #[doc(alias = "STDIN_FILENO")]
 #[inline]
@@ -124,14 +133,14 @@ pub const unsafe fn stdin() -> BorrowedFd<'static> {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdin.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stdin.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stdin.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stdin&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stdin.4
 /// [OpenBSD]: https://man.openbsd.org/stdin.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stdin&section=4
 /// [illumos]: https://illumos.org/man/4FS/stdin
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stdin
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stdin
 #[doc(alias = "STDIN_FILENO")]
 #[inline]
 pub unsafe fn take_stdin() -> OwnedFd {
@@ -160,14 +169,14 @@ pub unsafe fn take_stdin() -> OwnedFd {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdout.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stdout.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stdout.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stdout&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stdout.4
 /// [OpenBSD]: https://man.openbsd.org/stdout.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stdout&section=4
 /// [illumos]: https://illumos.org/man/4FS/stdout
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stdout
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stdout
 #[cfg(feature = "std")]
 #[doc(alias = "STDOUT_FILENO")]
 #[inline]
@@ -185,10 +194,10 @@ pub const fn stdout() -> BorrowedFd<'static> {
 ///
 /// # Safety
 ///
-/// In `no_std` configurations, the stdout file descriptor can be closed,
-/// potentially on other threads, in which case the file descriptor index
-/// value could be dynamically reused for other purposes, potentially on
-/// different threads.
+/// In `no_std` configurations, the process' stdout file descriptor can be
+/// closed, potentially on other threads, in which case the file descriptor
+/// index number (`STDOUT_FILENO`) could be dynamically reused for other
+/// purposes, potentially on different threads.
 ///
 /// # Warning
 ///
@@ -206,14 +215,14 @@ pub const fn stdout() -> BorrowedFd<'static> {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdout.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stdout.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stdout.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stdout&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stdout.4
 /// [OpenBSD]: https://man.openbsd.org/stdout.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stdout&section=4
 /// [illumos]: https://illumos.org/man/4FS/stdout
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stdout
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stdout
 #[cfg(not(feature = "std"))]
 #[doc(alias = "STDOUT_FILENO")]
 #[inline]
@@ -246,14 +255,14 @@ pub const unsafe fn stdout() -> BorrowedFd<'static> {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdout.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stdout.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stdout.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stdout&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stdout.4
 /// [OpenBSD]: https://man.openbsd.org/stdout.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stdout&section=4
 /// [illumos]: https://illumos.org/man/4FS/stdout
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stdout
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stdout
 #[doc(alias = "STDOUT_FILENO")]
 #[inline]
 pub unsafe fn take_stdout() -> OwnedFd {
@@ -276,14 +285,14 @@ pub unsafe fn take_stdout() -> OwnedFd {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stderr.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stderr.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stderr.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stderr&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stderr.4
 /// [OpenBSD]: https://man.openbsd.org/stderr.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stderr&section=4
 /// [illumos]: https://illumos.org/man/4FS/stderr
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stderr
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stderr
 #[cfg(feature = "std")]
 #[doc(alias = "STDERR_FILENO")]
 #[inline]
@@ -301,10 +310,10 @@ pub const fn stderr() -> BorrowedFd<'static> {
 ///
 /// # Safety
 ///
-/// In `no_std` configurations, the stderr file descriptor can be closed,
-/// potentially on other threads, in which case the file descriptor index
-/// value could be dynamically reused for other purposes, potentially on
-/// different threads.
+/// In `no_std` configurations, the process' stderr file descriptor can be
+/// closed, potentially on other threads, in which case the file descriptor
+/// index number (`STDERR_FILENO`) could be dynamically reused for other
+/// purposes, potentially on different threads.
 ///
 /// # References
 ///  - [POSIX]
@@ -316,14 +325,14 @@ pub const fn stderr() -> BorrowedFd<'static> {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stderr.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stderr.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stderr.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stderr&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stderr.4
 /// [OpenBSD]: https://man.openbsd.org/stderr.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stderr&section=4
 /// [illumos]: https://illumos.org/man/4FS/stderr
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stderr
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stderr
 #[cfg(not(feature = "std"))]
 #[doc(alias = "STDERR_FILENO")]
 #[inline]
@@ -361,14 +370,14 @@ pub const unsafe fn stderr() -> BorrowedFd<'static> {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stderr.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stderr.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stderr.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stderr&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stderr.4
 /// [OpenBSD]: https://man.openbsd.org/stderr.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stderr&section=4
 /// [illumos]: https://illumos.org/man/4FS/stderr
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stderr
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stderr
 #[doc(alias = "STDERR_FILENO")]
 #[inline]
 pub unsafe fn take_stderr() -> OwnedFd {
@@ -393,14 +402,14 @@ pub unsafe fn take_stderr() -> OwnedFd {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdin.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stdin.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stdin.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stdin&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stdin.4
 /// [OpenBSD]: https://man.openbsd.org/stdin.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stdin&section=4
 /// [illumos]: https://illumos.org/man/4FS/stdin
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stdin
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stdin
 #[doc(alias = "STDIN_FILENO")]
 #[inline]
 pub const fn raw_stdin() -> RawFd {
@@ -425,14 +434,14 @@ pub const fn raw_stdin() -> RawFd {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdout.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stdout.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stdout.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stdout&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stdout.4
 /// [OpenBSD]: https://man.openbsd.org/stdout.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stdout&section=4
 /// [illumos]: https://illumos.org/man/4FS/stdout
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stdout
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stdout
 #[doc(alias = "STDOUT_FILENO")]
 #[inline]
 pub const fn raw_stdout() -> RawFd {
@@ -457,14 +466,14 @@ pub const fn raw_stdout() -> RawFd {
 ///  - [illumos]
 ///  - [glibc]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stderr.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stderr.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/stderr.3.html
 /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=stderr&sektion=4
 /// [NetBSD]: https://man.netbsd.org/stderr.4
 /// [OpenBSD]: https://man.openbsd.org/stderr.4
 /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=stderr&section=4
 /// [illumos]: https://illumos.org/man/4FS/stderr
-/// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Standard-Streams.html#index-stderr
+/// [glibc]: https://sourceware.org/glibc/manual/latest/html_node/Standard-Streams.html#index-stderr
 #[doc(alias = "STDERR_FILENO")]
 #[inline]
 pub const fn raw_stderr() -> RawFd {
@@ -473,39 +482,42 @@ pub const fn raw_stderr() -> RawFd {
 
 /// Utility function to safely `dup2` over stdin (fd 0).
 #[cfg(not(any(windows, target_os = "wasi")))]
-#[allow(clippy::mem_forget)]
 #[inline]
 pub fn dup2_stdin<Fd: AsFd>(fd: Fd) -> io::Result<()> {
-    // SAFETY: We pass the returned `OwnedFd` to `forget` so that it isn't
-    // dropped.
-    let mut target = unsafe { take_stdin() };
-    backend::io::syscalls::dup2(fd.as_fd(), &mut target)?;
-    forget(target);
+    let fd = fd.as_fd();
+    if fd.as_raw_fd() != c::STDIN_FILENO {
+        // SAFETY: We wrap the returned `OwnedFd` to `ManuallyDrop` so that it
+        // isn't dropped.
+        let mut target = ManuallyDrop::new(unsafe { take_stdin() });
+        backend::io::syscalls::dup2(fd, &mut target)?;
+    }
     Ok(())
 }
 
 /// Utility function to safely `dup2` over stdout (fd 1).
 #[cfg(not(any(windows, target_os = "wasi")))]
-#[allow(clippy::mem_forget)]
 #[inline]
 pub fn dup2_stdout<Fd: AsFd>(fd: Fd) -> io::Result<()> {
-    // SAFETY: We pass the returned `OwnedFd` to `forget` so that it isn't
-    // dropped.
-    let mut target = unsafe { take_stdout() };
-    backend::io::syscalls::dup2(fd.as_fd(), &mut target)?;
-    forget(target);
+    let fd = fd.as_fd();
+    if fd.as_raw_fd() != c::STDOUT_FILENO {
+        // SAFETY: We wrap the returned `OwnedFd` to `ManuallyDrop` so that it
+        // isn't dropped.
+        let mut target = ManuallyDrop::new(unsafe { take_stdout() });
+        backend::io::syscalls::dup2(fd, &mut target)?;
+    }
     Ok(())
 }
 
 /// Utility function to safely `dup2` over stderr (fd 2).
 #[cfg(not(any(windows, target_os = "wasi")))]
-#[allow(clippy::mem_forget)]
 #[inline]
 pub fn dup2_stderr<Fd: AsFd>(fd: Fd) -> io::Result<()> {
-    // SAFETY: We pass the returned `OwnedFd` to `forget` so that it isn't
-    // dropped.
-    let mut target = unsafe { take_stderr() };
-    backend::io::syscalls::dup2(fd.as_fd(), &mut target)?;
-    forget(target);
+    let fd = fd.as_fd();
+    if fd.as_raw_fd() != c::STDERR_FILENO {
+        // SAFETY: We wrap the returned `OwnedFd` to `ManuallyDrop` so that it
+        // isn't dropped.
+        let mut target = ManuallyDrop::new(unsafe { take_stderr() });
+        backend::io::syscalls::dup2(fd, &mut target)?;
+    }
     Ok(())
 }

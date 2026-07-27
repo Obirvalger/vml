@@ -7,6 +7,7 @@
     target_os = "emscripten",
     target_os = "espidf",
     target_os = "fuchsia",
+    target_os = "horizon",
     target_os = "redox",
     target_os = "vita",
     target_os = "wasi"
@@ -16,20 +17,13 @@ use crate::{backend, io};
 use backend::fd::AsFd;
 use backend::fs::types::OFlags;
 
-// These `fcntl` functions live in the `io` module because they're not specific
-// to files, directories, or memfd objects. We re-export them here in the `fs`
-// module because the other the `fcntl` functions are here.
-#[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
-pub use crate::io::fcntl_dupfd_cloexec;
-pub use crate::io::{fcntl_getfd, fcntl_setfd};
-
 /// `fcntl(fd, F_GETFL)`—Returns a file descriptor's access mode and status.
 ///
 /// # References
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fcntl.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/fcntl.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/fcntl.2.html
 #[inline]
 #[doc(alias = "F_GETFL")]
@@ -43,7 +37,7 @@ pub fn fcntl_getfl<Fd: AsFd>(fd: Fd) -> io::Result<OFlags> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fcntl.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/fcntl.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/fcntl.2.html
 #[inline]
 #[doc(alias = "F_SETFL")]
@@ -51,7 +45,7 @@ pub fn fcntl_setfl<Fd: AsFd>(fd: Fd, flags: OFlags) -> io::Result<()> {
     backend::fs::syscalls::fcntl_setfl(fd.as_fd(), flags)
 }
 
-/// `fcntl(fd, F_GET_SEALS)`
+/// `fcntl(fd, F_GET_SEALS)`—Return the seals for `fd`'s inode.
 ///
 /// # References
 ///  - [Linux]
@@ -67,7 +61,7 @@ pub fn fcntl_get_seals<Fd: AsFd>(fd: Fd) -> io::Result<SealFlags> {
 #[cfg(any(linux_kernel, target_os = "freebsd", target_os = "fuchsia"))]
 use backend::fs::types::SealFlags;
 
-/// `fcntl(fd, F_ADD_SEALS)`
+/// `fcntl(fd, F_ADD_SEALS)`—Add seals to `fd`'s inode.
 ///
 /// # References
 ///  - [Linux]
@@ -94,12 +88,13 @@ pub fn fcntl_add_seals<Fd: AsFd>(fd: Fd, seals: SealFlags) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fcntl.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/fcntl.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/fcntl.2.html
 #[cfg(not(any(
     target_os = "emscripten",
     target_os = "espidf",
     target_os = "fuchsia",
+    target_os = "horizon",
     target_os = "redox",
     target_os = "vita",
     target_os = "wasi"

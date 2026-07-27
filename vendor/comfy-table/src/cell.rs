@@ -1,10 +1,9 @@
-#[cfg(feature = "tty")]
-use crossterm::style::{Attribute, Color};
-
 use crate::style::CellAlignment;
+#[cfg(feature = "tty")]
+use crate::{Attribute, Color};
 
 /// A stylable table cell with content.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Cell {
     /// The content is a list of strings.\
     /// This is done to make working with newlines more easily.\
@@ -24,13 +23,22 @@ pub struct Cell {
 
 impl Cell {
     /// Create a new Cell
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new<T: ToString>(content: T) -> Self {
-        Cell {
-            content: content
-                .to_string()
-                .split('\n')
-                .map(|content| content.to_string())
-                .collect(),
+        Self::new_owned(content.to_string())
+    }
+
+    /// Create a new Cell from an owned String
+    pub fn new_owned(content: String) -> Self {
+        #[cfg_attr(not(feature = "custom_styling"), allow(unused_mut))]
+        let mut split_content: Vec<String> = content.split('\n').map(ToString::to_string).collect();
+
+        // Correct ansi codes so style is terminated and resumed around the split
+        #[cfg(feature = "custom_styling")]
+        crate::utils::formatting::content_split::fix_style_in_split_str(&mut split_content);
+
+        Self {
+            content: split_content,
             delimiter: None,
             alignment: None,
             #[cfg(feature = "tty")]
@@ -43,13 +51,14 @@ impl Cell {
     }
 
     /// Return a copy of the content contained in this cell.
-    pub fn get_content(&self) -> String {
+    pub fn content(&self) -> String {
         self.content.join("\n")
     }
 
     /// Set the delimiter used to split text for this cell. \
     /// Normal text uses spaces (` `) as delimiters. This is necessary to help comfy-table
     /// understand the concept of _words_.
+    #[must_use]
     pub fn set_delimiter(mut self, delimiter: char) -> Self {
         self.delimiter = Some(delimiter);
 
@@ -61,12 +70,11 @@ impl Cell {
     /// Setting this overwrites alignment settings of the
     /// [Column](crate::column::Column::set_cell_alignment) for this specific cell.
     /// ```
-    /// use comfy_table::CellAlignment;
-    /// use comfy_table::Cell;
+    /// use comfy_table::{Cell, CellAlignment};
     ///
-    /// let mut cell = Cell::new("Some content")
-    ///     .set_alignment(CellAlignment::Center);
+    /// let mut cell = Cell::new("Some content").set_alignment(CellAlignment::Center);
     /// ```
+    #[must_use]
     pub fn set_alignment(mut self, alignment: CellAlignment) -> Self {
         self.alignment = Some(alignment);
 
@@ -75,16 +83,14 @@ impl Cell {
 
     /// Set the foreground text color for this cell.
     ///
-    /// comfy-table uses [Crossterm Colors](crossterm::style::Color).
-    /// Look at their documentation for all possible Colors.
+    /// Look at [Color](crate::Color) for a list of all possible Colors.
     /// ```
-    /// use comfy_table::Color;
-    /// use comfy_table::Cell;
+    /// use comfy_table::{Cell, Color};
     ///
-    /// let mut cell = Cell::new("Some content")
-    ///     .fg(Color::Red);
+    /// let mut cell = Cell::new("Some content").fg(Color::Red);
     /// ```
     #[cfg(feature = "tty")]
+    #[must_use]
     pub fn fg(mut self, color: Color) -> Self {
         self.fg = Some(color);
 
@@ -93,16 +99,14 @@ impl Cell {
 
     /// Set the background color for this cell.
     ///
-    /// comfy-table uses [Crossterm Colors](crossterm::style::Color).
-    /// Look at their documentation for all possible Colors.
+    /// Look at [Color](crate::Color) for a list of all possible Colors.
     /// ```
-    /// use comfy_table::Color;
-    /// use comfy_table::Cell;
+    /// use comfy_table::{Cell, Color};
     ///
-    /// let mut cell = Cell::new("Some content")
-    ///     .bg(Color::Red);
+    /// let mut cell = Cell::new("Some content").bg(Color::Red);
     /// ```
     #[cfg(feature = "tty")]
+    #[must_use]
     pub fn bg(mut self, color: Color) -> Self {
         self.bg = Some(color);
 
@@ -112,16 +116,14 @@ impl Cell {
     /// Add a styling attribute to the content cell.\
     /// Those can be **bold**, _italic_, blinking and many more.
     ///
-    /// comfy-table uses [Crossterm Attributes](crossterm::style::Attribute).
-    /// Look at their documentation for all possible [Attributes](Attribute).
+    /// Look at [Attribute](crate::Attribute) for a list of all possible Colors.
     /// ```
-    /// use comfy_table::Attribute;
-    /// use comfy_table::Cell;
+    /// use comfy_table::{Attribute, Cell};
     ///
-    /// let mut cell = Cell::new("Some content")
-    ///     .add_attribute(Attribute::Bold);
+    /// let mut cell = Cell::new("Some content").add_attribute(Attribute::Bold);
     /// ```
     #[cfg(feature = "tty")]
+    #[must_use]
     pub fn add_attribute(mut self, attribute: Attribute) -> Self {
         self.attributes.push(attribute);
 
@@ -130,6 +132,7 @@ impl Cell {
 
     /// Same as add_attribute, but you can pass a vector of [Attributes](Attribute)
     #[cfg(feature = "tty")]
+    #[must_use]
     pub fn add_attributes(mut self, mut attribute: Vec<Attribute>) -> Self {
         self.attributes.append(&mut attribute);
 
@@ -145,8 +148,8 @@ impl Cell {
 /// let cell: Cell = 5u32.into();
 /// ```
 impl<T: ToString> From<T> for Cell {
-    fn from(content: T) -> Cell {
-        Cell::new(content)
+    fn from(content: T) -> Self {
+        Self::new(content)
     }
 }
 
@@ -161,7 +164,7 @@ pub struct Cells(pub Vec<Cell>);
 /// By default this is implemented for all Iterators over items implementing [ToString].
 ///
 /// ```
-/// use comfy_table::{Row, Cells};
+/// use comfy_table::{Cells, Row};
 ///
 /// let cells_string: Cells = vec!["One", "Two", "Three"].into();
 /// let cells_integer: Cells = vec![1, 2, 3, 4].into();
@@ -171,8 +174,8 @@ where
     T: IntoIterator,
     T::Item: Into<Cell>,
 {
-    fn from(cells: T) -> Cells {
-        Cells(cells.into_iter().map(|item| item.into()).collect())
+    fn from(cells: T) -> Self {
+        Self(cells.into_iter().map(Into::into).collect())
     }
 }
 
@@ -185,6 +188,6 @@ mod tests {
         let content = "This is\nsome multiline\nstring".to_string();
         let cell = Cell::new(content.clone());
 
-        assert_eq!(cell.get_content(), content);
+        assert_eq!(cell.content(), content);
     }
 }

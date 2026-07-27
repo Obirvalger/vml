@@ -1,4 +1,4 @@
-#[cfg(not(target_os = "espidf"))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
 use crate::process::{Pid, Uid};
 use crate::{backend, io};
 
@@ -8,7 +8,7 @@ use crate::{backend, io};
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/nice.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/nice.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/nice.2.html
 #[inline]
 pub fn nice(inc: i32) -> io::Result<i32> {
@@ -23,10 +23,10 @@ pub fn nice(inc: i32) -> io::Result<i32> {
 ///  - [Linux]
 ///  - [Apple]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/getpriority.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/getpriority.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/getpriority.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/setpriority.2.html
-#[cfg(not(target_os = "espidf"))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
 #[inline]
 #[doc(alias = "getpriority")]
 pub fn getpriority_user(uid: Uid) -> io::Result<i32> {
@@ -43,10 +43,10 @@ pub fn getpriority_user(uid: Uid) -> io::Result<i32> {
 ///  - [Linux]
 ///  - [Apple]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/getpriority.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/getpriority.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/getpriority.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/setpriority.2.html
-#[cfg(not(target_os = "espidf"))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
 #[inline]
 #[doc(alias = "getpriority")]
 pub fn getpriority_pgrp(pgid: Option<Pid>) -> io::Result<i32> {
@@ -63,10 +63,10 @@ pub fn getpriority_pgrp(pgid: Option<Pid>) -> io::Result<i32> {
 ///  - [Linux]
 ///  - [Apple]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/getpriority.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/getpriority.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/getpriority.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/setpriority.2.html
-#[cfg(not(target_os = "espidf"))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
 #[inline]
 #[doc(alias = "getpriority")]
 pub fn getpriority_process(pid: Option<Pid>) -> io::Result<i32> {
@@ -81,10 +81,10 @@ pub fn getpriority_process(pid: Option<Pid>) -> io::Result<i32> {
 ///  - [Linux]
 ///  - [Apple]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/setpriority.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/setpriority.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/setpriority.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/setpriority.2.html
-#[cfg(not(target_os = "espidf"))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
 #[inline]
 #[doc(alias = "setpriority")]
 pub fn setpriority_user(uid: Uid, priority: i32) -> io::Result<()> {
@@ -101,10 +101,10 @@ pub fn setpriority_user(uid: Uid, priority: i32) -> io::Result<()> {
 ///  - [Linux]
 ///  - [Apple]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/setpriority.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/setpriority.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/setpriority.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/setpriority.2.html
-#[cfg(not(target_os = "espidf"))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
 #[inline]
 #[doc(alias = "setpriority")]
 pub fn setpriority_pgrp(pgid: Option<Pid>, priority: i32) -> io::Result<()> {
@@ -121,10 +121,10 @@ pub fn setpriority_pgrp(pgid: Option<Pid>, priority: i32) -> io::Result<()> {
 ///  - [Linux]
 ///  - [Apple]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/setpriority.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/setpriority.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/setpriority.2.html
 /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/setpriority.2.html
-#[cfg(not(target_os = "espidf"))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
 #[inline]
 #[doc(alias = "setpriority")]
 pub fn setpriority_process(pid: Option<Pid>, priority: i32) -> io::Result<()> {

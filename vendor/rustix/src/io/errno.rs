@@ -5,6 +5,8 @@
 //! want unrecognized values to create undefined behavior.
 
 use crate::backend;
+#[cfg(all(not(feature = "std"), error_in_core))]
+use core::error;
 use core::{fmt, result};
 #[cfg(feature = "std")]
 use std::error;
@@ -24,32 +26,32 @@ impl Errno {
 }
 
 impl fmt::Display for Errno {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         #[cfg(feature = "std")]
         {
-            std::io::Error::from(*self).fmt(fmt)
+            std::io::Error::from(*self).fmt(f)
         }
         #[cfg(not(feature = "std"))]
         {
-            write!(fmt, "os error {}", self.raw_os_error())
+            write!(f, "os error {}", self.raw_os_error())
         }
     }
 }
 
 impl fmt::Debug for Errno {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         #[cfg(feature = "std")]
         {
-            std::io::Error::from(*self).fmt(fmt)
+            std::io::Error::from(*self).fmt(f)
         }
         #[cfg(not(feature = "std"))]
         {
-            write!(fmt, "os error {}", self.raw_os_error())
+            write!(f, "os error {}", self.raw_os_error())
         }
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", error_in_core))]
 impl error::Error for Errno {}
 
 #[cfg(feature = "std")]

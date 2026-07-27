@@ -1,6 +1,6 @@
 [package]
 name = "crossterm"
-version = "0.22.1"
+version = "0.29.0"
 authors = ["T. Post"]
 description = "A crossplatform terminal library for manipulating terminals."
 repository = "https://github.com/crossterm-rs/crossterm"
@@ -9,73 +9,114 @@ license = "MIT"
 keywords = ["event", "color", "cli", "input", "terminal"]
 exclude = ["target", "Cargo.lock"]
 readme = "README.md"
-edition = "2018"
+edition = "2021"
+rust-version = "1.63.0"
 categories = ["command-line-interface", "command-line-utilities"]
 
 [lib]
 name = "crossterm"
 path = "src/lib.rs"
 
-#
-# Build documentation with all features -> EventStream is available
-#
 [package.metadata.docs.rs]
 all-features = true
 
-#
-# Features
-#
 [features]
-default = []
-event-stream = ["futures-core"]
+default = ["bracketed-paste", "events", "windows", "derive-more"]
 
-#
-# Shared dependencies
-#
+#! ### Default features
+## Enables triggering [`Event::Paste`](event::Event::Paste) when pasting text into the terminal.
+bracketed-paste = []
+
+## Enables reading input/events from the system using the [`event`] module.
+events = ["dep:mio", "dep:signal-hook", "dep:signal-hook-mio"]
+
+## Enables windows specific crates.
+windows = ["dep:winapi", "dep:crossterm_winapi"]
+
+#! ### Optional Features
+
+## Enables the [EventStream](event::EventStream) struct for async event reading.
+event-stream = ["dep:futures-core", "events"]
+
+## Enables [`serde`] for various types.
+serde = ["dep:serde", "bitflags/serde"]
+
+## Enables raw file descriptor polling / selecting instead of mio.
+use-dev-tty = ["filedescriptor", "rustix/process"]
+
+## Enables `is_*` helper functions for event enums.
+derive-more = ["dep:derive_more"]
+
+## Enables interacting with a host clipboard via [`clipboard`](clipboard/index.html)
+osc52 = ["dep:base64"]
+
 [dependencies]
-bitflags = "1.3"
-parking_lot = "0.11"
-
-# optional deps only added when requested
+base64 = { version = "0.22", optional = true }
+bitflags = { version = "2.9" }
+derive_more = { version = "2.0.0", features = ["is_variant"], optional = true }
+document-features = "0.2.11"
 futures-core = { version = "0.3", optional = true, default-features = false }
+parking_lot = "0.12"
 serde = { version = "1.0", features = ["derive"], optional = true }
 
-#
 # Windows dependencies
-#
-[target.'cfg(windows)'.dependencies.winapi]
-version = "0.3.9"
-features = ["winuser"]
-
 [target.'cfg(windows)'.dependencies]
-crossterm_winapi = "0.9"
+crossterm_winapi = { version = "0.9.1", optional = true }
+winapi = { version = "0.3.9", optional = true, features = ["winuser", "winerror"] }
 
-#
 # UNIX dependencies
-#
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
-mio = { version="0.7", features=["os-poll"] }
-signal-hook = { version = "0.3.8" }
-signal-hook-mio = { version = "0.2.1", features = ["support-v0_7"] }
+filedescriptor = { version = "0.8", optional = true }
+# Default to using rustix for UNIX systems, but provide an option to use libc for backwards
+# compatibility.
+libc = { version = "0.2", default-features = false, optional = true }
+mio = { version = "1.0", features = ["os-poll"], optional = true }
+rustix = { version = "1", default-features = false, features = ["std", "stdio", "termios"] }
+signal-hook = { version = "0.3.17", optional = true }
+signal-hook-mio = { version = "0.2.4", features = ["support-v1_0"], optional = true }
 
-#
-# Dev dependencies (examples, ...)
-#
 [dev-dependencies]
-tokio = { version = "1.5", features = ["full"] }
+async-std = "1.13"
 futures = "0.3"
 futures-timer = "3.0"
-async-std = "1.9"
-serde_json = "1.0.45"
+serde_json = "1.0"
+serial_test = "3.0.0"
+temp-env = "0.3.6"
+tokio = { version = "1.44", features = ["full"] }
 
-#
 # Examples
-#
+[[example]]
+name = "event-read"
+required-features = ["bracketed-paste", "events"]
+
+[[example]]
+name = "event-match-modifiers"
+required-features = ["bracketed-paste", "events"]
+
+[[example]]
+name = "event-poll-read"
+required-features = ["bracketed-paste", "events"]
+
 [[example]]
 name = "event-stream-async-std"
-required-features = ["event-stream"]
+required-features = ["event-stream", "events"]
 
 [[example]]
 name = "event-stream-tokio"
-required-features = ["event-stream"]
+required-features = ["event-stream", "events"]
+
+[[example]]
+name = "event-read-char-line"
+required-features = ["events"]
+
+[[example]]
+name = "stderr"
+required-features = ["events"]
+
+[[example]]
+name = "key-display"
+required-features = ["events"]
+
+[[example]]
+name = "copy-to-clipboard"
+required-features = ["osc52"]

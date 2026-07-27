@@ -5,7 +5,7 @@ fn get_table() -> Table {
     let mut table = Table::new();
     table
         .load_preset(presets::UTF8_FULL)
-        .set_header(&vec![
+        .set_header(vec![
             "hidden_header",
             "smol",
             "hidden_header",
@@ -14,7 +14,7 @@ fn get_table() -> Table {
             "Header3",
             "hidden_header",
         ])
-        .add_row(&vec![
+        .add_row(vec![
             "start_hidden",
             "smol",
             "middle_hidden",
@@ -23,7 +23,7 @@ fn get_table() -> Table {
             "This is the third text",
             "end_hidden",
         ])
-        .add_row(&vec![
+        .add_row(vec![
             "asdf",
             "smol",
             "asdf",
@@ -35,20 +35,20 @@ fn get_table() -> Table {
 
     // Hide the first, third and 6th column
     table
-        .get_column_mut(0)
+        .column_mut(0)
         .unwrap()
         .set_constraint(ColumnConstraint::Hidden);
     table
-        .get_column_mut(2)
+        .column_mut(2)
         .unwrap()
         .set_constraint(ColumnConstraint::Hidden);
     table
-        .get_column_mut(3)
+        .column_mut(3)
         .unwrap()
         .set_constraint(ColumnConstraint::Hidden);
 
     table
-        .get_column_mut(6)
+        .column_mut(6)
         .unwrap()
         .set_constraint(ColumnConstraint::Hidden);
 
@@ -59,7 +59,7 @@ fn get_table() -> Table {
 #[test]
 fn hidden_columns() {
     let table = get_table();
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 ┌──────┬──────────────────────┬────────────────────────┐
 │ smol ┆ Header2              ┆ Header3                │
@@ -70,17 +70,17 @@ fn hidden_columns() {
 │      ┆ add some             ┆                        │
 │      ┆ multi line stuff     ┆                        │
 └──────┴──────────────────────┴────────────────────────┘";
-    assert_eq!("\n".to_string() + &table.to_string(), expected);
+    assert_eq!(expected, "\n".to_string() + &table.to_string());
 }
 
 /// Make sure dynamic adjustment still works with hidden columns
 #[test]
 fn hidden_columns_with_dynamic_adjustment() {
     let mut table = get_table();
-    table.set_table_width(25);
+    table.set_width(25);
     table.set_content_arrangement(ContentArrangement::Dynamic);
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 ┌──────┬────────┬───────┐
 │ smol ┆ Header ┆ Heade │
@@ -99,7 +99,7 @@ fn hidden_columns_with_dynamic_adjustment() {
 │      ┆ line   ┆       │
 │      ┆ stuff  ┆       │
 └──────┴────────┴───────┘";
-    assert_eq!("\n".to_string() + &table.to_string(), expected);
+    assert_eq!(expected, "\n".to_string() + &table.to_string());
 }
 
 /// Nothing breaks, if all columns are hidden
@@ -115,11 +115,11 @@ fn only_hidden_columns() {
         ColumnConstraint::Hidden,
     ]);
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 ┌┐
 ╞╡
 ├┤
 └┘";
-    assert_eq!("\n".to_string() + &table.to_string(), expected);
+    assert_eq!(expected, "\n".to_string() + &table.to_string());
 }

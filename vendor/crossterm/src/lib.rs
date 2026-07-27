@@ -1,13 +1,8 @@
 #![deny(unused_imports, unused_must_use)]
 
-//! # Crossterm
+//! # Cross-platform Terminal Manipulation Library
 //!
-//! Have you ever been disappointed when a terminal library for rust was only written for UNIX systems?
-//! Crossterm provides clearing, event (input) handling, styling, cursor movement, and terminal actions for both
-//! Windows and UNIX systems.
-//!
-//! Crossterm aims to be simple and easy to call in code. Through the simplicity of Crossterm, you do not
-//! have to worry about the platform you are working with.
+//! Crossterm is a pure-rust, terminal manipulation library that makes it possible to write cross-platform text-based interfaces.
 //!
 //! This crate supports all UNIX and Windows terminals down to Windows 7 (not all terminals are tested
 //! see [Tested Terminals](https://github.com/crossterm-rs/crossterm#tested-terminals)
@@ -41,16 +36,18 @@
 //! - Module [`cursor`](cursor/index.html)
 //!   - Visibility - [`Show`](cursor/struct.Show.html), [`Hide`](cursor/struct.Hide.html)
 //!   - Appearance - [`EnableBlinking`](cursor/struct.EnableBlinking.html),
-//!     [`DisableBlinking`](cursor/struct.DisableBlinking.html)
+//!     [`DisableBlinking`](cursor/struct.DisableBlinking.html),
+//!     [`SetCursorStyle`](cursor/enum.SetCursorStyle.html)
 //!   - Position -
 //!     [`SavePosition`](cursor/struct.SavePosition.html), [`RestorePosition`](cursor/struct.RestorePosition.html),
 //!     [`MoveUp`](cursor/struct.MoveUp.html), [`MoveDown`](cursor/struct.MoveDown.html),
 //!     [`MoveLeft`](cursor/struct.MoveLeft.html), [`MoveRight`](cursor/struct.MoveRight.html),
 //!     [`MoveTo`](cursor/struct.MoveTo.html), [`MoveToColumn`](cursor/struct.MoveToColumn.html),[`MoveToRow`](cursor/struct.MoveToRow.html),
-//!     [`MoveToNextLine`](cursor/struct.MoveToNextLine.html), [`MoveToPreviousLine`](cursor/struct.MoveToPreviousLine.html),
-//!    - Shape -
-//!      [`SetCursorShape`](cursor/struct.SetCursorShape.html)
+//!     [`MoveToNextLine`](cursor/struct.MoveToNextLine.html), [`MoveToPreviousLine`](cursor/struct.MoveToPreviousLine.html)
 //! - Module [`event`](event/index.html)
+//!   - Keyboard events -
+//!     [`PushKeyboardEnhancementFlags`](event/struct.PushKeyboardEnhancementFlags.html),
+//!     [`PopKeyboardEnhancementFlags`](event/struct.PopKeyboardEnhancementFlags.html)
 //!   - Mouse events - [`EnableMouseCapture`](event/struct.EnableMouseCapture.html),
 //!     [`DisableMouseCapture`](event/struct.DisableMouseCapture.html)
 //! - Module [`style`](style/index.html)
@@ -63,12 +60,15 @@
 //!   - Scrolling - [`ScrollUp`](terminal/struct.ScrollUp.html),
 //!     [`ScrollDown`](terminal/struct.ScrollDown.html)
 //!   - Miscellaneous - [`Clear`](terminal/struct.Clear.html),
-//!     [`SetSize`](terminal/struct.SetSize.html)
-//!     [`SetTitle`](terminal/struct.SetTitle.html)
-//!     [`DisableLineWrap`](terminal/struct.DisableLineWrap.html)
+//!     [`SetSize`](terminal/struct.SetSize.html),
+//!     [`SetTitle`](terminal/struct.SetTitle.html),
+//!     [`DisableLineWrap`](terminal/struct.DisableLineWrap.html),
 //!     [`EnableLineWrap`](terminal/struct.EnableLineWrap.html)
 //!   - Alternate screen - [`EnterAlternateScreen`](terminal/struct.EnterAlternateScreen.html),
 //!     [`LeaveAlternateScreen`](terminal/struct.LeaveAlternateScreen.html)
+//! - Module [`clipboard`](clipboard/index.html) (requires
+//!     [`feature = "osc52"`](#optional-features))
+//!   - Clipboard - [`CopyToClipboard`](clipboard/struct.CopyToClipboard.html)
 //!
 //! ### Command Execution
 //!
@@ -152,12 +152,12 @@
 //! stdout.execute(cursor::MoveTo(5,5));
 //! ```
 //! The [execute](./trait.ExecutableCommand.html) function returns itself, therefore you can use this to queue
-//! another command. Like `stdout.queue(Goto(5,5)).queue(Clear(ClearType::All))`.
+//! another command. Like `stdout.execute(Goto(5,5))?.execute(Clear(ClearType::All))`.
 //!
 //! Macros:
 //!
 //! ```no_run
-//! use std::io::{Write, stdout};
+//! use std::io::{stdout, Write};
 //! use crossterm::{execute, ExecutableCommand, cursor};
 //!
 //! let mut stdout = stdout();
@@ -174,14 +174,14 @@
 //! Functions:
 //!
 //! ```no_run
-//! use std::io::{stdout, Write};
+//! use std::io::{self, Write};
 //! use crossterm::{
 //!     ExecutableCommand, QueueableCommand,
-//!     terminal, cursor, style::{self, Stylize}, Result
+//!     terminal, cursor, style::{self, Stylize}
 //! };
 //!
-//! fn main() -> Result<()> {
-//!   let mut stdout = stdout();
+//! fn main() -> io::Result<()> {
+//!   let mut stdout = io::stdout();
 //!
 //!   stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 //!
@@ -203,14 +203,14 @@
 //! Macros:
 //!
 //! ```no_run
-//! use std::io::{stdout, Write};
+//! use std::io::{self, Write};
 //! use crossterm::{
 //!     execute, queue,
-//!     style::{self, Stylize}, cursor, terminal, Result
+//!     style::{self, Stylize}, cursor, terminal
 //! };
 //!
-//! fn main() -> Result<()> {
-//!   let mut stdout = stdout();
+//! fn main() -> io::Result<()> {
+//!   let mut stdout = io::stdout();
 //!
 //!   execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
 //!
@@ -226,20 +226,20 @@
 //!   Ok(())
 //! }
 //!```
+//! ## Feature Flags
+#![doc = document_features::document_features!()]
 //!
 //! [write]: https://doc.rust-lang.org/std/io/trait.Write.html
 //! [stdout]: https://doc.rust-lang.org/std/io/fn.stdout.html
 //! [stderr]: https://doc.rust-lang.org/std/io/fn.stderr.html
 //! [flush]: https://doc.rust-lang.org/std/io/trait.Write.html#tymethod.flush
 
-pub use crate::{
-    command::{Command, ExecutableCommand, QueueableCommand},
-    error::{ErrorKind, Result},
-};
+pub use crate::command::{Command, ExecutableCommand, QueueableCommand, SynchronizedUpdate};
 
 /// A module to work with the terminal cursor
 pub mod cursor;
 /// A module to read events.
+#[cfg(feature = "events")]
 pub mod event;
 /// A module to apply attributes and colors on your text.
 pub mod style;
@@ -249,9 +249,15 @@ pub mod terminal;
 /// A module to query if the current instance is a tty.
 pub mod tty;
 
+/// A module for clipboard interaction
+#[cfg(feature = "osc52")]
+pub mod clipboard;
+
 #[cfg(windows)]
-/// A module that exposes one function to check if the current terminal supports ansi sequences.
+/// A module that exposes one function to check if the current terminal supports ANSI sequences.
 pub mod ansi_support;
 mod command;
-mod error;
 pub(crate) mod macros;
+
+#[cfg(all(windows, not(feature = "windows")))]
+compile_error!("Compiling on Windows with \"windows\" feature disabled. Feature \"windows\" should only be disabled when project will never be compiled on Windows.");

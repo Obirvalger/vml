@@ -45,7 +45,7 @@ jobs:
       run: cargo fmt --all -- --check
       continue-on-error: ${{ matrix.can-fail }}
     - name: Clippy
-      run: cargo clippy -- -D clippy::all
+      run: cargo clippy --all-features -- -D clippy::all
       continue-on-error: ${{ matrix.can-fail }}
     - name: Test Build
       run: cargo build
@@ -57,10 +57,22 @@ jobs:
       run: cargo test --lib --features serde -- --nocapture --test-threads 1
       continue-on-error: ${{ matrix.can-fail }}
     - name: Test event-stream feature
-      run: cargo test --lib --features event-stream -- --nocapture --test-threads 1
+      run: cargo test --lib --features "event-stream,events" -- --nocapture --test-threads 1
       continue-on-error: ${{ matrix.can-fail }}
     - name: Test all features
       run: cargo test --all-features -- --nocapture --test-threads 1
+      continue-on-error: ${{ matrix.can-fail }}
+    - name: Test no default features
+      if: matrix.os != 'windows-2019'
+      run: cargo test --no-default-features -- --nocapture --test-threads 1
+      continue-on-error: ${{ matrix.can-fail }}
+    - name: Test no default features with use-dev-tty feature enabled
+      if: matrix.os != 'windows-2019'
+      run: cargo test --no-default-features --features "use-dev-tty events event-stream bracketed-paste" -- --nocapture --test-threads 1
+      continue-on-error: ${{ matrix.can-fail }}
+    - name: Test no default features with windows feature enabled
+      if: matrix.os == 'windows-2019'
+      run: cargo test --no-default-features --features "windows" -- --nocapture --test-threads 1
       continue-on-error: ${{ matrix.can-fail }}
     - name: Test Packaging
       if: matrix.rust == 'stable'

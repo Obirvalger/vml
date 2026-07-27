@@ -28,14 +28,13 @@
 //! Using the Command API to color text.
 //!
 //! ```no_run
-//! use std::io::{stdout, Write};
-//!
-//! use crossterm::{execute, Result};
+//! use std::io::{self, Write};
+//! use crossterm::execute;
 //! use crossterm::style::{Print, SetForegroundColor, SetBackgroundColor, ResetColor, Color, Attribute};
 //!
-//! fn main() -> Result<()> {
+//! fn main() -> io::Result<()> {
 //!     execute!(
-//!         stdout(),
+//!         io::stdout(),
 //!         // Blue foreground
 //!         SetForegroundColor(Color::Blue),
 //!         // Red background
@@ -61,21 +60,21 @@
 //!
 //! ### Attributes
 //!
-//! How to appy terminal attributes to text.
+//! How to apply terminal attributes to text.
 //!
 //! Command API:
 //!
 //! Using the Command API to set attributes.
 //!
 //! ```no_run
-//! use std::io::{stdout, Write};
+//! use std::io::{self, Write};
 //!
-//! use crossterm::{execute, Result, style::Print};
-//! use crossterm::style::{SetAttribute, Attribute};
+//! use crossterm::execute;
+//! use crossterm::style::{Attribute, Print, SetAttribute};
 //!
-//! fn main() -> Result<()> {
+//! fn main() -> io::Result<()> {
 //!     execute!(
-//!         stdout(),
+//!         io::stdout(),
 //!         // Set to bold
 //!         SetAttribute(Attribute::Bold),
 //!         Print("Bold text here.".to_string()),
@@ -118,8 +117,6 @@ use std::{
 };
 
 use crate::command::execute_fmt;
-#[cfg(windows)]
-use crate::Result;
 use crate::{csi, impl_display, Command};
 
 pub use self::{
@@ -164,9 +161,35 @@ pub fn style<D: Display>(val: D) -> StyledContent<D> {
 ///
 /// This does not always provide a good result.
 pub fn available_color_count() -> u16 {
-    env::var("TERM")
-        .map(|x| if x.contains("256color") { 256 } else { 8 })
-        .unwrap_or(8)
+    #[cfg(windows)]
+    {
+        // Check if we're running in a pseudo TTY, which supports true color.
+        // Fall back to env vars otherwise for other terminals on Windows.
+        if crate::ansi_support::supports_ansi() {
+            return u16::MAX;
+        }
+    }
+
+    const DEFAULT: u16 = 8;
+    env::var("COLORTERM")
+        .or_else(|_| env::var("TERM"))
+        .map_or(DEFAULT, |x| match x {
+            _ if x.contains("24bit") || x.contains("truecolor") => u16::MAX,
+            _ if x.contains("256") => 256,
+            _ => DEFAULT,
+        })
+}
+
+/// Forces colored output on or off globally, overriding NO_COLOR.
+///
+/// # Notes
+///
+/// crossterm supports NO_COLOR (<https://no-color.org/>) to disabled colored output.
+///
+/// This API allows applications to override that behavior and force colorized output
+/// even if NO_COLOR is set.
+pub fn force_color_output(enabled: bool) {
+    Colored::set_ansi_color_disabled(!enabled)
 }
 
 /// A command that sets the the foreground color.
@@ -188,7 +211,7 @@ impl Command for SetForegroundColor {
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self) -> Result<()> {
+    fn execute_winapi(&self) -> std::io::Result<()> {
         sys::windows::set_foreground_color(self.0)
     }
 }
@@ -212,8 +235,35 @@ impl Command for SetBackgroundColor {
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self) -> Result<()> {
+    fn execute_winapi(&self) -> std::io::Result<()> {
         sys::windows::set_background_color(self.0)
+    }
+}
+
+/// A command that sets the the underline color.
+///
+/// See [`Color`](enum.Color.html) for more info.
+///
+/// [`SetColors`](struct.SetColors.html) can also be used to set both the foreground and background
+/// color with one command.
+///
+/// # Notes
+///
+/// Commands must be executed/queued for execution otherwise they do nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetUnderlineColor(pub Color);
+
+impl Command for SetUnderlineColor {
+    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
+        write!(f, csi!("{}m"), Colored::UnderlineColor(self.0))
+    }
+
+    #[cfg(windows)]
+    fn execute_winapi(&self) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "SetUnderlineColor not supported by winapi.",
+        ))
     }
 }
 
@@ -243,17 +293,28 @@ pub struct SetColors(pub Colors);
 
 impl Command for SetColors {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        if let Some(color) = self.0.foreground {
-            SetForegroundColor(color).write_ansi(f)?;
+        // Writing both foreground and background colors in one command resulted in about 20% more
+        // FPS (20 to 24 fps) on a fullscreen (171x51) app that writes every cell with a different
+        // foreground and background color, compared to separately using the SetForegroundColor and
+        // SetBackgroundColor commands (iTerm2, M2 Macbook Pro). `Esc[38;5;<fg>mEsc[48;5;<bg>m` (16
+        // chars) vs `Esc[38;5;<fg>;48;5;<bg>m` (14 chars)
+        match (self.0.foreground, self.0.background) {
+            (Some(fg), Some(bg)) => {
+                write!(
+                    f,
+                    csi!("{};{}m"),
+                    Colored::ForegroundColor(fg),
+                    Colored::BackgroundColor(bg)
+                )
+            }
+            (Some(fg), None) => write!(f, csi!("{}m"), Colored::ForegroundColor(fg)),
+            (None, Some(bg)) => write!(f, csi!("{}m"), Colored::BackgroundColor(bg)),
+            (None, None) => Ok(()),
         }
-        if let Some(color) = self.0.background {
-            SetBackgroundColor(color).write_ansi(f)?;
-        }
-        Ok(())
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self) -> Result<()> {
+    fn execute_winapi(&self) -> std::io::Result<()> {
         if let Some(color) = self.0.foreground {
             sys::windows::set_foreground_color(color)?;
         }
@@ -280,7 +341,7 @@ impl Command for SetAttribute {
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self) -> Result<()> {
+    fn execute_winapi(&self) -> std::io::Result<()> {
         // attributes are not supported by WinAPI.
         Ok(())
     }
@@ -307,9 +368,46 @@ impl Command for SetAttributes {
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self) -> Result<()> {
+    fn execute_winapi(&self) -> std::io::Result<()> {
         // attributes are not supported by WinAPI.
         Ok(())
+    }
+}
+
+/// A command that sets a style (colors and attributes).
+///
+/// # Notes
+///
+/// Commands must be executed/queued for execution otherwise they do nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetStyle(pub ContentStyle);
+
+impl Command for SetStyle {
+    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
+        if let Some(bg) = self.0.background_color {
+            execute_fmt(f, SetBackgroundColor(bg)).map_err(|_| fmt::Error)?;
+        }
+        if let Some(fg) = self.0.foreground_color {
+            execute_fmt(f, SetForegroundColor(fg)).map_err(|_| fmt::Error)?;
+        }
+        if let Some(ul) = self.0.underline_color {
+            execute_fmt(f, SetUnderlineColor(ul)).map_err(|_| fmt::Error)?;
+        }
+        if !self.0.attributes.is_empty() {
+            execute_fmt(f, SetAttributes(self.0.attributes)).map_err(|_| fmt::Error)?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn execute_winapi(&self) -> std::io::Result<()> {
+        panic!("tried to execute SetStyle command using WinAPI, use ANSI instead");
+    }
+
+    #[cfg(windows)]
+    fn is_ansi_code_supported(&self) -> bool {
+        true
     }
 }
 
@@ -339,6 +437,10 @@ impl<D: Display> Command for PrintStyledContent<D> {
             execute_fmt(f, SetForegroundColor(fg)).map_err(|_| fmt::Error)?;
             reset_foreground = true;
         }
+        if let Some(ul) = style.underline_color {
+            execute_fmt(f, SetUnderlineColor(ul)).map_err(|_| fmt::Error)?;
+            reset_foreground = true;
+        }
 
         if !style.attributes.is_empty() {
             execute_fmt(f, SetAttributes(style.attributes)).map_err(|_| fmt::Error)?;
@@ -366,7 +468,7 @@ impl<D: Display> Command for PrintStyledContent<D> {
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self) -> Result<()> {
+    fn execute_winapi(&self) -> std::io::Result<()> {
         Ok(())
     }
 }
@@ -385,7 +487,7 @@ impl Command for ResetColor {
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self) -> Result<()> {
+    fn execute_winapi(&self) -> std::io::Result<()> {
         sys::windows::reset()
     }
 }
@@ -402,7 +504,7 @@ impl<T: Display> Command for Print<T> {
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self) -> Result<()> {
+    fn execute_winapi(&self) -> std::io::Result<()> {
         panic!("tried to execute Print command using WinAPI, use ANSI instead");
     }
 
@@ -427,7 +529,93 @@ impl_display!(for PrintStyledContent<&'static str>);
 impl_display!(for ResetColor);
 
 /// Utility function for ANSI parsing in Color and Colored.
-/// Gets the next element of `iter` and tries to parse it as a u8.
+/// Gets the next element of `iter` and tries to parse it as a `u8`.
 fn parse_next_u8<'a>(iter: &mut impl Iterator<Item = &'a str>) -> Option<u8> {
     iter.next().and_then(|s| s.parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // On Windows many env var tests will fail so we need to conditionally check for ANSI support.
+    // This allows other terminals on Windows to still assert env var support.
+    macro_rules! skip_windows_ansi_supported {
+        () => {
+            #[cfg(windows)]
+            {
+                if crate::ansi_support::supports_ansi() {
+                    return;
+                }
+            }
+        };
+    }
+
+    #[cfg_attr(windows, test)]
+    #[cfg(windows)]
+    fn windows_always_truecolor() {
+        // This should always be true on supported Windows 10+,
+        // but downlevel Windows clients and other terminals may fail `cargo test` otherwise.
+        if crate::ansi_support::supports_ansi() {
+            assert_eq!(u16::MAX, available_color_count());
+        };
+    }
+
+    #[test]
+    fn colorterm_overrides_term() {
+        skip_windows_ansi_supported!();
+        temp_env::with_vars(
+            [
+                ("COLORTERM", Some("truecolor")),
+                ("TERM", Some("xterm-256color")),
+            ],
+            || {
+                assert_eq!(u16::MAX, available_color_count());
+            },
+        );
+    }
+
+    #[test]
+    fn term_24bits() {
+        skip_windows_ansi_supported!();
+        temp_env::with_vars(
+            [("COLORTERM", None), ("TERM", Some("xterm-24bits"))],
+            || {
+                assert_eq!(u16::MAX, available_color_count());
+            },
+        );
+    }
+
+    #[test]
+    fn term_256color() {
+        skip_windows_ansi_supported!();
+        temp_env::with_vars(
+            [("COLORTERM", None), ("TERM", Some("xterm-256color"))],
+            || {
+                assert_eq!(256u16, available_color_count());
+            },
+        );
+    }
+
+    #[test]
+    fn default_color_count() {
+        skip_windows_ansi_supported!();
+        temp_env::with_vars([("COLORTERM", None::<&str>), ("TERM", None)], || {
+            assert_eq!(8, available_color_count());
+        });
+    }
+
+    #[test]
+    fn unsupported_term_colorterm_values() {
+        skip_windows_ansi_supported!();
+        temp_env::with_vars(
+            [
+                ("COLORTERM", Some("gibberish")),
+                ("TERM", Some("gibberish")),
+            ],
+            || {
+                assert_eq!(8u16, available_color_count());
+            },
+        );
+    }
 }

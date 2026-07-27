@@ -1,15 +1,12 @@
+use comfy_table::{modifiers::*, presets::*, *};
 use pretty_assertions::assert_eq;
-
-use comfy_table::modifiers::*;
-use comfy_table::presets::*;
-use comfy_table::*;
 
 fn get_preset_table() -> Table {
     let mut table = Table::new();
     table
-        .set_header(&vec!["Header1", "Header2", "Header3"])
-        .add_row(&vec!["One One", "One Two", "One Three"])
-        .add_row(&vec!["One One", "One Two", "One Three"]);
+        .set_header(vec!["Header1", "Header2", "Header3"])
+        .add_row(vec!["One One", "One Two", "One Three"])
+        .add_row(vec!["One One", "One Two", "One Three"]);
 
     table
 }
@@ -29,6 +26,6 @@ fn utf8_round_corners() {
 │ One One ┆ One Two ┆ One Three │
 ╰─────────┴─────────┴───────────╯";
 
-    println!("{}", table.to_string());
-    assert_eq!("\n".to_string() + &table.to_string(), expected);
+    println!("{table}");
+    assert_eq!(expected, "\n".to_string() + &table.to_string());
 }

@@ -24,13 +24,21 @@ pub trait IsTty {
     fn is_tty(&self) -> bool;
 }
 
-/// On unix, the `isatty()` function returns true if a file
+/// On UNIX, the `isatty()` function returns true if a file
 /// descriptor is a terminal.
-#[cfg(unix)]
+#[cfg(all(unix, feature = "libc"))]
 impl<S: AsRawFd> IsTty for S {
     fn is_tty(&self) -> bool {
         let fd = self.as_raw_fd();
         unsafe { libc::isatty(fd) == 1 }
+    }
+}
+
+#[cfg(all(unix, not(feature = "libc")))]
+impl<S: AsRawFd> IsTty for S {
+    fn is_tty(&self) -> bool {
+        let fd = self.as_raw_fd();
+        rustix::termios::isatty(unsafe { std::os::unix::io::BorrowedFd::borrow_raw(fd) })
     }
 }
 

@@ -39,6 +39,7 @@ const AT_HWCAP2: c::c_ulong = 26;
 const AT_SECURE: c::c_ulong = 23;
 const AT_EXECFN: c::c_ulong = 31;
 const AT_SYSINFO_EHDR: c::c_ulong = 33;
+const AT_MINSIGSTKSZ: c::c_ulong = 51;
 
 // Declare `sysconf` ourselves so that we don't depend on all of libc just for
 // this.
@@ -54,25 +55,6 @@ const _SC_PAGESIZE: c::c_int = 30;
 const _SC_CLK_TCK: c::c_int = 6;
 #[cfg(target_os = "linux")]
 const _SC_CLK_TCK: c::c_int = 2;
-
-#[test]
-fn test_abi() {
-    const_assert_eq!(self::_SC_PAGESIZE, ::libc::_SC_PAGESIZE);
-    const_assert_eq!(self::_SC_CLK_TCK, ::libc::_SC_CLK_TCK);
-    const_assert_eq!(self::AT_HWCAP, ::libc::AT_HWCAP);
-    const_assert_eq!(self::AT_HWCAP2, ::libc::AT_HWCAP2);
-    const_assert_eq!(self::AT_EXECFN, ::libc::AT_EXECFN);
-    const_assert_eq!(self::AT_SECURE, ::libc::AT_SECURE);
-    const_assert_eq!(self::AT_SYSINFO_EHDR, ::libc::AT_SYSINFO_EHDR);
-    #[cfg(feature = "runtime")]
-    const_assert_eq!(self::AT_PHDR, ::libc::AT_PHDR);
-    #[cfg(feature = "runtime")]
-    const_assert_eq!(self::AT_PHNUM, ::libc::AT_PHNUM);
-    #[cfg(feature = "runtime")]
-    const_assert_eq!(self::AT_ENTRY, ::libc::AT_ENTRY);
-    #[cfg(feature = "runtime")]
-    const_assert_eq!(self::AT_RANDOM, ::libc::AT_RANDOM);
-}
 
 #[cfg(feature = "param")]
 #[inline]
@@ -111,9 +93,6 @@ pub(crate) fn linux_hwcap() -> (usize, usize) {
 #[cfg(feature = "param")]
 #[inline]
 pub(crate) fn linux_minsigstksz() -> usize {
-    // FIXME: reuse const from libc when available?
-    const AT_MINSIGSTKSZ: c::c_ulong = 51;
-
     #[cfg(not(feature = "runtime"))]
     if let Some(libc_getauxval) = getauxval.get() {
         unsafe { libc_getauxval(AT_MINSIGSTKSZ) as usize }
@@ -155,7 +134,7 @@ pub(crate) fn linux_secure() -> bool {
 #[inline]
 pub(crate) fn exe_phdrs() -> (*const c::c_void, usize, usize) {
     unsafe {
-        let phdr = getauxval(AT_PHDR) as *const c::c_void;
+        let phdr: *const c::c_void = getauxval(AT_PHDR);
         let phent = getauxval(AT_PHENT) as usize;
         let phnum = getauxval(AT_PHNUM) as usize;
         (phdr, phent, phnum)
@@ -191,4 +170,29 @@ pub(crate) fn entry() -> usize {
 #[inline]
 pub(crate) fn random() -> *const [u8; 16] {
     unsafe { getauxval(AT_RANDOM) as *const [u8; 16] }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_abi() {
+        const_assert_eq!(self::_SC_PAGESIZE, ::libc::_SC_PAGESIZE);
+        const_assert_eq!(self::_SC_CLK_TCK, ::libc::_SC_CLK_TCK);
+        const_assert_eq!(self::AT_HWCAP, ::libc::AT_HWCAP);
+        const_assert_eq!(self::AT_HWCAP2, ::libc::AT_HWCAP2);
+        const_assert_eq!(self::AT_EXECFN, ::libc::AT_EXECFN);
+        const_assert_eq!(self::AT_SECURE, ::libc::AT_SECURE);
+        const_assert_eq!(self::AT_SYSINFO_EHDR, ::libc::AT_SYSINFO_EHDR);
+        const_assert_eq!(self::AT_MINSIGSTKSZ, ::libc::AT_MINSIGSTKSZ);
+        #[cfg(feature = "runtime")]
+        const_assert_eq!(self::AT_PHDR, ::libc::AT_PHDR);
+        #[cfg(feature = "runtime")]
+        const_assert_eq!(self::AT_PHNUM, ::libc::AT_PHNUM);
+        #[cfg(feature = "runtime")]
+        const_assert_eq!(self::AT_ENTRY, ::libc::AT_ENTRY);
+        #[cfg(feature = "runtime")]
+        const_assert_eq!(self::AT_RANDOM, ::libc::AT_RANDOM);
+    }
 }

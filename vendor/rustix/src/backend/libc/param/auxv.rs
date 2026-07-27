@@ -17,7 +17,7 @@ pub(crate) fn page_size() -> usize {
     unsafe { c::sysconf(c::_SC_PAGESIZE) as usize }
 }
 
-#[cfg(not(any(target_os = "vita", target_os = "wasi")))]
+#[cfg(not(any(target_os = "horizon", target_os = "vita", target_os = "wasi")))]
 #[inline]
 pub(crate) fn clock_ticks_per_second() -> u64 {
     unsafe { c::sysconf(c::_SC_CLK_TCK) as u64 }
@@ -46,10 +46,8 @@ pub(crate) fn linux_hwcap() -> (usize, usize) {
 ))]
 #[inline]
 pub(crate) fn linux_minsigstksz() -> usize {
-    // FIXME: reuse const from libc when available?
-    const AT_MINSIGSTKSZ: c::c_ulong = 51;
     if let Some(libc_getauxval) = getauxval.get() {
-        unsafe { libc_getauxval(AT_MINSIGSTKSZ) as usize }
+        unsafe { libc_getauxval(c::AT_MINSIGSTKSZ) as usize }
     } else {
         0
     }

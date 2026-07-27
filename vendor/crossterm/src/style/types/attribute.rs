@@ -22,7 +22,7 @@ macro_rules! Attribute {
         /// * Only UNIX and Windows 10 terminals do support text attributes.
         /// * Keep in mind that not all terminals support all attributes.
         /// * Crossterm implements almost all attributes listed in the
-        ///   [SGR parameters](https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters).
+        ///   [SGR parameters](https://en.wikipedia.org/wiki/ANSI_escape_code#Select_Graphic_Rendition_parameters).
         ///
         /// | Attribute | Windows | UNIX | Notes |
         /// | :-- | :--: | :--: | :-- |
@@ -100,6 +100,17 @@ Attribute! {
     Italic = 3,
     /// Underlines the text.
     Underlined = 4,
+
+    // Other types of underlining
+    /// Double underlines the text.
+    DoubleUnderlined = 2,
+    /// Undercurls the text.
+    Undercurled = 3,
+    /// Underdots the text.
+    Underdotted = 4,
+    /// Underdashes the text.
+    Underdashed = 5,
+
     /// Makes the text blinking (< 150 per minute).
     SlowBlink = 5,
     /// Makes the text blinking (>= 150 per minute).
@@ -143,7 +154,7 @@ Attribute! {
 }
 
 impl Display for Attribute {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", SetAttribute(*self))?;
         Ok(())
     }
@@ -163,7 +174,10 @@ impl Attribute {
     /// Returns the SGR attribute value.
     ///
     /// See <https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters>
-    pub fn sgr(self) -> i16 {
-        SGR[self as usize]
+    pub fn sgr(self) -> String {
+        if (self as usize) > 4 && (self as usize) < 9 {
+            return "4:".to_string() + SGR[self as usize].to_string().as_str();
+        }
+        SGR[self as usize].to_string()
     }
 }

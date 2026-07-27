@@ -1,12 +1,13 @@
 //! POSIX-style filesystem functions which operate on bare paths.
 
 use crate::fd::OwnedFd;
-#[cfg(not(any(target_os = "espidf", target_os = "vita")))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon", target_os = "vita")))]
 use crate::fs::Access;
 #[cfg(not(any(
     solarish,
     target_os = "espidf",
     target_os = "haiku",
+    target_os = "horizon",
     target_os = "netbsd",
     target_os = "nto",
     target_os = "redox",
@@ -14,7 +15,7 @@ use crate::fs::Access;
     target_os = "wasi",
 )))]
 use crate::fs::StatFs;
-#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
+#[cfg(not(any(target_os = "wasi")))]
 use crate::fs::StatVfs;
 use crate::fs::{Mode, OFlags, Stat};
 #[cfg(not(target_os = "wasi"))]
@@ -39,7 +40,7 @@ use {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/open.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/open.2.html
 #[inline]
 pub fn open<P: path::Arg>(path: P, flags: OFlags, mode: Mode) -> io::Result<OwnedFd> {
@@ -52,7 +53,7 @@ pub fn open<P: path::Arg>(path: P, flags: OFlags, mode: Mode) -> io::Result<Owne
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/chmod.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/chmod.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/chmod.2.html
 #[cfg(not(target_os = "wasi"))]
 #[inline]
@@ -69,7 +70,7 @@ pub fn chmod<P: path::Arg>(path: P, mode: Mode) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/stat.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/stat.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/stat.2.html
 /// [`Mode::from_raw_mode`]: crate::fs::Mode::from_raw_mode
 /// [`FileType::from_raw_mode`]: crate::fs::FileType::from_raw_mode
@@ -88,7 +89,7 @@ pub fn stat<P: path::Arg>(path: P) -> io::Result<Stat> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/lstat.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/lstat.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/lstat.2.html
 /// [`Mode::from_raw_mode`]: crate::fs::Mode::from_raw_mode
 /// [`FileType::from_raw_mode`]: crate::fs::FileType::from_raw_mode
@@ -105,9 +106,10 @@ pub fn lstat<P: path::Arg>(path: P) -> io::Result<Stat> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/readlink.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/readlink.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/readlink.2.html
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn readlink<P: path::Arg, B: Into<Vec<u8>>>(path: P, reuse: B) -> io::Result<CString> {
     path.into_with_c_str(|path| _readlink(path, reuse.into()))
@@ -142,7 +144,7 @@ fn _readlink(path: &CStr, mut buffer: Vec<u8>) -> io::Result<CString> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/rename.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/rename.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/rename.2.html
 #[inline]
 pub fn rename<P: path::Arg, Q: path::Arg>(old_path: P, new_path: Q) -> io::Result<()> {
@@ -157,7 +159,7 @@ pub fn rename<P: path::Arg, Q: path::Arg>(old_path: P, new_path: Q) -> io::Resul
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/unlink.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/unlink.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/unlink.2.html
 #[inline]
 pub fn unlink<P: path::Arg>(path: P) -> io::Result<()> {
@@ -170,7 +172,7 @@ pub fn unlink<P: path::Arg>(path: P) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/rmdir.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/rmdir.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/rmdir.2.html
 #[inline]
 pub fn rmdir<P: path::Arg>(path: P) -> io::Result<()> {
@@ -189,7 +191,7 @@ pub fn rmdir<P: path::Arg>(path: P) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/link.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/link.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/link.2.html
 /// [`linkat`]: crate::fs::linkat
 /// [`AtFlags`]: crate::fs::AtFlags
@@ -207,7 +209,7 @@ pub fn link<P: path::Arg, Q: path::Arg>(old_path: P, new_path: Q) -> io::Result<
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/symlink.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/symlink.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/symlink.2.html
 #[inline]
 pub fn symlink<P: path::Arg, Q: path::Arg>(old_path: P, new_path: Q) -> io::Result<()> {
@@ -222,7 +224,7 @@ pub fn symlink<P: path::Arg, Q: path::Arg>(old_path: P, new_path: Q) -> io::Resu
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/mkdir.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/mkdir.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/mkdir.2.html
 #[inline]
 pub fn mkdir<P: path::Arg>(path: P, mode: Mode) -> io::Result<()> {
@@ -235,9 +237,9 @@ pub fn mkdir<P: path::Arg>(path: P, mode: Mode) -> io::Result<()> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/access.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/access.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/access.2.html
-#[cfg(not(any(target_os = "espidf", target_os = "vita")))]
+#[cfg(not(any(target_os = "espidf", target_os = "horizon", target_os = "vita")))]
 #[inline]
 pub fn access<P: path::Arg>(path: P, access: Access) -> io::Result<()> {
     path.into_with_c_str(|path| backend::fs::syscalls::access(path, access))
@@ -256,6 +258,7 @@ pub fn access<P: path::Arg>(path: P, access: Access) -> io::Result<()> {
     solarish,
     target_os = "espidf",
     target_os = "haiku",
+    target_os = "horizon",
     target_os = "netbsd",
     target_os = "nto",
     target_os = "redox",
@@ -278,9 +281,9 @@ pub fn statfs<P: path::Arg>(path: P) -> io::Result<StatFs> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/statvfs.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/statvfs.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/statvfs.2.html
-#[cfg(not(any(target_os = "haiku", target_os = "redox", target_os = "wasi")))]
+#[cfg(not(any(target_os = "wasi")))]
 #[inline]
 pub fn statvfs<P: path::Arg>(path: P) -> io::Result<StatVfs> {
     path.into_with_c_str(backend::fs::syscalls::statvfs)
@@ -292,7 +295,7 @@ pub fn statvfs<P: path::Arg>(path: P) -> io::Result<StatVfs> {
 ///  - [POSIX]
 ///  - [Linux]
 ///
-/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/chown.html
+/// [POSIX]: https://pubs.opengroup.org/onlinepubs/9799919799/functions/chown.html
 /// [Linux]: https://man7.org/linux/man-pages/man2/chown.2.html
 #[cfg(not(target_os = "wasi"))]
 #[inline]

@@ -1,11 +1,12 @@
 use std::slice::Iter;
 
-use unicode_width::UnicodeWidthStr;
-
-use crate::cell::{Cell, Cells};
+use crate::{
+    cell::{Cell, Cells},
+    utils::formatting::content_split::measure_text_width,
+};
 
 /// Each row contains [Cells](crate::Cell) and can be added to a [Table](crate::Table).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Row {
     /// Index of the row.
     /// This will be set as soon as the row is added to the table.
@@ -14,25 +15,21 @@ pub struct Row {
     pub(crate) max_height: Option<usize>,
 }
 
-impl Default for Row {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Row {
-    pub fn new() -> Row {
-        Row {
-            index: None,
-            cells: Vec::new(),
-            max_height: None,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Add a cell to the row.
     ///
+    /// **Attention:**
+    /// If a row has already been added to a table and you add more cells to it
+    /// than there're columns currently know to the [Table](crate::Table) struct,
+    /// these columns won't be known to the table unless you call
+    /// [crate::Table::discover_columns].
+    ///
     /// ```rust
-    /// use comfy_table::{Row, Cell};
+    /// use comfy_table::{Cell, Row};
     ///
     /// let mut row = Row::new();
     /// row.add_cell(Cell::new("One"));
@@ -46,7 +43,7 @@ impl Row {
     /// Truncate content of cells which occupies more than X lines of space.
     ///
     /// ```
-    /// use comfy_table::{Row, Cell};
+    /// use comfy_table::{Cell, Row};
     ///
     /// let mut row = Row::new();
     /// row.max_height(5);
@@ -67,7 +64,7 @@ impl Row {
                 // Each entry represents the longest string width for a cell.
                 cell.content
                     .iter()
-                    .map(|string| string.width())
+                    .map(|string| measure_text_width(string))
                     .max()
                     .unwrap_or(0)
             })
@@ -80,7 +77,7 @@ impl Row {
     }
 
     /// Returns an iterator over all cells of this row
-    pub fn cell_iter(&self) -> Iter<Cell> {
+    pub fn cell_iter(&self) -> Iter<'_, Cell> {
         self.cells.iter()
     }
 }
@@ -91,19 +88,15 @@ impl Row {
 /// Check the [From] implementations on [Cell] for more information.
 ///
 /// ```rust
-/// use comfy_table::{Row, Cell};
+/// use comfy_table::{Cell, Row};
 ///
-/// let row = Row::from(vec!["One", "Two", "Three",]);
-/// let row = Row::from(vec![
-///    Cell::new("One"),
-///    Cell::new("Two"),
-///    Cell::new("Three"),
-/// ]);
+/// let row = Row::from(vec!["One", "Two", "Three"]);
+/// let row = Row::from(vec![Cell::new("One"), Cell::new("Two"), Cell::new("Three")]);
 /// let row = Row::from(vec![1, 2, 3, 4]);
 /// ```
 impl<T: Into<Cells>> From<T> for Row {
-    fn from(cells: T) -> Row {
-        Row {
+    fn from(cells: T) -> Self {
+        Self {
             index: None,
             cells: cells.into().0,
             max_height: None,
@@ -132,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_some_functions() {
-        let cells = vec!["one", "two", "three"];
+        let cells = ["one", "two", "three"];
         let mut row = Row::new();
         for cell in cells.iter() {
             row.add_cell(Cell::new(cell));
@@ -142,7 +135,7 @@ mod tests {
         let mut cell_content_iter = cells.iter();
         for cell in row.cell_iter() {
             assert_eq!(
-                cell.get_content(),
+                cell.content(),
                 cell_content_iter.next().unwrap().to_string()
             );
         }

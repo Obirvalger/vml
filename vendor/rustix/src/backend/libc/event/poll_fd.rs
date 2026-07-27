@@ -1,8 +1,9 @@
 use crate::backend::c;
 use crate::backend::conv::borrowed_fd;
-use crate::backend::fd::{AsFd, AsRawFd, BorrowedFd, LibcFd};
+use crate::backend::fd::{AsFd, AsRawFd as _, BorrowedFd, LibcFd};
 #[cfg(windows)]
 use crate::backend::fd::{AsSocket, RawFd};
+use crate::ffi;
 use bitflags::bitflags;
 use core::fmt;
 use core::marker::PhantomData;
@@ -13,7 +14,7 @@ bitflags! {
     /// [`poll`]: crate::event::poll
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-    pub struct PollFlags: c::c_short {
+    pub struct PollFlags: ffi::c_short {
         /// `POLLIN`
         const IN = c::POLLIN;
         /// `POLLPRI`
@@ -40,10 +41,14 @@ bitflags! {
         #[cfg(not(target_os = "espidf"))]
         const NVAL = c::POLLNVAL;
         /// `POLLRDHUP`
-        #[cfg(all(
-            linux_kernel,
-            not(any(target_arch = "sparc", target_arch = "sparc64"))),
-        )]
+        #[cfg(any(
+            target_os = "freebsd",
+            target_os = "illumos",
+            all(
+                linux_kernel,
+                not(any(target_arch = "sparc", target_arch = "sparc64"))
+            ),
+        ))]
         const RDHUP = c::POLLRDHUP;
 
         /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
@@ -63,8 +68,8 @@ pub struct PollFd<'fd> {
 }
 
 impl<'fd> fmt::Debug for PollFd<'fd> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("PollFd")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PollFd")
             .field("fd", &self.pollfd.fd)
             .field("events", &self.pollfd.events)
             .field("revents", &self.pollfd.revents)

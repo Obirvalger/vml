@@ -1,10 +1,10 @@
-use std::convert::TryInto;
-
 use super::DisplayInfos;
-use crate::utils::formatting::borders::{
-    should_draw_left_border, should_draw_right_border, should_draw_vertical_lines,
+use crate::{
+    Cell, Column, Table,
+    utils::formatting::borders::{
+        should_draw_left_border, should_draw_right_border, should_draw_vertical_lines,
+    },
 };
-use crate::{Cell, Column, Table};
 
 /// The ColumnDisplayInfo works with a fixed value for content width.
 /// However, if a column is supposed to get a absolute width, we have to make sure that
@@ -13,13 +13,14 @@ use crate::{Cell, Column, Table};
 /// For this reason, we take the targeted width, subtract the column's padding and make sure that
 /// the content width is always a minimum of 1
 pub fn absolute_width_with_padding(column: &Column, width: u16) -> u16 {
-    let (left, right) = column.padding;
-    let mut content_width = i32::from(width) - i32::from(left) - i32::from(right);
-    if content_width <= 0 {
-        content_width = 1
+    let mut content_width = width
+        .saturating_sub(column.padding.0)
+        .saturating_sub(column.padding.1);
+    if content_width == 0 {
+        content_width = 1;
     }
 
-    content_width.try_into().unwrap_or(u16::MAX)
+    content_width
 }
 
 /// Return the amount of visible columns
@@ -29,8 +30,8 @@ pub fn count_visible_columns(columns: &[Column]) -> usize {
 
 /// Return the amount of visible columns that haven't been checked yet.
 ///
-/// - `column_count` is the total amount of columns that are visible, calculated
-///   with [count_visible_columns].
+/// - `column_count` is the total amount of columns that are visible, calculated with
+///   [count_visible_columns].
 /// - `infos` are all columns that have already been fixed in size or are hidden.
 pub fn count_remaining_columns(column_count: usize, infos: &DisplayInfos) -> usize {
     column_count - infos.iter().filter(|(_, info)| !info.is_hidden).count()
@@ -55,7 +56,7 @@ pub fn count_border_columns(table: &Table, visible_columns: usize) -> usize {
 
 /// Get the delimiter for a Cell.
 /// Priority is in decreasing order: Cell -> Column -> Table.
-pub fn get_delimiter(table: &Table, column: &Column, cell: &Cell) -> char {
+pub fn delimiter(table: &Table, column: &Column, cell: &Cell) -> char {
     // Determine, which delimiter should be used
     if let Some(delimiter) = cell.delimiter {
         delimiter

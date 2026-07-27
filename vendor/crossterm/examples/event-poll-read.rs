@@ -2,14 +2,13 @@
 //!
 //! cargo run --example event-poll-read
 
-use std::{io::stdout, time::Duration};
+use std::{io, time::Duration};
 
 use crossterm::{
     cursor::position,
     event::{poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode},
-    Result,
 };
 
 const HELP: &str = r#"Blocking poll() & non-blocking read()
@@ -19,11 +18,11 @@ const HELP: &str = r#"Blocking poll() & non-blocking read()
  - Use Esc to quit
 "#;
 
-fn print_events() -> Result<()> {
+fn print_events() -> io::Result<()> {
     loop {
         // Wait up to 1s for another event
         if poll(Duration::from_millis(1_000))? {
-            // It's guaranteed that read() wont block if `poll` returns `Ok(true)`
+            // It's guaranteed that read() won't block if `poll` returns `Ok(true)`
             let event = read()?;
 
             println!("Event::{:?}\r", event);
@@ -44,12 +43,12 @@ fn print_events() -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn main() -> io::Result<()> {
     println!("{}", HELP);
 
     enable_raw_mode()?;
 
-    let mut stdout = stdout();
+    let mut stdout = io::stdout();
     execute!(stdout, EnableMouseCapture)?;
 
     if let Err(e) = print_events() {

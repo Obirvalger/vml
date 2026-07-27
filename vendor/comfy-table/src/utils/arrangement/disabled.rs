@@ -1,26 +1,27 @@
-use super::constraints::get_max_constraint;
-use super::helper::*;
-use super::{ColumnDisplayInfo, DisplayInfos};
+use super::{ColumnDisplayInfo, DisplayInfos, constraint, helper::*};
 use crate::Table;
 
 /// Dynamic arrangement is disabled.
 /// Apply all non-relative constraints, and set the width of all remaining columns to the
 /// respective max content width.
-pub fn arrange(table: &Table, infos: &mut DisplayInfos, visible_columns: usize) {
+pub fn arrange(
+    table: &Table,
+    infos: &mut DisplayInfos,
+    visible_columns: usize,
+    max_content_widths: &[u16],
+) {
     for column in table.columns.iter() {
         if infos.contains_key(&column.index) {
             continue;
         }
 
-        let mut width = column.get_max_content_width();
+        let mut width = max_content_widths[column.index];
 
         // Reduce the width, if a column has longer content than the specified MaxWidth constraint.
-        if let Some(max_width) =
-            get_max_constraint(table, &column.constraint, None, visible_columns)
+        if let Some(max_width) = constraint::max(table, &column.constraint, visible_columns)
+            && max_width < width
         {
-            if max_width < width {
-                width = absolute_width_with_padding(column, max_width);
-            }
+            width = absolute_width_with_padding(column, max_width);
         }
 
         let info = ColumnDisplayInfo::new(column, width);

@@ -1,9 +1,5 @@
-use criterion::{criterion_group, criterion_main, Criterion};
-
-use comfy_table::presets::UTF8_FULL;
-use comfy_table::ColumnConstraint::*;
-use comfy_table::Width::*;
-use comfy_table::*;
+use comfy_table::{ColumnConstraint::*, Width::*, presets::UTF8_FULL, *};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 /// Build the readme table
 #[cfg(feature = "tty")]
@@ -11,7 +7,7 @@ fn build_readme_table() {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_table_width(80)
+        .set_width(80)
         .set_header(vec![
             Cell::new("Header1").add_attribute(Attribute::Bold),
             Cell::new("Header2").fg(Color::Green),
@@ -43,7 +39,7 @@ fn build_readme_table() {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_table_width(80)
+        .set_width(80)
         .set_header(vec![
             Cell::new("Header1"),
             Cell::new("Header2"),
@@ -66,19 +62,19 @@ fn build_readme_table() {
 
 /// Create a dynamic 10x10 Table with width 400 and unevenly distributed content.
 /// On top of that, most of the columns have some kind of constraint.
-fn build_huge_table() {
+fn build_big_table() {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
-        .set_table_width(400)
+        .set_width(400)
         .set_header(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
     // Create a 10x10 grid
     for row_index in 0..10 {
         let mut row = Vec::new();
         for column in 0..10 {
-            row.push("SomeWord ".repeat((column + row_index * 2) % 10))
+            row.push("SomeWord ".repeat((column + row_index * 2) % 10));
         }
         table.add_row(row);
     }
@@ -100,9 +96,9 @@ fn build_huge_table() {
 }
 
 pub fn build_tables(crit: &mut Criterion) {
-    crit.bench_function("Huge table", |b| b.iter(|| build_huge_table()));
+    crit.bench_function("Readme table", |b| b.iter(build_readme_table));
 
-    crit.bench_function("Readme table", |b| b.iter(|| build_readme_table()));
+    crit.bench_function("Big table", |b| b.iter(build_big_table));
 }
 
 criterion_group!(benches, build_tables);

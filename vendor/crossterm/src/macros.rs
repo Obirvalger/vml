@@ -1,8 +1,16 @@
-/// Append a the first few characters of an ANSI escape code to the given string.
+/// Concatenate string literals while prepending a ANSI control sequence introducer (`"\x1b["`)
 #[macro_export]
 #[doc(hidden)]
 macro_rules! csi {
     ($( $l:expr ),*) => { concat!("\x1B[", $( $l ),*) };
+}
+
+/// Concatenate string literals while prepending a xterm Operating System Commands (OSC)
+/// introducer (`"\x1b]"`) and appending a BEL (`"\x07"`).
+#[macro_export]
+#[doc(hidden)]
+macro_rules! osc {
+    ($( $l:expr ),*) => { concat!("\x1B]", $( $l ),*, "\x1B\\") };
 }
 
 /// Queues one or more command(s) for further execution.
@@ -16,7 +24,7 @@ macro_rules! csi {
 ///
 /// # Arguments
 ///
-/// - [std::io::Writer](https://doc.rust-lang.org/std/io/trait.Write.html)
+/// - [std::io::Writer](std::io::Write)
 ///
 ///     ANSI escape codes are written on the given 'writer', after which they are flushed.
 ///
@@ -30,23 +38,21 @@ macro_rules! csi {
 /// use std::io::{Write, stdout};
 /// use crossterm::{queue, style::Print};
 ///
-/// fn main() {
-///     let mut stdout = stdout();
+/// let mut stdout = stdout();
 ///
-///     // `Print` will executed executed when `flush` is called.
-///     queue!(stdout, Print("foo".to_string()));
+/// // `Print` will executed executed when `flush` is called.
+/// queue!(stdout, Print("foo".to_string()));
 ///
-///     // some other code (no execution happening here) ...
+/// // some other code (no execution happening here) ...
 ///
-///     // when calling `flush` on `stdout`, all commands will be written to the stdout and therefore executed.
-///     stdout.flush();
+/// // when calling `flush` on `stdout`, all commands will be written to the stdout and therefore executed.
+/// stdout.flush();
 ///
-///     // ==== Output ====
-///     // foo
-/// }
+/// // ==== Output ====
+/// // foo
 /// ```
 ///
-/// Have a look over at the [Command API](./#command-api) for more details.
+/// Have a look over at the [Command API](./index.html#command-api) for more details.
 ///
 /// # Notes
 ///
@@ -72,13 +78,13 @@ macro_rules! queue {
 ///
 /// # Arguments
 ///
-/// - [std::io::Writer](https://doc.rust-lang.org/std/io/trait.Write.html)
+/// - [std::io::Writer](std::io::Write)
 ///
-///     ANSI escape codes are written on the given 'writer', after which they are flushed.
+///   ANSI escape codes are written on the given 'writer', after which they are flushed.
 ///
 /// - [Command](./trait.Command.html)
 ///
-///     One or more commands
+///   One or more commands
 ///
 /// # Examples
 ///
@@ -86,29 +92,27 @@ macro_rules! queue {
 /// use std::io::{Write, stdout};
 /// use crossterm::{execute, style::Print};
 ///
-///  fn main() {
-///      // will be executed directly
-///      execute!(stdout(), Print("sum:\n".to_string()));
+/// // will be executed directly
+/// execute!(stdout(), Print("sum:\n".to_string()));
 ///
-///      // will be executed directly
-///      execute!(stdout(), Print("1 + 1= ".to_string()), Print((1+1).to_string()));
+/// // will be executed directly
+/// execute!(stdout(), Print("1 + 1 = ".to_string()), Print((1+1).to_string()));
 ///
-///      // ==== Output ====
-///      // sum:
-///      // 1 + 1 = 2
-///  }
+/// // ==== Output ====
+/// // sum:
+/// // 1 + 1 = 2
 /// ```
 ///
-/// Have a look over at the [Command API](./#command-api) for more details.
+/// Have a look over at the [Command API](./index.html#command-api) for more details.
 ///
 /// # Notes
 ///
 /// * In the case of UNIX and Windows 10, ANSI codes are written to the given 'writer'.
 /// * In case of Windows versions lower than 10, a direct WinAPI call will be made.
-///     The reason for this is that Windows versions lower than 10 do not support ANSI codes,
-///     and can therefore not be written to the given `writer`.
-///     Therefore, there is no difference between [execute](macro.execute.html)
-///     and [queue](macro.queue.html) for those old Windows versions.
+///   The reason for this is that Windows versions lower than 10 do not support ANSI codes,
+///   and can therefore not be written to the given `writer`.
+///   Therefore, there is no difference between [execute](macro.execute.html)
+///   and [queue](macro.queue.html) for those old Windows versions.
 #[macro_export]
 macro_rules! execute {
     ($writer:expr $(, $command:expr)* $(,)? ) => {{
@@ -153,7 +157,7 @@ mod tests {
 
     // Helper for execute tests to confirm flush
     #[derive(Default, Debug, Clone)]
-    pub(self) struct FakeWrite {
+    struct FakeWrite {
         buffer: String,
         flushed: bool,
     }
@@ -242,11 +246,9 @@ mod tests {
         use std::fmt;
 
         use std::cell::RefCell;
-        use std::fmt::Debug;
 
         use super::FakeWrite;
         use crate::command::Command;
-        use crate::error::Result as CrosstermResult;
 
         // We need to test two different APIs: WinAPI and the write api. We
         // don't know until runtime which we're supporting (via
@@ -278,7 +280,7 @@ mod tests {
                 f.write_str(self.value)
             }
 
-            fn execute_winapi(&self) -> CrosstermResult<()> {
+            fn execute_winapi(&self) -> std::io::Result<()> {
                 self.stream.borrow_mut().push(self.value);
                 Ok(())
             }
@@ -297,9 +299,9 @@ mod tests {
         // If the stream was populated, it tests that the two arrays are equal.
         // If the writer was populated, it tests that the contents of the
         // write buffer are equal to the concatenation of `stream_result`.
-        fn test_harness<E: Debug>(
+        fn test_harness(
             stream_result: &[&'static str],
-            test: impl FnOnce(&mut FakeWrite, &mut WindowsEventStream) -> Result<(), E>,
+            test: impl FnOnce(&mut FakeWrite, &mut WindowsEventStream) -> std::io::Result<()>,
         ) {
             let mut stream = WindowsEventStream::default();
             let mut writer = FakeWrite::default();

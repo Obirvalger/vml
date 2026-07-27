@@ -1,10 +1,9 @@
+use comfy_table::*;
 use pretty_assertions::assert_eq;
 
-use comfy_table::*;
-
-#[test]
 /// Cell alignment can be specified on Columns and Cells
 /// Alignment settings on Cells overwrite the settings of Columns
+#[test]
 fn cell_alignment() {
     let mut table = Table::new();
     table
@@ -21,7 +20,7 @@ fn cell_alignment() {
         ])
         .add_row(vec!["Left", "Center", "Right"]);
 
-    let alignment = vec![
+    let alignment = [
         CellAlignment::Left,
         CellAlignment::Center,
         CellAlignment::Right,
@@ -33,7 +32,7 @@ fn cell_alignment() {
         column.set_cell_alignment(*alignment);
     }
 
-    println!("{}", table.to_string());
+    println!("{table}");
     let expected = "
 +---------------------+---------------------+---------------------+
 | Header1             |       Header2       |             Header3 |
@@ -44,5 +43,5 @@ fn cell_alignment() {
 |---------------------+---------------------+---------------------|
 | Left                |        Center       |               Right |
 +---------------------+---------------------+---------------------+";
-    assert_eq!("\n".to_string() + &table.to_string(), expected);
+    assert_eq!(expected, "\n".to_string() + &table.to_string());
 }

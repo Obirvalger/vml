@@ -16,8 +16,8 @@
 </div>
 
 `rustix` provides efficient memory-safe and [I/O-safe] wrappers to POSIX-like,
-Unix-like, Linux, and Winsock syscall-like APIs, with configurable backends.
-It uses Rust references, slices, and return values instead of raw pointers, and
+Unix-like, Linux, and Winsock syscall-like APIs, with configurable backends. It
+uses Rust references, slices, and return values instead of raw pointers, and
 [I/O safety types] instead of raw file descriptors, providing memory safety,
 [I/O safety], and [provenance]. It uses `Result`s for reporting errors,
 [`bitflags`] instead of bare integer flags, an [`Arg`] trait with optimizations
@@ -46,14 +46,15 @@ more portable APIs built on this functionality, see the [`cap-std`], [`memfd`],
    Windows, and is portable to many OS's.
 
 The linux_raw backend is enabled by default on platforms which support it. To
-enable the libc backend instead, either enable the "use-libc" cargo feature,
-or set the `RUSTFLAGS` environment variable to `--cfg=rustix_use_libc` when
+enable the libc backend instead, either enable the "use-libc" cargo feature, or
+set the `RUSTFLAGS` environment variable to `--cfg=rustix_use_libc` when
 building.
 
 ## Cargo features
 
-The modules [`rustix::io`], [`rustix::fd`], and [`rustix::ffi`] are enabled
-by default. The rest of the API is conditional with cargo feature flags:
+The modules [`rustix::io`], [`rustix::buffer`], [`rustix::fd`],
+[`rustix::ffi`], and [`rustix::ioctl`] are enabled by default. The rest of the
+API modules are conditional with cargo feature flags.
 
 | Name       | Description                                                    |
 | ---------- | -------------------------------------------------------------- |
@@ -66,7 +67,6 @@ by default. The rest of the API is conditional with cargo feature flags:
 | `param`    | [`rustix::param`]—Process parameters.                          |
 | `pipe`     | [`rustix::pipe`]—Pipe operations.                              |
 | `process`  | [`rustix::process`]—Process-associated operations.             |
-| `procfs`   | [`rustix::procfs`]—Utilities for reading `/proc` on Linux.     |
 | `pty`      | [`rustix::pty`]—Pseudoterminal operations.                     |
 | `rand`     | [`rustix::rand`]—Random-related operations.                    |
 | `shm`      | [`rustix::shm`]—POSIX shared memory.                           |
@@ -77,7 +77,18 @@ by default. The rest of the API is conditional with cargo feature flags:
 | `time`     | [`rustix::time`]—Time-related operations.                      |
 |            |                                                                |
 | `use-libc` | Enable the libc backend.                                       |
+|            |                                                                |
+| `linux_4_11`    | Enable optimizations that assume Linux ≥ 4.11             |
+| `linux_5_1`     | Enable optimizations that assume Linux ≥ 5.1              |
+| `linux_5_11`    | Enable optimizations that assume Linux ≥ 5.11             |
+| `linux_latest`  | Enable optimizations that assume the latest Linux release |
+|                 |                                                           |
+| `use-libc-auxv` | Use `getauxval` instead of `PR_GET_AUXV` or "/proc/self/auxv". |
+|                 |                                                           |
+| `std`      | On by default; disable to activate `#![no_std]`.               |
+| `alloc`    | On by default; enables features that depend on [`alloc`].      |
 
+[`rustix::buffer`]: https://docs.rs/rustix/*/rustix/buffer/index.html
 [`rustix::event`]: https://docs.rs/rustix/*/rustix/event/index.html
 [`rustix::fs`]: https://docs.rs/rustix/*/rustix/fs/index.html
 [`rustix::io_uring`]: https://docs.rs/rustix/*/rustix/io_uring/index.html
@@ -87,7 +98,6 @@ by default. The rest of the API is conditional with cargo feature flags:
 [`rustix::param`]: https://docs.rs/rustix/*/rustix/param/index.html
 [`rustix::pipe`]: https://docs.rs/rustix/*/rustix/pipe/index.html
 [`rustix::process`]: https://docs.rs/rustix/*/rustix/process/index.html
-[`rustix::procfs`]: https://docs.rs/rustix/*/rustix/procfs/index.html
 [`rustix::pty`]: https://docs.rs/rustix/*/rustix/pty/index.html
 [`rustix::rand`]: https://docs.rs/rustix/*/rustix/rand/index.html
 [`rustix::shm`]: https://docs.rs/rustix/*/rustix/shm/index.html
@@ -99,6 +109,7 @@ by default. The rest of the API is conditional with cargo feature flags:
 [`rustix::io`]: https://docs.rs/rustix/*/rustix/io/index.html
 [`rustix::fd`]: https://docs.rs/rustix/*/rustix/fd/index.html
 [`rustix::ffi`]: https://docs.rs/rustix/*/rustix/ffi/index.html
+[`rustix::ioctl`]: https://docs.rs/rustix/*/rustix/ffi/ioctl.html
 
 ## 64-bit Large File Support (LFS) and Year 2038 (y2038) support
 
@@ -125,10 +136,10 @@ supported on Redox, such as `*at` functions like `openat`, which are important
 features for `rustix`.
 
 `rustix` has its own code for making direct syscalls, similar to the
-[`syscall`], [`sc`], and [`scall`] crates, using the Rust `asm!` macro.
-`rustix` can also use Linux's vDSO mechanism to optimize Linux `clock_gettime`
-on all architectures, and all Linux system calls on x86. And `rustix`'s
-syscalls report errors using an optimized `Errno` type.
+[`sc`], and [`scall`] crates, using the Rust `asm!` macro. `rustix` can also
+use Linux's vDSO mechanism to optimize Linux `clock_gettime` on all
+architectures, and all Linux system calls on x86. And `rustix`'s syscalls
+report errors using an optimized `Errno` type.
 
 `rustix`'s `*at` functions are similar to the [`openat`] crate, but `rustix`
 provides them as free functions rather than associated functions of a `Dir`
@@ -173,7 +184,6 @@ always reflect “very old” Linux versions.
 [`uapi`]: https://crates.io/crates/uapi
 [`rusl`]: https://lib.rs/crates/rusl
 [`relibc`]: https://gitlab.redox-os.org/redox-os/relibc
-[`syscall`]: https://crates.io/crates/syscall
 [`sc`]: https://crates.io/crates/sc
 [`scall`]: https://crates.io/crates/scall
 [`openat`]: https://crates.io/crates/openat
@@ -194,3 +204,4 @@ always reflect “very old” Linux versions.
 [`OwnedFd`]: https://doc.rust-lang.org/stable/std/os/fd/struct.OwnedFd.html
 [`AsFd`]: https://doc.rust-lang.org/stable/std/os/fd/trait.AsFd.html
 [`NOSYS`]: https://docs.rs/rustix/*/rustix/io/struct.Errno.html#associatedconstant.NOSYS
+[`alloc`]: https://doc.rust-lang.org/alloc/alloc/index.html
