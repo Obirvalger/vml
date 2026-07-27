@@ -221,6 +221,12 @@ matcher_map!(
         "djvu",
         matchers::image::is_djvu
     ),
+    (
+        MatcherType::Image,
+        "image/vnd.dwg",
+        "dwg",
+        matchers::image::is_dwg
+    ),
     // Video
     (
         MatcherType::Video,
@@ -452,6 +458,12 @@ matcher_map!(
     ),
     (
         MatcherType::Archive,
+        "application/x-par2",
+        "par2",
+        matchers::archive::is_par2
+    ),
+    (
+        MatcherType::Archive,
         "application/vnd.rar",
         "rar",
         matchers::archive::is_rar
@@ -467,6 +479,12 @@ matcher_map!(
         "application/x-bzip2",
         "bz2",
         matchers::archive::is_bz2
+    ),
+    (
+        MatcherType::Archive,
+        "application/vnd.bzip3",
+        "bz3",
+        matchers::archive::is_bz3
     ),
     (
         MatcherType::Archive,
@@ -575,6 +593,12 @@ matcher_map!(
         "application/zstd",
         "zst",
         matchers::archive::is_zst
+    ),
+    (
+        MatcherType::Archive,
+        "application/x-lz4",
+        "lz4",
+        matchers::archive::is_lz4
     ),
     (
         MatcherType::Archive,

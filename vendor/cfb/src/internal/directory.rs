@@ -1,12 +1,11 @@
 use crate::internal::{
-    self, consts, Allocator, Chain, DirEntry, Entries, EntriesOrder, ObjType,
-    Sector, SectorInit, Version,
+    self, consts, Allocator, Chain, Color, DirEntry, ObjType, Sector,
+    SectorInit, Timestamp, Validation, Version,
 };
-use byteorder::{LittleEndian, WriteBytesExt};
+use crate::WriteLeNumber;
 use fnv::FnvHashSet;
 use std::cmp::Ordering;
 use std::io::{self, Seek, SeekFrom, Write};
-use std::path::Path;
 
 //===========================================================================//
 
@@ -32,14 +31,19 @@ impl<F> Directory<F> {
         allocator: Allocator<F>,
         dir_entries: Vec<DirEntry>,
         dir_start_sector: u32,
+        validation: Validation,
     ) -> io::Result<Directory<F>> {
         let directory = Directory { allocator, dir_entries, dir_start_sector };
-        directory.validate()?;
+        directory.validate(validation)?;
         Ok(directory)
     }
 
     pub fn version(&self) -> Version {
         self.allocator.version()
+    }
+
+    pub fn inner(&self) -> &F {
+        self.allocator.inner()
     }
 
     pub fn sector_len(&self) -> usize {
@@ -69,85 +73,11 @@ impl<F> Directory<F> {
         Some(stream_id)
     }
 
-    /// Returns an iterator over the entries within the root storage object.
-    pub fn root_storage_entries(&self) -> Entries {
-        let start = self.root_dir_entry().child;
-        Entries::new(
-            EntriesOrder::Nonrecursive,
-            &self.dir_entries,
-            internal::path::path_from_name_chain(&[]),
-            start,
-        )
-    }
-
-    /// Returns an iterator over the entries within a storage object.
-    pub fn storage_entries(&self, path: &Path) -> io::Result<Entries> {
-        let names = internal::path::name_chain_from_path(path)?;
-        let path = internal::path::path_from_name_chain(&names);
-        let stream_id = match self.stream_id_for_name_chain(&names) {
-            Some(stream_id) => stream_id,
-            None => not_found!("No such storage: {:?}", path),
-        };
-        let start = {
-            let dir_entry = self.dir_entry(stream_id);
-            if dir_entry.obj_type == ObjType::Stream {
-                invalid_input!("Not a storage: {:?}", path);
-            }
-            debug_assert!(
-                dir_entry.obj_type == ObjType::Storage
-                    || dir_entry.obj_type == ObjType::Root
-            );
-            dir_entry.child
-        };
-        Ok(Entries::new(
-            EntriesOrder::Nonrecursive,
-            &self.dir_entries,
-            path,
-            start,
-        ))
-    }
-
-    /// Returns an iterator over all entries within the compound file, starting
-    /// from and including the root entry.  The iterator walks the storage tree
-    /// in a preorder traversal.
-    pub fn walk(&self) -> Entries {
-        Entries::new(
-            EntriesOrder::Preorder,
-            &self.dir_entries,
-            internal::path::path_from_name_chain(&[]),
-            consts::ROOT_STREAM_ID,
-        )
-    }
-
-    /// Returns an iterator over all entries under a storage subtree, including
-    /// the given path itself.  The iterator walks the storage tree in a
-    /// preorder traversal.
-    pub fn walk_storage(&self, path: &Path) -> io::Result<Entries> {
-        let mut names = internal::path::name_chain_from_path(path)?;
-        let stream_id = match self.stream_id_for_name_chain(&names) {
-            Some(stream_id) => stream_id,
-            None => {
-                not_found!(
-                    "No such object: {:?}",
-                    internal::path::path_from_name_chain(&names)
-                );
-            }
-        };
-        names.pop();
-        let parent_path = internal::path::path_from_name_chain(&names);
-        Ok(Entries::new(
-            EntriesOrder::Preorder,
-            &self.dir_entries,
-            parent_path,
-            stream_id,
-        ))
-    }
-
     pub fn open_chain(
         &mut self,
         start_sector_id: u32,
         init: SectorInit,
-    ) -> io::Result<Chain<F>> {
+    ) -> io::Result<Chain<'_, F>> {
         self.allocator.open_chain(start_sector_id, init)
     }
 
@@ -163,7 +93,7 @@ impl<F> Directory<F> {
         &mut self.dir_entries[stream_id as usize]
     }
 
-    fn validate(&self) -> io::Result<()> {
+    fn validate(&self, validation: Validation) -> io::Result<()> {
         if self.dir_entries.is_empty() {
             malformed!("root entry is missing");
         }
@@ -176,8 +106,8 @@ impl<F> Directory<F> {
             );
         }
         let mut visited = FnvHashSet::default();
-        let mut stack = vec![consts::ROOT_STREAM_ID];
-        while let Some(stream_id) = stack.pop() {
+        let mut stack = vec![(consts::ROOT_STREAM_ID, false)];
+        while let Some((stream_id, parent_is_red)) = stack.pop() {
             if visited.contains(&stream_id) {
                 malformed!("loop in tree");
             }
@@ -197,6 +127,16 @@ impl<F> Directory<F> {
                     "non-root entry with object type {:?}",
                     dir_entry.obj_type
                 );
+            }
+            let node_is_red = dir_entry.color == Color::Red;
+            // The MS-CFB spec section 2.6.4 says that two consecutive nodes in
+            // the red-black tree for siblings within a storage object MUST NOT
+            // both be red, but apparently some implementations don't obey this
+            // (see https://github.com/mdsteele/rust-cfb/issues/10).  We still
+            // want to be able to read these files, so we only consider this an
+            // error under Strict validation.
+            if parent_is_red && node_is_red && validation.is_strict() {
+                malformed!("RB tree has adjacent red nodes");
             }
             let left_sibling = dir_entry.left_sibling;
             if left_sibling != consts::NO_STREAM {
@@ -218,7 +158,7 @@ impl<F> Directory<F> {
                         entry.name
                     );
                 }
-                stack.push(left_sibling);
+                stack.push((left_sibling, node_is_red));
             }
             let right_sibling = dir_entry.right_sibling;
             if right_sibling != consts::NO_STREAM {
@@ -238,7 +178,7 @@ impl<F> Directory<F> {
                         entry.name
                     );
                 }
-                stack.push(right_sibling);
+                stack.push((right_sibling, node_is_red));
             }
             let child = dir_entry.child;
             if child != consts::NO_STREAM {
@@ -249,7 +189,7 @@ impl<F> Directory<F> {
                         self.dir_entries.len()
                     );
                 }
-                stack.push(child);
+                stack.push((child, false));
             }
         }
         Ok(())
@@ -260,11 +200,14 @@ impl<F: Seek> Directory<F> {
     pub fn seek_within_header(
         &mut self,
         offset_within_header: u64,
-    ) -> io::Result<Sector<F>> {
+    ) -> io::Result<Sector<'_, F>> {
         self.allocator.seek_within_header(offset_within_header)
     }
 
-    fn seek_to_dir_entry(&mut self, stream_id: u32) -> io::Result<Sector<F>> {
+    fn seek_to_dir_entry(
+        &mut self,
+        stream_id: u32,
+    ) -> io::Result<Sector<'_, F>> {
         self.seek_within_dir_entry(stream_id, 0)
     }
 
@@ -272,7 +215,7 @@ impl<F: Seek> Directory<F> {
         &mut self,
         stream_id: u32,
         offset_within_dir_entry: usize,
-    ) -> io::Result<Sector<F>> {
+    ) -> io::Result<Sector<'_, F>> {
         let dir_entries_per_sector =
             self.version().dir_entries_per_sector() as u32;
         let index_within_sector = stream_id % dir_entries_per_sector;
@@ -326,8 +269,12 @@ impl<F: Write + Seek> Directory<F> {
         );
         // Create a new directory entry.
         let stream_id = self.allocate_dir_entry()?;
-        let now = internal::time::current_timestamp();
-        *self.dir_entry_mut(stream_id) = DirEntry::new(name, obj_type, now);
+        // 2.6.1 streams must have creation and modified time of 0
+        let mut ts = Timestamp::zero();
+        if obj_type == ObjType::Storage {
+            ts = Timestamp::now();
+        }
+        *self.dir_entry_mut(stream_id) = DirEntry::new(name, obj_type, ts);
 
         // Insert the new entry into the tree.
         let mut sibling_id = self.dir_entry(parent_id).child;
@@ -348,19 +295,19 @@ impl<F: Write + Seek> Directory<F> {
                 self.dir_entry_mut(prev_sibling_id).left_sibling = stream_id;
                 let mut sector =
                     self.seek_within_dir_entry(prev_sibling_id, 68)?;
-                sector.write_u32::<LittleEndian>(stream_id)?;
+                sector.write_le_u32(stream_id)?;
             }
             Ordering::Greater => {
                 self.dir_entry_mut(prev_sibling_id).right_sibling = stream_id;
                 let mut sector =
                     self.seek_within_dir_entry(prev_sibling_id, 72)?;
-                sector.write_u32::<LittleEndian>(stream_id)?;
+                sector.write_le_u32(stream_id)?;
             }
             Ordering::Equal => {
                 debug_assert_eq!(prev_sibling_id, parent_id);
                 self.dir_entry_mut(parent_id).child = stream_id;
                 let mut sector = self.seek_within_dir_entry(parent_id, 76)?;
-                sector.write_u32::<LittleEndian>(stream_id)?;
+                sector.write_le_u32(stream_id)?;
             }
         }
         // TODO: rebalance tree
@@ -434,7 +381,7 @@ impl<F: Write + Seek> Directory<F> {
             if self.dir_entry(sibling_id).left_sibling == stream_id {
                 self.dir_entry_mut(sibling_id).left_sibling = replacement_id;
                 let mut sector = self.seek_within_dir_entry(sibling_id, 68)?;
-                sector.write_u32::<LittleEndian>(replacement_id)?;
+                sector.write_le_u32(replacement_id)?;
             } else {
                 debug_assert_eq!(
                     self.dir_entry(sibling_id).right_sibling,
@@ -442,12 +389,12 @@ impl<F: Write + Seek> Directory<F> {
                 );
                 self.dir_entry_mut(sibling_id).right_sibling = replacement_id;
                 let mut sector = self.seek_within_dir_entry(sibling_id, 72)?;
-                sector.write_u32::<LittleEndian>(replacement_id)?;
+                sector.write_le_u32(replacement_id)?;
             }
         } else {
             self.dir_entry_mut(parent_id).child = replacement_id;
             let mut sector = self.seek_within_dir_entry(parent_id, 76)?;
-            sector.write_u32::<LittleEndian>(replacement_id)?;
+            sector.write_le_u32(replacement_id)?;
         }
         self.free_dir_entry(stream_id)?;
         Ok(())
@@ -469,11 +416,37 @@ impl<F: Write + Seek> Directory<F> {
         if self.dir_entries.len() % dir_entries_per_sector == 0 {
             let start_sector = self.dir_start_sector;
             self.allocator.extend_chain(start_sector, SectorInit::Dir)?;
+            self.update_num_dir_sectors()?;
         }
         // Add a new entry to the end of the directory and return it.
         let stream_id = self.dir_entries.len() as u32;
         self.dir_entries.push(unallocated_dir_entry);
         Ok(stream_id)
+    }
+
+    /// Increase header num_dir_sectors if version V4
+    /// note: not updating this value breaks ole32 compatibility
+    fn update_num_dir_sectors(&mut self) -> io::Result<()> {
+        let start_sector = self.dir_start_sector;
+        if self.version() == Version::V4 {
+            let num_dir_sectors =
+                self.count_directory_sectors(start_sector)?;
+            self.seek_within_header(40)?.write_le_u32(num_dir_sectors)?;
+        }
+        Ok(())
+    }
+
+    fn count_directory_sectors(
+        &mut self,
+        start_sector: u32,
+    ) -> io::Result<u32> {
+        let mut num_dir_sectors = 1;
+        let mut next_sector = self.allocator.next(start_sector)?;
+        while next_sector != consts::END_OF_CHAIN {
+            num_dir_sectors += 1;
+            next_sector = self.allocator.next(next_sector)?;
+        }
+        Ok(num_dir_sectors)
     }
 
     /// Deallocates the specified directory entry.
@@ -484,6 +457,7 @@ impl<F: Write + Seek> Directory<F> {
         *self.dir_entry_mut(stream_id) = dir_entry;
         // TODO: Truncate directory chain if last directory sector is now all
         //       unallocated.
+        //       In that case, also call update_num_dir_sectors()
         Ok(())
     }
 
@@ -533,11 +507,15 @@ impl<F: Write + Seek> Directory<F> {
 mod tests {
     use super::Directory;
     use crate::internal::{
-        consts, Allocator, Color, DirEntry, ObjType, Sectors, Version,
+        consts, Allocator, Color, DirEntry, ObjType, Sectors, Timestamp,
+        Validation, Version,
     };
     use std::io::Cursor;
 
-    fn make_directory(entries: Vec<DirEntry>) -> Directory<Cursor<Vec<u8>>> {
+    fn make_directory(
+        entries: Vec<DirEntry>,
+        validation: Validation,
+    ) -> Directory<Cursor<Vec<u8>>> {
         let version = Version::V3;
         let num_sectors = 3;
         let data_len = (1 + num_sectors) * version.sector_len();
@@ -545,14 +523,15 @@ mod tests {
         let sectors = Sectors::new(version, data_len as u64, cursor);
         let mut fat = vec![consts::END_OF_CHAIN; num_sectors];
         fat[0] = consts::FAT_SECTOR;
-        let allocator = Allocator::new(sectors, vec![], vec![0], fat).unwrap();
-        Directory::new(allocator, entries, 1).unwrap()
+        let allocator =
+            Allocator::new(sectors, vec![], vec![0], fat, validation).unwrap();
+        Directory::new(allocator, entries, 1, validation).unwrap()
     }
 
     #[test]
     #[should_panic(expected = "Malformed directory (root entry is missing)")]
     fn no_root_entry() {
-        make_directory(vec![]);
+        make_directory(vec![], Validation::Permissive);
     }
 
     #[test]
@@ -564,7 +543,7 @@ mod tests {
         let mut root_entry = DirEntry::empty_root_entry();
         root_entry.start_sector = 2;
         root_entry.stream_len = 147;
-        make_directory(vec![root_entry]);
+        make_directory(vec![root_entry], Validation::Permissive);
     }
 
     #[test]
@@ -572,9 +551,10 @@ mod tests {
     fn storage_is_child_of_itself() {
         let mut root_entry = DirEntry::empty_root_entry();
         root_entry.child = 1;
-        let mut storage = DirEntry::new("foo", ObjType::Storage, 0);
+        let mut storage =
+            DirEntry::new("foo", ObjType::Storage, Timestamp::zero());
         storage.child = 1;
-        make_directory(vec![root_entry, storage]);
+        make_directory(vec![root_entry, storage], Validation::Permissive);
     }
 
     #[test]
@@ -584,7 +564,7 @@ mod tests {
     fn root_has_wrong_type() {
         let mut root_entry = DirEntry::empty_root_entry();
         root_entry.obj_type = ObjType::Storage;
-        make_directory(vec![root_entry]);
+        make_directory(vec![root_entry], Validation::Permissive);
     }
 
     #[test]
@@ -594,8 +574,8 @@ mod tests {
     fn nonroot_has_wrong_type() {
         let mut root_entry = DirEntry::empty_root_entry();
         root_entry.child = 1;
-        let storage = DirEntry::new("foo", ObjType::Root, 0);
-        make_directory(vec![root_entry, storage]);
+        let storage = DirEntry::new("foo", ObjType::Root, Timestamp::zero());
+        make_directory(vec![root_entry, storage], Validation::Permissive);
     }
 
     #[test]
@@ -607,24 +587,39 @@ mod tests {
         // we shouldn't complain if the root is red.
         let mut root_entry = DirEntry::empty_root_entry();
         root_entry.color = Color::Red;
-        make_directory(vec![root_entry]);
+        make_directory(vec![root_entry], Validation::Permissive);
+    }
+
+    fn make_entries_with_adjacent_red_nodes() -> Vec<DirEntry> {
+        let mut root_entry = DirEntry::empty_root_entry();
+        root_entry.child = 1;
+        let mut storage1 =
+            DirEntry::new("foo", ObjType::Storage, Timestamp::zero());
+        storage1.color = Color::Red;
+        storage1.left_sibling = 2;
+        let mut storage2 =
+            DirEntry::new("bar", ObjType::Storage, Timestamp::zero());
+        storage2.color = Color::Red;
+        vec![root_entry, storage1, storage2]
     }
 
     #[test]
-    fn tolerate_two_red_nodes_in_a_row() {
-        // The MS-CFB spec section 2.6.4 says that two consecutive nodes in the
-        // tree MUST NOT both be red, but apparently some implementations don't
-        // obey this (see https://github.com/mdsteele/rust-cfb/issues/10).  We
-        // still want to be able to read these files, so we shouldn't complain
-        // if there are two red nodes in a row.
-        let mut root_entry = DirEntry::empty_root_entry();
-        root_entry.child = 1;
-        let mut storage1 = DirEntry::new("foo", ObjType::Storage, 0);
-        storage1.color = Color::Red;
-        storage1.left_sibling = 2;
-        let mut storage2 = DirEntry::new("bar", ObjType::Storage, 0);
-        storage2.color = Color::Red;
-        make_directory(vec![root_entry, storage1, storage2]);
+    #[should_panic(
+        expected = "Malformed directory (RB tree has adjacent red nodes)"
+    )]
+    fn adjacent_red_nodes_strict() {
+        make_directory(
+            make_entries_with_adjacent_red_nodes(),
+            Validation::Strict,
+        );
+    }
+
+    #[test]
+    fn adjacent_red_nodes_permissive() {
+        make_directory(
+            make_entries_with_adjacent_red_nodes(),
+            Validation::Permissive,
+        );
     }
 }
 

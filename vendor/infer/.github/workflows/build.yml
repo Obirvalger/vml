@@ -9,6 +9,8 @@ on:
     - 'src/**'
     - 'tests/**'
     - 'testdata/**'
+    - 'examples/**'
+    - '.github/workflows/build.yml'
   pull_request:
     branches:
     - master
@@ -17,16 +19,31 @@ on:
     - 'src/**'
     - 'tests/**'
     - 'testdata/**'
+    - 'examples/**'
+    - '.github/workflows/build.yml'
 
 jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install Rust (MSRV)
+      uses: dtolnay/rust-toolchain@1.74
+    - name: Check MSRV (default)
+      run: cargo check
+    - name: Check MSRV (no_std)
+      run: cargo check --no-default-features --features alloc
+    - name: Check MSRV (no_alloc)
+      run: cargo check --no-default-features
+
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
-    - name: Install rustfmt
-      run: rustup component add rustfmt
-    - name: Install clippy
-      run: rustup component add clippy
+    - uses: actions/checkout@v7
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
     - name: Check format
       run: cargo fmt --all -- --check
     - name: Lint (all features)

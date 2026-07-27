@@ -1,5 +1,5 @@
 use cfb::{CompoundFile, Entry, Version};
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -39,7 +39,7 @@ fn create_empty_compound_file() {
 
     let cursor = comp.into_inner();
     assert_eq!(cursor.get_ref().len(), 3 * version.sector_len());
-    let comp = CompoundFile::open(cursor).expect("open");
+    let comp = CompoundFile::open_strict(cursor).expect("open");
     assert_eq!(comp.version(), version);
     assert_eq!(comp.entry("/").unwrap().name(), "Root Entry");
 }
@@ -76,8 +76,10 @@ fn partial_final_sector() {
     let mut cfb_data = comp.into_inner().into_inner();
     assert_eq!(cfb_data.len(), 6 * 4096);
     let mut expected_final_sector = vec![b'\0'; 4096];
-    for i in 0..(stream_data.len() % 4096) {
-        expected_final_sector[i] = b'x';
+    for sector in
+        expected_final_sector[..(stream_data.len() % 4096)].iter_mut()
+    {
+        *sector = b'x';
     }
     assert_eq!(&cfb_data[(5 * 4096)..], expected_final_sector.as_slice());
     // Now, truncate the raw CFB data so that the final sector only
@@ -114,7 +116,7 @@ fn create_directory_tree() {
     comp.create_storage("/foo/bar").unwrap();
 
     let cursor = comp.into_inner();
-    let comp = CompoundFile::open(cursor).expect("open");
+    let comp = CompoundFile::open_strict(cursor).expect("open");
     assert_eq!(read_root_storage_to_vec(&comp), vec!["baz", "foo"]);
     assert_eq!(read_storage_to_vec(&comp, "/"), vec!["baz", "foo"]);
     assert_eq!(read_storage_to_vec(&comp, "/foo"), vec!["bar"]);
@@ -256,7 +258,7 @@ fn storage_clsids() {
     assert_eq!(comp.entry("/foo").unwrap().clsid(), &uuid2);
 
     let cursor = comp.into_inner();
-    let comp = CompoundFile::open(cursor).expect("open");
+    let comp = CompoundFile::open_strict(cursor).expect("open");
     assert_eq!(comp.root_entry().clsid(), &uuid1);
     assert_eq!(comp.entry("/foo").unwrap().clsid(), &uuid2);
 }
@@ -295,7 +297,7 @@ fn state_bits() {
     assert_eq!(comp.entry("bar").unwrap().state_bits(), 0x0ABCDEF0);
 
     let cursor = comp.into_inner();
-    let comp = CompoundFile::open(cursor).expect("open");
+    let comp = CompoundFile::open_strict(cursor).expect("open");
     assert_eq!(comp.root_entry().state_bits(), 0);
     assert_eq!(comp.entry("foo").unwrap().state_bits(), 0x12345678);
     assert_eq!(comp.entry("bar").unwrap().state_bits(), 0x0ABCDEF0);
@@ -383,7 +385,7 @@ fn remove_storages() {
     comp.remove_storage("/baz/blarg").unwrap();
 
     let cursor = comp.into_inner();
-    let comp = CompoundFile::open(cursor).expect("open");
+    let comp = CompoundFile::open_strict(cursor).expect("open");
     assert_eq!(read_storage_to_vec(&comp, "/"), vec!["baz", "quux"]);
     assert!(read_storage_to_vec(&comp, "/baz").is_empty());
 }
@@ -437,7 +439,7 @@ fn remove_storage_all_on_storage() {
     comp.remove_storage_all("foo").unwrap();
 
     let cursor = comp.into_inner();
-    let comp = CompoundFile::open(cursor).expect("open");
+    let comp = CompoundFile::open_strict(cursor).expect("open");
     assert_eq!(read_storage_to_vec(&comp, "/"), vec!["stuff"]);
     assert_eq!(read_storage_to_vec(&comp, "/stuff"), vec!["foo"]);
 }
@@ -453,7 +455,7 @@ fn remove_storage_all_on_root() {
     comp.remove_storage_all("/").unwrap();
 
     let cursor = comp.into_inner();
-    let comp = CompoundFile::open(cursor).expect("open");
+    let comp = CompoundFile::open_strict(cursor).expect("open");
     assert!(read_storage_to_vec(&comp, "/").is_empty());
 }
 
@@ -468,7 +470,7 @@ fn create_streams() {
     comp.create_stream("/baz").unwrap().write_all(b"baz!").unwrap();
 
     let cursor = comp.into_inner();
-    let mut comp = CompoundFile::open(cursor).expect("open");
+    let mut comp = CompoundFile::open_strict(cursor).expect("open");
     {
         let mut stream = comp.open_stream("/foo").unwrap();
         let mut data = String::new();
@@ -493,7 +495,7 @@ fn create_small_stream() {
     comp.create_stream("foobar").unwrap().write_all(&data).unwrap();
 
     let cursor = comp.into_inner();
-    let mut comp = CompoundFile::open(cursor).expect("open");
+    let mut comp = CompoundFile::open_strict(cursor).expect("open");
     let mut stream = comp.open_stream("foobar").unwrap();
     let mut actual_data = Vec::new();
     stream.read_to_end(&mut actual_data).unwrap();
@@ -510,7 +512,7 @@ fn create_large_stream() {
     comp.create_stream("foobar").unwrap().write_all(&data).unwrap();
 
     let cursor = comp.into_inner();
-    let mut comp = CompoundFile::open(cursor).expect("open");
+    let mut comp = CompoundFile::open_strict(cursor).expect("open");
     let mut stream = comp.open_stream("foobar").unwrap();
     let mut actual_data = Vec::new();
     stream.read_to_end(&mut actual_data).unwrap();
@@ -531,7 +533,7 @@ fn create_very_large_stream() {
     }
 
     let cursor = comp.into_inner();
-    let mut comp = CompoundFile::open(cursor).expect("open");
+    let mut comp = CompoundFile::open_strict(cursor).expect("open");
     let mut stream = comp.open_stream("foobar").unwrap();
     assert_eq!(stream.len(), 1_000_000);
     assert_eq!(stream.seek(SeekFrom::End(0)).unwrap(), 1_000_000);
@@ -598,7 +600,7 @@ fn remove_streams() {
     comp.remove_stream("/baz/blarg").unwrap();
 
     let cursor = comp.into_inner();
-    let comp = CompoundFile::open(cursor).expect("open");
+    let comp = CompoundFile::open_strict(cursor).expect("open");
     assert_eq!(read_storage_to_vec(&comp, "/"), vec!["baz", "quux"]);
     assert!(read_storage_to_vec(&comp, "/baz").is_empty());
 }
@@ -643,7 +645,7 @@ fn truncate_stream() {
         assert_eq!(stream.seek(SeekFrom::Start(6000)).unwrap(), 6000);
         stream.set_len(7000).unwrap();
         assert_eq!(stream.len(), 7000);
-        assert_eq!(stream.seek(SeekFrom::Current(0)).unwrap(), 6000);
+        assert_eq!(stream.stream_position().unwrap(), 6000);
         stream.set_len(5000).unwrap();
         assert_eq!(stream.len(), 5000);
         stream.write_all(&vec![b'x'; 1000]).unwrap();
@@ -651,7 +653,7 @@ fn truncate_stream() {
     }
 
     let cursor = comp.into_inner();
-    let mut comp = CompoundFile::open(cursor).expect("open");
+    let mut comp = CompoundFile::open_strict(cursor).expect("open");
     let mut stream = comp.open_stream("/foobar").unwrap();
     assert_eq!(stream.len(), 6000);
     let mut actual_data = Vec::new();
@@ -672,17 +674,17 @@ fn extend_stream() {
         assert_eq!(stream.seek(SeekFrom::Start(1000)).unwrap(), 1000);
         stream.write_all(&vec![b'y'; 500]).unwrap();
         assert_eq!(stream.len(), 2000);
-        assert_eq!(stream.seek(SeekFrom::Current(0)).unwrap(), 1500);
+        assert_eq!(stream.stream_position().unwrap(), 1500);
         stream.set_len(5000).unwrap();
         assert_eq!(stream.len(), 5000);
-        assert_eq!(stream.seek(SeekFrom::Current(0)).unwrap(), 1500);
+        assert_eq!(stream.stream_position().unwrap(), 1500);
         stream.write_all(&vec![b'z'; 500]).unwrap();
         assert_eq!(stream.len(), 5000);
-        assert_eq!(stream.seek(SeekFrom::Current(0)).unwrap(), 2000);
+        assert_eq!(stream.stream_position().unwrap(), 2000);
     }
 
     let cursor = comp.into_inner();
-    let mut comp = CompoundFile::open(cursor).expect("open");
+    let mut comp = CompoundFile::open_strict(cursor).expect("open");
     let mut stream = comp.open_stream("/foobar").unwrap();
     assert_eq!(stream.len(), 5000);
     let mut actual_data = Vec::new();
@@ -717,6 +719,70 @@ fn stream_seek() {
     assert_eq!(stream.seek(SeekFrom::Current(-256)).unwrap(), 256);
     stream.read_exact(&mut buffer).unwrap();
     assert_eq!(buffer, vec![3; 128]);
+}
+
+//===========================================================================//
+// Tests for opening multiple streams at once:
+
+#[test]
+fn multiple_open_streams() -> io::Result<()> {
+    let cursor = Cursor::new(Vec::new());
+    let mut comp = CompoundFile::create(cursor)?;
+
+    // Create a stream and write multiple sectors worth of data into it.
+    let mut stream1 = comp.create_stream("/foo")?;
+    let mut data = Vec::<u8>::new();
+    for i in 1..150 {
+        for j in 0..i {
+            data.push(j);
+        }
+    }
+    assert!(data.len() > comp.version().sector_len() * 2);
+    stream1.write_all(&data)?;
+
+    // Create a second stream and copy the first stream into it.  Having two
+    // open streams at once, and interleaving reads and writes between them,
+    // should work fine.
+    let mut stream2 = comp.create_stream("/bar")?;
+    stream1.rewind()?;
+    let num_bytes = io::copy(&mut stream1, &mut stream2)?;
+    assert_eq!(num_bytes, data.len() as u64);
+
+    // Read the copied data out of the second stream and verify that it matches
+    // the original data.
+    let mut copied = Vec::<u8>::new();
+    stream2.rewind()?;
+    let num_bytes = stream2.read_to_end(&mut copied)?;
+    assert_eq!(num_bytes, data.len());
+    assert_eq!(copied, data);
+    Ok(())
+}
+
+#[test]
+fn drop_compound_file_with_stream_open() -> io::Result<()> {
+    let cursor = Cursor::new(Vec::new());
+    let mut comp = CompoundFile::create(cursor)?;
+    let mut stream = comp.create_stream("/foobar")?;
+    stream.write_all(b"Hello, world!")?;
+    comp.into_inner();
+    let result = stream.flush();
+    assert_eq!(result.unwrap_err().to_string(), "CompoundFile was dropped");
+    Ok(())
+}
+
+//===========================================================================//
+// Tests for asserting Send + Sync:
+
+#[test]
+fn test_compound_file_send() {
+    fn assert_send<T: Send>() {}
+    assert_send::<CompoundFile<std::fs::File>>();
+}
+
+#[test]
+fn test_compound_file_sync() {
+    fn assert_sync<T: Sync>() {}
+    assert_sync::<CompoundFile<std::fs::File>>();
 }
 
 //===========================================================================//

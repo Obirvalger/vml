@@ -69,6 +69,7 @@ assert_eq!(kind.extension(), "foo");
 #![crate_name = "infer"]
 #![doc(html_root_url = "https://docs.rs/infer/latest")]
 #![forbid(unsafe_code)]
+#![allow(clippy::struct_field_names)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg(feature = "alloc")]
@@ -141,16 +142,19 @@ impl Type {
     ///
     /// assert_eq!(kind.matcher_type(), infer::MatcherType::Image);
     /// ```
+    #[must_use]
     pub const fn matcher_type(&self) -> MatcherType {
         self.matcher_type
     }
 
     /// Returns the mime type
+    #[must_use]
     pub const fn mime_type(&self) -> &'static str {
         self.mime_type
     }
 
     /// Returns the file extension
+    #[must_use]
     pub const fn extension(&self) -> &'static str {
         self.extension
     }
@@ -167,7 +171,8 @@ impl fmt::Debug for Type {
             .field("matcher_type", &self.matcher_type)
             .field("mime_type", &self.mime_type)
             .field("extension", &self.extension)
-            .finish()
+            // `matcher` is not exposed
+            .finish_non_exhaustive()
     }
 }
 
@@ -197,6 +202,7 @@ pub struct Infer {
 
 impl Infer {
     /// Initialize a new instance of the infer struct.
+    #[must_use]
     pub const fn new() -> Infer {
         #[cfg(feature = "alloc")]
         return Infer { mmap: Vec::new() };
@@ -227,6 +233,7 @@ impl Infer {
     /// assert_eq!(kind.mime_type(), "image/jpeg");
     /// assert_eq!(kind.extension(), "jpg");
     /// ```
+    #[must_use]
     pub fn get(&self, buf: &[u8]) -> Option<Type> {
         self.iter_matchers().find(|kind| kind.matches(buf)).copied()
     }
@@ -236,14 +243,19 @@ impl Infer {
     /// # Examples
     ///
     /// See [`get_from_path`](./fn.get_from_path.html).
+    /// # Errors
+    ///
+    /// Will return `Err` if `path` does not exist or the user does not have
+    /// permission to read it.
     #[cfg(feature = "std")]
     pub fn get_from_path<P: AsRef<Path>>(&self, path: P) -> io::Result<Option<Type>> {
         let file = File::open(path)?;
 
         let limit = file
             .metadata()
-            .map(|m| std::cmp::min(m.len(), 8192) as usize + 1)
-            .unwrap_or(0);
+            .ok()
+            .and_then(|m| usize::try_from(std::cmp::min(m.len(), 8192)).ok())
+            .map_or(0, |len| len + 1);
         let mut bytes = Vec::with_capacity(limit);
         file.take(8192).read_to_end(&mut bytes)?;
 
@@ -255,6 +267,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is`](./fn.is.html).
+    #[must_use]
     pub fn is(&self, buf: &[u8], extension: &str) -> bool {
         self.iter_matchers()
             .any(|kind| kind.extension() == extension && kind.matches(buf))
@@ -265,6 +278,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_mime`](./fn.is_mime.html).
+    #[must_use]
     pub fn is_mime(&self, buf: &[u8], mime_type: &str) -> bool {
         self.iter_matchers()
             .any(|kind| kind.mime_type() == mime_type && kind.matches(buf))
@@ -275,6 +289,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_supported`](./fn.is_supported.html).
+    #[must_use]
     pub fn is_supported(&self, extension: &str) -> bool {
         self.iter_matchers()
             .any(|kind| kind.extension() == extension)
@@ -285,6 +300,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_mime_supported`](./fn.is_mime_supported.html).
+    #[must_use]
     pub fn is_mime_supported(&self, mime_type: &str) -> bool {
         self.iter_matchers()
             .any(|kind| kind.mime_type() == mime_type)
@@ -295,6 +311,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_app`](./fn.is_app.html).
+    #[must_use]
     pub fn is_app(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::App)
     }
@@ -304,6 +321,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_archive`](./fn.is_archive.html).
+    #[must_use]
     pub fn is_archive(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::Archive)
     }
@@ -313,6 +331,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_audio`](./fn.is_audio.html).
+    #[must_use]
     pub fn is_audio(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::Audio)
     }
@@ -322,6 +341,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_book`](./fn.is_book.html).
+    #[must_use]
     pub fn is_book(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::Book)
     }
@@ -331,6 +351,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_document`](./fn.is_document.html).
+    #[must_use]
     pub fn is_document(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::Doc)
     }
@@ -340,6 +361,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_font`](./fn.is_font.html).
+    #[must_use]
     pub fn is_font(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::Font)
     }
@@ -349,6 +371,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_image`](./fn.is_image.html).
+    #[must_use]
     pub fn is_image(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::Image)
     }
@@ -358,6 +381,7 @@ impl Infer {
     /// # Examples
     ///
     /// See [`is_video`](./fn.is_video.html).
+    #[must_use]
     pub fn is_video(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::Video)
     }
@@ -379,6 +403,7 @@ impl Infer {
     /// assert!(info.is_custom(&buf));
     /// # }
     /// ```
+    #[must_use]
     pub fn is_custom(&self, buf: &[u8]) -> bool {
         self.is_type(buf, MatcherType::Custom)
     }
@@ -439,6 +464,7 @@ static INFER: Infer = Infer::new();
 /// assert_eq!(kind.mime_type(), "image/jpeg");
 /// assert_eq!(kind.extension(), "jpg");
 /// ```
+#[must_use]
 pub fn get(buf: &[u8]) -> Option<Type> {
     INFER.get(buf)
 }
@@ -472,6 +498,7 @@ pub fn get_from_path<P: AsRef<Path>>(path: P) -> io::Result<Option<Type>> {
 /// let buf = [0xFF, 0xD8, 0xFF, 0xAA];
 /// assert!(infer::is(&buf, "jpg"));
 /// ```
+#[must_use]
 pub fn is(buf: &[u8], extension: &str) -> bool {
     INFER.is(buf, extension)
 }
@@ -484,6 +511,7 @@ pub fn is(buf: &[u8], extension: &str) -> bool {
 /// let buf = [0xFF, 0xD8, 0xFF, 0xAA];
 /// assert!(infer::is_mime(&buf, "image/jpeg"));
 /// ```
+#[must_use]
 pub fn is_mime(buf: &[u8], mime_type: &str) -> bool {
     INFER.is_mime(buf, mime_type)
 }
@@ -495,6 +523,7 @@ pub fn is_mime(buf: &[u8], mime_type: &str) -> bool {
 /// ```rust
 /// assert!(infer::is_supported("jpg"));
 /// ```
+#[must_use]
 pub fn is_supported(extension: &str) -> bool {
     INFER.is_supported(extension)
 }
@@ -506,6 +535,7 @@ pub fn is_supported(extension: &str) -> bool {
 /// ```rust
 /// assert!(infer::is_mime_supported("image/jpeg"));
 /// ```
+#[must_use]
 pub fn is_mime_supported(mime_type: &str) -> bool {
     INFER.is_mime_supported(mime_type)
 }
@@ -518,6 +548,7 @@ pub fn is_mime_supported(mime_type: &str) -> bool {
 /// use std::fs;
 /// assert!(infer::is_app(&fs::read("testdata/sample.wasm").unwrap()));
 /// ```
+#[must_use]
 pub fn is_app(buf: &[u8]) -> bool {
     INFER.is_app(buf)
 }
@@ -529,6 +560,7 @@ pub fn is_app(buf: &[u8]) -> bool {
 /// use std::fs;
 /// assert!(infer::is_archive(&fs::read("testdata/sample.pdf").unwrap()));
 /// ```
+#[must_use]
 pub fn is_archive(buf: &[u8]) -> bool {
     INFER.is_archive(buf)
 }
@@ -542,6 +574,7 @@ pub fn is_archive(buf: &[u8]) -> bool {
 /// let v = [0xff, 0xfb, 0x90, 0x44, 0x00];
 /// assert!(infer::is_audio(&v));
 /// ```
+#[must_use]
 pub fn is_audio(buf: &[u8]) -> bool {
     INFER.is_audio(buf)
 }
@@ -554,6 +587,7 @@ pub fn is_audio(buf: &[u8]) -> bool {
 /// use std::fs;
 /// assert!(infer::is_book(&fs::read("testdata/sample.epub").unwrap()));
 /// ```
+#[must_use]
 pub fn is_book(buf: &[u8]) -> bool {
     INFER.is_book(buf)
 }
@@ -566,6 +600,7 @@ pub fn is_book(buf: &[u8]) -> bool {
 /// use std::fs;
 /// assert!(infer::is_document(&fs::read("testdata/sample.docx").unwrap()));
 /// ```
+#[must_use]
 pub fn is_document(buf: &[u8]) -> bool {
     INFER.is_document(buf)
 }
@@ -578,6 +613,7 @@ pub fn is_document(buf: &[u8]) -> bool {
 /// use std::fs;
 /// assert!(infer::is_font(&fs::read("testdata/sample.ttf").unwrap()));
 /// ```
+#[must_use]
 pub fn is_font(buf: &[u8]) -> bool {
     INFER.is_font(buf)
 }
@@ -590,6 +626,7 @@ pub fn is_font(buf: &[u8]) -> bool {
 /// let v = [0xFF, 0xD8, 0xFF, 0xAA];
 /// assert!(infer::is_image(&v));
 /// ```
+#[must_use]
 pub fn is_image(buf: &[u8]) -> bool {
     INFER.is_image(buf)
 }
@@ -602,6 +639,7 @@ pub fn is_image(buf: &[u8]) -> bool {
 /// use std::fs;
 /// assert!(infer::is_video(&fs::read("testdata/sample.mov").unwrap()));
 /// ```
+#[must_use]
 pub fn is_video(buf: &[u8]) -> bool {
     INFER.is_video(buf)
 }

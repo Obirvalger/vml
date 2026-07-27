@@ -1,12 +1,13 @@
-use crate::internal::{
-    consts, Chain, DirEntry, Directory, Entries, MiniChain, ObjType, Sector,
-    SectorInit, Version,
-};
-use byteorder::{LittleEndian, WriteBytesExt};
-use fnv::FnvHashSet;
 use std::io::{self, Seek, SeekFrom, Write};
 use std::mem::size_of;
-use std::path::Path;
+
+use fnv::FnvHashSet;
+
+use crate::internal::{
+    consts, Chain, DirEntry, Directory, MiniChain, ObjType, Sector,
+    SectorInit, Validation, Version,
+};
+use crate::WriteLeNumber;
 
 //===========================================================================//
 
@@ -25,6 +26,7 @@ pub struct MiniAllocator<F> {
     directory: Directory<F>,
     minifat: Vec<u32>,
     minifat_start_sector: u32,
+    free_mini_sectors: Vec<u32>,
 }
 
 impl<F> MiniAllocator<F> {
@@ -32,15 +34,24 @@ impl<F> MiniAllocator<F> {
         directory: Directory<F>,
         minifat: Vec<u32>,
         minifat_start_sector: u32,
+        validation: Validation,
     ) -> io::Result<MiniAllocator<F>> {
-        let minialloc =
-            MiniAllocator { directory, minifat, minifat_start_sector };
-        minialloc.validate()?;
+        let mut minialloc = MiniAllocator {
+            directory,
+            minifat,
+            minifat_start_sector,
+            free_mini_sectors: Vec::new(),
+        };
+        minialloc.validate(validation)?;
         Ok(minialloc)
     }
 
     pub fn version(&self) -> Version {
         self.directory.version()
+    }
+
+    pub fn inner(&self) -> &F {
+        self.directory.inner()
     }
 
     pub fn next_mini_sector(&self, sector_id: u32) -> io::Result<u32> {
@@ -71,42 +82,18 @@ impl<F> MiniAllocator<F> {
         self.directory.stream_id_for_name_chain(names)
     }
 
-    /// Returns an iterator over the entries within the root storage object.
-    pub fn root_storage_entries(&self) -> Entries {
-        self.directory.root_storage_entries()
-    }
-
-    /// Returns an iterator over the entries within a storage object.
-    pub fn storage_entries(&self, path: &Path) -> io::Result<Entries> {
-        self.directory.storage_entries(path)
-    }
-
-    /// Returns an iterator over all entries within the compound file, starting
-    /// from and including the root entry.  The iterator walks the storage tree
-    /// in a preorder traversal.
-    pub fn walk(&self) -> Entries {
-        self.directory.walk()
-    }
-
-    /// Returns an iterator over all entries under a storage subtree, including
-    /// the given path itself.  The iterator walks the storage tree in a
-    /// preorder traversal.
-    pub fn walk_storage(&self, path: &Path) -> io::Result<Entries> {
-        self.directory.walk_storage(path)
-    }
-
     pub fn open_chain(
         &mut self,
         start_sector_id: u32,
         init: SectorInit,
-    ) -> io::Result<Chain<F>> {
+    ) -> io::Result<Chain<'_, F>> {
         self.directory.open_chain(start_sector_id, init)
     }
 
     pub fn open_mini_chain(
         &mut self,
         start_sector_id: u32,
-    ) -> io::Result<MiniChain<F>> {
+    ) -> io::Result<MiniChain<'_, F>> {
         MiniChain::new(self, start_sector_id)
     }
 
@@ -118,17 +105,21 @@ impl<F> MiniAllocator<F> {
         self.directory.dir_entry(stream_id)
     }
 
-    fn validate(&self) -> io::Result<()> {
+    fn validate(&mut self, validation: Validation) -> io::Result<()> {
         let root_entry = self.directory.root_dir_entry();
         let root_stream_mini_sectors =
             root_entry.stream_len / (consts::MINI_SECTOR_LEN as u64);
         if root_stream_mini_sectors < (self.minifat.len() as u64) {
-            malformed!(
+            if validation.is_strict() {
+                malformed!(
                 "MiniFAT has {} entries, but root stream has only {} mini \
                  sectors",
                 self.minifat.len(),
                 root_stream_mini_sectors
             );
+            } else {
+                self.minifat.truncate(root_stream_mini_sectors as usize);
+            }
         }
         let mut pointees = FnvHashSet::default();
         for (from_mini_sector, &to_mini_sector) in
@@ -153,6 +144,13 @@ impl<F> MiniAllocator<F> {
                 pointees.insert(to_mini_sector);
             }
         }
+
+        self.free_mini_sectors.clear();
+        for (idx, &entry) in self.minifat.iter().enumerate() {
+            if entry == consts::FREE_SECTOR {
+                self.free_mini_sectors.push(idx as u32);
+            }
+        }
         Ok(())
     }
 }
@@ -162,7 +160,7 @@ impl<F: Seek> MiniAllocator<F> {
         &mut self,
         mini_sector: u32,
         offset_within_mini_sector: u64,
-    ) -> io::Result<Sector<F>> {
+    ) -> io::Result<Sector<'_, F>> {
         debug_assert!(
             offset_within_mini_sector < consts::MINI_SECTOR_LEN as u64
         );
@@ -251,11 +249,10 @@ impl<F: Write + Seek> MiniAllocator<F> {
     /// returns the new mini sector number.
     fn allocate_mini_sector(&mut self, value: u32) -> io::Result<u32> {
         // If there's an existing free mini sector, use that.
-        for mini_sector in 0..self.minifat.len() {
-            if self.minifat[mini_sector] == consts::FREE_SECTOR {
-                let mini_sector = mini_sector as u32;
-                self.set_minifat(mini_sector, value)?;
-                return Ok(mini_sector);
+        while let Some(free_idx) = self.free_mini_sectors.pop() {
+            if self.minifat[free_idx as usize] == consts::FREE_SECTOR {
+                self.set_minifat(free_idx, value)?;
+                return Ok(free_idx);
             }
         }
         // Otherwise, we need a new mini sector; if there's not room in the
@@ -267,8 +264,8 @@ impl<F: Write + Seek> MiniAllocator<F> {
             self.minifat_start_sector =
                 self.directory.begin_chain(SectorInit::Fat)?;
             let mut header = self.directory.seek_within_header(60)?;
-            header.write_u32::<LittleEndian>(self.minifat_start_sector)?;
-            header.write_u32::<LittleEndian>(1)?;
+            header.write_le_u32(self.minifat_start_sector)?;
+            header.write_le_u32(1)?;
         } else if self.minifat.len() % minifat_entries_per_sector == 0 {
             let start = self.minifat_start_sector;
             self.directory.extend_chain(start, SectorInit::Fat)?;
@@ -277,7 +274,7 @@ impl<F: Write + Seek> MiniAllocator<F> {
                 .open_chain(start, SectorInit::Fat)?
                 .num_sectors() as u32;
             let mut header = self.directory.seek_within_header(64)?;
-            header.write_u32::<LittleEndian>(num_minifat_sectors)?;
+            header.write_le_u32(num_minifat_sectors)?;
         }
         // Add a new mini sector to the end of the mini stream and return it.
         let new_mini_sector = self.minifat.len() as u32;
@@ -319,7 +316,11 @@ impl<F: Write + Seek> MiniAllocator<F> {
 
     /// Deallocates the specified mini sector.
     fn free_mini_sector(&mut self, mini_sector: u32) -> io::Result<()> {
+        if self.minifat[mini_sector as usize] == consts::FREE_SECTOR {
+            invalid_input!("sector {} freed twice", mini_sector);
+        }
         self.set_minifat(mini_sector, consts::FREE_SECTOR)?;
+        self.free_mini_sectors.push(mini_sector);
         let mut mini_stream_len = self.directory.root_dir_entry().stream_len;
         debug_assert_eq!(mini_stream_len % consts::MINI_SECTOR_LEN as u64, 0);
         while self.minifat.last() == Some(&consts::FREE_SECTOR) {
@@ -327,6 +328,8 @@ impl<F: Write + Seek> MiniAllocator<F> {
             self.minifat.pop();
             // TODO: Truncate MiniFAT if last MiniFAT sector is now all free.
         }
+        let minifat_len = self.minifat.len();
+        self.free_mini_sectors.retain(|&idx| (idx as usize) < minifat_len);
 
         if mini_stream_len != self.directory.root_dir_entry().stream_len {
             self.directory.with_root_dir_entry_mut(|dir_entry| {
@@ -372,7 +375,7 @@ impl<F: Write + Seek> MiniAllocator<F> {
         let offset = (index as u64) * size_of::<u32>() as u64;
         debug_assert!(chain.len() >= offset + size_of::<u32>() as u64);
         chain.seek(SeekFrom::Start(offset))?;
-        chain.write_u32::<LittleEndian>(value)?;
+        chain.write_le_u32(value)?;
         if (index as usize) == self.minifat.len() {
             self.minifat.push(value);
         } else {
@@ -391,11 +394,14 @@ impl<F: Write + Seek> MiniAllocator<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::MiniAllocator;
-    use crate::internal::{
-        consts, Allocator, DirEntry, Directory, ObjType, Sectors, Version,
-    };
     use std::io::Cursor;
+
+    use crate::internal::{
+        consts, Allocator, DirEntry, Directory, ObjType, Sectors, Timestamp,
+        Validation, Version,
+    };
+
+    use super::MiniAllocator;
 
     fn make_minialloc(minifat: Vec<u32>) -> MiniAllocator<Cursor<Vec<u8>>> {
         let root_stream_len = (consts::MINI_SECTOR_LEN * minifat.len()) as u64;
@@ -406,6 +412,7 @@ mod tests {
         minifat: Vec<u32>,
         root_stream_len: u64,
     ) -> MiniAllocator<Cursor<Vec<u8>>> {
+        let validation = Validation::Strict;
         let version = Version::V3;
         let num_sectors = 4; // FAT, Directory, MiniFAT, and mini chain
         let data_len = (1 + num_sectors) * version.sector_len();
@@ -413,17 +420,20 @@ mod tests {
         let sectors = Sectors::new(version, data_len as u64, cursor);
         let mut fat = vec![consts::END_OF_CHAIN; num_sectors];
         fat[0] = consts::FAT_SECTOR;
-        let allocator = Allocator::new(sectors, vec![], vec![0], fat).unwrap();
+        let allocator =
+            Allocator::new(sectors, vec![], vec![0], fat, validation).unwrap();
         let mut root_entry = DirEntry::empty_root_entry();
         root_entry.child = 1;
         root_entry.start_sector = 3;
         root_entry.stream_len = root_stream_len;
-        let mut stream_entry = DirEntry::new("foo", ObjType::Stream, 0);
+        let mut stream_entry =
+            DirEntry::new("foo", ObjType::Stream, Timestamp::zero());
         stream_entry.start_sector = 0;
         stream_entry.stream_len = root_entry.stream_len;
         let entries = vec![root_entry, stream_entry];
-        let directory = Directory::new(allocator, entries, 1).unwrap();
-        MiniAllocator::new(directory, minifat, 2).unwrap()
+        let directory =
+            Directory::new(allocator, entries, 1, validation).unwrap();
+        MiniAllocator::new(directory, minifat, 2, validation).unwrap()
     }
 
     #[test]

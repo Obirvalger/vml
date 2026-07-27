@@ -3,12 +3,9 @@ use std::process::exit;
 
 fn main() {
     let mut args = args();
-    let path = match args.nth(1) {
-        Some(path) => path,
-        None => {
-            eprintln!("Please specify the file path");
-            exit(1);
-        }
+    let Some(path) = args.nth(1) else {
+        eprintln!("Please specify the file path");
+        exit(1);
     };
 
     match infer::get_from_path(path) {
@@ -24,7 +21,7 @@ fn main() {
         }
         Err(e) => {
             eprintln!("Looks like something went wrong 😔");
-            eprintln!("{}", e);
+            eprintln!("{e}");
             exit(1);
         }
     }

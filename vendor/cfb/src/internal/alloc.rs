@@ -1,5 +1,7 @@
-use crate::internal::{consts, Chain, Sector, SectorInit, Sectors, Version};
-use byteorder::{LittleEndian, WriteBytesExt};
+use crate::internal::{
+    consts, Chain, Sector, SectorInit, Sectors, Validation, Version,
+};
+use crate::WriteLeNumber;
 use fnv::FnvHashSet;
 use std::io::{self, Seek, Write};
 use std::mem::size_of;
@@ -22,6 +24,7 @@ pub struct Allocator<F> {
     difat_sector_ids: Vec<u32>,
     difat: Vec<u32>,
     fat: Vec<u32>,
+    free_sectors: Vec<u32>,
 }
 
 impl<F> Allocator<F> {
@@ -30,14 +33,25 @@ impl<F> Allocator<F> {
         difat_sector_ids: Vec<u32>,
         difat: Vec<u32>,
         fat: Vec<u32>,
+        validation: Validation,
     ) -> io::Result<Allocator<F>> {
-        let alloc = Allocator { sectors, difat_sector_ids, difat, fat };
-        alloc.validate()?;
+        let mut alloc = Allocator {
+            sectors,
+            difat_sector_ids,
+            difat,
+            fat,
+            free_sectors: Vec::new(),
+        };
+        alloc.validate(validation)?;
         Ok(alloc)
     }
 
     pub fn version(&self) -> Version {
         self.sectors.version()
+    }
+
+    pub fn inner(&self) -> &F {
+        self.sectors.inner()
     }
 
     pub fn sector_len(&self) -> usize {
@@ -71,11 +85,11 @@ impl<F> Allocator<F> {
         &mut self,
         start_sector_id: u32,
         init: SectorInit,
-    ) -> io::Result<Chain<F>> {
+    ) -> io::Result<Chain<'_, F>> {
         Chain::new(self, start_sector_id, init)
     }
 
-    fn validate(&self) -> io::Result<()> {
+    fn validate(&mut self, validation: Validation) -> io::Result<()> {
         if self.fat.len() > self.sectors.num_sectors() as usize {
             malformed!(
                 "FAT has {} entries, but file has only {} sectors",
@@ -84,34 +98,38 @@ impl<F> Allocator<F> {
             );
         }
         for &difat_sector in self.difat_sector_ids.iter() {
-            if difat_sector as usize >= self.fat.len() {
+            let difat_sector_index = difat_sector as usize;
+            let Some(sector) = self.fat.get_mut(difat_sector_index) else {
                 malformed!(
                     "FAT has {} entries, but DIFAT lists {} as a DIFAT sector",
                     self.fat.len(),
                     difat_sector
                 );
-            }
-            if self.fat[difat_sector as usize] != consts::DIFAT_SECTOR {
+            };
+            if *sector != consts::DIFAT_SECTOR && validation.is_strict() {
                 malformed!(
                     "DIFAT sector {} is not marked as such in the FAT",
                     difat_sector
                 );
             }
+            *sector = consts::DIFAT_SECTOR;
         }
         for &fat_sector in self.difat.iter() {
-            if fat_sector as usize >= self.fat.len() {
+            let fat_sector_index = fat_sector as usize;
+            let Some(sector) = self.fat.get_mut(fat_sector_index) else {
                 malformed!(
                     "FAT has {} entries, but DIFAT lists {} as a FAT sector",
                     self.fat.len(),
                     fat_sector
                 );
-            }
-            if self.fat[fat_sector as usize] != consts::FAT_SECTOR {
+            };
+            if *sector != consts::FAT_SECTOR && validation.is_strict() {
                 malformed!(
                     "FAT sector {} is not marked as such in the FAT",
                     fat_sector
                 );
             }
+            *sector = consts::FAT_SECTOR;
         }
         let mut pointees = FnvHashSet::default();
         for (from_sector, &to_sector) in self.fat.iter().enumerate() {
@@ -132,6 +150,14 @@ impl<F> Allocator<F> {
                 malformed!("0x{:08X} is not a valid FAT entry", to_sector);
             }
         }
+
+        self.free_sectors.clear();
+        for (idx, &entry) in self.fat.iter().enumerate() {
+            if entry == consts::FREE_SECTOR {
+                self.free_sectors.push(idx as u32);
+            }
+        }
+
         Ok(())
     }
 }
@@ -140,11 +166,14 @@ impl<F: Seek> Allocator<F> {
     pub fn seek_within_header(
         &mut self,
         offset_within_header: u64,
-    ) -> io::Result<Sector<F>> {
+    ) -> io::Result<Sector<'_, F>> {
         self.sectors.seek_within_header(offset_within_header)
     }
 
-    pub fn seek_to_sector(&mut self, sector_id: u32) -> io::Result<Sector<F>> {
+    pub fn seek_to_sector(
+        &mut self,
+        sector_id: u32,
+    ) -> io::Result<Sector<'_, F>> {
         self.sectors.seek_to_sector(sector_id)
     }
 
@@ -152,7 +181,7 @@ impl<F: Seek> Allocator<F> {
         &mut self,
         sector_id: u32,
         offset_within_sector: u64,
-    ) -> io::Result<Sector<F>> {
+    ) -> io::Result<Sector<'_, F>> {
         self.sectors.seek_within_sector(sector_id, offset_within_sector)
     }
 
@@ -162,7 +191,7 @@ impl<F: Seek> Allocator<F> {
         subsector_index_within_sector: u32,
         subsector_len: usize,
         offset_within_subsector: u64,
-    ) -> io::Result<Sector<F>> {
+    ) -> io::Result<Sector<'_, F>> {
         let subsector_start =
             subsector_index_within_sector as usize * subsector_len;
         let offset_within_sector =
@@ -207,15 +236,13 @@ impl<F: Write + Seek> Allocator<F> {
     /// returns the new sector number.
     fn allocate_sector(&mut self, init: SectorInit) -> io::Result<u32> {
         // If there's an existing free sector, use that.
-        for sector_id in 0..self.fat.len() {
-            if self.fat[sector_id] == consts::FREE_SECTOR {
-                let sector_id = sector_id as u32;
-                self.set_fat(sector_id, consts::END_OF_CHAIN)?;
-                self.sectors.init_sector(sector_id, init)?;
-                return Ok(sector_id);
-            }
+        if let Some(free_sector_idx) = self.free_sectors.pop() {
+            let sector_id = free_sector_idx;
+            self.set_fat(sector_id, consts::END_OF_CHAIN)?;
+            self.sectors.init_sector(sector_id, init)?;
+            return Ok(sector_id);
         }
-        // Otherwise, we need a new sector; if there's not room in the FAT to
+        // Otherwise, we need a new sector; if there's no room in the FAT to
         // add it, then first we need to allocate a new FAT sector.
         let fat_entries_per_sector =
             self.sectors.sector_len() / size_of::<u32>();
@@ -247,7 +274,7 @@ impl<F: Write + Seek> Allocator<F> {
             // This DIFAT entry goes in the file header.
             let offset = 76 + 4 * difat_index as u64;
             let mut header = self.sectors.seek_within_header(offset)?;
-            header.write_u32::<LittleEndian>(new_fat_sector_id)?;
+            header.write_le_u32(new_fat_sector_id)?;
         } else {
             // This DIFAT entry goes in a DIFAT sector.
             let difat_entries_per_sector = (self.sector_len() - 4) / 4;
@@ -267,15 +294,13 @@ impl<F: Write + Seek> Allocator<F> {
                     let mut sector = self
                         .sectors
                         .seek_within_sector(last_sector_id, offset)?;
-                    sector.write_u32::<LittleEndian>(new_difat_sector_id)?;
+                    sector.write_le_u32(new_difat_sector_id)?;
                 }
                 self.difat_sector_ids.push(new_difat_sector_id);
                 // Update DIFAT chain fields in header.
                 let mut header = self.sectors.seek_within_header(68)?;
-                header.write_u32::<LittleEndian>(self.difat_sector_ids[0])?;
-                header.write_u32::<LittleEndian>(
-                    self.difat_sector_ids.len() as u32,
-                )?;
+                header.write_le_u32(self.difat_sector_ids[0])?;
+                header.write_le_u32(self.difat_sector_ids.len() as u32)?;
             }
             // Write the new entry into the DIFAT sector.
             let difat_sector_id = self.difat_sector_ids[difat_sector_index];
@@ -286,12 +311,12 @@ impl<F: Write + Seek> Allocator<F> {
                 difat_sector_id,
                 4 * index_within_difat_sector as u64,
             )?;
-            sector.write_u32::<LittleEndian>(new_fat_sector_id)?;
+            sector.write_le_u32(new_fat_sector_id)?;
         }
 
         // Update length of FAT chain in header.
         let mut header = self.sectors.seek_within_header(44)?;
-        header.write_u32::<LittleEndian>(self.difat.len() as u32)?;
+        header.write_le_u32(self.difat.len() as u32)?;
         Ok(())
     }
 
@@ -317,7 +342,11 @@ impl<F: Write + Seek> Allocator<F> {
 
     /// Deallocates the specified sector.
     fn free_sector(&mut self, sector_id: u32) -> io::Result<()> {
+        if self.fat.get(sector_id as usize) == Some(&consts::FREE_SECTOR) {
+            invalid_input!("sector {} freed twice", sector_id);
+        }
         self.set_fat(sector_id, consts::FREE_SECTOR)?;
+        self.free_sectors.push(sector_id);
         // TODO: Truncate FAT if last FAT sector is now all free.
         Ok(())
     }
@@ -334,7 +363,7 @@ impl<F: Write + Seek> Allocator<F> {
         let mut sector = self
             .sectors
             .seek_within_sector(fat_sector_id, offset_within_sector)?;
-        sector.write_u32::<LittleEndian>(value)?;
+        sector.write_le_u32(value)?;
         if index == self.fat.len() {
             self.fat.push(value);
         } else {
@@ -354,7 +383,7 @@ impl<F: Write + Seek> Allocator<F> {
 #[cfg(test)]
 mod tests {
     use super::Allocator;
-    use crate::internal::{consts, Sectors, Version};
+    use crate::internal::{consts, Sectors, Validation, Version};
     use std::io::Cursor;
 
     fn make_sectors(
@@ -368,12 +397,14 @@ mod tests {
     fn make_allocator(
         difat: Vec<u32>,
         fat: Vec<u32>,
+        validation: Validation,
     ) -> Allocator<Cursor<Vec<u8>>> {
         Allocator::new(
             make_sectors(Version::V3, fat.len()),
             vec![],
             difat,
             fat,
+            validation,
         )
         .unwrap()
     }
@@ -387,7 +418,8 @@ mod tests {
         let difat = vec![0];
         let fat = vec![consts::FAT_SECTOR, 2, consts::END_OF_CHAIN];
         let sectors = make_sectors(Version::V3, 2);
-        Allocator::new(sectors, vec![], difat, fat).unwrap();
+        Allocator::new(sectors, vec![], difat, fat, Validation::Strict)
+            .unwrap();
     }
 
     #[test]
@@ -400,7 +432,8 @@ mod tests {
         let difat = vec![0];
         let fat = vec![consts::FAT_SECTOR, consts::END_OF_CHAIN];
         let sectors = make_sectors(Version::V3, fat.len());
-        Allocator::new(sectors, difat_sectors, difat, fat).unwrap();
+        Allocator::new(sectors, difat_sectors, difat, fat, Validation::Strict)
+            .unwrap();
     }
 
     #[test]
@@ -408,12 +441,35 @@ mod tests {
         expected = "Malformed FAT (DIFAT sector 1 is not marked as such in \
                     the FAT)"
     )]
-    fn difat_sector_not_marked_in_fat() {
+    fn difat_sector_not_marked_in_fat_strict() {
         let difat_sectors = vec![1];
         let difat = vec![0];
         let fat = vec![consts::FAT_SECTOR, consts::END_OF_CHAIN];
         let sectors = make_sectors(Version::V3, fat.len());
-        Allocator::new(sectors, difat_sectors, difat, fat).unwrap();
+        Allocator::new(sectors, difat_sectors, difat, fat, Validation::Strict)
+            .unwrap();
+    }
+
+    #[test]
+    fn difat_sector_not_marked_in_fat_permissive() {
+        let difat_sectors = vec![1];
+        let difat = vec![0];
+        let fat = vec![consts::FAT_SECTOR, consts::END_OF_CHAIN];
+        let sectors = make_sectors(Version::V3, fat.len());
+        // Marking the DIFAT sector as END_OF_CHAIN instead of DIFAT_SECTOR is
+        // a spec violation, but is tolerated under Permissive validation.
+        let mut allocator = Allocator::new(
+            sectors,
+            difat_sectors,
+            difat,
+            fat,
+            Validation::Permissive,
+        )
+        .unwrap();
+        // We should repair the FAT entry, and the resulting Allocator should
+        // now pass Strict validation.
+        assert_eq!(allocator.fat[1], consts::DIFAT_SECTOR);
+        allocator.validate(Validation::Strict).unwrap();
     }
 
     #[test]
@@ -424,7 +480,7 @@ mod tests {
     fn fat_sector_out_of_range() {
         let difat = vec![0, 3];
         let fat = vec![consts::FAT_SECTOR, consts::END_OF_CHAIN];
-        make_allocator(difat, fat);
+        make_allocator(difat, fat, Validation::Permissive);
     }
 
     #[test]
@@ -432,10 +488,24 @@ mod tests {
         expected = "Malformed FAT (FAT sector 1 is not marked as such in the \
                     FAT)"
     )]
-    fn fat_sector_not_marked_in_fat() {
+    fn fat_sector_not_marked_in_fat_strict() {
         let difat = vec![0, 1];
         let fat = vec![consts::FAT_SECTOR, consts::END_OF_CHAIN];
-        make_allocator(difat, fat);
+        make_allocator(difat, fat, Validation::Strict);
+    }
+
+    // Regression test for https://github.com/mdsteele/rust-cfb/issues/30
+    #[test]
+    fn fat_sector_not_marked_in_fat_permissive() {
+        let difat = vec![0, 1];
+        let fat = vec![consts::FAT_SECTOR, consts::END_OF_CHAIN];
+        // Marking the second FAT sector as END_OF_CHAIN instead of FAT_SECTOR
+        // is a spec violation, but is tolerated under Permissive validation.
+        let mut allocator = make_allocator(difat, fat, Validation::Permissive);
+        // We should repair the FAT entry, and the resulting Allocator should
+        // now pass Strict validation.
+        assert_eq!(allocator.fat[1], consts::FAT_SECTOR);
+        allocator.validate(Validation::Strict).unwrap();
     }
 
     #[test]
@@ -446,7 +516,7 @@ mod tests {
     fn pointee_out_of_range() {
         let difat = vec![0];
         let fat = vec![consts::FAT_SECTOR, 2];
-        make_allocator(difat, fat);
+        make_allocator(difat, fat, Validation::Permissive);
     }
 
     #[test]
@@ -454,7 +524,7 @@ mod tests {
     fn double_pointee() {
         let difat = vec![0];
         let fat = vec![consts::FAT_SECTOR, 3, 3, consts::END_OF_CHAIN];
-        make_allocator(difat, fat);
+        make_allocator(difat, fat, Validation::Permissive);
     }
 
     #[test]
@@ -464,7 +534,7 @@ mod tests {
     fn invalid_pointee() {
         let difat = vec![0];
         let fat = vec![consts::FAT_SECTOR, consts::INVALID_SECTOR];
-        make_allocator(difat, fat);
+        make_allocator(difat, fat, Validation::Permissive);
     }
 }
 

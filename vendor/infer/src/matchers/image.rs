@@ -1,11 +1,13 @@
 use core::convert::TryInto;
 
 /// Returns whether a buffer is JPEG image data.
+#[must_use]
 pub fn is_jpeg(buf: &[u8]) -> bool {
     buf.len() > 2 && buf[0] == 0xFF && buf[1] == 0xD8 && buf[2] == 0xFF
 }
 
 /// Returns whether a buffer is jpg2 image data.
+#[must_use]
 pub fn is_jpeg2000(buf: &[u8]) -> bool {
     buf.len() > 12
         && buf[0] == 0x0
@@ -24,21 +26,25 @@ pub fn is_jpeg2000(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is PNG image data.
+#[must_use]
 pub fn is_png(buf: &[u8]) -> bool {
     buf.len() > 3 && buf[0] == 0x89 && buf[1] == 0x50 && buf[2] == 0x4E && buf[3] == 0x47
 }
 
 /// Returns whether a buffer is GIF image data.
+#[must_use]
 pub fn is_gif(buf: &[u8]) -> bool {
     buf.len() > 2 && buf[0] == 0x47 && buf[1] == 0x49 && buf[2] == 0x46
 }
 
 /// Returns whether a buffer is WEBP image data.
+#[must_use]
 pub fn is_webp(buf: &[u8]) -> bool {
     buf.len() > 11 && buf[8] == 0x57 && buf[9] == 0x45 && buf[10] == 0x42 && buf[11] == 0x50
 }
 
 /// Returns whether a buffer is Canon CR2 image data.
+#[must_use]
 pub fn is_cr2(buf: &[u8]) -> bool {
     buf.len() > 10
         && ((buf[0] == 0x49 && buf[1] == 0x49 && buf[2] == 0x2A && buf[3] == 0x0)
@@ -49,6 +55,7 @@ pub fn is_cr2(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is TIFF image data.
+#[must_use]
 pub fn is_tiff(buf: &[u8]) -> bool {
     buf.len() > 9
         && ((buf[0] == 0x49 && buf[1] == 0x49 && buf[2] == 0x2A && buf[3] == 0x0)
@@ -59,26 +66,31 @@ pub fn is_tiff(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is BMP image data.
+#[must_use]
 pub fn is_bmp(buf: &[u8]) -> bool {
     buf.len() > 1 && buf[0] == 0x42 && buf[1] == 0x4D
 }
 
 /// Returns whether a buffer is jxr image data.
+#[must_use]
 pub fn is_jxr(buf: &[u8]) -> bool {
     buf.len() > 2 && buf[0] == 0x49 && buf[1] == 0x49 && buf[2] == 0xBC
 }
 
 /// Returns whether a buffer is Photoshop PSD image data.
+#[must_use]
 pub fn is_psd(buf: &[u8]) -> bool {
     buf.len() > 3 && buf[0] == 0x38 && buf[1] == 0x42 && buf[2] == 0x50 && buf[3] == 0x53
 }
 
 /// Returns whether a buffer is ICO icon image data.
+#[must_use]
 pub fn is_ico(buf: &[u8]) -> bool {
     buf.len() > 3 && buf[0] == 0x00 && buf[1] == 0x00 && buf[2] == 0x01 && buf[3] == 0x00
 }
 
 /// Returns whether a buffer is JPEG XL (JXL) image data.
+#[must_use]
 pub fn is_jxl(buf: &[u8]) -> bool {
     (buf.len() > 2 && buf[0] == 0xFF && buf[1] == 0x0A)
         || (buf.len() > 12
@@ -97,6 +109,7 @@ pub fn is_jxl(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is HEIF image data.
+#[must_use]
 pub fn is_heif(buf: &[u8]) -> bool {
     if buf.is_empty() {
         return false;
@@ -107,7 +120,7 @@ pub fn is_heif(buf: &[u8]) -> bool {
     }
 
     if let Some((major, _minor, compatible)) = get_ftyp(buf) {
-        if major == b"heic" {
+        if major == b"heic" || major == b"heix" {
             return true;
         }
 
@@ -124,6 +137,7 @@ pub fn is_heif(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is AVIF image data.
+#[must_use]
 pub fn is_avif(buf: &[u8]) -> bool {
     if buf.is_empty() {
         return false;
@@ -162,6 +176,8 @@ fn is_isobmff(buf: &[u8]) -> bool {
     buf.len() >= ftyp_length
 }
 
+/// Returns whether a buffer is `ORA` image data.
+#[must_use]
 pub fn is_ora(buf: &[u8]) -> bool {
     buf.len() > 57
         && buf[0] == 0x50
@@ -194,7 +210,8 @@ pub fn is_ora(buf: &[u8]) -> bool {
         && buf[53] == 0x72
 }
 
-/// Returns whether a buffer is DjVu image data.
+/// Returns whether a buffer is `DjVu` image data.
+#[must_use]
 pub fn is_djvu(buf: &[u8]) -> bool {
     buf.len() > 14
         && buf[0] == 0x41
@@ -208,6 +225,42 @@ pub fn is_djvu(buf: &[u8]) -> bool {
         && buf[12] == 0x44
         && buf[13] == 0x4A
         && buf[14] == 0x56
+}
+
+/// Returns whether a buffer is an AutoCAD Drawing (DWG).
+#[must_use]
+pub fn is_dwg(buf: &[u8]) -> bool {
+    if buf.len() < 6 {
+        return false;
+    }
+
+    matches!(
+        &buf[..6],
+        b"MC0.0\0"
+            | b"AC1.2\0"
+            | b"AC1.3\0"
+            | b"AC1.40"
+            | b"AC1.50"
+            | b"AC2.10"
+            | b"AC2.21"
+            | b"AC2.22"
+            | b"AC1001"
+            | b"AC1002"
+            | b"AC1003"
+            | b"AC1004"
+            | b"AC1006"
+            | b"AC1009"
+            | b"AC1012"
+            | b"AC1013"
+            | b"AC1014"
+            | b"AC1015"
+            | b"AC1018"
+            | b"AC1021"
+            | b"AC1024"
+            | b"AC1027"
+            | b"AC1032"
+            | b"AC1035"
+    )
 }
 
 // GetFtyp returns the major brand, minor version and compatible brands of the ISO-BMFF data

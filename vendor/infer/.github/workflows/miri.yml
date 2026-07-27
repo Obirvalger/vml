@@ -1,0 +1,29 @@
+name: Miri
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  miri:
+    name: Run Miri
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install nightly Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: Setup Miri
+        run: cargo miri setup
+
+      - name: Run Miri tests
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+        run: cargo miri test
+

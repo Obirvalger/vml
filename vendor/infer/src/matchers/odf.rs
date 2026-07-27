@@ -7,17 +7,20 @@ enum DocType {
     Presentation,
 }
 
-/// Returns whether a buffer is OpenDocument Text
+/// Returns whether a buffer is `OpenDocument` Text
+#[must_use]
 pub fn is_odt(buf: &[u8]) -> bool {
     odf(buf) == Some(DocType::Text)
 }
 
-/// Returns whether a buffer is OpenDocument Spreadsheet
+/// Returns whether a buffer is `OpenDocument` Spreadsheet
+#[must_use]
 pub fn is_ods(buf: &[u8]) -> bool {
     odf(buf) == Some(DocType::Spreadsheet)
 }
 
-/// Returns whether a buffer is OpenDocument Presentation
+/// Returns whether a buffer is `OpenDocument` Presentation
+#[must_use]
 pub fn is_odp(buf: &[u8]) -> bool {
     odf(buf) == Some(DocType::Presentation)
 }

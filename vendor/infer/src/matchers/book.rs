@@ -1,4 +1,5 @@
 /// Returns whether a buffer is an ePub.
+#[must_use]
 pub fn is_epub(buf: &[u8]) -> bool {
     buf.len() > 57
         && buf[0] == 0x50
@@ -36,6 +37,7 @@ pub fn is_epub(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is a mobi.
+#[must_use]
 pub fn is_mobi(buf: &[u8]) -> bool {
     buf.len() > 67
         // BOOK

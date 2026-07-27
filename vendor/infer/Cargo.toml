@@ -10,9 +10,10 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
+rust-version = "1.74"
 name = "infer"
-version = "0.16.0"
+version = "0.22.0"
 authors = ["Bojan <dbojan@gmail.com>"]
 build = false
 exclude = [
@@ -56,5 +57,5 @@ path = "examples/file.rs"
 required-features = ["std"]
 
 [dependencies.cfb]
-version = "0.7.0"
+version = "0.14"
 optional = true

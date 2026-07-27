@@ -33,4 +33,119 @@ pub const ROOT_STREAM_ID: u32 = 0;
 pub const MAX_REGULAR_STREAM_ID: u32 = 0xfffffffa;
 pub const NO_STREAM: u32 = 0xffffffff;
 
+pub(crate) fn prettify(sectors: &[u32]) -> Vec<Sector> {
+    let mut fmt = Vec::new();
+    for s in sectors.iter() {
+        match *s {
+            END_OF_CHAIN => fmt.push(Sector::End),
+            FREE_SECTOR => {
+                if let Some(Sector::Free(i)) = fmt.last_mut() {
+                    *i += 1;
+                    continue;
+                }
+                fmt.push(Sector::Free(1));
+            }
+            DIFAT_SECTOR => {
+                if let Some(Sector::Difat(i)) = fmt.last_mut() {
+                    *i += 1;
+                    continue;
+                }
+                fmt.push(Sector::Difat(1));
+            }
+            FAT_SECTOR => {
+                if let Some(Sector::Fat(i)) = fmt.last_mut() {
+                    *i += 1;
+                    continue;
+                }
+                fmt.push(Sector::Fat(1));
+            }
+            i => {
+                if let Some(Sector::Range(_, end)) = fmt.last_mut() {
+                    if *end + 1 == i {
+                        *end += 1;
+                        continue;
+                    }
+                }
+                fmt.push(Sector::Range(i, i));
+            }
+        };
+    }
+    fmt
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum Sector {
+    // number of contiguous free sectors
+    Free(usize),
+    End,
+    // number of contiguous fat sectors
+    Fat(usize),
+    // number of contiguous difat sectors
+    Difat(usize),
+    Range(u32, u32),
+}
+
+impl Sector {
+    pub(crate) fn new(i: u32) -> Sector {
+        match i {
+            END_OF_CHAIN => Sector::End,
+            FREE_SECTOR => Sector::Free(1),
+            DIFAT_SECTOR => Sector::Difat(1),
+            FAT_SECTOR => Sector::Fat(1),
+            i => Sector::Range(i, i),
+        }
+    }
+}
+
+impl std::fmt::Debug for Sector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Sector::Range(start, end) if *start == *end => {
+                write!(f, "{start}")
+            }
+            Sector::Range(start, end) => write!(f, "{start}..={end}"),
+            Sector::Free(1) => f.write_str("FREE"),
+            Sector::Free(n) => write!(f, "{n} FREE"),
+            Sector::End => f.write_str("EOC"),
+            Sector::Fat(1) => f.write_str("FAT"),
+            Sector::Fat(n) => write!(f, "{n} FAT"),
+            Sector::Difat(1) => f.write_str("DIFAT"),
+            Sector::Difat(n) => write!(f, "{n} DIFAT"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prettify_sectors() {
+        let sectors = [
+            END_OF_CHAIN,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            END_OF_CHAIN,
+            23,
+            25,
+            18,
+            FREE_SECTOR,
+            FREE_SECTOR,
+            27,
+            FREE_SECTOR,
+        ];
+        let s = prettify(&sectors);
+        assert_eq!(
+            "[EOC, 0..=7, EOC, 23, 25, 18, 2 FREE, 27, FREE]",
+            format!("{s:?}")
+        );
+    }
+}
+
 // ========================================================================= //

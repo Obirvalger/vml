@@ -2,6 +2,7 @@
 ///
 /// Conforms to [whatwg](https://mimesniff.spec.whatwg.org/)
 /// specification.
+#[must_use]
 pub fn is_html(buf: &[u8]) -> bool {
     let values: &[&[u8]] = &[
         b"<!DOCTYPE HTML",
@@ -29,7 +30,7 @@ pub fn is_html(buf: &[u8]) -> bool {
             match buf[val.len()] {
                 // tag-terminitating byte
                 0x20 | 0x3E => return true,
-                _ => continue,
+                _ => {}
             }
         }
     }
@@ -41,6 +42,7 @@ pub fn is_html(buf: &[u8]) -> bool {
 ///
 /// Conforms to [whatwg](https://mimesniff.spec.whatwg.org/)
 /// specification.
+#[must_use]
 pub fn is_xml(buf: &[u8]) -> bool {
     let val: &[u8] = b"<?xml";
     let buf = trim_start_whitespaces(buf);
@@ -50,7 +52,7 @@ pub fn is_xml(buf: &[u8]) -> bool {
 
 /// Strip whitespaces at the beginning of the buffer.
 ///
-/// Follows https://mimesniff.spec.whatwg.org
+/// Follows <https://mimesniff.spec.whatwg.org>
 /// definition of whitespace.
 fn trim_start_whitespaces(mut buf: &[u8]) -> &[u8] {
     while !buf.is_empty() {
@@ -66,9 +68,8 @@ fn trim_start_whitespaces(mut buf: &[u8]) -> &[u8] {
 fn trim_start_byte_order_marks(mut buf: &[u8]) -> &[u8] {
     while buf.len() >= 3 {
         match (buf[0], buf[1], buf[2]) {
-            (0xEF, 0xBB, 0xBF) => buf = &buf[3..], // UTF-8
-            (0xFE, 0xFF, _) => buf = &buf[2..],    // UTF-16 BE
-            (0xFF, 0xFE, _) => buf = &buf[2..],    // UTF-16 BE
+            (0xEF, 0xBB, 0xBF) => buf = &buf[3..],                // UTF-8
+            (0xFE, 0xFF, _) | (0xFF, 0xFE, _) => buf = &buf[2..], // UTF-16 BE
             _ => break,
         }
     }
@@ -80,6 +81,7 @@ fn starts_with_ignore_ascii_case(buf: &[u8], needle: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is a shell script.
+#[must_use]
 pub fn is_shellscript(buf: &[u8]) -> bool {
     buf.len() > 2 && &buf[..2] == b"#!"
 }

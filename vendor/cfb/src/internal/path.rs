@@ -1,12 +1,41 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 
 // ========================================================================= //
+
+pub struct CaseMapper(HashMap<char, char>);
+
+impl CaseMapper {
+    fn new() -> CaseMapper {
+        // extracted exceptional uppercase characters from icu_casemap library
+        CaseMapper(include!("uppercase.txt").iter().copied().collect())
+    }
+    fn simple_uppercase(&self, c: char) -> char {
+        self.0.get(&c).copied().or(c.to_uppercase().next()).unwrap_or_default()
+    }
+}
 
 const MAX_NAME_LEN: usize = 31;
 
 // ========================================================================= //
+
+/// Converts a char to uppercase as defined in MS-CFB,
+/// using simple capitalization and the ability to add exceptions.
+/// Used when two directory entry names need to be compared.
+fn cfb_uppercase_char(c: char) -> char {
+    static CASE_MAPPER: OnceLock<CaseMapper> = OnceLock::new();
+    let case_mapper = CASE_MAPPER.get_or_init(CaseMapper::new);
+
+    // TODO: Edge cases can be added that appear
+    // in the table from Appendix A, <3> Section 2.6.4
+
+    // Base case, just do a simple uppercase
+    // equivalent to icu_casemap::CaseMapper::new().simple_uppercase(c)
+    case_mapper.simple_uppercase(c)
+}
 
 /// Compares two directory entry names according to CFB ordering, which is
 /// case-insensitive, and which always puts shorter names before longer names,
@@ -14,13 +43,38 @@ const MAX_NAME_LEN: usize = 31;
 /// order](https://en.wikipedia.org/wiki/Shortlex_order), rather than
 /// dictionary order).
 pub fn compare_names(name1: &str, name2: &str) -> Ordering {
-    match name1.encode_utf16().count().cmp(&name2.encode_utf16().count()) {
-        // This is actually not 100% correct -- the MS-CFB spec specifies a
-        // particular way of doing the uppercasing on individual UTF-16 code
-        // units, along with a list of weird exceptions and corner cases.  But
-        // hopefully this is good enough for 99+% of the time.
-        Ordering::Equal => name1.to_uppercase().cmp(&name2.to_uppercase()),
-        other => other,
+    // This ASCII fast-path is important for performance.
+    // We saw a 10x speedup for many small streams when comparing pure ascii names.
+    // Make sure you run the write benchmark before and after changing this code
+    // to not introduce regressions.
+    if name1.is_ascii() && name2.is_ascii() {
+        match name1.len().cmp(&name2.len()) {
+            Ordering::Equal => {
+                for (left, right) in name1.bytes().zip(name2.bytes()) {
+                    let left = left.to_ascii_uppercase();
+                    let right = right.to_ascii_uppercase();
+                    match left.cmp(&right) {
+                        Ordering::Equal => {}
+                        other => return other,
+                    }
+                }
+                Ordering::Equal
+            }
+            other => other,
+        }
+    } else {
+        match name1.encode_utf16().count().cmp(&name2.encode_utf16().count()) {
+            // This is actually not 100% correct -- the MS-CFB spec specifies a
+            // particular way of doing the uppercasing on individual UTF-16 code
+            // units, along with a list of weird exceptions and corner cases.  But
+            // hopefully this is good enough for 99+% of the time.
+            Ordering::Equal => {
+                let n1 = name1.chars().map(cfb_uppercase_char);
+                let n2 = name2.chars().map(cfb_uppercase_char);
+                n1.cmp(n2)
+            }
+            other => other,
+        }
     }
 }
 
@@ -31,8 +85,7 @@ pub fn validate_name(name: &str) -> io::Result<Vec<u16>> {
         name.encode_utf16().take(MAX_NAME_LEN + 1).collect();
     if name_utf16.len() > MAX_NAME_LEN {
         invalid_input!(
-            "Object name cannot be more than {} UTF-16 code units \
-                        (was {})",
+            "Object name cannot be more than {} UTF-16 code units (was {})",
             MAX_NAME_LEN,
             name.encode_utf16().count()
         );
@@ -85,8 +138,8 @@ pub fn path_from_name_chain(names: &[&str]) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        compare_names, name_chain_from_path, path_from_name_chain,
-        validate_name,
+        cfb_uppercase_char, compare_names, name_chain_from_path,
+        path_from_name_chain, validate_name,
     };
     use std::cmp::Ordering;
     use std::path::{Path, PathBuf};
@@ -96,6 +149,36 @@ mod tests {
         assert_eq!(compare_names("foobar", "FOOBAR"), Ordering::Equal);
         assert_eq!(compare_names("foo", "barfoo"), Ordering::Less);
         assert_eq!(compare_names("Foo", "bar"), Ordering::Greater);
+        // testcases from real .doc files
+        assert_eq!(
+            compare_names(
+                "ÖÇÔÍÒÄÁØÐÔÞ3×ÆXVÔÄHMDQ==",
+                "ßYÜ0MÈÝEÄÄÂKÏÓÉDÀP5ÃÝA=="
+            ),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_names(
+                "É1EDAÉNÅPUOÈÒKÔÓCÓÇÇPÐ==",
+                "ßÕFÆRDÜÐNÔCÄ2PKQÃFAFMA=="
+            ),
+            Ordering::Less
+        );
+
+        let uppercase = "ßQÑ52Ç4ÅÁÔÂFÛCWCÙÂNË5Q=="
+            .chars()
+            .map(cfb_uppercase_char)
+            .collect::<String>();
+
+        assert_eq!("ßQÑ52Ç4ÅÁÔÂFÛCWCÙÂNË5Q==", uppercase);
+
+        assert_eq!(
+            compare_names(
+                "ÜL43ÁMÆÛÏEKZÅYWÚÓVDÙÄÀ==",
+                "ßQÑ52Ç4ÅÁÔÂFÛCWCÙÂNË5Q=="
+            ),
+            Ordering::Less
+        );
     }
 
     #[test]
@@ -108,8 +191,8 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Object name cannot be more than 31 UTF-16 code \
-                               units (was 35)"
+        expected = "Object name cannot be more than 31 UTF-16 code units \
+                    (was 35)"
     )]
     fn long_name_is_invalid() {
         validate_name("ThisNameIsMostDefinitelyMuchTooLong").unwrap();
@@ -124,7 +207,7 @@ mod tests {
     #[test]
     fn absolute_path_is_valid() {
         assert_eq!(
-            name_chain_from_path(&Path::new("/foo/bar/baz/")).unwrap(),
+            name_chain_from_path(Path::new("/foo/bar/baz/")).unwrap(),
             vec!["foo", "bar", "baz"]
         );
     }
@@ -132,7 +215,7 @@ mod tests {
     #[test]
     fn relative_path_is_valid() {
         assert_eq!(
-            name_chain_from_path(&Path::new("foo/bar/baz")).unwrap(),
+            name_chain_from_path(Path::new("foo/bar/baz")).unwrap(),
             vec!["foo", "bar", "baz"]
         );
     }
@@ -140,7 +223,7 @@ mod tests {
     #[test]
     fn path_with_parents_is_valid() {
         assert_eq!(
-            name_chain_from_path(&Path::new("foo/bar/../baz")).unwrap(),
+            name_chain_from_path(Path::new("foo/bar/../baz")).unwrap(),
             vec!["foo", "baz"]
         );
     }
@@ -148,14 +231,55 @@ mod tests {
     #[test]
     #[should_panic(expected = "Invalid path (must be within root)")]
     fn parent_of_root_is_invalid() {
-        name_chain_from_path(&Path::new("foo/../../baz")).unwrap();
+        name_chain_from_path(Path::new("foo/../../baz")).unwrap();
     }
 
     #[test]
     fn canonical_path_is_absolute() {
         let path = Path::new("foo/bar/../baz");
-        let names = name_chain_from_path(&path).unwrap();
+        let names = name_chain_from_path(path).unwrap();
         assert_eq!(path_from_name_chain(&names), PathBuf::from("/foo/baz"));
+    }
+
+    #[ignore = "add icu_casemap to dependencies to regenerate exceptional uppercase chars"]
+    #[test]
+    fn uppercase_generation() {
+        use std::fmt;
+
+        struct AsArray(Vec<(char, char)>);
+
+        impl fmt::Display for AsArray {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("[")?;
+                let s = self
+                    .0
+                    .iter()
+                    .map(|(input, output)| format!("('{input}', '{output}')"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                f.write_str(&s)?;
+                f.write_str("]")
+            }
+        }
+
+        let case_mapper = super::CaseMapper::new();
+        // uncomment line to regenerate exceptions
+        // let case_mapper = icu_casemap::CaseMapper::new();
+        let mut nonequal = Vec::new();
+        for i in 0..u32::MAX {
+            let Some(c) = char::from_u32(i) else {
+                continue;
+            };
+            let u1 = case_mapper.simple_uppercase(c);
+            let mut uppers = c.to_uppercase();
+            let u2 = uppers.next().unwrap();
+            if u1 != u2 || uppers.next().is_some() {
+                nonequal.push((c, u1));
+            }
+        }
+        let array = AsArray(nonequal);
+        std::fs::write("src/internal/uppercase.txt", array.to_string())
+            .unwrap();
     }
 }
 

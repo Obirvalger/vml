@@ -1,4 +1,5 @@
 /// Returns whether a buffer is WOFF font data.
+#[must_use]
 pub fn is_woff(buf: &[u8]) -> bool {
     buf.len() > 7
         && buf[0] == 0x77
@@ -12,6 +13,7 @@ pub fn is_woff(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is WOFF2 font data.
+#[must_use]
 pub fn is_woff2(buf: &[u8]) -> bool {
     buf.len() > 7
         && buf[0] == 0x77
@@ -25,6 +27,7 @@ pub fn is_woff2(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is TTF font data.
+#[must_use]
 pub fn is_ttf(buf: &[u8]) -> bool {
     buf.len() > 4
         && buf[0] == 0x00
@@ -35,6 +38,7 @@ pub fn is_ttf(buf: &[u8]) -> bool {
 }
 
 /// Returns whether a buffer is OTF font data.
+#[must_use]
 pub fn is_otf(buf: &[u8]) -> bool {
     buf.len() > 4
         && buf[0] == 0x4F
