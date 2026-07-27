@@ -1,0 +1,23 @@
+[package]
+name        = "file-lock"
+version     = "2.1.11"
+authors     = ["Alfie John <alfie@alfie.wtf>", "Corey Richardson <corey@octayn.net>", "Jacob Turner <jacob.turner870@gmail.com>", "Mateusz Kondej <m.kondej@fudosecurity.com>", "Michael Lohr <michael@lohr.dev>", "Quang Luong <quang@cloudflare.com>", "Sebastian Thiel <byronimo@gmail.com>"]
+description = "File locking via POSIX advisory record locks"
+license     = "MIT"
+edition     = "2021"
+
+documentation = "https://docs.rs/file-lock/"
+homepage      = "https://crates.io/crates/file-lock"
+repository    = "https://github.com/alfiedotwtf/file-lock"
+readme        = "README.md"
+
+build = "build.rs"
+
+[dependencies]
+libc = "0.2.139"
+
+[dev-dependencies]
+nix = { version = "0.26.2", default-features = false, features = ["process"] }
+
+[build-dependencies]
+cc = "1.0.78"

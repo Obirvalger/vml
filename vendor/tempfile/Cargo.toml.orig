@@ -1,0 +1,37 @@
+[package]
+name = "tempfile"
+version = "3.10.1"
+authors = [
+  "Steven Allen <steven@stebalien.com>",
+  "The Rust Project Developers",
+  "Ashley Mannix <ashleymannix@live.com.au>",
+  "Jason White <me@jasonwhite.io>",
+]
+documentation = "https://docs.rs/tempfile"
+edition = "2021"
+rust-version = "1.63"
+homepage = "https://stebalien.com/projects/tempfile-rs/"
+keywords = ["tempfile", "tmpfile", "filesystem"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Stebalien/tempfile"
+description = "A library for managing temporary files and directories."
+
+[dependencies]
+cfg-if = "1"
+fastrand = "2.0.1"
+
+[target.'cfg(any(unix, target_os = "wasi"))'.dependencies]
+rustix = { version = "0.38.31", features = ["fs"] }
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.52"
+features = [
+    "Win32_Storage_FileSystem",
+    "Win32_Foundation",
+]
+
+[dev-dependencies]
+doc-comment = "0.3"
+
+[features]
+nightly = []

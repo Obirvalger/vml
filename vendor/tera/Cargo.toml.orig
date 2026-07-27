@@ -1,0 +1,51 @@
+[package]
+name = "tera"
+version = "1.20.0"
+authors = ["Vincent Prouillet <hello@prouilletvincent.com>"]
+license = "MIT"
+readme = "README.md"
+description = "Template engine based on Jinja2/Django templates"
+homepage = "https://keats.github.io/tera/"
+repository = "https://github.com/Keats/tera"
+keywords = ["template", "html", "django", "markup", "jinja2"]
+categories = ["template-engine"]
+edition = "2018"
+include = ["/src/**/*", "/LICENSE", "/README.md", "/CHANGELOG.md"]
+rust-version = "1.70"
+
+[dependencies]
+globwalk = "0.9.1"
+serde = "1.0"
+serde_json = "1.0"
+pest = "2.5.5"
+pest_derive = "2.5.5"
+lazy_static = "1.4"
+# used in striptags, spaceless & titles filters. Already pulled by globwalk
+regex = "1.7"
+# used in truncate filter and string iteration
+unic-segment = "0.9"
+
+# used in slugify filter
+slug = {version = "0.1", optional = true}
+# used in urlencode filter
+percent-encoding = {version = "2.2", optional = true}
+# used in filesizeformat filter
+humansize = {version = "2.1", optional = true}
+# used in date format filter
+chrono = {version = "0.4.27", optional = true, default-features = false, features = ["std", "clock"]}
+# used in date format filter
+chrono-tz = {version = "0.9", optional = true}
+# used in get_random function
+rand = {version = "0.8", optional = true}
+
+[dev-dependencies]
+serde_derive = "1.0"
+pretty_assertions = "1"
+tempfile = "3"
+
+[features]
+default = ["builtins"]
+builtins = ["urlencode", "slug", "humansize", "chrono", "chrono-tz", "rand"]
+urlencode = ["percent-encoding"]
+preserve_order = ["serde_json/preserve_order"]
+date-locale = ["builtins", "chrono/unstable-locales"]

@@ -1,0 +1,17 @@
+language: rust
+rust:
+- stable
+- nightly
+before_script:
+- pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
+script:
+- travis-cargo build
+# tests currently require unstable features of tempfile crate, and can't run on stable
+- if `test $TRAVIS_RUST_VERSION = nightly`; then travis-cargo test; fi
+- travis-cargo doc
+after_success:
+# upload docs with nightly, as these look better
+- if `test $TRAVIS_RUST_VERSION = nightly`; then travis-cargo doc-upload; fi
+env:
+  global:
+    secure: E1GHfJJTq1UhswKdlkrzg9LdaUMW04vQK2tpba6TQcqg+wsxMk7a7qtt2mnMQVjM73glotszrVyfXpmdbJJHEYBS6eO22QSWUBKlSlG4iEKc316gSWOQtOPE72FqGsxtzCQKudQLv1W191kUSJoD5Wrhu0P+DEjgFxXUgaGaegNx0I5ZF/vFlnlh5U4R+UOKxnM0ZyaTvMb2N4RjN9S7tthtpaukvBMcw8KZtEaaQxRDtiXvLDDE+xQH4u4tyayVN/LSXk3Z+D+Wugc9a0pZnTP1x3yibpH1KLuV6xpVwYastcLZA7oY1nsDe+GHK8jVcuUFmKdoxvc11wuZM5tqF9ilTYU62U+zavrp/+D4tkJ3PN+zP15o6l/1EaqV6IzCmZoMprlIB16Enwcj+xmkozAluRauL2EMv939jnZAYIPd7F6ZXeElkYHo9fzrsgpuvMfVHotxQ3X+L6SYSaFcWGUw/WLZK/muO4Eqn0nQIkNLRKGOm+tFVwbMOpwrhO0NZsJkfKzl+piLaslZMbV05xaaoe2dTz3e6Zw7NS3SxUK1RhdqeSv3UDI7QfmBmIZMwdJZQtjSuIfwzFRkYrc0lV1pkbgmsfJPSe1oJxNY2BdppZlR0dD8vqW/tjpDWUs/INVvSLwODYGSm6FYgl7L5UlYUZ5wIBUHnLmigkTuWIQ=

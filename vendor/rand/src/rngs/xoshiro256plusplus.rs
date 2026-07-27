@@ -6,10 +6,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[cfg(feature="serde1")] use serde::{Serialize, Deserialize};
-use rand_core::impls::fill_bytes_via_next;
-use rand_core::le::read_u64_into;
-use rand_core::{SeedableRng, RngCore, Error};
+use core::convert::Infallible;
+use rand_core::{SeedableRng, TryRng, utils};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// A xoshiro256++ random number generator.
 ///
@@ -20,7 +20,7 @@ use rand_core::{SeedableRng, RngCore, Error};
 /// reference source code](http://xoshiro.di.unimi.it/xoshiro256plusplus.c) by
 /// David Blackman and Sebastiano Vigna.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature="serde1", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Xoshiro256PlusPlus {
     s: [u64; 4],
 }
@@ -32,43 +32,50 @@ impl SeedableRng for Xoshiro256PlusPlus {
     /// mapped to a different seed.
     #[inline]
     fn from_seed(seed: [u8; 32]) -> Xoshiro256PlusPlus {
-        if seed.iter().all(|&x| x == 0) {
+        let state = utils::read_words(&seed);
+        // Check for zero on aligned integers for better code generation.
+        // Furthermore, seed_from_u64(0) will expand to a constant when optimized.
+        if state.iter().all(|&x| x == 0) {
             return Self::seed_from_u64(0);
         }
-        let mut state = [0; 4];
-        read_u64_into(&seed, &mut state);
         Xoshiro256PlusPlus { s: state }
     }
 
     /// Create a new `Xoshiro256PlusPlus` from a `u64` seed.
     ///
     /// This uses the SplitMix64 generator internally.
+    #[inline]
     fn seed_from_u64(mut state: u64) -> Self {
         const PHI: u64 = 0x9e3779b97f4a7c15;
-        let mut seed = Self::Seed::default();
-        for chunk in seed.as_mut().chunks_mut(8) {
+        let mut s = [0; 4];
+        for i in s.iter_mut() {
             state = state.wrapping_add(PHI);
             let mut z = state;
             z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
             z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
             z = z ^ (z >> 31);
-            chunk.copy_from_slice(&z.to_le_bytes());
+            *i = z;
         }
-        Self::from_seed(seed)
+        // By using a non-zero PHI we are guaranteed to generate a non-zero state
+        // Thus preventing a recursion between from_seed and seed_from_u64.
+        debug_assert_ne!(s, [0; 4]);
+        Xoshiro256PlusPlus { s }
     }
 }
 
-impl RngCore for Xoshiro256PlusPlus {
+impl TryRng for Xoshiro256PlusPlus {
+    type Error = Infallible;
+
     #[inline]
-    fn next_u32(&mut self) -> u32 {
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
         // The lowest bits have some linear dependencies, so we use the
         // upper bits instead.
-        (self.next_u64() >> 32) as u32
+        self.try_next_u64().map(|val| (val >> 32) as u32)
     }
 
     #[inline]
-    fn next_u64(&mut self) -> u64 {
-        let result_plusplus = self.s[0]
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+        let res = self.s[0]
             .wrapping_add(self.s[3])
             .rotate_left(23)
             .wrapping_add(self.s[0]);
@@ -84,39 +91,67 @@ impl RngCore for Xoshiro256PlusPlus {
 
         self.s[3] = self.s[3].rotate_left(45);
 
-        result_plusplus
+        Ok(res)
     }
 
     #[inline]
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        fill_bytes_via_next(self, dest);
-    }
-
-    #[inline]
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
-        self.fill_bytes(dest);
-        Ok(())
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
+        utils::fill_bytes_via_next_word(dst, || self.try_next_u64())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Xoshiro256PlusPlus;
+    use rand_core::{Rng, SeedableRng};
 
     #[test]
     fn reference() {
-        let mut rng = Xoshiro256PlusPlus::from_seed(
-            [1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
-             3, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0]);
+        let mut rng = Xoshiro256PlusPlus::from_seed([
+            1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0,
+            0, 0, 0,
+        ]);
         // These values were produced with the reference implementation:
         // http://xoshiro.di.unimi.it/xoshiro256plusplus.c
         let expected = [
-            41943041, 58720359, 3588806011781223, 3591011842654386,
-            9228616714210784205, 9973669472204895162, 14011001112246962877,
-            12406186145184390807, 15849039046786891736, 10450023813501588000,
+            41943041,
+            58720359,
+            3588806011781223,
+            3591011842654386,
+            9228616714210784205,
+            9973669472204895162,
+            14011001112246962877,
+            12406186145184390807,
+            15849039046786891736,
+            10450023813501588000,
         ];
         for &e in &expected {
             assert_eq!(rng.next_u64(), e);
+        }
+    }
+
+    #[test]
+    fn stable_seed_from_u64_and_from_seed() {
+        // We don't guarantee value-stability for SmallRng but this
+        // could influence keeping stability whenever possible (e.g. after optimizations).
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(0);
+        // from_seed([0; 32]) should produce the same state as seed_from_u64(0).
+        let mut rng_from_seed_0 = Xoshiro256PlusPlus::from_seed([0; 32]);
+        let expected = [
+            5987356902031041503,
+            7051070477665621255,
+            6633766593972829180,
+            211316841551650330,
+            9136120204379184874,
+            379361710973160858,
+            15813423377499357806,
+            15596884590815070553,
+            5439680534584881407,
+            1369371744833522710,
+        ];
+        for &e in &expected {
+            assert_eq!(rng.next_u64(), e);
+            assert_eq!(rng_from_seed_0.next_u64(), e);
         }
     }
 }

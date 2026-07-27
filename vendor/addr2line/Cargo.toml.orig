@@ -1,0 +1,69 @@
+[package]
+name = "addr2line"
+version = "0.22.0"
+description = "A cross-platform symbolication library written in Rust, using `gimli`"
+documentation = "https://docs.rs/addr2line"
+exclude = ["/benches/*", "/fixtures/*", ".github", "*.sh", "*.r"]
+keywords = ["DWARF", "debug", "elf", "symbolicate", "atos"]
+categories = ["development-tools::debugging"]
+license = "Apache-2.0 OR MIT"
+readme = "./README.md"
+repository = "https://github.com/gimli-rs/addr2line"
+edition = "2018"
+rust-version = "1.65"
+
+[dependencies]
+gimli = { version = "0.29.0", default-features = false, features = ["read"] }
+fallible-iterator = { version = "0.3.0", default-features = false, optional = true }
+memmap2 = { version = "0.9.4", optional = true }
+object = { version = "0.35.0", default-features = false, features = ["read"], optional = true }
+smallvec = { version = "1", default-features = false, optional = true }
+rustc-demangle = { version = "0.1", optional = true }
+cpp_demangle = { version = "0.4", default-features = false, features = ["alloc"], optional = true }
+
+# Internal feature, only used when building as part of libstd, not part of the
+# stable interface of this crate.
+core = { version = '1.0.0', optional = true, package = 'rustc-std-workspace-core' }
+alloc = { version = '1.0.0', optional = true, package = 'rustc-std-workspace-alloc' }
+compiler_builtins = { version = '0.1.2', optional = true }
+
+[dev-dependencies]
+clap = { version = "4.3.21", features = ["wrap_help"] }
+backtrace = "0.3.13"
+findshlibs = "0.10"
+libtest-mimic = "0.7.2"
+auxiliary = { path = "tests/auxiliary" }
+typed-arena = "2"
+
+[profile.release]
+debug = true
+
+[profile.bench]
+debug = true
+codegen-units = 1
+
+[features]
+default = ["rustc-demangle", "cpp_demangle", "std-object", "fallible-iterator", "smallvec", "memmap2"]
+std = ["gimli/std"]
+std-object = ["std", "object", "object/std", "object/compression", "gimli/endian-reader"]
+
+# Internal feature, only used when building as part of libstd, not part of the
+# stable interface of this crate.
+rustc-dep-of-std = ['core', 'alloc', 'compiler_builtins', 'gimli/rustc-dep-of-std']
+
+[[test]]
+name = "output_equivalence"
+harness = false
+required-features = ["default"]
+
+[[test]]
+name = "correctness"
+required-features = ["default"]
+
+[[test]]
+name = "parse"
+required-features = ["std-object"]
+
+[[example]]
+name = "addr2line"
+required-features = ["default"]

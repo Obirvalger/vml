@@ -1,0 +1,29 @@
+[package]
+name = "cmd_lib"
+description = "Common rust commandline macros and utils, to write shell script like tasks easily"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/rust-shell-script/rust_cmd_lib"
+repository = "https://github.com/rust-shell-script/rust_cmd_lib"
+documentation = "https://docs.rs/cmd_lib"
+keywords = ["shell", "script", "cli", "process", "pipe"]
+categories = ["command-line-interface", "command-line-utilities"]
+readme = "README.md"
+version = "1.9.4"
+authors = ["rust-shell-script <rust-shell-script@gmail.com>"]
+edition = "2018"
+
+[workspace]
+members = ["macros"]
+
+[dependencies]
+cmd_lib_macros = { version = "1.9.4", path = "./macros" }
+lazy_static = "1.4.0"
+log = "0.4.20"
+faccess = "0.2.4"
+os_pipe = "1.1.4"
+env_logger = "0.10.0"
+
+[dev-dependencies]
+rayon = "1.8.0"
+structopt = "0.3.26"
+byte-unit = "4.0.19"

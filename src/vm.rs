@@ -16,7 +16,6 @@ use cmd_lib::run_fun;
 use file_lock::{FileLock, FileOptions};
 use log::{debug, info};
 use procfs::process::Process;
-use rand::Rng;
 use tera::Context;
 
 use crate::cache::Cache;
@@ -110,9 +109,8 @@ pub async fn create<S: AsRef<str>>(
 }
 
 fn get_random_mac() -> String {
-    let mut rng = rand::thread_rng();
     let mac_tail =
-        (0..5).map(|_| format!("{:02x}", rng.gen::<u8>())).collect::<Vec<_>>().join(":");
+        (0..5).map(|_| format!("{:02x}", rand::random::<u8>())).collect::<Vec<_>>().join(":");
     format!("fe:{}", &mac_tail)
 }
 
