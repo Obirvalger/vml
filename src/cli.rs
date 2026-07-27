@@ -8,17 +8,17 @@ use clap_complete::{generate, Generator, Shell};
 
 use crate::files;
 
-fn print_completions<G: Generator>(gen: G, app: &mut Command) {
-    generate(gen, app, app.get_name().to_string(), &mut io::stdout());
+fn print_completions<G: Generator>(generator: G, app: &mut Command) {
+    generate(generator, app, app.get_name().to_string(), &mut io::stdout());
 }
 
 pub fn completion(shell: &str, raw: bool) -> Result<()> {
     let mut app = build_cli();
-    if let Ok(gen) = Shell::from_str(shell, true) {
+    if let Ok(generator) = Shell::from_str(shell, true) {
         if !raw && (shell == "bash" || shell == "zsh") {
             files::show_file(format!("completions/{}", shell))?
         } else {
-            print_completions(gen, &mut app)
+            print_completions(generator, &mut app)
         }
     } else {
         bail!("Unknown shell `{}` for completion", shell)
