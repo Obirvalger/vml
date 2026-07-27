@@ -716,10 +716,8 @@ async fn main() -> Result<()> {
 
         Some(("show", show_matches)) => {
             vmc.all();
+            vmc.with_pid(WithPid::Option);
 
-            if show_matches.is_present("all") {
-                vmc.with_pid(WithPid::Option);
-            }
             if show_matches.is_present("running") {
                 vmc.with_pid(WithPid::Filter);
             }
