@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::io;
@@ -471,8 +471,16 @@ async fn main() -> Result<()> {
                     let available_images = vml::images::available(&config.images)?;
                     let images = if let Some(images) = pull_images_matches.values_of("IMAGES") {
                         let names =
-                            images.map(|image| image.to_string()).collect::<HashSet<String>>();
-                        available_images.filter(|i| names.contains(&i.name))
+                            images.map(|image| image.to_string()).collect::<BTreeSet<String>>();
+                        let images = available_images.filter(|i| names.contains(&i.name));
+                        let bad_images = names
+                            .difference(&images.names())
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>();
+                        if !bad_images.is_empty() {
+                            bail!(Error::PullUnavailableImages(bad_images.join(", ")))
+                        }
+                        images
                     } else if pull_images_matches.is_present("available") {
                         available_images
                     } else if pull_images_matches.is_present("exists") {

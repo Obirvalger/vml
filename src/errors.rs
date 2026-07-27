@@ -26,6 +26,8 @@ pub enum Error {
     ImageDoesNotExists(String),
     #[error("pull html instead of qcow2 image (url could be moved)")]
     PullHtmlImage,
+    #[error("try pulling unavailable images `{0}`")]
+    PullUnavailableImages(String),
     #[error("pull image of unknown type")]
     PullUnknownTypeImage,
     #[error("pull image of unsupported type `{0}` (only qcow2 supported)")]
