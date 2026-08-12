@@ -51,7 +51,7 @@ impl VMConfig {
         let config_str = &fs::read_to_string(config_path)
             .with_context(|| format!("failed to read config `{}`", config_path.display()))?;
         let config = toml::from_str(config_str)
-            .with_context(|| format!("failed to parse vm config `{}`", &config_path.display()))?;
+            .with_context(|| format!("failed to parse vm config `{}`", config_path.display()))?;
 
         Ok(config)
     }

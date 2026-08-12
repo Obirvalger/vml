@@ -7,7 +7,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use byte_unit::Byte;
 use clap::{ArgMatches, Values};
 use comfy_table::presets::UTF8_FULL;
@@ -15,6 +15,9 @@ use comfy_table::{Cell, Color, ContentArrangement, Table};
 use env_logger::Env;
 use log::{debug, error, info};
 
+use vml::ConfigSsh;
+use vml::Error;
+use vml::StringOrUint;
 use vml::cli;
 use vml::config::Config;
 use vml::config::{CreateExistsAction, StartRunningAction};
@@ -24,9 +27,6 @@ use vml::net::ConfigNet;
 use vml::openssh_config;
 use vml::template;
 use vml::vm_config::VMConfig;
-use vml::ConfigSsh;
-use vml::Error;
-use vml::StringOrUint;
 use vml::{VMsCreator, WithPid};
 
 fn list(vmc: &VMsCreator, config: &Config, fold: bool, unfold: bool) -> Result<BTreeSet<String>> {
@@ -291,19 +291,11 @@ fn parse_user_at_name(user_at_name: &str) -> (Option<&str>, &str) {
 }
 
 fn matches_valid_value<S: AsRef<str>>(matches: &ArgMatches, key: S) -> Option<&str> {
-    if matches.is_valid_arg(key.as_ref()) {
-        matches.value_of(key.as_ref())
-    } else {
-        None
-    }
+    if matches.is_valid_arg(key.as_ref()) { matches.value_of(key.as_ref()) } else { None }
 }
 
 fn matches_valid_values<S: AsRef<str>>(matches: &ArgMatches, key: S) -> Option<Values<'_>> {
-    if matches.is_valid_arg(key.as_ref()) {
-        matches.values_of(key.as_ref())
-    } else {
-        None
-    }
+    if matches.is_valid_arg(key.as_ref()) { matches.values_of(key.as_ref()) } else { None }
 }
 
 fn set_specifications(vmc: &mut VMsCreator, matches: &ArgMatches) {
@@ -394,9 +386,9 @@ async fn main() -> Result<()> {
                 Some(("available", _)) => {
                     for image in vml::images::available(&config.images)? {
                         if let Some(description) = &image.description {
-                            println!("{} - {}", &image.name, description);
+                            println!("{} - {}", image.name, description);
                         } else {
-                            println!("{}", &image.name);
+                            println!("{}", image.name);
                         }
                     }
                 }
@@ -488,7 +480,7 @@ async fn main() -> Result<()> {
                     } else if pull_images_matches.is_present("outdate") {
                         available_images.outdate()
                     } else {
-                        panic!("Unknown image pull options {:?}", &pull_images_matches)
+                        panic!("Unknown image pull options {:?}", pull_images_matches)
                     };
 
                     let show_pb = !pull_images_matches.is_present("no-progress-bar");
@@ -707,10 +699,10 @@ async fn main() -> Result<()> {
         }
 
         Some(("scp", _scp_matches)) => {
-            let line = format!("Include {}", &config.openssh_config.main_config.display());
+            let line = format!("Include {}", config.openssh_config.main_config.display());
             println!(
                 "To use scp add the following line at the beginning of your ssh config:\n{}",
-                &line
+                line
             );
         }
 

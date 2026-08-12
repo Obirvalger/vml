@@ -20,9 +20,9 @@ pub fn add(configs_dir: &Path, vm: &VM) -> Result<()> {
     let config_path = configs_dir.join(encode(name));
 
     let mut config = File::create(&config_path).with_context(|| {
-        format!("could not create vm openssh config `{}`", &config_path.display())
+        format!("could not create vm openssh config `{}`", config_path.display())
     })?;
-    writeln!(config, "Host {}", &vm.name)?;
+    writeln!(config, "Host {}", vm.name)?;
 
     let info = vm.info();
 

@@ -41,11 +41,7 @@ pub struct VMsDefault {
 }
 
 fn default_cpu_model() -> String {
-    if ARCH == "aarch64" {
-        "host,pmu=off".to_string()
-    } else {
-        "host".to_string()
-    }
+    if ARCH == "aarch64" { "host,pmu=off".to_string() } else { "host".to_string() }
 }
 
 fn default_nic_model() -> String {
@@ -354,20 +350,20 @@ impl Config {
     pub fn new() -> Result<Config> {
         let config_path = config_dir().join("config.toml");
         let config_str = &fs::read_to_string(&config_path)
-            .with_context(|| format!("failed to read config `{}`", &config_path.display()))?;
+            .with_context(|| format!("failed to read config `{}`", config_path.display()))?;
 
         let mut config: Config = toml::from_str(config_str)
-            .with_context(|| format!("failed to parse config `{}`", &config_path.display()))?;
+            .with_context(|| format!("failed to parse config `{}`", config_path.display()))?;
         config.commands.clean.program = expand_tilde(&config.commands.clean.program);
         config.images.directory = expand_tilde(&config.images.directory);
         config.vms_dir = expand_tilde(&config.vms_dir);
         if !config.vms_dir.is_dir() {
             fs::create_dir_all(&config.vms_dir).with_context(|| {
-                format!("failed to create vms dir `{}`", &config.vms_dir.display())
+                format!("failed to create vms dir `{}`", config.vms_dir.display())
             })?;
         } else {
             config.vms_dir = fs::canonicalize(&config.vms_dir).with_context(|| {
-                format!("failed to canonicalize vms dir name `{}`", &config.vms_dir.display())
+                format!("failed to canonicalize vms dir name `{}`", config.vms_dir.display())
             })?;
         }
         config.openssh_config.main_config = expand_tilde(&config.openssh_config.main_config);

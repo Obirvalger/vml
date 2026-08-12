@@ -11,16 +11,17 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Context as AnyhowContext;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use cmd_lib::run_fun;
 use file_lock::{FileLock, FileOptions};
 use log::{debug, info};
 use procfs::process::Process;
 use tera::Context;
 
+use crate::Error;
 use crate::cache::Cache;
 use crate::cloud_init;
-use crate::config::{config_dir, Config, CreateExistsAction};
+use crate::config::{Config, CreateExistsAction, config_dir};
 use crate::gui::ConfigGui;
 use crate::images;
 use crate::images::Images;
@@ -30,7 +31,6 @@ use crate::specified_by::SpecifiedBy;
 use crate::ssh::Ssh;
 use crate::template;
 use crate::vm_config::VMConfig;
-use crate::Error;
 
 pub fn exists<S: AsRef<str>>(config: &Config, name: S) -> bool {
     let vm_dir = config.vms_dir.join(name.as_ref());
@@ -111,7 +111,7 @@ pub async fn create<S: AsRef<str>>(
 fn get_random_mac() -> String {
     let mac_tail =
         (0..5).map(|_| format!("{:02x}", rand::random::<u8>())).collect::<Vec<_>>().join(":");
-    format!("fe:{}", &mac_tail)
+    format!("fe:{}", mac_tail)
 }
 
 fn get_available_port() -> Option<String> {
@@ -372,7 +372,7 @@ impl VM {
                     let hostfwd = if let Some(ssh) = &self.ssh {
                         let host = ssh.host().to_string();
                         let port = ssh.port().to_string();
-                        format!(",hostfwd=tcp:{}:{}-:22,model={}", host, port, &self.nic_model)
+                        format!(",hostfwd=tcp:{}:{}-:22,model={}", host, port, self.nic_model)
                     } else {
                         "".to_string()
                     };
@@ -390,7 +390,7 @@ impl VM {
                         "-nic",
                         &format!(
                             "tap,ifname={},script=no,mac={},model={}",
-                            tap, mac, &self.nic_model
+                            tap, mac, self.nic_model
                         ),
                     ]);
                 }
@@ -435,7 +435,7 @@ impl VM {
                 "-drive",
                 &format!(
                     "file={},if=virtio,format=raw,force-share=on,read-only=on",
-                    &image.to_string_lossy()
+                    image.to_string_lossy()
                 ),
             ]);
         }
@@ -459,7 +459,7 @@ impl VM {
                     let exit_status = qemu
                         .spawn()
                         .with_context(|| {
-                            format!("failed to run executable executable {}", &self.qemu_binary)
+                            format!("failed to run executable executable {}", self.qemu_binary)
                         })?
                         .wait()?;
 
@@ -479,7 +479,7 @@ impl VM {
         debug!("{:?}", &qemu);
         let exit_status = qemu
             .spawn()
-            .with_context(|| format!("failed to run executable executable {}", &self.qemu_binary))?
+            .with_context(|| format!("failed to run executable executable {}", self.qemu_binary))?
             .wait()?;
 
         if !exit_status.success() {
@@ -614,7 +614,7 @@ impl VM {
         context.insert("name", &self.name);
         let hostname = if n.parse::<u128>().is_ok() {
             let host = if len > 1 { &self.names[len - 2] } else { "host" };
-            format!("{}-{}", host, &n)
+            format!("{}-{}", host, n)
         } else {
             n
         };
@@ -736,7 +736,7 @@ impl VM {
     pub fn monitor(&self) -> Result<()> {
         Command::new("socat")
             .arg("-,echo=0,icanon=0")
-            .arg(format!("unix-connect:{}", &self.monitor.to_string_lossy()))
+            .arg(format!("unix-connect:{}", self.monitor.to_string_lossy()))
             .spawn()
             .context("failed to run executable socat")?
             .wait()?;
@@ -826,9 +826,9 @@ impl VM {
         let ssh_flags: [String; 0] = [];
         let guest_program_path = if let Some(dir) = guest_working_dir {
             let dir = dir.as_ref();
-            format!("{}/{}", dir, &prog_name)
+            format!("{}/{}", dir, prog_name)
         } else {
-            format!("./{}", &prog_name)
+            format!("./{}", prog_name)
         };
         self.ssh(user, &ssh_options, &ssh_flags, &Some(vec![guest_program_path]))
     }
@@ -883,7 +883,7 @@ impl VM {
                     info.insert("network", "user".to_string());
                 }
                 Net::Tap { address, tap, .. } => {
-                    info.insert("network", format!("tap:{}", &tap));
+                    info.insert("network", format!("tap:{}", tap));
                     if let Some(address) = address {
                         info.insert("network_address", address.to_string());
                     }
@@ -939,10 +939,10 @@ fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u64> {
     let out = qemu_img.output()?;
 
     let out = String::from_utf8(out.stdout)
-        .with_context(|| format!("bad utf8 symbols in {:?} command output", &qemu_img))?;
+        .with_context(|| format!("bad utf8 symbols in {:?} command output", qemu_img))?;
 
     let parsed = json::parse(&out)
-        .with_context(|| format!("failed to parse `{:?}` command output as json", &qemu_img))?;
+        .with_context(|| format!("failed to parse `{:?}` command output as json", qemu_img))?;
 
     if let Some(size) = parsed["virtual-size"].as_u64() {
         return Ok(size);

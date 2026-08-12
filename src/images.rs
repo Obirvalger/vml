@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::cmp::min;
 use std::cmp::Ordering;
+use std::cmp::min;
 use std::collections::btree_map;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::env::consts::ARCH;
@@ -9,7 +9,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use cmd_lib::run_fun;
 use file_lock::{FileLock, FileOptions};
 use futures_util::StreamExt;
@@ -19,11 +19,11 @@ use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+use crate::Error;
 use crate::config::Images as ConfigImages;
 use crate::config_dir;
 use crate::files;
 use crate::template;
-use crate::Error;
 
 #[derive(Clone, Debug)]
 pub struct Image<'a> {
@@ -421,11 +421,10 @@ pub fn update_images_file(embedded_iamges_toml: Cow<'static, [u8]>) -> Result<()
         .0
         .into_iter();
     let images_file_path = images_file_path();
-    let images_str = &fs::read_to_string(&images_file_path).with_context(|| {
-        format!("failed to read images file `{}`", &images_file_path.display())
-    })?;
+    let images_str = &fs::read_to_string(&images_file_path)
+        .with_context(|| format!("failed to read images file `{}`", images_file_path.display()))?;
     let mut config_images = toml::from_str::<DeserializeImages>(images_str)
-        .with_context(|| format!("failed to parse images file `{}`", &images_file_path.display()))?
+        .with_context(|| format!("failed to parse images file `{}`", images_file_path.display()))?
         .0
         .into_iter();
 

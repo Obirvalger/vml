@@ -1,17 +1,17 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use procfs::process;
 use procfs::process::FDTarget;
 use walkdir::WalkDir;
 
+use crate::Error;
+use crate::VM;
 use crate::config::Config;
 use crate::specified_by::SpecifiedBy;
 use crate::template;
 use crate::vm_config::VMConfig;
-use crate::Error;
-use crate::VM;
 
 #[derive(Clone, Debug)]
 pub enum WithPid {

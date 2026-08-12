@@ -3,12 +3,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::Context as AnyhowContext;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use tera::Context;
 
+use crate::Error;
 use crate::net;
 use crate::template;
-use crate::Error;
 
 pub fn generate_data(context: &Context, work_dir: &Path) -> Result<PathBuf> {
     let data = work_dir.join("data.img");

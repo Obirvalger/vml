@@ -2,12 +2,12 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::Error;
 use crate::net::{self, ConfigNet};
 use crate::string_like::StringOrUint;
-use crate::Error;
 
 pub struct Keys {
     authorized_keys: Vec<String>,
@@ -112,7 +112,10 @@ impl Ssh {
             config.port.as_ref()
         };
 
-        let port = if let Some(port) = port { port.to_string() } else { return None };
+        let port = {
+            let port = port?;
+            port.to_string()
+        };
 
         let options =
             if let Some(options) = &config.options { options.to_owned() } else { Vec::new() };

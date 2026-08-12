@@ -21,6 +21,6 @@ pub use config::config_dir;
 pub use errors::Error;
 pub use ssh::ConfigSsh;
 pub use string_like::StringOrUint;
-pub use vm::create as create_vm;
 pub use vm::VM;
+pub use vm::create as create_vm;
 pub use vms_creator::{VMsCreator, WithPid};

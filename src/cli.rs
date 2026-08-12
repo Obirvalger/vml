@@ -1,10 +1,10 @@
 use std::io;
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use byte_unit::Byte;
-use clap::{crate_version, value_parser, Arg, ArgEnum, ArgGroup, Command, ValueHint};
-use clap_complete::{generate, Generator, Shell};
+use clap::{Arg, ArgEnum, ArgGroup, Command, ValueHint, crate_version, value_parser};
+use clap_complete::{Generator, Shell, generate};
 
 use crate::files;
 

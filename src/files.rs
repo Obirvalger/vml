@@ -8,9 +8,9 @@ use cmd_lib::run_cmd;
 use file_lock::{FileLock, FileOptions};
 use rust_embed::RustEmbed;
 
+use crate::Error;
 use crate::config::Config;
 use crate::config_dir;
-use crate::Error;
 
 #[derive(RustEmbed)]
 #[folder = "files/configs"]
@@ -129,7 +129,7 @@ fn install_openssh_config(config: &Config) -> Result<()> {
     }
     lock_write(
         main_config,
-        format!("Include {}/*", &config.openssh_config.vm_configs_dir.display()),
+        format!("Include {}/*", config.openssh_config.vm_configs_dir.display()),
     )?;
 
     Ok(())
