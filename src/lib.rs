@@ -6,6 +6,7 @@ mod errors;
 pub mod files;
 mod gui;
 pub mod images;
+pub mod modify_command;
 pub mod net;
 pub mod openssh_config;
 mod socket;

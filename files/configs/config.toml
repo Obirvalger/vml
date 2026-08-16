@@ -91,6 +91,12 @@ nic-model = "virtio-net-pci"
 
 minimum-disk-size = "30G"
 
+# Prepend qemu command. Using ["echo"] will just print qemu command e.g.
+modify-command.qemu.prepend = []
+
+# Append qemu command, to add qemu flags
+modify-command.qemu.append = []
+
 
 [images]
 

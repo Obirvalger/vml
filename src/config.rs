@@ -9,6 +9,7 @@ use log::LevelFilter;
 use serde::Deserialize;
 
 use crate::gui::ConfigGui;
+use crate::modify_command::ModifyCommand;
 use crate::net::ConfigNet;
 use crate::ssh::ConfigSsh;
 use crate::string_like::StringOrUint;
@@ -38,6 +39,7 @@ pub struct VMsDefault {
     pub minimum_disk_size: Option<Byte>,
     pub cloud_init: bool,
     pub cloud_init_image: Option<PathBuf>,
+    pub modify_command: Option<ModifyCommand>,
 }
 
 fn default_cpu_model() -> String {

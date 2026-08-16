@@ -7,6 +7,7 @@ use byte_unit::Byte;
 use serde::{Deserialize, Serialize};
 
 use crate::gui::ConfigGui;
+use crate::modify_command::ModifyCommand;
 use crate::net::ConfigNet;
 use crate::ssh::ConfigSsh;
 use crate::string_like::StringOrUint;
@@ -37,6 +38,7 @@ pub struct VMConfig {
     pub gui: Option<ConfigGui>,
     pub ssh: Option<ConfigSsh>,
     pub net: Option<ConfigNet>,
+    pub modify_command: Option<ModifyCommand>,
 }
 
 impl VMConfig {
@@ -89,6 +91,7 @@ impl VMConfig {
             qemu_bios,
             ssh,
             tags,
+            modify_command,
         } = self;
 
         if cloud_init.is_none() {
@@ -111,6 +114,9 @@ impl VMConfig {
         }
         if gui.is_none() {
             other.gui.clone_into(gui);
+        }
+        if modify_command.is_none() {
+            other.modify_command.clone_into(modify_command);
         }
         if name.is_none() {
             other.name.clone_into(name);

@@ -25,6 +25,7 @@ use crate::config::{Config, CreateExistsAction, config_dir};
 use crate::gui::ConfigGui;
 use crate::images;
 use crate::images::Images;
+use crate::modify_command::ModifyCommand;
 use crate::net::{ConfigNet, Net};
 use crate::socket;
 use crate::specified_by::SpecifiedBy;
@@ -156,6 +157,7 @@ pub struct VM {
     qemu_arch_options: Vec<String>,
     qemu_bios_options: Vec<String>,
     ssh: Option<Ssh>,
+    modify_command: ModifyCommand,
     tags: HashSet<String>,
     vml_directory: PathBuf,
 }
@@ -258,6 +260,10 @@ impl VM {
 
         let openssh_config = config.openssh_config.vm_configs_dir.join(&name);
 
+        let modify_command = vm_config
+            .modify_command
+            .unwrap_or_else(|| config.default.modify_command.to_owned().unwrap_or_default());
+
         Ok(VM {
             cache,
             cloud_init,
@@ -270,6 +276,7 @@ impl VM {
             gui,
             memory,
             monitor,
+            modify_command,
             minimum_disk_size,
             image_name: vm_config.image_name.to_owned(),
             name,
@@ -332,7 +339,15 @@ impl VM {
         drives: &[S],
     ) -> Result<()> {
         debug!("Start vm {:?}", self.name);
-        let mut qemu = Command::new(&self.qemu_binary);
+        let prepend = &self.modify_command.qemu.prepend;
+        let mut qemu = if prepend.is_empty() {
+            Command::new(&self.qemu_binary)
+        } else {
+            let mut qemu = Command::new(&prepend[0]);
+            qemu.args(&prepend[1..]);
+            qemu.arg(&self.qemu_binary);
+            qemu
+        };
         let mut context = self.context();
         let mut user_net = "".to_string();
 
@@ -455,6 +470,7 @@ impl VM {
                     let user_net = user_net.replace("random", &port);
                     qemu.args(["-nic", &user_net]);
 
+                    qemu.args(&self.modify_command.qemu.append);
                     debug!("{:?}", &qemu);
                     let exit_status = qemu
                         .spawn()
@@ -476,6 +492,7 @@ impl VM {
             };
         }
 
+        qemu.args(&self.modify_command.qemu.append);
         debug!("{:?}", &qemu);
         let exit_status = qemu
             .spawn()
