@@ -89,6 +89,9 @@ net.type = "user"
 
 nic-model = "virtio-net-pci"
 
+# Do not run qemu in the background, could be used with some script in prepend
+nodaemonize = false
+
 minimum-disk-size = "30G"
 
 # Prepend qemu command. Using ["echo"] will just print qemu command e.g.

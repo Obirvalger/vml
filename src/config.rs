@@ -27,6 +27,8 @@ pub struct VMsDefault {
     #[serde(default = "default_nic_model")]
     pub nic_model: String,
     pub nproc: StringOrUint,
+    #[serde(default)]
+    pub nodaemonize: bool,
     pub gui: Option<ConfigGui>,
     #[serde(default)]
     pub ssh: ConfigSsh,

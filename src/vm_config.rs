@@ -23,6 +23,7 @@ pub struct VMConfig {
     pub disk: Option<PathBuf>,
     pub display: Option<String>,
     pub name: Option<String>,
+    pub nodaemonize: Option<bool>,
     pub image_name: Option<String>,
     #[serde(alias = "mem")]
     pub memory: Option<String>,
@@ -85,6 +86,7 @@ impl VMConfig {
             net,
             nic_model,
             nproc,
+            nodaemonize,
             properties,
             qemu_binary,
             qemu_arch_options,
@@ -143,6 +145,9 @@ impl VMConfig {
         }
         if nproc.is_none() {
             other.nproc.clone_into(nproc);
+        }
+        if nodaemonize.is_none() {
+            other.nodaemonize.clone_into(nodaemonize);
         }
         if properties.is_none() {
             other.properties.clone_into(properties);

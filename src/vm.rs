@@ -150,6 +150,7 @@ pub struct VM {
     net: Option<Net>,
     nic_model: String,
     nproc: String,
+    nodaemonize: bool,
     specified_by: SpecifiedBy,
     pid: Option<i32>,
     openssh_config: PathBuf,
@@ -229,6 +230,7 @@ impl VM {
         let nic_model =
             vm_config.nic_model.unwrap_or_else(|| config.default.nic_model.to_string());
         let nproc = vm_config.nproc.unwrap_or_else(|| config.default.nproc.to_owned()).to_string();
+        let nodaemonize = vm_config.nodaemonize.unwrap_or(config.default.nodaemonize);
         let tags = vm_config.tags.unwrap_or_default();
 
         let mut net_config = match vm_config.net {
@@ -286,6 +288,7 @@ impl VM {
             pid: None,
             nic_model,
             nproc,
+            nodaemonize,
             openssh_config,
             qemu_binary,
             qemu_arch_options,
@@ -371,7 +374,9 @@ impl VM {
                 qemu.args(["-nographic", "-serial", "mon:stdio"]);
             } else {
                 qemu.args(["-display", display]);
-                qemu.arg("-daemonize");
+                if !self.nodaemonize {
+                    qemu.arg("-daemonize");
+                }
             }
         } else {
             qemu.arg("-daemonize");
