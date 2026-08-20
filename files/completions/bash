@@ -240,11 +240,11 @@ _vml() {
                     return 0
                     ;;
                 --name-same-image)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
                     return 0
                     ;;
                 -N)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
                     return 0
                     ;;
                 --image)
@@ -804,11 +804,11 @@ _vml() {
                     return 0
                     ;;
                 --name-same-image)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
                     return 0
                     ;;
                 -N)
-                    COMPREPLY=($(compgen -f "${cur}"))
+                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
                     return 0
                     ;;
                 --cloud-init-image)

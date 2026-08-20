@@ -139,7 +139,7 @@
                  return 0
              fi
              case "${prev}" in
-@@ -164,22 +221,22 @@
+@@ -164,38 +221,38 @@
                      COMPREPLY=()
                      ;;
              esac
@@ -166,7 +166,13 @@
                      return 0
                      ;;
                  --name-same-image)
-@@ -191,11 +248,11 @@
+-                    COMPREPLY=($(compgen -f "${cur}"))
++                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                     return 0
+                     ;;
+                 -N)
+-                    COMPREPLY=($(compgen -f "${cur}"))
++                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
                      return 0
                      ;;
                  --image)
@@ -519,7 +525,7 @@
                      return 0
                      ;;
                  --rsync-options)
-@@ -728,22 +785,22 @@
+@@ -728,30 +785,30 @@
                      COMPREPLY=()
                      ;;
              esac
@@ -546,6 +552,16 @@
                      return 0
                      ;;
                  --name-same-image)
+-                    COMPREPLY=($(compgen -f "${cur}"))
++                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                     return 0
+                     ;;
+                 -N)
+-                    COMPREPLY=($(compgen -f "${cur}"))
++                    COMPREPLY=($(compgen -W "${image_names}" -- "${cur}"))
+                     return 0
+                     ;;
+                 --cloud-init-image)
 @@ -767,11 +824,11 @@
                      return 0
                      ;;

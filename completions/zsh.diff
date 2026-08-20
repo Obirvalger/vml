@@ -120,12 +120,16 @@
  && ret=0
  ;;
  (help)
-@@ -135,8 +202,8 @@
+@@ -133,10 +200,10 @@
+ _arguments "${_arguments_options[@]}" \
+ '-n+[]: : ' \
  '--names=[]: : ' \
- '-N+[use this value as image and as vm name]:name: ' \
- '--name-same-image=[use this value as image and as vm name]:name: ' \
+-'-N+[use this value as image and as vm name]:name: ' \
+-'--name-same-image=[use this value as image and as vm name]:name: ' \
 -'-i+[]: : ' \
 -'--image=[]: : ' \
++'-N[use this value as image and as vm name]:name:_vml_image_names_all' \
++'--name-same-image=[use this value as image and as vm name]:name:_vml_image_names_all' \
 +'-i[]: :_vml_image_names_all' \
 +'--image=[]: :_vml_image_names_all' \
  '--nproc=[]: : ' \
@@ -142,7 +146,7 @@
  '-d+[]: : ' \
  '--drives=[]: : ' \
  '-p+[]: : ' \
-@@ -192,7 +259,7 @@
+@@ -192,20 +259,20 @@
  '--running-restart[restart vm if it is running already]' \
  '-h[Print help information]' \
  '--help[Print help information]' \
@@ -151,7 +155,13 @@
  && ret=0
  ;;
  (run)
-@@ -204,8 +271,8 @@
+ _arguments "${_arguments_options[@]}" \
+ '-n+[]: : ' \
+ '--names=[]: : ' \
+-'-N+[use this value as image and as vm name]:name: ' \
+-'--name-same-image=[use this value as image and as vm name]:name: ' \
++'-N[use this value as image and as vm name]:name:_vml_image_names_all' \
++'--name-same-image=[use this value as image and as vm name]:name:_vml_image_names_all' \
  '--cloud-init-image=[]: :_files' \
  '-d+[]: : ' \
  '--drives=[]: : ' \

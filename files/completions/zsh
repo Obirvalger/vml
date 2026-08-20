@@ -200,8 +200,8 @@ esac
 _arguments "${_arguments_options[@]}" \
 '-n+[]: : ' \
 '--names=[]: : ' \
-'-N+[use this value as image and as vm name]:name: ' \
-'--name-same-image=[use this value as image and as vm name]:name: ' \
+'-N[use this value as image and as vm name]:name:_vml_image_names_all' \
+'--name-same-image=[use this value as image and as vm name]:name:_vml_image_names_all' \
 '-i[]: :_vml_image_names_all' \
 '--image=[]: :_vml_image_names_all' \
 '--nproc=[]: : ' \
@@ -266,8 +266,8 @@ _arguments "${_arguments_options[@]}" \
 _arguments "${_arguments_options[@]}" \
 '-n+[]: : ' \
 '--names=[]: : ' \
-'-N+[use this value as image and as vm name]:name: ' \
-'--name-same-image=[use this value as image and as vm name]:name: ' \
+'-N[use this value as image and as vm name]:name:_vml_image_names_all' \
+'--name-same-image=[use this value as image and as vm name]:name:_vml_image_names_all' \
 '--cloud-init-image=[]: :_files' \
 '-d+[]: : ' \
 '--drives=[]: : ' \
