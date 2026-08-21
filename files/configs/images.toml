@@ -8,6 +8,18 @@ url = "http://ftp.altlinux.org/pub/people/obirvalger/cloud-images/alt-sisyphus-d
 description = "Unofficial ALT build for developnent and testing"
 change = ["update-all", "delete"]
 
+[alt-dev-gui]
+url = "http://ftp.altlinux.org/pub/people/obirvalger/cloud-images/alt-sisyphus-gui-x86_64.qcow2"
+description = "Unofficial ALT build for developnent and testing with lxqt de"
+properties = ["gui"]
+change = ["update-all", "delete"]
+
+[alt-p11-dev-gui]
+url = "http://ftp.altlinux.org/pub/people/obirvalger/cloud-images/alt-p11-gui-x86_64.qcow2"
+description = "Unofficial ALT build for developnent and testing with lxqt de"
+properties = ["gui"]
+change = ["update-all", "delete"]
+
 [alt-p11]
 url = "http://ftp.altlinux.org/pub/distributions/ALTLinux/images/p11/cloud/{{arch}}/alt-p11-cloud-{{arch}}.qcow2"
 description = "ALT Linux p11"
