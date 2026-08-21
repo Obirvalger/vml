@@ -398,13 +398,14 @@ impl VM {
                     };
                     user_net = format!("user{}", hostfwd);
                 }
-                Net::Tap { address, nameservers, tap, .. } => {
+                Net::Tap { address, nameservers, tap, mac, .. } => {
                     context.insert("address", &address);
                     context.insert("gateway4", &net.gateway4());
                     context.insert("gateway6", &net.gateway6());
                     context.insert("tap", &tap);
                     context.insert("nameservers", &nameservers);
-                    let mac = get_random_mac();
+                    let mac =
+                        if let Some(mac) = &mac { mac.to_string() } else { get_random_mac() };
                     context.insert("mac", &mac);
                     qemu.args([
                         "-nic",

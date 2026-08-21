@@ -106,6 +106,7 @@ async fn create(config: &Config, create_matches: &ArgMatches) -> Result<()> {
             tap: create_matches.value_of("net-tap").map(|t| t.to_string()),
             address: create_matches.value_of("net-address").map(|t| t.to_string()),
             gateway: create_matches.value_of("net-gateway").map(|g| g.to_string()),
+            mac: create_matches.value_of("net-mac").map(|m| m.to_string()),
             nameservers: create_matches
                 .values_of("net-nameservers")
                 .map(|ns| ns.map(|n| n.to_string()).collect()),

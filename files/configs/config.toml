@@ -83,6 +83,7 @@ cloud-init = true
 # net.address = "192.168.0.2"
 # net.tap = "tap0"
 # net.gateway = "192.168.0.1"
+# net.mac = "fe:aa:00:ff:ee:00"
 # net.nameservers = ["8.8.8.8"]
 
 net.type = "user"

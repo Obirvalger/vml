@@ -14,6 +14,7 @@ pub enum ConfigNet {
     Tap {
         address: Option<String>,
         gateway: Option<String>,
+        mac: Option<String>,
         nameservers: Option<Vec<String>>,
         tap: Option<String>,
     },
@@ -28,22 +29,25 @@ impl ConfigNet {
                 ConfigNet::Tap {
                     address: self_address,
                     gateway: self_gateway,
+                    mac: self_mac,
                     nameservers: self_nameservers,
                     tap: self_tap,
                 },
                 ConfigNet::Tap {
                     address: other_address,
                     gateway: other_gateway,
+                    mac: other_mac,
                     nameservers: other_nameservers,
                     tap: other_tap,
                 },
             ) => {
                 let address = self_address.as_ref().or(other_address.as_ref()).cloned();
                 let gateway = self_gateway.as_ref().or(other_gateway.as_ref()).cloned();
+                let mac = self_mac.as_ref().or(other_mac.as_ref()).cloned();
                 let nameservers =
                     self_nameservers.as_ref().or(other_nameservers.as_ref()).cloned();
                 let tap = self_tap.as_ref().or(other_tap.as_ref()).cloned();
-                ConfigNet::Tap { address, gateway, nameservers, tap }
+                ConfigNet::Tap { address, gateway, mac, nameservers, tap }
             }
             _ => self.to_owned(),
         }
@@ -67,6 +71,7 @@ pub enum Net {
     Tap {
         address: Option<String>,
         gateway: Option<String>,
+        mac: Option<String>,
         nameservers: Option<Vec<String>>,
         tap: String,
     },
@@ -77,13 +82,14 @@ impl Net {
     pub fn new(config: &ConfigNet) -> Result<Option<Net>> {
         match config {
             ConfigNet::None => Ok(None),
-            ConfigNet::Tap { address, gateway, nameservers, tap } => {
+            ConfigNet::Tap { address, gateway, mac, nameservers, tap } => {
                 let address = address.to_owned();
                 let gateway = gateway.to_owned();
+                let mac = mac.to_owned();
                 let nameservers = nameservers.to_owned();
                 let tap = tap.to_owned().ok_or(Error::TapNetworkTapUnset)?;
 
-                Ok(Some(Net::Tap { address, gateway, nameservers, tap }))
+                Ok(Some(Net::Tap { address, gateway, mac, nameservers, tap }))
             }
             ConfigNet::User => Ok(Some(Net::User)),
         }

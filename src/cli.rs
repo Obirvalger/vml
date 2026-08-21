@@ -276,6 +276,15 @@ pub fn build_cli() -> clap::Command<'static> {
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
                 .arg(
+                    Arg::new("net-mac")
+                        .help("vm mac address, used for qemu tap network")
+                        .long("net-mac")
+                        .takes_value(true)
+                        .value_name("mac")
+                        .requires("net-tap")
+                        .conflicts_with_all(&["net-user", "net-none"]),
+                )
+                .arg(
                     Arg::new("net-nameservers")
                         .help("vm nameservers, used for qemu tap network")
                         .long("net-nameservers")
@@ -502,6 +511,15 @@ pub fn build_cli() -> clap::Command<'static> {
                         .long("net-gateway")
                         .takes_value(true)
                         .value_name("gateway")
+                        .requires("net-tap")
+                        .conflicts_with_all(&["net-user", "net-none"]),
+                )
+                .arg(
+                    Arg::new("net-mac")
+                        .help("vm mac address, used for qemu tap network")
+                        .long("net-mac")
+                        .takes_value(true)
+                        .value_name("mac")
                         .requires("net-tap")
                         .conflicts_with_all(&["net-user", "net-none"]),
                 )
