@@ -79,6 +79,15 @@ change = ["update-all", "delete"]
 x86_64 = "amd64"
 aarch64 = "arm64"
 
+[ubuntu-stonking]
+url = "https://cloud-images.ubuntu.com/stonking/current/stonking-server-cloudimg-{{arch}}.img"
+description = "Ubuntu 26.10 Stonking Stingray (daily)"
+change = ["update-all", "delete"]
+
+[ubuntu-stonking.arch-mapping]
+x86_64 = "amd64"
+aarch64 = "arm64"
+
 [ubuntu-questing]
 url = "https://cloud-images.ubuntu.com/questing/current/questing-server-cloudimg-{{arch}}.img"
 description = "Ubuntu 25.10 Questing Quokka"
