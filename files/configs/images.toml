@@ -310,8 +310,8 @@ description = "openSUSE Tumbleweed"
 change = ["update-all", "delete"]
 
 [opensuse-leap]
-url = "https://download.opensuse.org/repositories/Virtualization:/Appliances:/Images:/openSUSE-Leap-15.6/images/openSUSE-Leap-15.6-Minimal-VM.{{arch}}-Cloud.qcow2"
-description = "openSUSE Leap 15.6"
+url = "https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.{{arch}}-Cloud.qcow2"
+description = "openSUSE Leap 16"
 change = ["update-all", "delete"]
 
 [opensuse-tumbleweed]
