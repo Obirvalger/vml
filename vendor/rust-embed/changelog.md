@@ -7,9 +7,57 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 Thanks to [Mark Drobnak](https://github.com/AzureMarker) for the changelog.
 
+## [8.12.0] - 2026-07-08
+
+ - Fix embedded data being duplicated in binary. Thanks to redgg@xiretza.xyz.
+ - Make Way to avoid compile failure on undefined env. Thanks to Tommy Yu <y@metatoaster.com>.
+ - Remove redundant `Option`/`.unwrap()` and comment. Thanks to Tommy Yu <y@metatoaster.com>.
+ - Fix folder_path not being an Option. Thanks to Tommy Yu <y@metatoaster.com>.
+ - Fix mime guess host/target issue. Thanks to David Tolnay <dtolnay@gmail.com>.
+ - Fix rust-embed-utils is built twice when cross-compiling. Thanks to David Tolnay <dtolnay@gmail.com>.
+ - Add support to get files data compressed. Thanks to Hugues Morisset <morisset.hugues@gmail.com>.
+ - Rename symlinks and readme files to uppercase for consistency. Thanks to pyrossh.
+
+## [8.11.0] - 2026-01-14
+
+ - Fix RustEmbed::iter() signature as it was breaking the static lifetime.
+
+## [8.10.0] - 2026-01-13
+
+ - RustEmbed::iter(): replace concrete return type with generic iterator, to make it easier to implement an empty fake embed. Thanks to Johannes Altmanninger <aclopte@gmail.com>.
+
+## [8.9.0] - 2025-10-31
+
+ - Ignore paths that couldn't be canonicalized. Thanks to zvolin <mac.zwolinski@gmail.com>.
+
+## [8.9.0] - 2025-10-18
+
+ - fix export of RustEmbed macro. Thanks to LorrensP-2158466 <lorrens.pantelis@student.uhasselt.be>.
+
+## [8.7.2] - 2025-05-14
+
+ - Update repo links to sub-packages
+
+## [8.7.1] - 2025-05-05
+
+ - Update documentation and repo links
+
+## [8.7.0] - 2025-04-10
+
+ - add deterministic timestamps flag for deterministic builds [#259](https://github.com/pyrossh/rust-embed/pull/259). Thanks to [daywalker90](https://github.com/daywalker90)
+
+
+## [8.6.0] - 2025-02-25
+
+- Update include-flate to 0.3 [#246](https://github.com/pyrossh/rust-embed/pull/246). Thanks to [krant](https://github.com/krant)
+- refactor: remove redundant reference and closure [#250](https://github.com/pyrossh/rust-embed/pull/250). Thanks to [hamirmahal](https://github.com/hamirmahal)
+- refactor: replace map().unwrap_or_else(). [#250](https://github.com/pyrossh/rust-embed/pull/255). Thanks to [hamirmahal](https://github.com/hamirmahal)
+- Compatible with Axum 0.7.9 [#253](https://github.com/pyrossh/rust-embed/pull/253). Thanks to [wkmyws](https://github.com/wkmyws)
+- Add allow_missing option to derive macro [#256](https://github.com/pyrossh/rust-embed/pull/256). Thanks to [lirannl](https://github.com/lirannl)
+
+
 ## [8.5.0] - 2024-07-09
 
-- Re-export RustEmbed as Embed [#246](https://github.com/pyrossh/rust-embed/pull/246). Thanks to [krant](https://github.com/krant)
 - Allow users to specify a custom path to the rust_embed crate in generated code[#232](https://github.com/pyrossh/rust-embed/pull/232). Thanks to [Wulf](https://github.com/Wulf)
 - Increase minimum rust-version to v1.7.0.0
 

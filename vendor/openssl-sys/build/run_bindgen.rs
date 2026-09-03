@@ -1,5 +1,5 @@
 #[cfg(feature = "bindgen")]
-use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
+use bindgen::callbacks::{ItemInfo, MacroParsingBehavior, ParseCallbacks};
 #[cfg(feature = "bindgen")]
 use bindgen::{MacroTypeVariation, RustTarget};
 use std::io::Write;
@@ -36,15 +36,20 @@ const INCLUDES: &str = "
 #include <openssl/x509_vfy.h>
 #include <openssl/x509v3.h>
 
+#if !defined(OPENSSL_IS_AWSLC)
 // this must be included after ssl.h for libressl!
 #include <openssl/srtp.h>
+#endif
 
-#if !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_IS_BORINGSSL)
+#if !(defined(OPENSSL_IS_BORINGSSL) || defined(OPENSSL_IS_AWSLC))
 #include <openssl/cms.h>
 #endif
 
-#if !defined(OPENSSL_IS_BORINGSSL)
+#if !defined(OPENSSL_NO_COMP) && !(defined(OPENSSL_IS_BORINGSSL) || defined(OPENSSL_IS_AWSLC))
 #include <openssl/comp.h>
+#endif
+
+#if !defined(OPENSSL_IS_BORINGSSL)
 #include <openssl/ocsp.h>
 #endif
 
@@ -53,17 +58,73 @@ const INCLUDES: &str = "
 #endif
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000
+#include <openssl/decoder.h>
+#include <openssl/encoder.h>
 #include <openssl/provider.h>
+#include <openssl/params.h>
+#include <openssl/param_build.h>
 #endif
 
 #if OPENSSL_VERSION_NUMBER >= 0x30200000
 #include <openssl/quic.h>
 #endif
 
-#if defined(LIBRESSL_VERSION_NUMBER) || defined(OPENSSL_IS_BORINGSSL)
+#if defined(LIBRESSL_VERSION_NUMBER) || defined(OPENSSL_IS_BORINGSSL) || defined(OPENSSL_IS_AWSLC)
 #include <openssl/poly1305.h>
 #endif
+
+#if defined(OPENSSL_IS_BORINGSSL)
+#include <openssl/mldsa.h>
+#include <openssl/mlkem.h>
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x30200000
+#include <openssl/thread.h>
+#endif
 ";
+
+/// Attempts to find and use pre-generated AWS-LC Rust bindings from the
+/// installation directory. Returns `true` if pre-generated bindings were
+/// found and installed, `false` otherwise.
+///
+/// AWS-LC installations may ship pre-generated bindings at:
+///   $PREFIX/share/rust/aws_lc_bindings.rs
+///
+/// where $PREFIX is the parent of the include directory. These bindings are
+/// generated with the same bindgen options used by aws-lc-sys, and the
+/// handful of static inline functions that matter (e.g., BIO_get_mem_data)
+/// are already implemented in pure Rust in src/lib.rs.
+///
+/// **Contract:** The pregenerated bindings must not contain `extern "C"`
+/// declarations for static inline wrapper functions (i.e., those that would
+/// normally be compiled from `awslc_static_wrapper.c`). When this function
+/// returns `true`, the caller skips both bindgen and the static wrapper
+/// compilation step; the required shims are instead provided as pure Rust
+/// in `openssl-sys/src/lib.rs`.
+fn try_pregenerated_awslc_bindings(include_dirs: &[PathBuf]) -> bool {
+    for include_dir in include_dirs {
+        let Some(prefix_dir) = include_dir.parent() else {
+            continue;
+        };
+        let bindings_path = prefix_dir
+            .join("share")
+            .join("rust")
+            .join("aws_lc_bindings.rs");
+        if bindings_path.exists() {
+            let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+            println!(
+                "cargo:warning=Using pre-generated AWS-LC bindings from {}",
+                bindings_path.display()
+            );
+            println!("cargo:rerun-if-changed={}", bindings_path.display());
+            println!("cargo:rustc-cfg=awslc_pregenerated");
+            fs::copy(&bindings_path, out_dir.join("bindgen.rs"))
+                .expect("Failed to copy pre-generated AWS-LC Rust bindings");
+            return true;
+        }
+    }
+    false
+}
 
 #[cfg(feature = "bindgen")]
 pub fn run(include_dirs: &[PathBuf]) {
@@ -71,7 +132,7 @@ pub fn run(include_dirs: &[PathBuf]) {
 
     let mut builder = bindgen::builder()
         .parse_callbacks(Box::new(OpensslCallbacks))
-        .rust_target(RustTarget::Stable_1_47)
+        .rust_target(RustTarget::stable(70, 0).unwrap())
         .ctypes_prefix("::libc")
         .raw_line("use libc::*;")
         .raw_line("#[cfg(windows)] use std::os::windows::raw::HANDLE;")
@@ -125,7 +186,7 @@ pub fn run_boringssl(include_dirs: &[PathBuf]) {
         .expect("Failed to write contents to boring_static_wrapper.h");
 
     let mut builder = bindgen::builder()
-        .rust_target(RustTarget::Stable_1_47)
+        .rust_target(RustTarget::stable(70, 0).unwrap())
         .ctypes_prefix("::libc")
         .raw_line("use libc::*;")
         .derive_default(false)
@@ -177,9 +238,7 @@ pub fn run_boringssl(include_dirs: &[PathBuf]) {
     bindgen_cmd
         .arg("-o")
         .arg(out_dir.join("bindgen.rs"))
-        // Must be a valid version from
-        // https://docs.rs/bindgen/latest/bindgen/enum.RustTarget.html
-        .arg("--rust-target=1.47")
+        .arg("--rust-target=1.80")
         .arg("--ctypes-prefix=::libc")
         .arg("--raw-line=use libc::*;")
         .arg("--no-derive-default")
@@ -213,6 +272,138 @@ pub fn run_boringssl(include_dirs: &[PathBuf]) {
 }
 
 #[cfg(feature = "bindgen")]
+mod bindgen_options {
+    use bindgen::callbacks::{ItemInfo, ParseCallbacks};
+
+    #[derive(Debug)]
+    pub struct StripPrefixCallback {
+        remove_prefix: Option<String>,
+    }
+
+    impl StripPrefixCallback {
+        pub fn new(prefix: &str) -> StripPrefixCallback {
+            StripPrefixCallback {
+                remove_prefix: Some(prefix.to_string()),
+            }
+        }
+    }
+
+    impl ParseCallbacks for StripPrefixCallback {
+        fn generated_name_override(&self, item_info: ItemInfo<'_>) -> Option<String> {
+            self.remove_prefix
+                .as_ref()
+                .and_then(|s| item_info.name.strip_prefix(s.as_str()).map(String::from))
+        }
+    }
+}
+
+#[cfg(feature = "bindgen")]
+pub fn run_awslc(include_dirs: &[PathBuf], symbol_prefix: Option<String>) {
+    // If the AWS-LC installation ships pre-generated Rust bindings, use them
+    // directly. These bindings already handle symbol prefix stripping.
+    if try_pregenerated_awslc_bindings(include_dirs) {
+        return;
+    }
+
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+
+    fs::File::create(out_dir.join("awslc_static_wrapper.h"))
+        .expect("Failed to create awslc_static_wrapper.h")
+        .write_all(INCLUDES.as_bytes())
+        .expect("Failed to write contents to awslc_static_wrapper.h");
+
+    let mut builder = bindgen::builder()
+        .rust_target(RustTarget::stable(70, 0).unwrap())
+        .ctypes_prefix("::libc")
+        .raw_line("use libc::*;")
+        .derive_default(false)
+        .enable_function_attribute_detection()
+        .default_macro_constant_type(MacroTypeVariation::Signed)
+        .rustified_enum("point_conversion_form_t")
+        .allowlist_file(r".*(/|\\)openssl((/|\\)[^/\\]+)+\.h")
+        .wrap_static_fns(true)
+        .wrap_static_fns_path(out_dir.join("awslc_static_wrapper").display().to_string())
+        .layout_tests(false)
+        .header(out_dir.join("awslc_static_wrapper.h").display().to_string());
+
+    if let Some(prefix) = symbol_prefix {
+        use bindgen_options::StripPrefixCallback;
+        let callback = StripPrefixCallback::new(prefix.as_str());
+        builder = builder.parse_callbacks(Box::from(callback));
+    }
+
+    for include_dir in include_dirs {
+        builder = builder
+            .clang_arg("-I")
+            .clang_arg(include_dir.display().to_string());
+    }
+
+    builder
+        .generate()
+        .unwrap()
+        .write_to_file(out_dir.join("bindgen.rs"))
+        .unwrap();
+
+    cc::Build::new()
+        .file(out_dir.join("awslc_static_wrapper.c"))
+        .includes(include_dirs)
+        .compile("awslc_static_wrapper");
+}
+
+#[cfg(not(feature = "bindgen"))]
+pub fn run_awslc(include_dirs: &[PathBuf], symbol_prefix: Option<String>) {
+    // If the AWS-LC installation ships pre-generated Rust bindings, use them
+    // directly. These bindings already handle symbol prefix stripping.
+    if try_pregenerated_awslc_bindings(include_dirs) {
+        return;
+    }
+
+    if symbol_prefix.is_some() {
+        panic!("aws-lc installation has prefixed symbols, but bindgen-cli does not support removing prefixes. \
+        Enable the bindgen crate feature to support this installation.")
+    }
+
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+
+    fs::File::create(out_dir.join("awslc_static_wrapper.h"))
+        .expect("Failed to create awslc_static_wrapper.h")
+        .write_all(INCLUDES.as_bytes())
+        .expect("Failed to write contents to awslc_static_wrapper.h");
+
+    let mut bindgen_cmd = process::Command::new("bindgen");
+    bindgen_cmd
+        .arg("-o")
+        .arg(out_dir.join("bindgen.rs"))
+        .arg("--rust-target=1.80")
+        .arg("--ctypes-prefix=::libc")
+        .arg("--raw-line=use libc::*;")
+        .arg("--no-derive-default")
+        .arg("--enable-function-attribute-detection")
+        .arg("--default-macro-constant-type=signed")
+        .arg("--rustified-enum=point_conversion_form_t")
+        .arg(r"--allowlist-file=.*(/|\\)openssl((/|\\)[^/\\]+)+\.h")
+        .arg("--experimental")
+        .arg("--wrap-static-fns")
+        .arg("--wrap-static-fns-path")
+        .arg(out_dir.join("awslc_static_wrapper").display().to_string())
+        .arg(out_dir.join("awslc_static_wrapper.h"))
+        .arg("--")
+        .arg(format!("--target={}", env::var("TARGET").unwrap()));
+
+    for include_dir in include_dirs {
+        bindgen_cmd.arg("-I").arg(include_dir.display().to_string());
+    }
+
+    let result = bindgen_cmd.status().expect("bindgen failed to execute");
+    assert!(result.success());
+
+    cc::Build::new()
+        .file(out_dir.join("awslc_static_wrapper.c"))
+        .includes(include_dirs)
+        .compile("awslc_static_wrapper");
+}
+
+#[cfg(feature = "bindgen")]
 #[derive(Debug)]
 struct OpensslCallbacks;
 
@@ -223,8 +414,8 @@ impl ParseCallbacks for OpensslCallbacks {
         MacroParsingBehavior::Ignore
     }
 
-    fn item_name(&self, original_item_name: &str) -> Option<String> {
-        match original_item_name {
+    fn item_name(&self, item_info: ItemInfo) -> Option<String> {
+        match item_info.name {
             // Our original definitions of these are wrong, so rename to avoid breakage
             "CRYPTO_EX_new"
             | "CRYPTO_EX_dup"
@@ -242,7 +433,9 @@ impl ParseCallbacks for OpensslCallbacks {
             | "SSL_CTX_set_tmp_ecdh_callback"
             | "SSL_set_tmp_ecdh_callback"
             | "SSL_CTX_callback_ctrl"
-            | "SSL_CTX_set_alpn_select_cb" => Some(format!("{}__fixed_rust", original_item_name)),
+            | "SSL_CTX_set_alpn_select_cb" => Some(format!("{}__fixed_rust", item_info.name)),
+            // On NetBSD, "off_t" is generated as "__off_t".
+            "__off_t" => Some("off_t".to_string()),
             _ => None,
         }
     }

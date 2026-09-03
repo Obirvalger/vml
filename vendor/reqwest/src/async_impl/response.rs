@@ -15,7 +15,6 @@ use tokio::time::Sleep;
 use url::Url;
 
 use super::body::Body;
-use super::decoder::{Accepts, Decoder};
 use crate::async_impl::body::ResponseBody;
 #[cfg(feature = "cookies")]
 use crate::cookie;
@@ -27,7 +26,7 @@ use mime::Mime;
 
 /// A Response to a submitted `Request`.
 pub struct Response {
-    pub(super) res: hyper::Response<Decoder>,
+    pub(super) res: hyper::Response<ResponseBody>,
     // Boxed to save space (11 words to 1 word), and it's not accessed
     // frequently internally.
     url: Box<Url>,
@@ -37,17 +36,14 @@ impl Response {
     pub(super) fn new(
         res: hyper::Response<ResponseBody>,
         url: Url,
-        accepts: Accepts,
         total_timeout: Option<Pin<Box<Sleep>>>,
         read_timeout: Option<Duration>,
     ) -> Response {
-        let (mut parts, body) = res.into_parts();
-        let decoder = Decoder::detect(
-            &mut parts.headers,
+        let (parts, body) = res.into_parts();
+        let res = hyper::Response::from_parts(
+            parts,
             super::body::response(body, total_timeout, read_timeout),
-            accepts,
         );
-        let res = hyper::Response::from_parts(parts, decoder);
 
         Response {
             res,
@@ -79,13 +75,18 @@ impl Response {
         self.res.headers_mut()
     }
 
-    /// Get the content-length of this response, if known.
+    /// Get the content length of the response, if it is known.
+    ///
+    /// This value does not directly represents the value of the `Content-Length`
+    /// header, but rather the size of the response's body. To read the header's
+    /// value, please use the [`Response::headers`] method instead.
     ///
     /// Reasons it may not be known:
     ///
-    /// - The server didn't send a `content-length` header.
-    /// - The response is compressed and automatically decoded (thus changing
-    ///   the actual decoded length).
+    /// - The response does not include a body (e.g. it responds to a `HEAD`
+    ///   request).
+    /// - The response is gzipped and automatically decoded (thus changing the
+    ///   actual decoded length).
     pub fn content_length(&self) -> Option<u64> {
         use hyper::body::Body;
 
@@ -134,7 +135,8 @@ impl Response {
     /// Get the full response text.
     ///
     /// This method decodes the response body with BOM sniffing
-    /// and with malformed sequences replaced with the REPLACEMENT CHARACTER.
+    /// and with malformed sequences replaced with the
+    /// [`char::REPLACEMENT_CHARACTER`].
     /// Encoding is determined from the `charset` parameter of `Content-Type` header,
     /// and defaults to `utf-8` if not presented.
     ///
@@ -175,7 +177,7 @@ impl Response {
     /// Get the full response text given a specific encoding.
     ///
     /// This method decodes the response body with BOM sniffing
-    /// and with malformed sequences replaced with the REPLACEMENT CHARACTER.
+    /// and with malformed sequences replaced with the [`char::REPLACEMENT_CHARACTER`].
     /// You can provide a default encoding for decoding the raw message, while the
     /// `charset` parameter of `Content-Type` header is still prioritized. For more information
     /// about the possible encoding name, please go to [`encoding_rs`] docs.
@@ -257,7 +259,7 @@ impl Response {
     ///
     /// # Errors
     ///
-    /// This method fails whenever the response body is not in JSON format
+    /// This method fails whenever the response body is not in JSON format,
     /// or it cannot be properly deserialized to target type `T`. For more
     /// details please see [`serde_json::from_reader`].
     ///
@@ -265,9 +267,9 @@ impl Response {
     #[cfg(feature = "json")]
     #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
     pub async fn json<T: DeserializeOwned>(self) -> crate::Result<T> {
-        let full = self.bytes().await?;
+        let (full, url) = self.do_bytes().await?;
 
-        serde_json::from_slice(&full).map_err(crate::error::decode)
+        serde_json::from_slice(&full).map_err(|err| crate::error::decode(err).with_url(*url))
     }
 
     /// Get the full response body as `Bytes`.
@@ -286,11 +288,7 @@ impl Response {
     /// # }
     /// ```
     pub async fn bytes(self) -> crate::Result<Bytes> {
-        use http_body_util::BodyExt;
-
-        BodyExt::collect(self.res.into_body())
-            .await
-            .map(|buf| buf.to_bytes())
+        self.do_bytes().await.map(|(bytes, _)| bytes)
     }
 
     /// Stream a chunk of the response body.
@@ -315,7 +313,7 @@ impl Response {
         // loop to ignore unrecognized frames
         loop {
             if let Some(res) = self.res.body_mut().frame().await {
-                let frame = res?;
+                let frame = res.map_err(crate::error::decode)?;
                 if let Ok(buf) = frame.into_data() {
                     return Ok(Some(buf));
                 }
@@ -351,7 +349,7 @@ impl Response {
     #[cfg(feature = "stream")]
     #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
     pub fn bytes_stream(self) -> impl futures_core::Stream<Item = crate::Result<Bytes>> {
-        super::body::DataStream(self.res.into_body())
+        http_body_util::BodyDataStream::new(self.res.into_body().map_err(crate::error::decode))
     }
 
     // util methods
@@ -379,8 +377,9 @@ impl Response {
     /// ```
     pub fn error_for_status(self) -> crate::Result<Self> {
         let status = self.status();
+        let reason = self.extensions().get::<hyper::ext::ReasonPhrase>().cloned();
         if status.is_client_error() || status.is_server_error() {
-            Err(crate::error::status_code(*self.url, status))
+            Err(crate::error::status_code(*self.url, status, reason))
         } else {
             Ok(self)
         }
@@ -409,8 +408,9 @@ impl Response {
     /// ```
     pub fn error_for_status_ref(&self) -> crate::Result<&Self> {
         let status = self.status();
+        let reason = self.extensions().get::<hyper::ext::ReasonPhrase>().cloned();
         if status.is_client_error() || status.is_server_error() {
-            Err(crate::error::status_code(*self.url.clone(), status))
+            Err(crate::error::status_code(*self.url.clone(), status, reason))
         } else {
             Ok(self)
         }
@@ -424,15 +424,23 @@ impl Response {
     //
     // This method is just used by the blocking API.
     #[cfg(feature = "blocking")]
-    pub(crate) fn body_mut(&mut self) -> &mut Decoder {
+    pub(crate) fn body_mut(&mut self) -> &mut ResponseBody {
         self.res.body_mut()
+    }
+    async fn do_bytes(self) -> crate::Result<(Bytes, Box<Url>)> {
+        use http_body_util::BodyExt;
+
+        match BodyExt::collect(self.res.into_body()).await {
+            Ok(buf) => Ok((buf.to_bytes(), self.url)),
+            Err(err) => Err(crate::error::decode(err).with_url(*self.url)),
+        }
     }
 }
 
 impl fmt::Debug for Response {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Response")
-            .field("url", self.url())
+            .field("url", &self.url().as_str())
             .field("status", &self.status())
             .field("headers", self.headers())
             .finish()
@@ -442,7 +450,7 @@ impl fmt::Debug for Response {
 /// A `Response` can be piped as the `Body` of another request.
 impl From<Response> for Body {
     fn from(r: Response) -> Body {
-        Body::streaming(r.res.into_body())
+        Body::wrap(r.res.into_body())
     }
 }
 
@@ -454,17 +462,12 @@ impl<T: Into<Body>> From<http::Response<T>> for Response {
 
         let (mut parts, body) = r.into_parts();
         let body: crate::async_impl::body::Body = body.into();
-        let decoder = Decoder::detect(
-            &mut parts.headers,
-            ResponseBody::new(body.map_err(Into::into)),
-            Accepts::none(),
-        );
         let url = parts
             .extensions
             .remove::<ResponseUrl>()
             .unwrap_or_else(|| ResponseUrl(Url::parse("http://no.url.provided.local").unwrap()));
         let url = url.0;
-        let res = hyper::Response::from_parts(parts, decoder);
+        let res = hyper::Response::from_parts(parts, ResponseBody::new(body.map_err(Into::into)));
         Response {
             res,
             url: Box::new(url),
@@ -477,7 +480,7 @@ impl<T: Into<Body>> From<http::Response<T>> for Response {
 impl From<Response> for http::Response<Body> {
     fn from(r: Response) -> http::Response<Body> {
         let (parts, body) = r.res.into_parts();
-        let body = Body::streaming(body);
+        let body = Body::wrap(body);
         http::Response::from_parts(parts, body)
     }
 }

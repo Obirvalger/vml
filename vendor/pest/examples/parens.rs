@@ -17,7 +17,7 @@ enum Rule {
 struct ParenParser;
 
 impl Parser<Rule> for ParenParser {
-    fn parse(rule: Rule, input: &str) -> Result<Pairs<Rule>, Error<Rule>> {
+    fn parse(rule: Rule, input: &str) -> Result<Pairs<'_, Rule>, Error<Rule>> {
         fn expr(state: Box<ParserState<'_, Rule>>) -> ParseResult<Box<ParserState<'_, Rule>>> {
             state.sequence(|s| s.repeat(paren).and_then(|s| s.end_of_input()))
         }
@@ -48,6 +48,7 @@ impl Parser<Rule> for ParenParser {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct Paren(Vec<Paren>);
 
 fn expr(pairs: Pairs<Rule>) -> Vec<Paren> {
@@ -67,9 +68,20 @@ fn main() {
         io::stdin().read_line(&mut line).unwrap();
         line.pop();
 
-        match ParenParser::parse(Rule::expr, &line) {
+        let parsed = ParenParser::parse(Rule::expr, &line);
+        #[cfg(feature = "miette-error")]
+        let parsed = parsed
+            .map_err(Error::into_miette)
+            .map_err(miette::Report::from);
+
+        match parsed {
             Ok(pairs) => println!("{:?}", expr(pairs)),
-            Err(e) => println!("\n{}", e),
+            // To print pest errors, use Display formatting.
+            #[cfg(not(feature = "miette-error"))]
+            Err(e) => eprintln!("\n{}", e),
+            // To print miette errors, use Debug formatting.
+            #[cfg(feature = "miette-error")]
+            Err(e) => eprintln!("\n{:?}", e),
         };
     }
 }

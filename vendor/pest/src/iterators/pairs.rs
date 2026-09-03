@@ -327,7 +327,7 @@ impl<'i, R: RuleType> Pairs<'i, R> {
     pub fn find_tagged(
         self,
         tag: &'i str,
-    ) -> Filter<FlatPairs<'i, R>, impl FnMut(&Pair<'i, R>) -> bool + '_> {
+    ) -> Filter<FlatPairs<'i, R>, impl FnMut(&Pair<'i, R>) -> bool + 'i> {
         self.flatten()
             .filter(move |pair: &Pair<'i, R>| matches!(pair.as_node_tag(), Some(nt) if nt == tag))
     }
@@ -374,6 +374,11 @@ impl<'i, R: RuleType> Pairs<'i, R> {
         }
     }
 
+    /// Returns `true` if the iterator contains no `Pair`s.
+    pub fn is_empty(&self) -> bool {
+        self.pairs_count == 0
+    }
+
     /// Generates a string that stores the lexical information of `self` in
     /// a pretty-printed JSON format.
     #[cfg(feature = "pretty-print")]
@@ -408,7 +413,7 @@ impl<'i, R: RuleType> Pairs<'i, R> {
     }
 }
 
-impl<'i, R: RuleType> ExactSizeIterator for Pairs<'i, R> {
+impl<R: RuleType> ExactSizeIterator for Pairs<'_, R> {
     #[inline]
     fn len(&self) -> usize {
         self.pairs_count
@@ -432,7 +437,7 @@ impl<'i, R: RuleType> Iterator for Pairs<'i, R> {
     }
 }
 
-impl<'i, R: RuleType> DoubleEndedIterator for Pairs<'i, R> {
+impl<R: RuleType> DoubleEndedIterator for Pairs<'_, R> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.end <= self.start {
             return None;
@@ -452,22 +457,26 @@ impl<'i, R: RuleType> DoubleEndedIterator for Pairs<'i, R> {
     }
 }
 
-impl<'i, R: RuleType> fmt::Debug for Pairs<'i, R> {
+impl<R: RuleType> fmt::Debug for Pairs<'_, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.clone()).finish()
     }
 }
 
-impl<'i, R: RuleType> fmt::Display for Pairs<'i, R> {
+impl<R: RuleType> fmt::Display for Pairs<'_, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "[{}]",
-            self.clone()
-                .map(|pair| format!("{}", pair))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+        let inner = self
+            .clone()
+            .map(|pair| {
+                if f.alternate() {
+                    format!("{pair:#}")
+                } else {
+                    format!("{pair}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "[{inner}]")
     }
 }
 
@@ -480,7 +489,7 @@ impl<'i, R: PartialEq> PartialEq for Pairs<'i, R> {
     }
 }
 
-impl<'i, R: Eq> Eq for Pairs<'i, R> {}
+impl<R: Eq> Eq for Pairs<'_, R> {}
 
 impl<'i, R: Hash> Hash for Pairs<'i, R> {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -492,7 +501,7 @@ impl<'i, R: Hash> Hash for Pairs<'i, R> {
 }
 
 #[cfg(feature = "pretty-print")]
-impl<'i, R: RuleType> ::serde::Serialize for Pairs<'i, R> {
+impl<R: RuleType> ::serde::Serialize for Pairs<'_, R> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: ::serde::Serializer,
@@ -603,10 +612,10 @@ mod tests {
         assert_eq!(
             format!("{:?}", pairs),
             "[\
-                Pair { rule: a, span: Span { str: \"abc\", start: 0, end: 3 }, inner: [\
-                    Pair { rule: b, span: Span { str: \"b\", start: 1, end: 2 }, inner: [] }\
+                Pair { rule: a, span: Span { str: \"abc\", range: 0..3 }, inner: [\
+                    Pair { rule: b, span: Span { str: \"b\", range: 1..2 }, inner: [] }\
                 ] }, \
-                Pair { rule: c, span: Span { str: \"e\", start: 4, end: 5 }, inner: [] }\
+                Pair { rule: c, span: Span { str: \"e\", range: 4..5 }, inner: [] }\
             ]"
             .to_owned()
         );
@@ -616,8 +625,9 @@ mod tests {
     fn pairs_display() {
         let pairs = AbcParser::parse(Rule::a, "abcde").unwrap();
 
+        assert_eq!(format!("{}", pairs), "[abc, e]".to_owned());
         assert_eq!(
-            format!("{}", pairs),
+            format!("{:#}", pairs),
             "[a(0, 3, [b(1, 2)]), c(4, 5)]".to_owned()
         );
     }

@@ -1,5 +1,6 @@
 #![deny(missing_debug_implementations, missing_docs, unreachable_pub)]
 #![cfg_attr(test, deny(warnings))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! Utilities for [`http_body::Body`].
 //!
@@ -15,6 +16,9 @@ mod full;
 mod limited;
 mod stream;
 
+#[cfg(feature = "channel")]
+pub mod channel;
+
 mod util;
 
 use self::combinators::{BoxBody, MapErr, MapFrame, UnsyncBoxBody};
@@ -25,6 +29,9 @@ pub use self::empty::Empty;
 pub use self::full::Full;
 pub use self::limited::{LengthLimitError, Limited};
 pub use self::stream::{BodyDataStream, BodyStream, StreamBody};
+
+#[cfg(feature = "channel")]
+pub use self::channel::Channel;
 
 /// An extension trait for [`http_body::Body`] adding various combinators and adapters
 pub trait BodyExt: http_body::Body {
@@ -48,6 +55,15 @@ pub trait BodyExt: http_body::Body {
         MapFrame::new(self, f)
     }
 
+    /// A body that calls a function with a reference to each frame before yielding it.
+    fn inspect_frame<F>(self, f: F) -> combinators::InspectFrame<Self, F>
+    where
+        Self: Sized,
+        F: FnMut(&http_body::Frame<Self::Data>),
+    {
+        combinators::InspectFrame::new(self, f)
+    }
+
     /// Maps this body's error value to a different value.
     fn map_err<F, E>(self, f: F) -> MapErr<Self, F>
     where
@@ -55,6 +71,15 @@ pub trait BodyExt: http_body::Body {
         F: FnMut(Self::Error) -> E,
     {
         MapErr::new(self, f)
+    }
+
+    /// A body that calls a function with a reference to an error before yielding it.
+    fn inspect_err<F>(self, f: F) -> combinators::InspectErr<Self, F>
+    where
+        Self: Sized,
+        F: FnMut(&Self::Error),
+    {
+        combinators::InspectErr::new(self, f)
     }
 
     /// Turn this body into a boxed trait object.
@@ -129,12 +154,33 @@ pub trait BodyExt: http_body::Body {
         combinators::WithTrailers::new(self, trailers)
     }
 
+    /// Turn this body into [`BodyStream`].
+    fn into_stream(self) -> BodyStream<Self>
+    where
+        Self: Sized,
+    {
+        BodyStream::new(self)
+    }
+
     /// Turn this body into [`BodyDataStream`].
     fn into_data_stream(self) -> BodyDataStream<Self>
     where
         Self: Sized,
     {
         BodyDataStream::new(self)
+    }
+
+    /// Creates a "fused" body.
+    ///
+    /// This [`Body`][http_body::Body] yields `Poll::Ready(None)` forever after the underlying
+    /// body yields `Poll::Ready(None)`, or an error `Poll::Ready(Some(Err(_)))`, once.
+    ///
+    /// See [`Fuse<B>`][combinators::Fuse] for more information.
+    fn fuse(self) -> combinators::Fuse<Self>
+    where
+        Self: Sized,
+    {
+        combinators::Fuse::new(self)
     }
 }
 

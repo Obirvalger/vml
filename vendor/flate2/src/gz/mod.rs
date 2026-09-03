@@ -1,6 +1,9 @@
-use std::ffi::CString;
-use std::io::{BufRead, Error, ErrorKind, Read, Result, Write};
-use std::time;
+use crate::io::{BufRead, Error, ErrorKind, Read, Result, Write};
+use alloc::boxed::Box;
+use alloc::ffi::CString;
+use alloc::vec::Vec;
+use core::convert::TryFrom;
+use core::time;
 
 use crate::bufreader::BufReader;
 use crate::{Compression, Crc};
@@ -76,18 +79,27 @@ impl GzHeader {
     ///
     /// The time is measured as seconds since 00:00:00 GMT, Jan. 1 1970.
     /// See [`mtime`](#method.mtime) for more detail.
-    pub fn mtime_as_datetime(&self) -> Option<time::SystemTime> {
+    #[cfg(not(flate2_unstable_nightly_alloc_io))]
+    pub fn mtime_as_datetime(&self) -> Option<std::time::SystemTime> {
+        self.mtime_as_duration().map(|d| std::time::UNIX_EPOCH + d)
+    }
+
+    /// Returns the [`Duration`](time::Duration) between the most recent modification
+    /// time and 00:00:00 GMT, Jan. 1 1970, also known as Unix epoch.
+    /// See [`mtime`](#method.mtime) for more detail.
+    /// Returns `None` if the value of the underlying counter is 0,
+    /// indicating no time stamp is available.
+    pub fn mtime_as_duration(&self) -> Option<time::Duration> {
         if self.mtime == 0 {
             None
         } else {
             let duration = time::Duration::new(u64::from(self.mtime), 0);
-            let datetime = time::UNIX_EPOCH + duration;
-            Some(datetime)
+            Some(duration)
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum GzHeaderState {
     Start(u8, [u8; 10]),
     Xlen(Option<Box<Crc>>, u8, [u8; 2]),
@@ -95,13 +107,8 @@ pub enum GzHeaderState {
     Filename(Option<Box<Crc>>),
     Comment(Option<Box<Crc>>),
     Crc(Option<Box<Crc>>, u8, [u8; 2]),
+    #[default]
     Complete,
-}
-
-impl Default for GzHeaderState {
-    fn default() -> Self {
-        Self::Complete
-    }
 }
 
 #[derive(Debug, Default)]
@@ -120,7 +127,7 @@ impl GzHeaderParser {
         }
     }
 
-    fn parse<'a, R: Read>(&mut self, r: &'a mut R) -> Result<()> {
+    fn parse<R: BufRead>(&mut self, r: &mut R) -> Result<()> {
         loop {
             match &mut self.state {
                 GzHeaderState::Start(count, buffer) => {
@@ -140,7 +147,7 @@ impl GzHeaderParser {
                     if self.flags & FRESERVED != 0 {
                         return Err(bad_header());
                     }
-                    self.header.mtime = ((buffer[4] as u32) << 0)
+                    self.header.mtime = (buffer[4] as u32)
                         | ((buffer[5] as u32) << 8)
                         | ((buffer[6] as u32) << 16)
                         | ((buffer[7] as u32) << 24);
@@ -163,7 +170,7 @@ impl GzHeaderParser {
                         if let Some(crc) = crc {
                             crc.update(buffer);
                         }
-                        let xlen = parse_le_u16(&buffer);
+                        let xlen = parse_le_u16(buffer);
                         self.header.extra = Some(vec![0; xlen as usize]);
                         self.state = GzHeaderState::Extra(crc.take(), 0);
                     } else {
@@ -209,7 +216,7 @@ impl GzHeaderParser {
                         while (*count as usize) < buffer.len() {
                             *count += read_into(r, &mut buffer[*count as usize..])? as u8;
                         }
-                        let stored_crc = parse_le_u16(&buffer);
+                        let stored_crc = parse_le_u16(buffer);
                         let calced_crc = crc.sum() as u16;
                         if stored_crc != calced_crc {
                             return Err(corrupt());
@@ -253,13 +260,11 @@ fn read_into<R: Read>(r: &mut R, buffer: &mut [u8]) -> Result<usize> {
 }
 
 // Read `r` up to the first nul byte, pushing non-nul bytes to `buffer`.
-fn read_to_nul<R: Read>(r: &mut R, buffer: &mut Vec<u8>) -> Result<()> {
+fn read_to_nul<R: BufRead>(r: &mut R, buffer: &mut Vec<u8>) -> Result<()> {
     let mut bytes = r.bytes();
     loop {
         match bytes.next().transpose()? {
-            Some(byte) if byte == 0 => {
-                return Ok(());
-            }
+            Some(0) => return Ok(()),
             Some(_) if buffer.len() == MAX_HEADER_BUF => {
                 return Err(Error::new(
                     ErrorKind::InvalidInput,
@@ -277,7 +282,7 @@ fn read_to_nul<R: Read>(r: &mut R, buffer: &mut Vec<u8>) -> Result<()> {
 }
 
 fn parse_le_u16(buffer: &[u8; 2]) -> u16 {
-    (buffer[0] as u16) | ((buffer[1] as u16) << 8)
+    u16::from_le_bytes(*buffer)
 }
 
 fn bad_header() -> Error {
@@ -317,7 +322,7 @@ fn corrupt() -> Error {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GzBuilder {
     extra: Option<Vec<u8>>,
     filename: Option<CString>,
@@ -326,22 +331,10 @@ pub struct GzBuilder {
     mtime: u32,
 }
 
-impl Default for GzBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl GzBuilder {
     /// Create a new blank builder with no header by default.
     pub fn new() -> GzBuilder {
-        GzBuilder {
-            extra: None,
-            filename: None,
-            comment: None,
-            operating_system: None,
-            mtime: 0,
-        }
+        Self::default()
     }
 
     /// Configure the `mtime` field in the gzip header.
@@ -357,8 +350,17 @@ impl GzBuilder {
     }
 
     /// Configure the `extra` field in the gzip header.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `extra` is longer than [`u16::MAX`].
     pub fn extra<T: Into<Vec<u8>>>(mut self, extra: T) -> GzBuilder {
-        self.extra = Some(extra.into());
+        let extra = extra.into();
+        assert!(
+            extra.len() <= u16::MAX as usize,
+            "gzip extra field length cannot exceed u16::MAX"
+        );
+        self.extra = Some(extra);
         self
     }
 
@@ -421,8 +423,12 @@ impl GzBuilder {
         let mut header = vec![0u8; 10];
         if let Some(v) = extra {
             flg |= FEXTRA;
-            header.push((v.len() >> 0) as u8);
-            header.push((v.len() >> 8) as u8);
+            header.extend(
+                (u16::try_from(v.len()).expect(
+                    "`extra` can only be created from `extra()` which would have panicked on len > u16::MAX",
+                ))
+                .to_le_bytes(),
+            );
             header.extend(v);
         }
         if let Some(filename) = filename {
@@ -437,7 +443,7 @@ impl GzBuilder {
         header[1] = 0x8b;
         header[2] = 8;
         header[3] = flg;
-        header[4] = (mtime >> 0) as u8;
+        header[4] = mtime as u8;
         header[5] = (mtime >> 8) as u8;
         header[6] = (mtime >> 16) as u8;
         header[7] = (mtime >> 24) as u8;
@@ -460,11 +466,13 @@ impl GzBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::io::prelude::*;
+    use crate::io::{Read, Write};
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
 
     use super::{read, write, GzBuilder, GzHeaderParser};
     use crate::{Compression, GzHeader};
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
 
     #[test]
     fn roundtrip() {
@@ -493,7 +501,7 @@ mod tests {
         let mut w = write::GzEncoder::new(Vec::new(), Compression::default());
         let v = crate::random_bytes().take(1024).collect::<Vec<_>>();
         for _ in 0..200 {
-            let to_write = &v[..thread_rng().gen_range(0..v.len())];
+            let to_write = &v[..rng().random_range(0..v.len())];
             real.extend(to_write.iter().copied());
             w.write_all(to_write).unwrap();
         }
@@ -532,7 +540,7 @@ mod tests {
                     if c & 1 != 0 {
                         c = 0xedb88320 ^ (c >> 1);
                     } else {
-                        c = c >> 1;
+                        c >>= 1;
                     }
                 }
                 crc.crc_table[n] = c;
@@ -571,7 +579,7 @@ mod tests {
             .into_header(Compression::fast());
 
         // Add a CRC to the header
-        header[3] = header[3] ^ super::FHCRC;
+        header[3] ^= super::FHCRC;
         let rfc1952_crc = Rfc1952Crc::new();
         let crc32 = rfc1952_crc.crc(&header);
         let crc16 = crc32 as u16;
@@ -593,8 +601,178 @@ mod tests {
     }
 
     #[test]
+    fn gzip_encoder_matches_rfc1952() {
+        /// Extract CRC32 and ISIZE from gzip footer
+        fn extract_zip_footer(compressed: &[u8]) -> (u32, u32) {
+            assert!(compressed.len() >= 8, "Gzip output too short");
+            let footer_start = compressed.len() - 8;
+
+            let crc = u32::from_le_bytes([
+                compressed[footer_start],
+                compressed[footer_start + 1],
+                compressed[footer_start + 2],
+                compressed[footer_start + 3],
+            ]);
+
+            let size = u32::from_le_bytes([
+                compressed[footer_start + 4],
+                compressed[footer_start + 5],
+                compressed[footer_start + 6],
+                compressed[footer_start + 7],
+            ]);
+
+            (crc, size)
+        }
+
+        #[track_caller]
+        fn test_crc_for_write(data: &[u8], expected_crc: u32, description: &str) {
+            // Compress data using write::GzEncoder
+            let mut encoder = write::GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(data).unwrap();
+            let compressed = encoder.finish().unwrap();
+
+            let expected_size = data.len() as u32;
+            let (actual_crc, actual_size) = extract_zip_footer(&compressed);
+
+            assert_eq!(
+                expected_crc, actual_crc,
+                "CRC32 mismatch for write {}: expected {:#08x}, got {:#08x}",
+                description, expected_crc, actual_crc
+            );
+            assert_eq!(
+                expected_size, actual_size,
+                "Size mismatch for write {}: expected {}, got {}",
+                description, expected_size, actual_size
+            );
+        }
+
+        #[track_caller]
+        fn test_crc_for_read(data: &[u8], expected_crc: u32, description: &str) {
+            // Compress data using read::GzEncoder
+            let data_reader = crate::io::Cursor::new(data);
+            let mut encoder = read::GzEncoder::new(data_reader, Compression::default());
+            let mut compressed = Vec::new();
+            encoder.read_to_end(&mut compressed).unwrap();
+
+            let expected_size = data.len() as u32;
+            let (actual_crc, actual_size) = extract_zip_footer(&compressed);
+
+            assert_eq!(
+                expected_crc, actual_crc,
+                "CRC32 mismatch for read {}: expected {:#08x}, got {:#08x}",
+                description, expected_crc, actual_crc
+            );
+            assert_eq!(
+                expected_size, actual_size,
+                "Size mismatch for read {}: expected {}, got {}",
+                description, expected_size, actual_size
+            );
+        }
+
+        #[track_caller]
+        fn test_crc_for_data(data: &[u8], description: &str) {
+            let rfc1952_crc = Rfc1952Crc::new();
+            let expected_crc = rfc1952_crc.crc(data);
+
+            test_crc_for_write(data, expected_crc, description);
+            test_crc_for_read(data, expected_crc, description);
+        }
+
+        // Edge cases
+        test_crc_for_data(&[], "empty data");
+        test_crc_for_data(&[0x00], "single zero byte");
+        test_crc_for_data(&[0xFF], "single 0xFF byte");
+
+        // Simple text patterns
+        test_crc_for_data(b"Hello World", "simple ASCII");
+        test_crc_for_data(b"AAAAAAA", "repeated 'A'");
+        test_crc_for_data(b"1234567890", "digits");
+
+        // Binary patterns
+        test_crc_for_data(&[0x00, 0x01, 0x02, 0x03, 0x04, 0x05], "sequential bytes");
+        test_crc_for_data(&[0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55], "alternating pattern");
+        test_crc_for_data(&[0x00; 10], "all zeros");
+        test_crc_for_data(&[0xFF; 10], "all ones");
+
+        // Large data
+        let large_data = vec![0x42; 10240];
+        test_crc_for_data(&large_data, "10 kiB data");
+
+        // Test multi-write scenario to ensure CRC accumulation works correctly
+        {
+            let data = b"This is a test of multi-write CRC accumulation";
+            let rfc1952_crc = Rfc1952Crc::new();
+            let expected_crc = rfc1952_crc.crc(data);
+
+            let mut encoder = write::GzEncoder::new(Vec::new(), Compression::default());
+            // Write in chunks
+            encoder.write_all(&data[..10]).unwrap();
+            encoder.write_all(&data[10..20]).unwrap();
+            encoder.write_all(&data[20..]).unwrap();
+            let compressed = encoder.finish().unwrap();
+
+            let expected_size = data.len() as u32;
+            let (actual_crc, actual_size) = extract_zip_footer(&compressed);
+
+            assert_eq!(
+                expected_crc, actual_crc,
+                "Multi-write CRC mismatch: expected {:#08x}, got {:#08x}",
+                expected_crc, actual_crc
+            );
+            assert_eq!(
+                expected_size, actual_size,
+                "Size mismatch for multi-write: expected {}, got {}",
+                expected_size, actual_size
+            );
+        }
+    }
+
+    fn gzip_corrupted_crc() -> Vec<u8> {
+        let test_data = b"The quick brown fox jumps over the lazy dog";
+
+        let mut encoder = write::GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(test_data).unwrap();
+        let mut compressed = encoder.finish().unwrap();
+
+        // Corrupt the CRC32 in the footer
+        let crc_offset = compressed.len() - 8;
+        compressed[crc_offset] ^= 0xFF;
+
+        compressed
+    }
+
+    #[test]
+    fn read_decoder_detects_corrupted_crc() {
+        let compressed = gzip_corrupted_crc();
+        let mut decoder = read::GzDecoder::new(&compressed[..]);
+        let mut output = Vec::new();
+        let error = decoder.read_to_end(&mut output).unwrap_err();
+        assert_eq!(error.kind(), crate::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn read_decoder_rejects_incomplete_deflate_stream() {
+        let mut compressed = gzip_corrupted_crc();
+        compressed.truncate(11);
+        let error = read::GzDecoder::new(&compressed[..])
+            .read_to_end(&mut Vec::new())
+            .unwrap_err();
+        assert_eq!(error.kind(), crate::io::ErrorKind::UnexpectedEof);
+        assert_eq!(error.to_string(), "incomplete deflate stream");
+    }
+
+    #[test]
+    fn write_decoder_detects_corrupted_crc() {
+        let compressed = gzip_corrupted_crc();
+        let mut decoder = write::GzDecoder::new(Vec::new());
+        decoder.write_all(&compressed).unwrap();
+        let error = decoder.finish().unwrap_err();
+        assert_eq!(error.kind(), crate::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
     fn fields() {
-        let r = vec![0, 2, 4, 6];
+        let r = [0, 2, 4, 6];
         let e = GzBuilder::new()
             .filename("foo.rs")
             .comment("bar")
@@ -607,6 +785,12 @@ mod tests {
         let mut res = Vec::new();
         d.read_to_end(&mut res).unwrap();
         assert_eq!(res, vec![0, 2, 4, 6]);
+    }
+
+    #[test]
+    #[should_panic(expected = "gzip extra field length cannot exceed u16::MAX")]
+    fn extra_too_long() {
+        GzBuilder::new().extra(vec![0; u16::MAX as usize + 1]);
     }
 
     #[test]

@@ -1,9 +1,8 @@
-use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Stdio};
 use std::string::String;
-use std::thread;
+use std::{fs, thread};
 
 use super::*;
 
@@ -14,6 +13,44 @@ macro_rules! p {
             Err(e) => panic!("{:?}", e),
         }
     };
+}
+
+#[test]
+#[cfg_attr(target_vendor = "apple", should_panic = "-9830", allow(deprecated))]
+fn connect_google_tls13_only() {
+    let builder = p!(TlsConnector::builder()
+        .min_protocol_version(Some(Protocol::Tlsv13))
+        .max_protocol_version(Some(Protocol::Tlsv13))
+        .build());
+    let s = p!(TcpStream::connect("google.com:443"));
+    let mut socket = p!(builder.connect("google.com", s));
+
+    p!(socket.write_all(b"GET / HTTP/1.0\r\n\r\n"));
+    let mut result = vec![];
+    p!(socket.read_to_end(&mut result));
+
+    println!("{}", String::from_utf8_lossy(&result));
+    assert!(result.starts_with(b"HTTP/1.0"));
+    assert!(result.ends_with(b"</HTML>\r\n") || result.ends_with(b"</html>"));
+}
+
+#[test]
+#[cfg_attr(target_vendor = "apple", allow(deprecated))]
+fn connect_google_tls12_13() {
+    let builder = p!(TlsConnector::builder()
+        .min_protocol_version(Some(Protocol::Tlsv12))
+        .max_protocol_version(Some(Protocol::Tlsv13))
+        .build());
+    let s = p!(TcpStream::connect("www.google.com:443"));
+    let mut socket = p!(builder.connect("www.google.com", s));
+
+    p!(socket.write_all(b"GET / HTTP/1.0\r\n\r\n"));
+    let mut result = vec![];
+    p!(socket.read_to_end(&mut result));
+
+    println!("{}", String::from_utf8_lossy(&result));
+    assert!(result.starts_with(b"HTTP/1.0"));
+    assert!(result.ends_with(b"</HTML>\r\n") || result.ends_with(b"</html>"));
 }
 
 #[test]
@@ -433,6 +470,58 @@ fn alpn_google_none() {
     let socket = p!(builder.connect("google.com", s));
     let alpn = p!(socket.negotiated_alpn());
     assert_eq!(alpn, None);
+}
+
+#[test]
+#[cfg(feature = "alpn-accept")]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+fn alpn_server_side() {
+    let keys = test_cert_gen::keys();
+    let cert = keys.server.cert_and_key.cert.to_pem().into_bytes();
+    let key = rsa_to_pkcs8(&keys.server.cert_and_key.key.to_pem_incorrect()).into_bytes();
+
+    let ident = Identity::from_pkcs8(&cert, &key).unwrap();
+    let ident2 = ident.clone();
+    let mut builder = TlsAcceptor::builder(ident);
+    builder.accept_alpn(&["h2"]);
+    let builder = p!(builder.build());
+
+    let listener = p!(TcpListener::bind("0.0.0.0:0"));
+    let port = p!(listener.local_addr()).port();
+
+    let j = thread::spawn(move || {
+        let socket = p!(listener.accept()).0;
+        let mut socket = p!(builder.accept(socket));
+
+        let alpn = p!(socket.negotiated_alpn());
+        assert_eq!(alpn, Some(b"h2".to_vec()));
+
+        let mut buf = [0; 5];
+        p!(socket.read_exact(&mut buf));
+        assert_eq!(&buf, b"hello");
+
+        p!(socket.write_all(b"world"));
+    });
+
+    let root_ca = Certificate::from_der(keys.client.ca.get_der()).unwrap();
+
+    let socket = p!(TcpStream::connect(("localhost", port)));
+    let mut builder = TlsConnector::builder();
+
+    builder.request_alpns(&["h2"]);
+
+    builder.identity(ident2);
+
+    builder.add_root_certificate(root_ca);
+    let builder = p!(builder.build());
+    let mut socket = p!(builder.connect("localhost", socket));
+
+    p!(socket.write_all(b"hello"));
+    let mut buf = vec![];
+    p!(socket.read_to_end(&mut buf));
+    assert_eq!(buf, b"world");
+
+    p!(j.join());
 }
 
 #[test]

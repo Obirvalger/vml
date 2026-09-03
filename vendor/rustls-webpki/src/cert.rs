@@ -16,12 +16,15 @@
 use pki_types::SubjectPublicKeyInfoDer;
 use pki_types::{CertificateDer, DnsName};
 
-use crate::der::{self, DerIterator, FromDer, Tag, CONSTRUCTED, CONTEXT_SPECIFIC};
+use crate::der::{self, CONSTRUCTED, CONTEXT_SPECIFIC, DerIterator, FromDer, Tag};
 use crate::error::{DerTypeId, Error};
 use crate::public_values_eq;
 use crate::signed_data::SignedData;
 use crate::subject_name::{GeneralName, NameIterator, WildcardDnsNameRef};
-use crate::x509::{remember_extension, set_extension_once, DistributionPointName, Extension};
+use crate::x509::{
+    DistributionPointName, Extension, UnknownExtensionPolicy, remember_extension,
+    set_extension_once,
+};
 
 /// A parsed X509 certificate.
 pub struct Cert<'a> {
@@ -47,7 +50,18 @@ pub struct Cert<'a> {
 }
 
 impl<'a> Cert<'a> {
+    pub(crate) fn for_trust_anchor(cert_der: untrusted::Input<'a>) -> Result<Self, Error> {
+        Self::from_input(cert_der, UnknownExtensionPolicy::IgnoreCritical)
+    }
+
     pub(crate) fn from_der(cert_der: untrusted::Input<'a>) -> Result<Self, Error> {
+        Self::from_input(cert_der, UnknownExtensionPolicy::default())
+    }
+
+    fn from_input(
+        cert_der: untrusted::Input<'a>,
+        ext_policy: UnknownExtensionPolicy,
+    ) -> Result<Self, Error> {
         let (tbs, signed_data) =
             cert_der.read_all(Error::TrailingData(DerTypeId::Certificate), |cert_der| {
                 der::nested(
@@ -104,6 +118,16 @@ impl<'a> Cert<'a> {
                     der: CertificateDer::from(cert_der.as_slice_less_safe()),
                 };
 
+                // When used to read X509v3 Certificate.tbsCertificate.extensions, we allow
+                // the extensions to be empty.  This is in spite of RFC5280:
+                //
+                //   "If present, this field is a SEQUENCE of one or more certificate extensions."
+                //
+                // Unfortunately other implementations don't get this right, eg:
+                // - https://github.com/golang/go/issues/52319
+                // - https://github.com/openssl/openssl/issues/20877
+                const ALLOW_EMPTY: bool = true;
+
                 if !tbs.at_end() {
                     der::nested(
                         tbs,
@@ -115,10 +139,12 @@ impl<'a> Cert<'a> {
                                 der::Tag::Sequence,
                                 der::Tag::Sequence,
                                 Error::TrailingData(DerTypeId::Extension),
+                                ALLOW_EMPTY,
                                 |extension| {
                                     remember_cert_extension(
                                         &mut cert,
                                         &Extension::from_der(extension)?,
+                                        ext_policy,
                                     )
                                 },
                             )
@@ -138,8 +164,8 @@ impl<'a> Cert<'a> {
     /// [EndEntityCert::verify_is_valid_for_subject_name].
     ///
     /// [EndEntityCert::verify_is_valid_for_subject_name]: crate::EndEntityCert::verify_is_valid_for_subject_name
-    pub fn valid_dns_names(&self) -> impl Iterator<Item = &str> {
-        NameIterator::new(Some(self.subject), self.subject_alt_name).filter_map(|result| {
+    pub fn valid_dns_names(&self) -> impl Iterator<Item = &'a str> {
+        NameIterator::new(self.subject_alt_name).filter_map(|result| {
             let presented_id = match result.ok()? {
                 GeneralName::DnsName(presented) => presented,
                 _ => return None,
@@ -160,22 +186,50 @@ impl<'a> Cert<'a> {
         })
     }
 
-    /// Raw DER encoded certificate serial number.
+    /// Returns a list of valid URI names provided in the subject alternative names extension
+    ///
+    /// This function returns URIs as strings without performing validation beyond checking that
+    /// they are valid UTF-8.
+    pub fn valid_uri_names(&self) -> impl Iterator<Item = &'a str> {
+        NameIterator::new(self.subject_alt_name).filter_map(|result| {
+            let presented_id = match result.ok()? {
+                GeneralName::UniformResourceIdentifier(presented) => presented,
+                _ => return None,
+            };
+
+            // if the URI can be converted to a valid UTF-8 string, return it; otherwise,
+            // keep going.
+            core::str::from_utf8(presented_id.as_slice_less_safe()).ok()
+        })
+    }
+
+    /// Raw certificate serial number.
+    ///
+    /// This is in big-endian byte order, in twos-complement encoding.
+    ///
+    /// If the caller were to add an `INTEGER` tag and suitable length, this
+    /// would become a valid DER encoding.
     pub fn serial(&self) -> &[u8] {
         self.serial.as_slice_less_safe()
     }
 
-    /// Raw DER encoded certificate issuer.
+    /// Raw DER-encoded certificate issuer.
+    ///
+    /// This does not include the outer `SEQUENCE` tag or length.
     pub fn issuer(&self) -> &[u8] {
         self.issuer.as_slice_less_safe()
     }
 
     /// Raw DER encoded certificate subject.
+    ///
+    /// This does not include the outer `SEQUENCE` tag or length.
     pub fn subject(&self) -> &[u8] {
         self.subject.as_slice_less_safe()
     }
 
     /// Get the RFC 5280-compliant [`SubjectPublicKeyInfoDer`] (SPKI) of this [`Cert`].
+    ///
+    /// This **does** include the outer `SEQUENCE` tag and length.
     #[cfg(feature = "alloc")]
     pub fn subject_public_key_info(&self) -> SubjectPublicKeyInfoDer<'static> {
         // Our SPKI representation contains only the content of the RFC 5280 SEQUENCE
@@ -193,7 +247,7 @@ impl<'a> Cert<'a> {
         self.crl_distribution_points.map(DerIterator::new)
     }
 
-    /// Raw DER encoded representation of the certificate.
+    /// Raw DER-encoded representation of the certificate.
     pub fn der(&self) -> CertificateDer<'a> {
         self.der.clone() // This is cheap, just cloning a reference.
     }
@@ -236,12 +290,13 @@ pub(crate) fn lenient_certificate_serial_number<'a>(
 fn remember_cert_extension<'a>(
     cert: &mut Cert<'a>,
     extension: &Extension<'a>,
+    ext_policy: UnknownExtensionPolicy,
 ) -> Result<(), Error> {
     // We don't do anything with certificate policies so we can safely ignore
     // all policy-related stuff. We assume that the policy-related extensions
     // are not marked critical.
 
-    remember_extension(extension, |id| {
+    remember_extension(extension, ext_policy, |id| {
         let out = match id {
             // id-ce-keyUsage 2.5.29.15.
             15 => &mut cert.key_usage,
@@ -262,7 +317,7 @@ fn remember_cert_extension<'a>(
             37 => &mut cert.eku,
 
             // Unsupported extension
-            _ => return extension.unsupported(),
+            _ => return extension.unsupported(ext_policy),
         };
 
         set_extension_once(out, || {
@@ -353,10 +408,12 @@ impl<'a> FromDer<'a> for CrlDistributionPoint<'a> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "alloc")]
+    use alloc::vec::Vec;
+
     use super::*;
     #[cfg(feature = "alloc")]
     use crate::crl::RevocationReason;
-    use std::prelude::v1::*;
 
     #[test]
     // Note: cert::parse_cert is crate-local visibility, and EndEntityCert doesn't expose the

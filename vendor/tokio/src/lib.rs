@@ -1,4 +1,3 @@
-#![allow(unknown_lints, unexpected_cfgs)]
 #![allow(
     clippy::cognitive_complexity,
     clippy::large_enum_variant,
@@ -11,14 +10,18 @@
     rust_2018_idioms,
     unreachable_pub
 )]
-#![deny(unused_must_use)]
+#![deny(unused_must_use, unsafe_op_in_unsafe_fn)]
 #![doc(test(
     no_crate_inject,
     attr(deny(warnings, rust_2018_idioms), allow(dead_code, unused_variables))
 ))]
+// loom is an internal implementation detail.
+// Do not show "Available on non-loom only" label
+#![cfg_attr(docsrs, doc(auto_cfg(hide(loom))))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
 #![cfg_attr(loom, allow(dead_code, unreachable_pub))]
+#![cfg_attr(windows, allow(rustdoc::broken_intra_doc_links))]
 
 //! A runtime for writing reliable network applications without compromising speed.
 //!
@@ -194,6 +197,8 @@
 //! [`thread_keep_alive`]: crate::runtime::Builder::thread_keep_alive()
 //!
 //! ```
+//! # #[cfg(not(target_family = "wasm"))]
+//! # {
 //! #[tokio::main]
 //! async fn main() {
 //!     // This is running on a core thread.
@@ -208,6 +213,7 @@
 //!     // panic.
 //!     blocking_task.await.unwrap();
 //! }
+//! # }
 //! ```
 //!
 //! If your code is CPU-bound and you wish to limit the number of threads used
@@ -266,6 +272,8 @@
 //! A simple TCP echo server:
 //!
 //! ```no_run
+//! # #[cfg(not(target_family = "wasm"))]
+//! # {
 //! use tokio::net::TcpListener;
 //! use tokio::io::{AsyncReadExt, AsyncWriteExt};
 //!
@@ -283,7 +291,7 @@
 //!             loop {
 //!                 let n = match socket.read(&mut buf).await {
 //!                     // socket closed
-//!                     Ok(n) if n == 0 => return,
+//!                     Ok(0) => return,
 //!                     Ok(n) => n,
 //!                     Err(e) => {
 //!                         eprintln!("failed to read from socket; err = {:?}", e);
@@ -300,9 +308,10 @@
 //!         });
 //!     }
 //! }
+//! # }
 //! ```
 //!
-//! ## Feature flags
+//! # Feature flags
 //!
 //! Tokio uses a set of [feature flags] to reduce the amount of compiled code. It
 //! is possible to just enable certain features over others. By default, Tokio
@@ -314,45 +323,42 @@
 //! Beware though that this will pull in many extra dependencies that you may not
 //! need.
 //!
-//! - `full`: Enables all features listed below except `test-util` and `tracing`.
+//! - `full`: Enables all features listed below except `test-util` and unstable features.
 //! - `rt`: Enables `tokio::spawn`, the current-thread scheduler,
-//!         and non-scheduler utilities.
+//!   and non-scheduler utilities.
 //! - `rt-multi-thread`: Enables the heavier, multi-threaded, work-stealing scheduler.
 //! - `io-util`: Enables the IO based `Ext` traits.
 //! - `io-std`: Enable `Stdout`, `Stdin` and `Stderr` types.
 //! - `net`: Enables `tokio::net` types such as `TcpStream`, `UnixStream` and
-//!          `UdpSocket`, as well as (on Unix-like systems) `AsyncFd` and (on
-//!          FreeBSD) `PollAio`.
+//!   `UdpSocket`, as well as (on Unix-like systems) `AsyncFd` and (on
+//!   FreeBSD) `PollAio`.
 //! - `time`: Enables `tokio::time` types and allows the schedulers to enable
-//!           the built in timer.
+//!   the built-in timer.
 //! - `process`: Enables `tokio::process` types.
 //! - `macros`: Enables `#[tokio::main]` and `#[tokio::test]` macros.
 //! - `sync`: Enables all `tokio::sync` types.
 //! - `signal`: Enables all `tokio::signal` types.
 //! - `fs`: Enables `tokio::fs` types.
 //! - `test-util`: Enables testing based infrastructure for the Tokio runtime.
-//! - `parking_lot`: As a potential optimization, use the `_parking_lot_` crate's
-//!                  synchronization primitives internally. Also, this
-//!                  dependency is necessary to construct some of our primitives
-//!                  in a `const` context. `MSRV` may increase according to the
-//!                  `_parking_lot_` release in use.
+//! - `parking_lot`: As a potential optimization, use the [`parking_lot`] crate's
+//!   synchronization primitives internally. Also, this
+//!   dependency is necessary to construct some of our primitives
+//!   in a `const` context. `MSRV` may increase according to the
+//!   [`parking_lot`] release in use.
 //!
 //! _Note: `AsyncRead` and `AsyncWrite` traits do not require any features and are
 //! always available._
 //!
-//! ### Unstable features
+//! ## Unstable features
 //!
 //! Some feature flags are only available when specifying the `tokio_unstable` flag:
 //!
 //! - `tracing`: Enables tracing events.
+//! - `schedule-latency`: Allows measurement of task scheduling latencies.
+//! - `io-uring`: Enables `io-uring` (Linux only).
+//! - `taskdump`: Enables `taskdump` (Linux only).
 //!
-//! Likewise, some parts of the API are only available with the same flag:
-//!
-//! - [`task::Builder`]
-//! - Some methods on [`task::JoinSet`]
-//! - [`runtime::RuntimeMetrics`]
-//! - [`runtime::Builder::unhandled_panic`]
-//! - [`task::Id`]
+//! Likewise, this flag enables access to unstable APIs.
 //!
 //! This flag enables **unstable** features. The public API of these features
 //! may break in 1.x releases. To enable these features, the `--cfg
@@ -366,6 +372,12 @@
 //! [build]
 //! rustflags = ["--cfg", "tokio_unstable"]
 //! ```
+//!
+//! <div class="warning">
+//! The <code>[build]</code> section does <strong>not</strong> go in a
+//! <code>Cargo.toml</code> file. Instead it must be placed in the Cargo config
+//! file <code>.cargo/config.toml</code>.
+//! </div>
 //!
 //! Alternatively, you can specify it with an environment variable:
 //!
@@ -384,7 +396,7 @@
 //! [unstable features]: https://internals.rust-lang.org/t/feature-request-unstable-opt-in-non-transitive-crate-features/16193#why-not-a-crate-feature-2
 //! [feature flags]: https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section
 //!
-//! ## Supported platforms
+//! # Supported platforms
 //!
 //! Tokio currently guarantees support for the following platforms:
 //!
@@ -410,7 +422,7 @@
 //!
 //! [mio-supported]: https://crates.io/crates/mio#platforms
 //!
-//! ### `WASM` support
+//! ## `WASM` support
 //!
 //! Tokio has some limited support for the `WASM` platform. Without the
 //! `tokio_unstable` flag, the following features are supported:
@@ -432,7 +444,7 @@
 //! immediately instead of blocking forever. On platforms that don't support
 //! time, this means that the runtime can never be idle in any way.
 //!
-//! ### Unstable `WASM` support
+//! ## Unstable `WASM` support
 //!
 //! Tokio also has unstable support for some additional `WASM` features. This
 //! requires the use of the `tokio_unstable` flag.
@@ -466,21 +478,38 @@ compile_error! {
 ))]
 compile_error!("Only features sync,macros,io-util,rt,time are supported on wasm.");
 
-#[cfg(all(not(tokio_unstable), tokio_taskdump))]
-compile_error!("The `tokio_taskdump` feature requires `--cfg tokio_unstable`.");
+#[cfg(all(not(tokio_unstable), feature = "io-uring"))]
+compile_error!("The `io-uring` feature requires `--cfg tokio_unstable`.");
+
+#[cfg(all(not(tokio_unstable), feature = "taskdump"))]
+compile_error!("The `taskdump` feature requires `--cfg tokio_unstable`.");
 
 #[cfg(all(
-    tokio_taskdump,
+    feature = "taskdump",
     not(doc),
     not(all(
         target_os = "linux",
-        any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
+        any(
+            target_arch = "aarch64",
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "s390x"
+        )
     ))
 ))]
 compile_error!(
-    "The `tokio_taskdump` feature is only currently supported on \
-linux, on `aarch64`, `x86` and `x86_64`."
+    "The `taskdump` feature is only currently supported on \
+linux, on `aarch64`, `x86`, `x86_64` and `s390x`."
 );
+
+#[cfg(all(not(tokio_unstable), feature = "schedule-latency"))]
+compile_error!("The `schedule-latency` feature requires `--cfg tokio_unstable`.");
+
+#[cfg(all(
+    feature = "schedule-latency",
+    not(all(target_pointer_width = "64", target_has_atomic = "64"))
+))]
+compile_error!("The `schedule-latency` feature is only currently supported on 64-bit targets.");
 
 // Includes re-exports used by macros.
 //
@@ -538,6 +567,11 @@ cfg_not_sync! {
     mod sync;
 }
 
+// Currently, task module does not expose any public API outside `rt`
+// feature, so we mark it in the docs. This happens only to docs to
+// avoid introducing breaking changes by restricting the visibility
+// of the task module.
+#[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
 pub mod task;
 cfg_rt! {
     pub use task::spawn;
@@ -548,10 +582,6 @@ cfg_time! {
 }
 
 mod trace {
-    use std::future::Future;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-
     cfg_taskdump! {
         pub(crate) use crate::runtime::task::trace::trace_leaf;
     }
@@ -559,25 +589,14 @@ mod trace {
     cfg_not_taskdump! {
         #[inline(always)]
         #[allow(dead_code)]
-        pub(crate) fn trace_leaf(_: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+        pub(crate) fn trace_leaf() -> std::task::Poll<()> {
             std::task::Poll::Ready(())
         }
     }
 
     #[cfg_attr(not(feature = "sync"), allow(dead_code))]
-    pub(crate) fn async_trace_leaf() -> impl Future<Output = ()> {
-        struct Trace;
-
-        impl Future for Trace {
-            type Output = ();
-
-            #[inline(always)]
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-                trace_leaf(cx)
-            }
-        }
-
-        Trace
+    pub(crate) async fn async_trace_leaf() {
+        std::future::poll_fn(|_cx| trace_leaf()).await
     }
 }
 
@@ -625,15 +644,15 @@ pub mod stream {}
 // local re-exports of platform specific things, allowing for decent
 // documentation to be shimmed in on docs.rs
 
-#[cfg(docsrs)]
+#[cfg(all(docsrs, unix))]
 pub mod doc;
 
-#[cfg(feature = "net")]
-#[cfg(docsrs)]
+#[cfg(any(feature = "net", feature = "fs"))]
+#[cfg(all(docsrs, unix))]
 #[allow(unused)]
 pub(crate) use self::doc::os;
 
-#[cfg(not(docsrs))]
+#[cfg(not(all(docsrs, unix)))]
 #[allow(unused)]
 pub(crate) use std::os;
 

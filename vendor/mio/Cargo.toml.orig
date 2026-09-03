@@ -1,10 +1,11 @@
 [package]
-edition = "2018"
+edition = "2021"
+rust-version = "1.71"
 name = "mio"
 # When releasing to crates.io:
 # - Update CHANGELOG.md.
 # - Create git tag
-version       = "0.8.11"
+version       = "1.2.3"
 license       = "MIT"
 authors       = [
   "Carl Lerche <me@carllerche.com>",
@@ -45,26 +46,29 @@ net = []
 [dependencies]
 log = { version = "0.4.8", optional = true }
 
-[target.'cfg(unix)'.dependencies]
-libc = "0.2.149"
+[target.'cfg(any(unix, target_os = "hermit", target_os = "wasi"))'.dependencies]
+libc = "0.2.183"
 
 [target.'cfg(windows)'.dependencies.windows-sys]
-version = "0.48"
+version = "0.61"
 features = [
+  "Wdk_Foundation",                   # Required for AFD.
+  "Wdk_Storage_FileSystem",           # Required for AFD.
+  "Wdk_System_IO",                    # Required for AFD.
   "Win32_Foundation",                 # Basic types eg HANDLE
   "Win32_Networking_WinSock",         # winsock2 types/functions
   "Win32_Storage_FileSystem",         # Enables NtCreateFile
+  "Win32_Security",                   # Enables NtCreateFile
   "Win32_System_IO",                  # IO types like OVERLAPPED etc
   "Win32_System_WindowsProgramming",  # General future used for various types/funcs
 ]
 
 [target.'cfg(target_os = "wasi")'.dependencies]
 wasi = "0.11.0"
-libc = "0.2.149"
 
 [dev-dependencies]
-env_logger = { version = "0.9.3", default-features = false }
-rand = "0.8"
+env_logger = { version = "0.11", default-features = false }
+rand = "0.9"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -72,8 +76,9 @@ rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 targets = [
   "aarch64-apple-ios",
   "aarch64-linux-android",
-  "wasm32-wasi",
+  "wasm32-wasip1",
   "x86_64-apple-darwin",
+  "x86_64-pc-windows-gnu",
   "x86_64-pc-windows-msvc",
   "x86_64-unknown-dragonfly",
   "x86_64-unknown-freebsd",
@@ -81,6 +86,7 @@ targets = [
   "x86_64-unknown-linux-gnu",
   "x86_64-unknown-netbsd",
   "x86_64-unknown-openbsd",
+  "x86_64-unknown-hermit",
 ]
 
 [package.metadata.playground]
@@ -97,3 +103,6 @@ required-features = ["os-poll", "net"]
 [[example]]
 name = "udp_server"
 required-features = ["os-poll", "net"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mio_unsupported_force_poll_poll)', 'cfg(mio_unsupported_force_waker_pipe)'] }

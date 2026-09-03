@@ -84,33 +84,37 @@ impl<T: ?Sized + AsyncBufRead + Unpin> AsyncBufRead for &mut T {
 
 impl<P> AsyncBufRead for Pin<P>
 where
-    P: DerefMut + Unpin,
+    P: DerefMut,
     P::Target: AsyncBufRead,
 {
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
-        self.get_mut().as_mut().poll_fill_buf(cx)
+        crate::util::pin_as_deref_mut(self).poll_fill_buf(cx)
     }
 
     fn consume(self: Pin<&mut Self>, amt: usize) {
-        self.get_mut().as_mut().consume(amt);
+        crate::util::pin_as_deref_mut(self).consume(amt);
     }
 }
 
 impl AsyncBufRead for &[u8] {
+    #[inline]
     fn poll_fill_buf(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
         Poll::Ready(Ok(*self))
     }
 
+    #[inline]
     fn consume(mut self: Pin<&mut Self>, amt: usize) {
         *self = &self[amt..];
     }
 }
 
 impl<T: AsRef<[u8]> + Unpin> AsyncBufRead for io::Cursor<T> {
+    #[inline]
     fn poll_fill_buf(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
         Poll::Ready(io::BufRead::fill_buf(self.get_mut()))
     }
 
+    #[inline]
     fn consume(self: Pin<&mut Self>, amt: usize) {
         io::BufRead::consume(self.get_mut(), amt);
     }

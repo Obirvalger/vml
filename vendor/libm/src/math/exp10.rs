@@ -6,12 +6,19 @@ const P10: &[f64] = &[
     1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
 ];
 
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+/// Calculates 10 raised to the power of `x` (f64).
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn exp10(x: f64) -> f64 {
+    select_implementation! {
+        name: x87_exp10,
+        use_arch_required: x86_no_sse,
+        args: x,
+    }
+
     let (mut y, n) = modf(x);
     let u: u64 = n.to_bits();
     /* fabs(n) < 16 without raising invalid on nan */
-    if (u >> 52 & 0x7ff) < 0x3ff + 4 {
+    if ((u >> 52) & 0x7ff) < 0x3ff + 4 {
         if y == 0.0 {
             return i!(P10, ((n as isize) + 15) as usize);
         }

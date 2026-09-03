@@ -41,7 +41,7 @@ impl CFData {
     /// Creates a [`CFData`] referencing `buffer` without creating a copy
     pub fn from_arc<T: AsRef<[u8]> + Sync + Send>(buffer: Arc<T>) -> Self {
         use crate::base::{CFAllocator, CFAllocatorContext};
-        use std::os::raw::c_void;
+        use core::ffi::c_void;
 
         unsafe {
             let ptr = (*buffer).as_ref().as_ptr() as *const _;
@@ -81,7 +81,14 @@ impl CFData {
     /// read-only.
     #[inline]
     pub fn bytes(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(CFDataGetBytePtr(self.0), self.len() as usize) }
+        unsafe {
+            let ptr = CFDataGetBytePtr(self.0);
+            // Rust slice must never have a NULL pointer
+            if ptr.is_null() {
+                return &[];
+            }
+            slice::from_raw_parts(ptr, self.len() as usize)
+        }
     }
 
     /// Returns the length of this byte buffer.

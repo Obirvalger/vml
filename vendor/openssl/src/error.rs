@@ -18,7 +18,7 @@
 use cfg_if::cfg_if;
 use libc::{c_char, c_int};
 use std::borrow::Cow;
-#[cfg(boringssl)]
+#[cfg(any(boringssl, awslc))]
 use std::convert::TryInto;
 use std::error;
 use std::ffi::CStr;
@@ -27,9 +27,9 @@ use std::io;
 use std::ptr;
 use std::str;
 
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 type ErrType = libc::c_ulong;
-#[cfg(boringssl)]
+#[cfg(any(boringssl, awslc))]
 type ErrType = libc::c_uint;
 
 /// Collection of [`Error`]s from OpenSSL.
@@ -53,6 +53,10 @@ impl ErrorStack {
         for error in self.errors() {
             error.put();
         }
+    }
+
+    pub(crate) fn internal_error(message: &'static str) -> ErrorStack {
+        ErrorStack(vec![Error::new_internal(message)])
     }
 }
 
@@ -85,7 +89,7 @@ impl error::Error for ErrorStack {}
 
 impl From<ErrorStack> for io::Error {
     fn from(e: ErrorStack) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, e)
+        io::Error::other(e)
     }
 }
 
@@ -127,14 +131,11 @@ impl Error {
                     let data = if flags & ffi::ERR_TXT_STRING != 0 {
                         let bytes = CStr::from_ptr(data as *const _).to_bytes();
                         let data = str::from_utf8(bytes).unwrap();
-                        #[cfg(not(boringssl))]
                         let data = if flags & ffi::ERR_TXT_MALLOCED != 0 {
                             Cow::Owned(data.to_string())
                         } else {
                             Cow::Borrowed(data)
                         };
-                        #[cfg(boringssl)]
-                        let data = Cow::Borrowed(data);
                         Some(data)
                     } else {
                         None
@@ -156,6 +157,18 @@ impl Error {
                         data,
                     })
                 }
+            }
+        }
+    }
+
+    pub(crate) fn new_internal(message: &'static str) -> Error {
+        unsafe {
+            Error {
+                code: 0,
+                file: ShimStr::new(c"<rust-openssl>".as_ptr()),
+                line: 0,
+                func: None,
+                data: Some(Cow::Borrowed(message)),
             }
         }
     }
@@ -204,9 +217,9 @@ impl Error {
 
     #[cfg(not(ossl300))]
     fn put_error(&self) {
-        #[cfg(not(boringssl))]
+        #[cfg(not(any(boringssl, awslc)))]
         let line = self.line;
-        #[cfg(boringssl)]
+        #[cfg(any(boringssl, awslc))]
         let line = self.line.try_into().unwrap();
         unsafe {
             ffi::ERR_put_error(
@@ -238,7 +251,7 @@ impl Error {
 
     /// Returns the raw OpenSSL error constant for the library reporting the
     /// error.
-    // On BoringSSL ERR_GET_{LIB,FUNC,REASON} are `unsafe`, but on
+    // On AWS-LC and BoringSSL ERR_GET_{LIB,FUNC,REASON} are `unsafe`, but on
     // OpenSSL/LibreSSL they're safe.
     #[allow(unused_unsafe)]
     pub fn library_code(&self) -> libc::c_int {
@@ -263,7 +276,7 @@ impl Error {
     }
 
     /// Returns the raw OpenSSL error constant for the reason for the error.
-    // On BoringSSL ERR_GET_{LIB,FUNC,REASON} are `unsafe`, but on
+    // On AWS-LC and BoringSSL ERR_GET_{LIB,FUNC,REASON} are `unsafe`, but on
     // OpenSSL/LibreSSL they're safe.
     #[allow(unused_unsafe)]
     pub fn reason_code(&self) -> libc::c_int {
@@ -310,7 +323,7 @@ impl fmt::Debug for Error {
 }
 
 impl fmt::Display for Error {
-    // On BoringSSL ERR_GET_{LIB,FUNC,REASON} are `unsafe`, but on
+    // On AWS-LC and BoringSSL ERR_GET_{LIB,FUNC,REASON} are `unsafe`, but on
     // OpenSSL/LibreSSL they're safe.
     #[allow(unused_unsafe)]
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -410,9 +423,9 @@ mod tests {
     fn test_error_library_code() {
         let stack = Nid::create("not-an-oid", "invalid", "invalid").unwrap_err();
         let errors = stack.errors();
-        #[cfg(not(boringssl))]
+        #[cfg(not(any(boringssl, awslc)))]
         assert_eq!(errors[0].library_code(), ffi::ERR_LIB_ASN1);
-        #[cfg(boringssl)]
+        #[cfg(any(boringssl, awslc))]
         assert_eq!(errors[0].library_code(), ffi::ERR_LIB_OBJ as libc::c_int);
     }
 }

@@ -1,3 +1,137 @@
+# 1.12.1 (July 8th, 2026)
+
+### Fixed
+- Properly handle when `Box::new` panics (#837)
+
+# 1.12.0 (June 18th, 2026)
+
+### Added
+- Add `BytesMut::extend_from_within()` (#818)
+- Add `BytesMut::try_unsplit()` (#746)
+
+### Fixed
+- Fix panic in `get_int` if `nbytes` is zero (#806)
+
+### Changed
+- Pass vtable data by value (#826)
+- Exclude development scripts from published package (#810)
+
+### Documented
+- Document that `BytesMut::{reserve,try_reserve}` doesn't preserve unused capacity (#808)
+
+# 1.11.1 (February 3rd, 2026)
+
+- Fix integer overflow in `BytesMut::reserve`
+
+# 1.11.0 (November 14th, 2025)
+
+- Bump MSRV to 1.57 (#788)
+
+### Fixed
+
+- fix: `BytesMut` only reuse if src has remaining (#803)
+- Specialize `BytesMut::put::<Bytes>` (#793)
+- Reserve capacity in `BytesMut::put` (#794)
+- Change `BytesMut::remaining_mut` to use `isize::MAX` instead of `usize::MAX` (#795)
+
+### Internal changes
+
+- Guarantee address in `slice()` for empty slices. (#780)
+- Rename `Vtable::to_*` -> `Vtable::into_*` (#776)
+- Fix latest clippy warnings (#787)
+- Ignore `BytesMut::freeze` doctest on wasm (#790)
+- Move `drop_fn` of `from_owner` into vtable (#801)
+
+# 1.10.1 (March 5th, 2025)
+
+### Fixed
+
+- Fix memory leak when using `to_vec` with `Bytes::from_owner` (#773)
+
+# 1.10.0 (February 3rd, 2025)
+
+### Added
+
+- Add feature to support platforms without atomic CAS (#467)
+- `try_get_*` methods for `Buf` trait (#753)
+- Implement `Buf::chunks_vectored` for `Take` (#617)
+- Implement `Buf::chunks_vectored` for `VecDeque<u8>` (#708)
+
+### Fixed
+
+- Remove incorrect guarantee for `chunks_vectored` (#754)
+- Ensure that tests pass under `panic=abort` (#749)
+
+# 1.9.0 (November 27, 2024)
+
+### Added
+
+- Add `Bytes::from_owner` to enable externally-allocated memory (#742)
+
+### Documented
+
+- Fix typo in Buf::chunk() comment (#744)
+
+### Internal changes
+
+- Replace BufMut::put with BufMut::put_slice in Writer impl (#745)
+- Rename hex_impl! to fmt_impl! and reuse it for fmt::Debug (#743)
+
+# 1.8.0 (October 21, 2024)
+
+- Guarantee address in `split_off`/`split_to` for empty slices (#740)
+
+# 1.7.2 (September 17, 2024)
+
+### Fixed
+
+- Fix default impl of `Buf::{get_int, get_int_le}` (#732)
+
+### Documented
+
+- Fix double spaces in comments and doc comments (#731)
+
+### Internal changes
+
+- Ensure BytesMut::advance reduces capacity (#728)
+
+# 1.7.1 (August 1, 2024)
+
+This release reverts the following change due to a regression:
+
+- Reuse capacity when possible in `<BytesMut as Buf>::advance` impl (#698)
+
+The revert can be found at #726.
+
+# 1.7.0 (July 31, 2024)
+
+### Added
+
+- Add conversion from `Bytes` to `BytesMut` (#695, #710)
+- Add reclaim method without additional allocation (#686)
+
+### Documented
+
+- Clarify how `BytesMut::zeroed` works (#714)
+- Clarify the behavior of `Buf::chunk` (#717)
+
+### Changed
+
+- Change length condition of `BytesMut::truncate`
+- Reuse capacity when possible in `<BytesMut as Buf>::advance` impl (#698)
+- Improve `must_use` suggestion of `BytesMut::split` (#699)
+
+### Internal changes
+
+- Use `ManuallyDrop` instead of `mem::forget` (#678)
+- Don't set `len` in `BytesMut::reserve` (#682)
+- Optimize `Bytes::copy_to_bytes` (#688)
+- Refactor `BytesMut::truncate` (#694)
+- Refactor `BytesMut::resize` (#696)
+- Reorder assertion in `Bytes::split_to`, `Bytes::split_off` (#689, #693)
+- Use `offset_from` in more places (#705)
+- Correct the wrong usage of `IntoIter` (#707)
+
 # 1.6.1 (July 13, 2024)
 
 This release fixes a bug where `Bytes::is_unique` returns incorrect values when

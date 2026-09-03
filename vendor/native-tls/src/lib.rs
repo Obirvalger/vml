@@ -34,9 +34,10 @@
 //!
 //! # Cargo Features
 //!
-//! * `vendored` - If enabled, the crate will compile and statically link to a
-//!     vendored copy of OpenSSL. This feature has no effect on Windows and
-//!     macOS, where OpenSSL is not used.
+//! * `vendored` - If enabled, the crate will compile and statically link to a vendored copy of OpenSSL. This feature
+//!   has no effect on Windows and macOS, where OpenSSL is not used.
+//! * `alpn` - enables `request_alpns()` for negotiating HTTP/2, etc.
+//! * `alpn-accept` - enables ALPN for `TlsAcceptor`.
 //!
 //! # Examples
 //!
@@ -63,7 +64,7 @@
 //! ```rust,no_run
 //! use native_tls::{Identity, TlsAcceptor, TlsStream};
 //! use std::fs::File;
-//! use std::io::{Read};
+//! use std::io::Read;
 //! use std::net::{TcpListener, TcpStream};
 //! use std::sync::Arc;
 //! use std::thread;
@@ -89,8 +90,8 @@
 //!                 let stream = acceptor.accept(stream).unwrap();
 //!                 handle_client(stream);
 //!             });
-//!         }
-//!         Err(e) => { /* connection failed */ }
+//!         },
+//!         Err(e) => { /* connection failed */ },
 //!     }
 //! }
 //! ```
@@ -98,22 +99,14 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::any::Any;
-use std::error;
-use std::fmt;
-use std::io;
-use std::result;
+use std::{error, fmt, io, result};
 
-#[cfg(not(any(target_os = "windows", target_vendor = "apple",)))]
-#[macro_use]
-extern crate log;
-#[cfg(any(target_vendor = "apple",))]
-#[path = "imp/security_framework.rs"]
-mod imp;
-#[cfg(target_os = "windows")]
-#[path = "imp/schannel.rs"]
-mod imp;
-#[cfg(not(any(target_vendor = "apple", target_os = "windows",)))]
-#[path = "imp/openssl.rs"]
+#[cfg_attr(target_vendor = "apple", path = "imp/security_framework.rs")]
+#[cfg_attr(target_os = "windows", path = "imp/schannel.rs")]
+#[cfg_attr(
+    not(any(target_vendor = "apple", target_os = "windows")),
+    path = "imp/openssl.rs"
+)]
 mod imp;
 
 #[cfg(test)]
@@ -181,6 +174,7 @@ impl Identity {
     /// clients to allow them to build a chain to a trusted root.
     ///
     /// A certificate chain here means a series of PEM encoded certificates concatenated together.
+    #[cfg_attr(all(target_vendor = "apple", not(target_os = "macos")), deprecated(note = "Not available on iOS"))]
     pub fn from_pkcs8(pem: &[u8], key: &[u8]) -> Result<Identity> {
         let identity = imp::Identity::from_pkcs8(pem, key)?;
         Ok(Identity(identity))
@@ -199,9 +193,17 @@ impl Certificate {
     }
 
     /// Parses a PEM-formatted X509 certificate.
+    #[cfg_attr(all(target_vendor = "apple", not(target_os = "macos")), deprecated(note = "Not available on iOS"))]
     pub fn from_pem(pem: &[u8]) -> Result<Certificate> {
         let cert = imp::Certificate::from_pem(pem)?;
         Ok(Certificate(cert))
+    }
+
+    /// Parses some PEM-formatted X509 certificates.
+    #[cfg_attr(all(target_vendor = "apple", not(target_os = "macos")), deprecated(note = "Not available on iOS"))]
+    pub fn stack_from_pem(buf: &[u8]) -> Result<Vec<Certificate>> {
+        let certs = imp::Certificate::stack_from_pem(buf)?;
+        Ok(certs.into_iter().map(Certificate).collect())
     }
 
     /// Returns the DER-encoded representation of this certificate.
@@ -225,11 +227,13 @@ where
 
 impl<S> MidHandshakeTlsStream<S> {
     /// Returns a shared reference to the inner stream.
+    #[must_use]
     pub fn get_ref(&self) -> &S {
         self.0.get_ref()
     }
 
     /// Returns a mutable reference to the inner stream.
+    #[must_use]
     pub fn get_mut(&mut self) -> &mut S {
         self.0.get_mut()
     }
@@ -296,10 +300,8 @@ where
 impl<S> From<imp::HandshakeError<S>> for HandshakeError<S> {
     fn from(e: imp::HandshakeError<S>) -> HandshakeError<S> {
         match e {
-            imp::HandshakeError::Failure(e) => HandshakeError::Failure(Error(e)),
-            imp::HandshakeError::WouldBlock(s) => {
-                HandshakeError::WouldBlock(MidHandshakeTlsStream(s))
-            }
+            imp::HandshakeError::Failure(e) => Self::Failure(Error(e)),
+            imp::HandshakeError::WouldBlock(s) => Self::WouldBlock(MidHandshakeTlsStream(s)),
         }
     }
 }
@@ -308,24 +310,38 @@ impl<S> From<imp::HandshakeError<S>> for HandshakeError<S> {
 #[derive(Debug, Copy, Clone)]
 #[non_exhaustive]
 pub enum Protocol {
-    /// The SSL 3.0 protocol.
+    /// The SSL 3.0 protocol is insecure. Don't use it.
     ///
     /// # Warning
     ///
     /// SSL 3.0 has severe security flaws, and should not be used unless absolutely necessary. If
     /// you are not sure if you need to enable this protocol, you should not.
     Sslv3,
-    /// The TLS 1.0 protocol.
+    /// The TLS 1.0 protocol is insecure. Don't use it.
+    ///
+    /// # Warning
+    ///
+    /// Deprecated in 2021 (RFC 8996)
     Tlsv10,
     /// The TLS 1.1 protocol.
+    ///
+    /// # Warning
+    ///
+    /// Deprecated in 2021 (RFC 8996)
     Tlsv11,
     /// The TLS 1.2 protocol.
     Tlsv12,
+    /// The TLS 1.3 protocol. Not supported on macOS/iOS.
+    ///
+    /// Apple platforms will fall back to TLS 1.2 when it's allowed by the minimum protocol version setting,
+    /// or fail due to lack of TLS 1.3 support (with error -9830).
+    Tlsv13,
 }
 
 /// A builder for `TlsConnector`s.
 ///
 /// You can get one from [`TlsConnector::builder()`](TlsConnector::builder)
+#[allow(clippy::struct_excessive_bools)]
 pub struct TlsConnectorBuilder {
     identity: Option<Identity>,
     min_protocol: Option<Protocol>,
@@ -336,7 +352,7 @@ pub struct TlsConnectorBuilder {
     use_sni: bool,
     disable_built_in_roots: bool,
     #[cfg(feature = "alpn")]
-    alpn: Vec<String>,
+    alpn: Vec<Box<str>>,
 }
 
 impl TlsConnectorBuilder {
@@ -350,7 +366,7 @@ impl TlsConnectorBuilder {
     ///
     /// A value of `None` enables support for the oldest protocols supported by the implementation.
     ///
-    /// Defaults to `Some(Protocol::Tlsv10)`.
+    /// Defaults to `Some(Protocol::Tlsv12)`.
     pub fn min_protocol_version(&mut self, protocol: Option<Protocol>) -> &mut TlsConnectorBuilder {
         self.min_protocol = protocol;
         self
@@ -391,7 +407,7 @@ impl TlsConnectorBuilder {
     #[cfg(feature = "alpn")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alpn")))]
     pub fn request_alpns(&mut self, protocols: &[&str]) -> &mut TlsConnectorBuilder {
-        self.alpn = protocols.iter().map(|s| (*s).to_owned()).collect();
+        self.alpn = protocols.iter().copied().map(Box::from).collect();
         self
     }
 
@@ -404,10 +420,7 @@ impl TlsConnectorBuilder {
     /// You should think very carefully before using this method. If invalid certificates are trusted, *any*
     /// certificate for *any* site will be trusted for use. This includes expired certificates. This introduces
     /// significant vulnerabilities, and should only be used as a last resort.
-    pub fn danger_accept_invalid_certs(
-        &mut self,
-        accept_invalid_certs: bool,
-    ) -> &mut TlsConnectorBuilder {
+    pub fn danger_accept_invalid_certs(&mut self, accept_invalid_certs: bool) -> &mut Self {
         self.accept_invalid_certs = accept_invalid_certs;
         self
     }
@@ -429,10 +442,7 @@ impl TlsConnectorBuilder {
     /// You should think very carefully before using this method. If invalid hostnames are trusted, *any* valid
     /// certificate for *any* site will be trusted for use. This introduces significant vulnerabilities, and should
     /// only be used as a last resort.
-    pub fn danger_accept_invalid_hostnames(
-        &mut self,
-        accept_invalid_hostnames: bool,
-    ) -> &mut TlsConnectorBuilder {
+    pub fn danger_accept_invalid_hostnames(&mut self, accept_invalid_hostnames: bool) -> &mut Self {
         self.accept_invalid_hostnames = accept_invalid_hostnames;
         self
     }
@@ -473,10 +483,11 @@ impl TlsConnector {
     }
 
     /// Returns a new builder for a `TlsConnector`.
+    #[must_use]
     pub fn builder() -> TlsConnectorBuilder {
         TlsConnectorBuilder {
             identity: None,
-            min_protocol: Some(Protocol::Tlsv10),
+            min_protocol: Some(Protocol::Tlsv12),
             max_protocol: None,
             root_certificates: vec![],
             use_sni: true,
@@ -520,6 +531,8 @@ pub struct TlsAcceptorBuilder {
     identity: Identity,
     min_protocol: Option<Protocol>,
     max_protocol: Option<Protocol>,
+    #[cfg(feature = "alpn-accept")]
+    accept_alpn: Vec<Box<str>>,
 }
 
 impl TlsAcceptorBuilder {
@@ -527,7 +540,7 @@ impl TlsAcceptorBuilder {
     ///
     /// A value of `None` enables support for the oldest protocols supported by the implementation.
     ///
-    /// Defaults to `Some(Protocol::Tlsv10)`.
+    /// Defaults to `Some(Protocol::Tlsv12)`.
     pub fn min_protocol_version(&mut self, protocol: Option<Protocol>) -> &mut TlsAcceptorBuilder {
         self.min_protocol = protocol;
         self
@@ -540,6 +553,16 @@ impl TlsAcceptorBuilder {
     /// Defaults to `None`.
     pub fn max_protocol_version(&mut self, protocol: Option<Protocol>) -> &mut TlsAcceptorBuilder {
         self.max_protocol = protocol;
+        self
+    }
+
+    /// Accept specific protocols through ALPN (Application-Layer Protocol Negotiation).
+    ///
+    /// Defaults to empty.
+    #[cfg(feature = "alpn-accept")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alpn-accept")))]
+    pub fn accept_alpn(&mut self, protocols: &[impl AsRef<str>]) -> &mut TlsAcceptorBuilder {
+        self.accept_alpn = protocols.iter().map(|s| Box::from(s.as_ref())).collect();
         self
     }
 
@@ -557,7 +580,7 @@ impl TlsAcceptorBuilder {
 /// ```rust,no_run
 /// use native_tls::{Identity, TlsAcceptor, TlsStream};
 /// use std::fs::File;
-/// use std::io::{Read};
+/// use std::io::Read;
 /// use std::net::{TcpListener, TcpStream};
 /// use std::sync::Arc;
 /// use std::thread;
@@ -583,8 +606,8 @@ impl TlsAcceptorBuilder {
 ///                 let stream = acceptor.accept(stream).unwrap();
 ///                 handle_client(stream);
 ///             });
-///         }
-///         Err(e) => { /* connection failed */ }
+///         },
+///         Err(e) => { /* connection failed */ },
 ///     }
 /// }
 /// ```
@@ -602,11 +625,14 @@ impl TlsAcceptor {
     /// Returns a new builder for a `TlsAcceptor`.
     ///
     /// The identity acts as the server's private key/certificate chain.
+    #[must_use]
     pub fn builder(identity: Identity) -> TlsAcceptorBuilder {
         TlsAcceptorBuilder {
             identity,
-            min_protocol: Some(Protocol::Tlsv10),
+            min_protocol: Some(Protocol::Tlsv12),
             max_protocol: None,
+            #[cfg(feature = "alpn-accept")]
+            accept_alpn: vec![],
         }
     }
 
@@ -638,11 +664,13 @@ impl<S: fmt::Debug> fmt::Debug for TlsStream<S> {
 
 impl<S> TlsStream<S> {
     /// Returns a shared reference to the inner stream.
+    #[must_use]
     pub fn get_ref(&self) -> &S {
         self.0.get_ref()
     }
 
     /// Returns a mutable reference to the inner stream.
+    #[must_use]
     pub fn get_mut(&mut self) -> &mut S {
         self.0.get_mut()
     }

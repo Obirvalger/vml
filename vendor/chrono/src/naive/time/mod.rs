@@ -15,11 +15,11 @@ use rkyv::{Archive, Deserialize, Serialize};
 #[cfg(feature = "alloc")]
 use crate::format::DelayedFormat;
 use crate::format::{
-    parse, parse_and_remainder, write_hundreds, Fixed, Item, Numeric, Pad, ParseError, ParseResult,
-    Parsed, StrftimeItems,
+    Fixed, Item, Numeric, Pad, ParseError, ParseResult, Parsed, StrftimeItems, parse,
+    parse_and_remainder, write_hundreds,
 };
-use crate::{expect, try_opt};
 use crate::{FixedOffset, TimeDelta, Timelike};
+use crate::{expect, try_opt};
 
 #[cfg(feature = "serde")]
 mod serde;
@@ -95,7 +95,7 @@ mod tests;
 /// Practically speaking, though, by the time of the first leap second on 1972-06-30,
 /// every time zone offset around the world has standardized to the 5-minute alignment.
 ///
-/// ## Date And Time Arithmetics
+/// ## Date And Time Arithmetic
 ///
 /// As a concrete example, let's assume that `03:00:60` and `04:00:60` are leap seconds.
 /// In reality, of course, leap seconds are separated by at least 6 months.
@@ -1524,7 +1524,32 @@ impl fmt::Debug for NaiveTime {
         } else if nano % 1_000 == 0 {
             write!(f, ".{:06}", nano / 1_000)
         } else {
-            write!(f, ".{:09}", nano)
+            write!(f, ".{nano:09}")
+        }
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for NaiveTime {
+    fn format(&self, fmt: defmt::Formatter) {
+        let (hour, min, sec) = self.hms();
+        let (sec, nano) = if self.frac >= 1_000_000_000 {
+            (sec + 1, self.frac - 1_000_000_000)
+        } else {
+            (sec, self.frac)
+        };
+
+        let (hour, min, sec) = (hour as u8, min as u8, sec as u8);
+        defmt::write!(fmt, "{:02}:{:02}:{:02}", hour, min, sec);
+
+        if nano == 0 {
+            return;
+        } else if nano % 1_000_000 == 0 {
+            defmt::write!(fmt, ".{:03}", nano / 1_000_000);
+        } else if nano % 1_000 == 0 {
+            defmt::write!(fmt, ".{:06}", nano / 1_000);
+        } else {
+            defmt::write!(fmt, ".{:09}", nano);
         }
     }
 }

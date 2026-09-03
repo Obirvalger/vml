@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-#![cfg_attr(docsrs, feature(doc_auto_cfg, doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! Utilities for working with hyper.
 //!
@@ -12,7 +12,7 @@ mod common;
 pub mod rt;
 #[cfg(feature = "server")]
 pub mod server;
-#[cfg(feature = "service")]
+#[cfg(any(feature = "service", feature = "client-legacy"))]
 pub mod service;
 
 mod error;

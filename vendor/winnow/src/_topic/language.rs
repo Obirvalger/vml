@@ -17,6 +17,7 @@
 //!     - [Binary](#binary)
 //!     - [Decimal](#decimal)
 //!   + [Floating Point Numbers](#floating-point-numbers)
+//! * [C-style Expressions](#c-style-expressions)
 //!
 //! ## Whitespace
 //!
@@ -65,7 +66,7 @@
 //!   token::take_till,
 //! };
 //!
-//! pub fn peol_comment<'a, E: ParserError<&'a str>>(i: &mut &'a str) -> PResult<(), E>
+//! pub fn peol_comment<'a, E: ParserError<&'a str>>(i: &mut &'a str) -> ModalResult<(), E>
 //! {
 //!   ('%', take_till(1.., ['\n', '\r']))
 //!     .void() // Output is thrown away.
@@ -85,7 +86,7 @@
 //!   token::take_until,
 //! };
 //!
-//! pub fn pinline_comment<'a, E: ParserError<&'a str>>(i: &mut &'a str) -> PResult<(), E> {
+//! pub fn pinline_comment<'a, E: ParserError<&'a str>>(i: &mut &'a str) -> ModalResult<(), E> {
 //!   (
 //!     "(*",
 //!     take_until(0.., "*)"),
@@ -111,21 +112,21 @@
 //!   token::one_of,
 //! };
 //!
-//! pub fn identifier<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! pub fn identifier<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //!   (
 //!       one_of(|c: char| c.is_alpha() || c == '_'),
 //!       take_while(0.., |c: char| c.is_alphanum() || c == '_')
 //!   )
-//!   .recognize()
+//!   .take()
 //!   .parse_next(input)
 //! }
 //! ```
 //!
 //! Let's say we apply this to the identifier `hello_world123abc`. The first element of the tuple
-//! would uses [`one_of`][crate::token::one_of] which would recognize `h`. The tuple ensures that
+//! would uses [`one_of`][crate::token::one_of] which would take `h`. The tuple ensures that
 //! `ello_world123abc` will be piped to the next [`take_while`][crate::token::take_while] parser,
-//! which recognizes every remaining character. However, the tuple returns a tuple of the results
-//! of its sub-parsers. The [`recognize`][crate::Parser::recognize] parser produces a `&str` of the
+//! which takes every remaining character. However, the tuple returns a tuple of the results
+//! of its sub-parsers. The [`take`][crate::Parser::take] parser produces a `&str` of the
 //! input text that was parsed, which in this case is the entire `&str` `hello_world123abc`.
 //!
 //! ## Literal Values
@@ -136,7 +137,7 @@
 #![doc = include_str!("../../examples/string/parser.rs")]
 //! ```
 //!
-//! See also [`take_escaped`] and [`escaped_transform`].
+//! See also [`take_escaped`] and [`escaped`].
 //!
 //! ### Integers
 //!
@@ -156,17 +157,17 @@
 //! use winnow::prelude::*;
 //! use winnow::{
 //!   combinator::alt,
-//!   combinator::{repeat},
+//!   combinator::repeat,
 //!   combinator::{preceded, terminated},
 //!   token::one_of,
 //! };
 //!
-//! fn hexadecimal<'s>(input: &mut &'s str) -> PResult<&'s str> { // <'a, E: ParserError<&'a str>>
+//! fn hexadecimal<'s>(input: &mut &'s str) -> ModalResult<&'s str> { // <'a, E: ParserError<&'a str>>
 //!   preceded(
 //!     alt(("0x", "0X")),
 //!     repeat(1..,
 //!       terminated(one_of(('0'..='9', 'a'..='f', 'A'..='F')), repeat(0.., '_').map(|()| ()))
-//!     ).map(|()| ()).recognize()
+//!     ).map(|()| ()).take()
 //!   ).parse_next(input)
 //! }
 //! ```
@@ -177,17 +178,17 @@
 //! use winnow::prelude::*;
 //! use winnow::{
 //!   combinator::alt,
-//!   combinator::{repeat},
+//!   combinator::repeat,
 //!   combinator::{preceded, terminated},
 //!   token::one_of,
 //! };
 //!
-//! fn hexadecimal_value(input: &mut &str) -> PResult<i64> {
+//! fn hexadecimal_value(input: &mut &str) -> ModalResult<i64> {
 //!   preceded(
 //!     alt(("0x", "0X")),
 //!     repeat(1..,
 //!       terminated(one_of(('0'..='9', 'a'..='f', 'A'..='F')), repeat(0.., '_').map(|()| ()))
-//!     ).map(|()| ()).recognize()
+//!     ).map(|()| ()).take()
 //!   ).try_map(
 //!     |out: &str| i64::from_str_radix(&str::replace(&out, "_", ""), 16)
 //!   ).parse_next(input)
@@ -202,17 +203,17 @@
 //! use winnow::prelude::*;
 //! use winnow::{
 //!   combinator::alt,
-//!   combinator::{repeat},
+//!   combinator::repeat,
 //!   combinator::{preceded, terminated},
 //!   token::one_of,
 //! };
 //!
-//! fn octal<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! fn octal<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //!   preceded(
 //!     alt(("0o", "0O")),
 //!     repeat(1..,
 //!       terminated(one_of('0'..='7'), repeat(0.., '_').map(|()| ()))
-//!     ).map(|()| ()).recognize()
+//!     ).map(|()| ()).take()
 //!   ).parse_next(input)
 //! }
 //! ```
@@ -223,17 +224,17 @@
 //! use winnow::prelude::*;
 //! use winnow::{
 //!   combinator::alt,
-//!   combinator::{repeat},
+//!   combinator::repeat,
 //!   combinator::{preceded, terminated},
 //!   token::one_of,
 //! };
 //!
-//! fn binary<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! fn binary<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //!   preceded(
 //!     alt(("0b", "0B")),
 //!     repeat(1..,
 //!       terminated(one_of('0'..='1'), repeat(0.., '_').map(|()| ()))
-//!     ).map(|()| ()).recognize()
+//!     ).map(|()| ()).take()
 //!   ).parse_next(input)
 //! }
 //! ```
@@ -243,16 +244,16 @@
 //! ```rust
 //! use winnow::prelude::*;
 //! use winnow::{
-//!   combinator::{repeat},
+//!   combinator::repeat,
 //!   combinator::terminated,
 //!   token::one_of,
 //! };
 //!
-//! fn decimal<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! fn decimal<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //!   repeat(1..,
 //!     terminated(one_of('0'..='9'), repeat(0.., '_').map(|()| ()))
 //!   ).map(|()| ())
-//!     .recognize()
+//!     .take()
 //!     .parse_next(input)
 //! }
 //! ```
@@ -267,13 +268,13 @@
 //! use winnow::prelude::*;
 //! use winnow::{
 //!   combinator::alt,
-//!   combinator::{repeat},
+//!   combinator::repeat,
 //!   combinator::opt,
 //!   combinator::{preceded, terminated},
 //!   token::one_of,
 //! };
 //!
-//! fn float<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! fn float<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //!   alt((
 //!     // Case one: .42
 //!     (
@@ -284,7 +285,7 @@
 //!         opt(one_of(['+', '-'])),
 //!         decimal
 //!       ))
-//!     ).recognize()
+//!     ).take()
 //!     , // Case two: 42e42 and 42.42e42
 //!     (
 //!       decimal,
@@ -295,32 +296,46 @@
 //!       one_of(['e', 'E']),
 //!       opt(one_of(['+', '-'])),
 //!       decimal
-//!     ).recognize()
+//!     ).take()
 //!     , // Case three: 42. and 42.42
 //!     (
 //!       decimal,
 //!       '.',
 //!       opt(decimal)
-//!     ).recognize()
+//!     ).take()
 //!   )).parse_next(input)
 //! }
 //!
-//! fn decimal<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! fn decimal<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //!   repeat(1..,
 //!     terminated(one_of('0'..='9'), repeat(0.., '_').map(|()| ()))
 //!   ).
 //!   map(|()| ())
-//!     .recognize()
+//!     .take()
 //!     .parse_next(input)
 //! }
 //! ```
 //!
 //! See also [`float`]
+//!
+//! ## C-style Expressions
+//!
+//! An example using the [`expression()`] parser to build an abstract syntax tree
+//! for C-style expressions.
+//!
+//! The operator precedence level is based on the [C language](c-precedence).
+//!
+//! [c-precedence]: https://en.cppreference.com/w/c/language/operator_precedence.html
+//!
+//! ```rust
+#![doc = include_str!("../../examples/c_expression/parser.rs")]
+//! ```
 
 #![allow(unused_imports)]
 use crate::ascii::dec_int;
 use crate::ascii::dec_uint;
-use crate::ascii::escaped_transform;
+use crate::ascii::escaped;
 use crate::ascii::float;
 use crate::ascii::hex_uint;
 use crate::ascii::take_escaped;
+use crate::combinator::expression;

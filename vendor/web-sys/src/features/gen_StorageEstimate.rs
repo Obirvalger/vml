@@ -4,12 +4,52 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = StorageEstimate)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "StorageEstimate")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `StorageEstimate` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
     pub type StorageEstimate;
+    #[doc = "Get the `quota` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[wasm_bindgen(method, getter = "quota")]
+    pub fn get_quota(this: &StorageEstimate) -> Option<f64>;
+    #[doc = "Change the `quota` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[wasm_bindgen(method, setter = "quota")]
+    pub fn set_quota(this: &StorageEstimate, val: f64);
+    #[doc = "Change the `quota` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[wasm_bindgen(method, setter = "quota")]
+    pub fn set_quota_u32(this: &StorageEstimate, val: u32);
+    #[doc = "Change the `quota` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[wasm_bindgen(method, setter = "quota")]
+    pub fn set_quota_f64(this: &StorageEstimate, val: f64);
+    #[doc = "Get the `usage` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[wasm_bindgen(method, getter = "usage")]
+    pub fn get_usage(this: &StorageEstimate) -> Option<f64>;
+    #[doc = "Change the `usage` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[wasm_bindgen(method, setter = "usage")]
+    pub fn set_usage(this: &StorageEstimate, val: f64);
+    #[doc = "Change the `usage` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[wasm_bindgen(method, setter = "usage")]
+    pub fn set_usage_u32(this: &StorageEstimate, val: u32);
+    #[doc = "Change the `usage` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[wasm_bindgen(method, setter = "usage")]
+    pub fn set_usage_f64(this: &StorageEstimate, val: f64);
 }
 impl StorageEstimate {
     #[doc = "Construct a new `StorageEstimate`."]
@@ -20,30 +60,14 @@ impl StorageEstimate {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `quota` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[deprecated = "Use `set_quota()` instead."]
     pub fn quota(&mut self, val: f64) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("quota"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_quota(val);
         self
     }
-    #[doc = "Change the `usage` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `StorageEstimate`*"]
+    #[deprecated = "Use `set_usage()` instead."]
     pub fn usage(&mut self, val: f64) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("usage"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_usage(val);
         self
     }
 }

@@ -67,10 +67,10 @@ impl Scheme {
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for Scheme {
+impl TryFrom<&[u8]> for Scheme {
     type Error = InvalidUri;
     #[inline]
-    fn try_from(s: &'a [u8]) -> Result<Self, Self::Error> {
+    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
         use self::Scheme2::*;
 
         match Scheme2::parse_exact(s)? {
@@ -89,10 +89,10 @@ impl<'a> TryFrom<&'a [u8]> for Scheme {
     }
 }
 
-impl<'a> TryFrom<&'a str> for Scheme {
+impl TryFrom<&str> for Scheme {
     type Error = InvalidUri;
     #[inline]
-    fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
         TryFrom::try_from(s.as_bytes())
     }
 }
@@ -302,7 +302,7 @@ impl Scheme2<usize> {
                         // Return scheme
                         return Ok(Scheme2::Other(i));
                     }
-                    // Invald scheme character, abort
+                    // Invalid scheme character, abort
                     0 => break,
                     _ => {}
                 }
@@ -349,10 +349,10 @@ mod test {
 
     #[test]
     fn invalid_scheme_is_error() {
-        Scheme::try_from("my_funky_scheme").expect_err("Unexpectly valid Scheme");
+        Scheme::try_from("my_funky_scheme").expect_err("Unexpectedly valid Scheme");
 
         // Invalid UTF-8
-        Scheme::try_from([0xC0].as_ref()).expect_err("Unexpectly valid Scheme");
+        Scheme::try_from([0xC0].as_ref()).expect_err("Unexpectedly valid Scheme");
     }
 
     fn scheme(s: &str) -> Scheme {

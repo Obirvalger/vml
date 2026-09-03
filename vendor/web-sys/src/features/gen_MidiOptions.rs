@@ -4,12 +4,32 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = MIDIOptions)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "MIDIOptions")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `MidiOptions` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `MidiOptions`*"]
     pub type MidiOptions;
+    #[doc = "Get the `software` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `MidiOptions`*"]
+    #[wasm_bindgen(method, getter = "software")]
+    pub fn get_software(this: &MidiOptions) -> Option<bool>;
+    #[doc = "Change the `software` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `MidiOptions`*"]
+    #[wasm_bindgen(method, setter = "software")]
+    pub fn set_software(this: &MidiOptions, val: bool);
+    #[doc = "Get the `sysex` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `MidiOptions`*"]
+    #[wasm_bindgen(method, getter = "sysex")]
+    pub fn get_sysex(this: &MidiOptions) -> Option<bool>;
+    #[doc = "Change the `sysex` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `MidiOptions`*"]
+    #[wasm_bindgen(method, setter = "sysex")]
+    pub fn set_sysex(this: &MidiOptions, val: bool);
 }
 impl MidiOptions {
     #[doc = "Construct a new `MidiOptions`."]
@@ -20,34 +40,14 @@ impl MidiOptions {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `software` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `MidiOptions`*"]
+    #[deprecated = "Use `set_software()` instead."]
     pub fn software(&mut self, val: bool) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("software"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_software(val);
         self
     }
-    #[doc = "Change the `sysex` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `MidiOptions`*"]
+    #[deprecated = "Use `set_sysex()` instead."]
     pub fn sysex(&mut self, val: bool) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("sysex"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_sysex(val);
         self
     }
 }

@@ -4,10 +4,12 @@ pub mod write;
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use std::io::prelude::*;
+    use crate::io;
+    use crate::io::{Read, Write};
+    use alloc::string::ToString;
+    use alloc::vec::Vec;
 
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
 
     use crate::zlib::{read, write};
     use crate::Compression;
@@ -18,7 +20,7 @@ mod tests {
         let mut w = write::ZlibEncoder::new(Vec::new(), Compression::default());
         let v = crate::random_bytes().take(1024).collect::<Vec<_>>();
         for _ in 0..200 {
-            let to_write = &v[..thread_rng().gen_range(0..v.len())];
+            let to_write = &v[..rng().random_range(0..v.len())];
             real.extend(to_write.iter().copied());
             w.write_all(to_write).unwrap();
         }
@@ -47,7 +49,7 @@ mod tests {
         let mut w = write::ZlibEncoder::new(Vec::new(), Compression::default());
         let v = crate::random_bytes().take(1024).collect::<Vec<_>>();
         for _ in 0..200 {
-            let to_write = &v[..thread_rng().gen_range(0..v.len())];
+            let to_write = &v[..rng().random_range(0..v.len())];
             real.extend(to_write.iter().copied());
             w.write_all(to_write).unwrap();
         }
@@ -127,6 +129,20 @@ mod tests {
         match w.write_all(&data[..]) {
             Ok(_) => panic!("Expected an error to be returned!"),
             Err(e) => assert_eq!(e.kind(), io::ErrorKind::InvalidInput),
+        }
+    }
+
+    #[test]
+    fn rejects_incomplete_stream() {
+        let mut encoder = write::ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"hello").unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        for end in compressed.len() - 4..compressed.len() {
+            let mut decoder = read::ZlibDecoder::new(&compressed[..end]);
+            let error = crate::io::copy(&mut decoder, &mut crate::io::sink()).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+            assert_eq!(error.to_string(), "incomplete deflate stream");
         }
     }
 

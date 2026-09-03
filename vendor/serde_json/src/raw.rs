@@ -99,9 +99,9 @@ use serde::ser::{Serialize, SerializeStruct, Serializer};
 /// the boxed form of `RawValue` instead. This is almost as efficient but
 /// involves buffering the raw value from the I/O stream into memory.
 ///
-/// [`serde_json::from_str`]: ../fn.from_str.html
-/// [`serde_json::from_slice`]: ../fn.from_slice.html
-/// [`serde_json::from_reader`]: ../fn.from_reader.html
+/// [`serde_json::from_str`]: crate::from_str
+/// [`serde_json::from_slice`]: crate::from_slice
+/// [`serde_json::from_reader`]: crate::from_reader
 ///
 /// ```
 /// # use serde::Deserialize;
@@ -119,7 +119,7 @@ pub struct RawValue {
 }
 
 impl RawValue {
-    fn from_borrowed(json: &str) -> &Self {
+    const fn from_borrowed(json: &str) -> &Self {
         unsafe { mem::transmute::<&str, &RawValue>(json) }
     }
 
@@ -148,7 +148,7 @@ impl ToOwned for RawValue {
 
 impl Default for Box<RawValue> {
     fn default() -> Self {
-        RawValue::from_borrowed("null").to_owned()
+        RawValue::NULL.to_owned()
     }
 }
 
@@ -168,6 +168,13 @@ impl Display for RawValue {
 }
 
 impl RawValue {
+    /// A constant RawValue with the JSON value `null`.
+    pub const NULL: &'static RawValue = RawValue::from_borrowed("null");
+    /// A constant RawValue with the JSON value `true`.
+    pub const TRUE: &'static RawValue = RawValue::from_borrowed("true");
+    /// A constant RawValue with the JSON value `false`.
+    pub const FALSE: &'static RawValue = RawValue::from_borrowed("false");
+
     /// Convert an owned `String` of JSON data to an owned `RawValue`.
     ///
     /// This function is equivalent to `serde_json::from_str::<Box<RawValue>>`
@@ -182,6 +189,49 @@ impl RawValue {
             return Ok(borrowed.to_owned());
         }
         Ok(Self::from_owned(json.into_boxed_str()))
+    }
+
+    /// Convert an owned `String` of JSON data to an owned `RawValue` without
+    /// checking that it contains valid JSON.
+    ///
+    /// This is the unchecked counterpart of [`RawValue::from_string`], for
+    /// strings that are already known to be valid JSON, such as the output of
+    /// another JSON serializer. Unlike `from_string`, it does not re-parse the
+    /// string; the only cost is `String::into_boxed_str`.
+    ///
+    /// # Safety
+    ///
+    /// The string passed in must contain a single well-formed JSON value with
+    /// no leading or trailing whitespace. `RawValue` is written verbatim into
+    /// JSON output wherever it is embedded, and other code (including unsafe
+    /// code) is allowed to rely on `RawValue` upholding this invariant, in the
+    /// same way that unsafe code may rely on `str` containing valid UTF-8.
+    ///
+    /// In debug builds this contract is checked with a `debug_assert!` that
+    /// re-parses the input; the check is compiled out in release builds, so
+    /// only release performance matches the "no re-parse" guarantee above.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use serde_json::value::RawValue;
+    ///
+    /// let json = serde_json::to_string(&[1, 2, 3])?;
+    ///
+    /// // SAFETY: `json` was produced by serde_json's own serializer, so it is
+    /// // a single well-formed JSON value without surrounding whitespace.
+    /// let raw = unsafe { RawValue::from_string_unchecked(json) };
+    ///
+    /// assert_eq!(raw.get(), "[1,2,3]");
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
+    pub unsafe fn from_string_unchecked(json: String) -> Box<Self> {
+        debug_assert!(
+            crate::from_str::<&Self>(&json).is_ok_and(|v| v.json.len() == json.len()),
+            "from_string_unchecked: input is not a single well-formed JSON value \
+             with no leading or trailing whitespace",
+        );
+        Self::from_owned(json.into_boxed_str())
     }
 
     /// Access the JSON text underlying a raw value.

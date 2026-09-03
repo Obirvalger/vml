@@ -1,4 +1,3 @@
-#![allow(unknown_lints, unexpected_cfgs)]
 #![allow(clippy::needless_doctest_main)]
 #![warn(
     missing_debug_implementations,
@@ -12,11 +11,6 @@
 ))]
 
 //! Macros for use with Tokio
-
-// This `extern` is required for older `rustc` versions but newer `rustc`
-// versions warn about the unused `extern crate`.
-#[allow(unused_extern_crates)]
-extern crate proc_macro;
 
 mod entry;
 mod select;
@@ -35,10 +29,11 @@ use proc_macro::TokenStream;
 /// powerful interface.
 ///
 /// Note: This macro can be used on any function and not just the `main`
-/// function. Using it on a non-main function makes the function behave as if it
-/// was synchronous by starting a new runtime each time it is called. If the
-/// function is called often, it is preferable to create the runtime using the
-/// runtime builder so the runtime can be reused across calls.
+/// function. Although the function is written with `async fn`, this macro
+/// expands it to a synchronous function that starts a runtime each time it is
+/// called. If the function is called often, it is preferable to create the
+/// runtime using the runtime builder so the runtime can be reused across calls.
+/// For details on the expansion, see [Bridging with sync code][bridging].
 ///
 /// # Non-worker async function
 ///
@@ -47,7 +42,12 @@ use proc_macro::TokenStream;
 /// Awaiting on other futures from the function provided here will not
 /// perform as fast as those spawned as workers.
 ///
-/// # Multi-threaded runtime
+/// # Runtime flavors
+///
+/// The macro can be configured with a `flavor` parameter to select
+/// different runtime configurations.
+///
+/// ## Multi-threaded
 ///
 /// To use the multi-threaded runtime, the macro can be configured using
 ///
@@ -62,23 +62,56 @@ use proc_macro::TokenStream;
 /// Note: The multi-threaded runtime requires the `rt-multi-thread` feature
 /// flag.
 ///
-/// # Current thread runtime
+/// ## Current-thread
 ///
 /// To use the single-threaded runtime known as the `current_thread` runtime,
 /// the macro can be configured using
 ///
-/// ```
+/// ```rust
 /// #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {}
 /// ```
 ///
-/// ## Function arguments:
+/// ## Local
 ///
-/// Arguments are allowed for any functions aside from `main` which is special
+/// To use the [local runtime], the macro can be configured using
 ///
-/// ## Usage
+/// ```rust
+/// #[tokio::main(flavor = "local")]
+/// # async fn main() {}
+/// ```
 ///
-/// ### Using the multi-thread runtime
+/// # Function arguments
+///
+/// Arguments are allowed for any functions, aside from `main` which is special.
+///
+/// # Usage
+///
+/// ## Set the name of the runtime
+///
+/// ```rust
+/// #[tokio::main(name = "my-runtime")]
+/// async fn main() {
+///     println!("Hello world");
+/// }
+/// ```
+///
+/// Equivalent code not using `#[tokio::main]`
+///
+/// ```rust
+/// fn main() {
+///     tokio::runtime::Builder::new_multi_thread()
+///         .enable_all()
+///         .name("my-runtime")
+///         .build()
+///         .unwrap()
+///         .block_on(async {
+///             println!("Hello world");
+///         })
+/// }
+/// ```
+///
+/// ## Using the multi-threaded runtime
 ///
 /// ```rust
 /// #[tokio::main]
@@ -101,7 +134,7 @@ use proc_macro::TokenStream;
 /// }
 /// ```
 ///
-/// ### Using current thread runtime
+/// ## Using the current-thread runtime
 ///
 /// The basic scheduler is single-threaded.
 ///
@@ -126,7 +159,34 @@ use proc_macro::TokenStream;
 /// }
 /// ```
 ///
-/// ### Set number of worker threads
+/// ## Using the local runtime
+///
+/// The [local runtime] is similar to the current-thread runtime but
+/// supports [`task::spawn_local`](../tokio/task/fn.spawn_local.html).
+///
+/// ```rust
+/// #[tokio::main(flavor = "local")]
+/// async fn main() {
+///     println!("Hello world");
+/// }
+/// ```
+///
+/// Equivalent code not using `#[tokio::main]`
+///
+/// ```rust
+/// fn main() {
+///     tokio::runtime::Builder::new_current_thread()
+///         .enable_all()
+///         .build_local(tokio::runtime::LocalOptions::default())
+///         .unwrap()
+///         .block_on(async {
+///             println!("Hello world");
+///         })
+/// }
+/// ```
+///
+///
+/// ## Set number of worker threads
 ///
 /// ```rust
 /// #[tokio::main(worker_threads = 2)]
@@ -150,7 +210,7 @@ use proc_macro::TokenStream;
 /// }
 /// ```
 ///
-/// ### Configure the runtime to start with time paused
+/// ## Configure the runtime to start with time paused
 ///
 /// ```rust
 /// #[tokio::main(flavor = "current_thread", start_paused = true)]
@@ -176,7 +236,7 @@ use proc_macro::TokenStream;
 ///
 /// Note that `start_paused` requires the `test-util` feature to be enabled.
 ///
-/// ### Rename package
+/// ## Rename package
 ///
 /// ```rust
 /// use tokio as tokio1;
@@ -202,6 +262,54 @@ use proc_macro::TokenStream;
 ///         })
 /// }
 /// ```
+///
+/// ## Configure unhandled panic behavior
+///
+/// Available options are `shutdown_runtime` and `ignore`. For more details, see
+/// [`Builder::unhandled_panic`].
+///
+/// This option is only compatible with the `current_thread` runtime.
+///
+/// ```no_run
+/// #[cfg(tokio_unstable)]
+/// #[tokio::main(flavor = "current_thread", unhandled_panic = "shutdown_runtime")]
+/// async fn main() {
+///     let _ = tokio::spawn(async {
+///         panic!("This panic will shutdown the runtime.");
+///     }).await;
+/// }
+/// # #[cfg(not(tokio_unstable))]
+/// # fn main() { }
+/// ```
+///
+/// Equivalent code not using `#[tokio::main]`
+///
+/// ```no_run
+/// #[cfg(tokio_unstable)]
+/// fn main() {
+///     tokio::runtime::Builder::new_current_thread()
+///         .enable_all()
+///         .unhandled_panic(tokio::runtime::UnhandledPanic::ShutdownRuntime)
+///         .build()
+///         .unwrap()
+///         .block_on(async {
+///             let _ = tokio::spawn(async {
+///                 panic!("This panic will shutdown the runtime.");
+///             }).await;
+///         })
+/// }
+/// # #[cfg(not(tokio_unstable))]
+/// # fn main() { }
+/// ```
+///
+/// **Note**: This option depends on Tokio's [unstable API][unstable]. See [the
+/// documentation on unstable features][unstable] for details on how to enable
+/// Tokio's unstable features.
+///
+/// [`Builder::unhandled_panic`]: ../tokio/runtime/struct.Builder.html#method.unhandled_panic
+/// [unstable]: ../tokio/index.html#unstable-features
+/// [local runtime]: ../tokio/runtime/struct.LocalRuntime.html
+/// [bridging]: https://tokio.rs/tokio/topics/bridging#what-tokiomain-expands-to
 #[proc_macro_attribute]
 pub fn main(args: TokenStream, item: TokenStream) -> TokenStream {
     entry::main(args.into(), item.into(), true).into()
@@ -313,6 +421,31 @@ pub fn main_rt(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// ## Usage
 ///
+/// ### Set the name of the runtime
+///
+/// ```no_run
+/// #[tokio::test(name = "my-test-runtime")]
+/// async fn my_test() {
+///     assert!(true);
+/// }
+/// ```
+///
+/// Equivalent code not using `#[tokio::test]`
+///
+/// ```no_run
+/// #[test]
+/// fn my_test() {
+///     tokio::runtime::Builder::new_current_thread()
+///         .enable_all()
+///         .name("my-test-runtime")
+///         .build()
+///         .unwrap()
+///         .block_on(async {
+///             assert!(true);
+///         })
+/// }
+/// ```
+///
 /// ### Using the multi-thread runtime
 ///
 /// ```no_run
@@ -364,7 +497,7 @@ pub fn main_rt(args: TokenStream, item: TokenStream) -> TokenStream {
 /// ### Set number of worker threads
 ///
 /// ```no_run
-/// #[tokio::test(flavor ="multi_thread", worker_threads = 2)]
+/// #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 /// async fn my_test() {
 ///     assert!(true);
 /// }
@@ -423,6 +556,53 @@ pub fn main_rt(args: TokenStream, item: TokenStream) -> TokenStream {
 ///     println!("Hello world");
 /// }
 /// ```
+///
+/// ### Configure unhandled panic behavior
+///
+/// Available options are `shutdown_runtime` and `ignore`. For more details, see
+/// [`Builder::unhandled_panic`].
+///
+/// This option is only compatible with the `current_thread` runtime.
+///
+/// ```no_run
+/// #[cfg(tokio_unstable)]
+/// #[tokio::test(flavor = "current_thread", unhandled_panic = "shutdown_runtime")]
+/// async fn my_test() {
+///     let _ = tokio::spawn(async {
+///         panic!("This panic will shutdown the runtime.");
+///     }).await;
+/// }
+///
+/// # fn main() { }
+/// ```
+///
+/// Equivalent code not using `#[tokio::test]`
+///
+/// ```no_run
+/// #[cfg(tokio_unstable)]
+/// #[test]
+/// fn my_test() {
+///     tokio::runtime::Builder::new_current_thread()
+///         .enable_all()
+///         .unhandled_panic(UnhandledPanic::ShutdownRuntime)
+///         .build()
+///         .unwrap()
+///         .block_on(async {
+///             let _ = tokio::spawn(async {
+///                 panic!("This panic will shutdown the runtime.");
+///             }).await;
+///         })
+/// }
+///
+/// # fn main() { }
+/// ```
+///
+/// **Note**: This option depends on Tokio's [unstable API][unstable]. See [the
+/// documentation on unstable features][unstable] for details on how to enable
+/// Tokio's unstable features.
+///
+/// [`Builder::unhandled_panic`]: ../tokio/runtime/struct.Builder.html#method.unhandled_panic
+/// [unstable]: ../tokio/index.html#unstable-features
 #[proc_macro_attribute]
 pub fn test(args: TokenStream, item: TokenStream) -> TokenStream {
     entry::test(args.into(), item.into(), true).into()

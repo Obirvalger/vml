@@ -8,19 +8,19 @@ mod slice;
 mod tests;
 
 pub use self::iter::{
-    Difference, Drain, Intersection, IntoIter, Iter, Splice, SymmetricDifference, Union,
+    Difference, Drain, ExtractIf, Intersection, IntoIter, Iter, Splice, SymmetricDifference, Union,
 };
 pub use self::mutable::MutableValues;
 pub use self::slice::Slice;
 
+use crate::TryReserveError;
 #[cfg(feature = "rayon")]
 pub use crate::rayon::set as rayon;
-use crate::TryReserveError;
 
 #[cfg(feature = "std")]
-use std::collections::hash_map::RandomState;
+use std::hash::RandomState;
 
-use crate::util::try_simplify_range;
+use crate::util::{assert_index_lt, try_simplify_range};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -28,7 +28,7 @@ use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use core::ops::{BitAnd, BitOr, BitXor, Index, RangeBounds, Sub};
 
-use super::{Entries, Equivalent, IndexMap};
+use super::{Equivalent, IndexMap};
 
 type Bucket<T> = super::Bucket<T, ()>;
 
@@ -105,32 +105,6 @@ where
     }
 }
 
-impl<T, S> Entries for IndexSet<T, S> {
-    type Entry = Bucket<T>;
-
-    #[inline]
-    fn into_entries(self) -> Vec<Self::Entry> {
-        self.map.into_entries()
-    }
-
-    #[inline]
-    fn as_entries(&self) -> &[Self::Entry] {
-        self.map.as_entries()
-    }
-
-    #[inline]
-    fn as_entries_mut(&mut self) -> &mut [Self::Entry] {
-        self.map.as_entries_mut()
-    }
-
-    fn with_entries<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut [Self::Entry]),
-    {
-        self.map.with_entries(f);
-    }
-}
-
 impl<T, S> fmt::Debug for IndexSet<T, S>
 where
     T: fmt::Debug,
@@ -187,6 +161,23 @@ impl<T, S> IndexSet<T, S> {
         IndexSet {
             map: IndexMap::with_hasher(hash_builder),
         }
+    }
+
+    #[inline]
+    pub(crate) fn into_entries(self) -> Vec<Bucket<T>> {
+        self.map.into_entries()
+    }
+
+    #[inline]
+    pub(crate) fn as_entries(&self) -> &[Bucket<T>] {
+        self.map.as_entries()
+    }
+
+    pub(crate) fn with_entries<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut [Bucket<T>]),
+    {
+        self.map.with_entries(f);
     }
 
     /// Return the number of elements the set can hold without reallocating.
@@ -250,11 +241,58 @@ impl<T, S> IndexSet<T, S> {
     ///
     /// ***Panics*** if the starting point is greater than the end point or if
     /// the end point is greater than the length of the set.
+    #[track_caller]
     pub fn drain<R>(&mut self, range: R) -> Drain<'_, T>
     where
         R: RangeBounds<usize>,
     {
         Drain::new(self.map.core.drain(range))
+    }
+
+    /// Creates an iterator which uses a closure to determine if a value should be removed,
+    /// for all values in the given range.
+    ///
+    /// If the closure returns true, then the value is removed and yielded.
+    /// If the closure returns false, the value will remain in the list and will not be yielded
+    /// by the iterator.
+    ///
+    /// The range may be any type that implements [`RangeBounds<usize>`],
+    /// including all of the `std::ops::Range*` types, or even a tuple pair of
+    /// `Bound` start and end values. To check the entire set, use `RangeFull`
+    /// like `set.extract_if(.., predicate)`.
+    ///
+    /// If the returned `ExtractIf` is not exhausted, e.g. because it is dropped without iterating
+    /// or the iteration short-circuits, then the remaining elements will be retained.
+    /// Use [`retain`] with a negated predicate if you do not need the returned iterator.
+    ///
+    /// [`retain`]: IndexSet::retain
+    ///
+    /// ***Panics*** if the starting point is greater than the end point or if
+    /// the end point is greater than the length of the set.
+    ///
+    /// # Examples
+    ///
+    /// Splitting a set into even and odd values, reusing the original set:
+    ///
+    /// ```
+    /// use indexmap::IndexSet;
+    ///
+    /// let mut set: IndexSet<i32> = (0..8).collect();
+    /// let extracted: IndexSet<i32> = set.extract_if(.., |v| v % 2 == 0).collect();
+    ///
+    /// let evens = extracted.into_iter().collect::<Vec<_>>();
+    /// let odds = set.into_iter().collect::<Vec<_>>();
+    ///
+    /// assert_eq!(evens, vec![0, 2, 4, 6]);
+    /// assert_eq!(odds, vec![1, 3, 5, 7]);
+    /// ```
+    #[track_caller]
+    pub fn extract_if<F, R>(&mut self, range: R, pred: F) -> ExtractIf<'_, T, F>
+    where
+        F: FnMut(&T) -> bool,
+        R: RangeBounds<usize>,
+    {
+        ExtractIf::new(&mut self.map.core, range, pred)
     }
 
     /// Splits the collection into two at the given index.
@@ -264,6 +302,7 @@ impl<T, S> IndexSet<T, S> {
     /// the elements `[0, at)` with its previous capacity unchanged.
     ///
     /// ***Panics*** if `at > len`.
+    #[track_caller]
     pub fn split_off(&mut self, at: usize) -> Self
     where
         S: Clone,
@@ -361,7 +400,7 @@ where
     ///
     /// This is equivalent to finding the position with
     /// [`binary_search`][Self::binary_search], and if needed calling
-    /// [`shift_insert`][Self::shift_insert] for a new value.
+    /// [`insert_before`][Self::insert_before] for a new value.
     ///
     /// If the sorted item is found in the set, it returns the index of that
     /// existing item and `false`, without any change. Otherwise, it inserts the
@@ -383,16 +422,151 @@ where
         (index, existing.is_none())
     }
 
-    /// Insert the value into the set at the given index.
+    /// Insert the value into the set at its ordered position among values
+    /// sorted by `cmp`.
     ///
-    /// If an equivalent item already exists in the set, it returns
-    /// `false` leaving the original value in the set, but moving it to
-    /// the new position in the set. Otherwise, it inserts the new
-    /// item at the given index and returns `true`.
+    /// This is equivalent to finding the position with
+    /// [`binary_search_by`][Self::binary_search_by], then calling
+    /// [`insert_before`][Self::insert_before].
     ///
-    /// ***Panics*** if `index` is out of bounds.
+    /// If the existing items are **not** already sorted, then the insertion
+    /// index is unspecified (like [`slice::binary_search`]), but the value
+    /// is moved to or inserted at that position regardless.
     ///
     /// Computes in **O(n)** time (average).
+    pub fn insert_sorted_by<F>(&mut self, value: T, mut cmp: F) -> (usize, bool)
+    where
+        F: FnMut(&T, &T) -> Ordering,
+    {
+        let (index, existing) = self
+            .map
+            .insert_sorted_by(value, (), |a, (), b, ()| cmp(a, b));
+        (index, existing.is_none())
+    }
+
+    /// Insert the value into the set at its ordered position among values
+    /// using a sort-key extraction function.
+    ///
+    /// This is equivalent to finding the position with
+    /// [`binary_search_by_key`][Self::binary_search_by_key] with `sort_key(key)`,
+    /// then calling [`insert_before`][Self::insert_before].
+    ///
+    /// If the existing items are **not** already sorted, then the insertion
+    /// index is unspecified (like [`slice::binary_search`]), but the value
+    /// is moved to or inserted at that position regardless.
+    ///
+    /// Computes in **O(n)** time (average).
+    pub fn insert_sorted_by_key<B, F>(&mut self, value: T, mut sort_key: F) -> (usize, bool)
+    where
+        B: Ord,
+        F: FnMut(&T) -> B,
+    {
+        let (index, existing) = self.map.insert_sorted_by_key(value, (), |k, _| sort_key(k));
+        (index, existing.is_none())
+    }
+
+    /// Insert the value into the set before the value at the given index, or at the end.
+    ///
+    /// If an equivalent item already exists in the set, it returns `false` leaving the
+    /// original value in the set, but moved to the new position. The returned index
+    /// will either be the given index or one less, depending on how the value moved.
+    /// (See [`shift_insert`](Self::shift_insert) for different behavior here.)
+    ///
+    /// Otherwise, it inserts the new value exactly at the given index and returns `true`.
+    ///
+    /// ***Panics*** if `index` is out of bounds.
+    /// Valid indices are `0..=set.len()` (inclusive).
+    ///
+    /// Computes in **O(n)** time (average).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indexmap::IndexSet;
+    /// let mut set: IndexSet<char> = ('a'..='z').collect();
+    ///
+    /// // The new value '*' goes exactly at the given index.
+    /// assert_eq!(set.get_index_of(&'*'), None);
+    /// assert_eq!(set.insert_before(10, '*'), (10, true));
+    /// assert_eq!(set.get_index_of(&'*'), Some(10));
+    ///
+    /// // Moving the value 'a' up will shift others down, so this moves *before* 10 to index 9.
+    /// assert_eq!(set.insert_before(10, 'a'), (9, false));
+    /// assert_eq!(set.get_index_of(&'a'), Some(9));
+    /// assert_eq!(set.get_index_of(&'*'), Some(10));
+    ///
+    /// // Moving the value 'z' down will shift others up, so this moves to exactly 10.
+    /// assert_eq!(set.insert_before(10, 'z'), (10, false));
+    /// assert_eq!(set.get_index_of(&'z'), Some(10));
+    /// assert_eq!(set.get_index_of(&'*'), Some(11));
+    ///
+    /// // Moving or inserting before the endpoint is also valid.
+    /// assert_eq!(set.len(), 27);
+    /// assert_eq!(set.insert_before(set.len(), '*'), (26, false));
+    /// assert_eq!(set.get_index_of(&'*'), Some(26));
+    /// assert_eq!(set.insert_before(set.len(), '+'), (27, true));
+    /// assert_eq!(set.get_index_of(&'+'), Some(27));
+    /// assert_eq!(set.len(), 28);
+    /// ```
+    #[track_caller]
+    pub fn insert_before(&mut self, index: usize, value: T) -> (usize, bool) {
+        let (index, existing) = self.map.insert_before(index, value, ());
+        (index, existing.is_none())
+    }
+
+    /// Insert the value into the set at the given index.
+    ///
+    /// If an equivalent item already exists in the set, it returns `false` leaving
+    /// the original value in the set, but moved to the given index.
+    /// Note that existing values **cannot** be moved to `index == set.len()`!
+    /// (See [`insert_before`](Self::insert_before) for different behavior here.)
+    ///
+    /// Otherwise, it inserts the new value at the given index and returns `true`.
+    ///
+    /// ***Panics*** if `index` is out of bounds.
+    /// Valid indices are `0..set.len()` (exclusive) when moving an existing value, or
+    /// `0..=set.len()` (inclusive) when inserting a new value.
+    ///
+    /// Computes in **O(n)** time (average).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indexmap::IndexSet;
+    /// let mut set: IndexSet<char> = ('a'..='z').collect();
+    ///
+    /// // The new value '*' goes exactly at the given index.
+    /// assert_eq!(set.get_index_of(&'*'), None);
+    /// assert_eq!(set.shift_insert(10, '*'), true);
+    /// assert_eq!(set.get_index_of(&'*'), Some(10));
+    ///
+    /// // Moving the value 'a' up to 10 will shift others down, including the '*' that was at 10.
+    /// assert_eq!(set.shift_insert(10, 'a'), false);
+    /// assert_eq!(set.get_index_of(&'a'), Some(10));
+    /// assert_eq!(set.get_index_of(&'*'), Some(9));
+    ///
+    /// // Moving the value 'z' down to 9 will shift others up, including the '*' that was at 9.
+    /// assert_eq!(set.shift_insert(9, 'z'), false);
+    /// assert_eq!(set.get_index_of(&'z'), Some(9));
+    /// assert_eq!(set.get_index_of(&'*'), Some(10));
+    ///
+    /// // Existing values can move to len-1 at most, but new values can insert at the endpoint.
+    /// assert_eq!(set.len(), 27);
+    /// assert_eq!(set.shift_insert(set.len() - 1, '*'), false);
+    /// assert_eq!(set.get_index_of(&'*'), Some(26));
+    /// assert_eq!(set.shift_insert(set.len(), '+'), true);
+    /// assert_eq!(set.get_index_of(&'+'), Some(27));
+    /// assert_eq!(set.len(), 28);
+    /// ```
+    ///
+    /// ```should_panic
+    /// use indexmap::IndexSet;
+    /// let mut set: IndexSet<char> = ('a'..='z').collect();
+    ///
+    /// // This is an invalid index for moving an existing value!
+    /// set.shift_insert(set.len(), 'a');
+    /// ```
+    #[track_caller]
     pub fn shift_insert(&mut self, index: usize, value: T) -> bool {
         self.map.shift_insert(index, value, ()).is_none()
     }
@@ -417,6 +591,22 @@ where
             (i, Some((replaced, ()))) => (i, Some(replaced)),
             (i, None) => (i, None),
         }
+    }
+
+    /// Replaces the value at the given index. The new value does not need to be
+    /// equivalent to the one it is replacing, but it must be unique to the rest
+    /// of the set.
+    ///
+    /// Returns `Ok(old_value)` if successful, or `Err((other_index, value))` if
+    /// an equivalent value already exists at a different index. The set will be
+    /// unchanged in the error case.
+    ///
+    /// ***Panics*** if `index` is out of bounds.
+    ///
+    /// Computes in **O(1)** time (average).
+    #[track_caller]
+    pub fn replace_index(&mut self, index: usize, value: T) -> Result<T, (usize, T)> {
+        self.map.replace_index(index, value)
     }
 
     /// Return an iterator over the values that are in `self` but not `other`.
@@ -494,12 +684,43 @@ where
     /// assert!(set.into_iter().eq([0, 1, 5, 3, 2, 4]));
     /// assert_eq!(removed, &[2, 3]);
     /// ```
+    #[track_caller]
     pub fn splice<R, I>(&mut self, range: R, replace_with: I) -> Splice<'_, I::IntoIter, T, S>
     where
         R: RangeBounds<usize>,
         I: IntoIterator<Item = T>,
     {
         Splice::new(self, range, replace_with.into_iter())
+    }
+
+    /// Moves all values from `other` into `self`, leaving `other` empty.
+    ///
+    /// This is equivalent to calling [`insert`][Self::insert] for each value
+    /// from `other` in order, which means that values that already exist
+    /// in `self` are unchanged in their current position.
+    ///
+    /// See also [`union`][Self::union] to iterate the combined values by
+    /// reference, without modifying `self` or `other`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indexmap::IndexSet;
+    ///
+    /// let mut a = IndexSet::from([3, 2, 1]);
+    /// let mut b = IndexSet::from([3, 4, 5]);
+    /// let old_capacity = b.capacity();
+    ///
+    /// a.append(&mut b);
+    ///
+    /// assert_eq!(a.len(), 5);
+    /// assert_eq!(b.len(), 0);
+    /// assert_eq!(b.capacity(), old_capacity);
+    ///
+    /// assert!(a.iter().eq(&[3, 2, 1, 4, 5]));
+    /// ```
+    pub fn append<S2>(&mut self, other: &mut IndexSet<T, S2>) {
+        self.map.append(&mut other.map);
     }
 }
 
@@ -678,8 +899,34 @@ impl<T, S> IndexSet<T, S> {
     /// This preserves the order of the remaining elements.
     ///
     /// Computes in **O(1)** time (average).
+    #[doc(alias = "pop_last")] // like `BTreeSet`
     pub fn pop(&mut self) -> Option<T> {
         self.map.pop().map(|(x, ())| x)
+    }
+
+    /// Removes and returns the last value from a set if the predicate
+    /// returns `true`, or [`None`] if the predicate returns false or the set
+    /// is empty (the predicate will not be called in that case).
+    ///
+    /// This preserves the order of the remaining elements.
+    ///
+    /// Computes in **O(1)** time (average).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indexmap::IndexSet;
+    ///
+    /// let mut set = IndexSet::from([1, 2, 3, 4]);
+    /// let pred = |x: &i32| *x % 2 == 0;
+    ///
+    /// assert_eq!(set.pop_if(pred), Some(4));
+    /// assert_eq!(set.as_slice(), &[1, 2, 3]);
+    /// assert_eq!(set.pop_if(pred), None);
+    /// ```
+    pub fn pop_if(&mut self, predicate: impl FnOnce(&T) -> bool) -> Option<T> {
+        let last = self.last()?;
+        if predicate(last) { self.pop() } else { None }
     }
 
     /// Scan through each value in the set and keep those where the
@@ -696,7 +943,7 @@ impl<T, S> IndexSet<T, S> {
         self.map.retain(move |x, &mut ()| keep(x))
     }
 
-    /// Sort the set’s values by their default ordering.
+    /// Sort the set's values by their default ordering.
     ///
     /// This is a stable sort -- but equivalent values should not normally coexist in
     /// a set at all, so [`sort_unstable`][Self::sort_unstable] is preferred
@@ -710,14 +957,14 @@ impl<T, S> IndexSet<T, S> {
         self.map.sort_keys()
     }
 
-    /// Sort the set’s values in place using the comparison function `cmp`.
+    /// Sort the set's values in place using the comparison function `cmp`.
     ///
     /// Computes in **O(n log n)** time and **O(n)** space. The sort is stable.
     pub fn sort_by<F>(&mut self, mut cmp: F)
     where
         F: FnMut(&T, &T) -> Ordering,
     {
-        self.map.sort_by(move |a, _, b, _| cmp(a, b));
+        self.map.sort_by(move |a, (), b, ()| cmp(a, b));
     }
 
     /// Sort the values of the set and return a by-value iterator of
@@ -731,6 +978,19 @@ impl<T, S> IndexSet<T, S> {
         let mut entries = self.into_entries();
         entries.sort_by(move |a, b| cmp(&a.key, &b.key));
         IntoIter::new(entries)
+    }
+
+    /// Sort the set's values in place using a key extraction function.
+    ///
+    /// Computes in **O(n log n)** time and **O(n)** space. The sort is stable.
+    pub fn sort_by_key<K, F>(&mut self, mut sort_key: F)
+    where
+        K: Ord,
+        F: FnMut(&T) -> K,
+    {
+        self.with_entries(move |entries| {
+            entries.sort_by_key(move |a| sort_key(&a.key));
+        });
     }
 
     /// Sort the set's values by their default ordering.
@@ -764,7 +1024,20 @@ impl<T, S> IndexSet<T, S> {
         IntoIter::new(entries)
     }
 
-    /// Sort the set’s values in place using a key extraction function.
+    /// Sort the set's values in place using a key extraction function.
+    ///
+    /// Computes in **O(n log n)** time. The sort is unstable.
+    pub fn sort_unstable_by_key<K, F>(&mut self, mut sort_key: F)
+    where
+        K: Ord,
+        F: FnMut(&T) -> K,
+    {
+        self.with_entries(move |entries| {
+            entries.sort_unstable_by_key(move |a| sort_key(&a.key));
+        });
+    }
+
+    /// Sort the set's values in place using a key extraction function.
     ///
     /// During sorting, the function is called at most once per entry, by using temporary storage
     /// to remember the results of its evaluation. The order of calls to the function is
@@ -825,6 +1098,34 @@ impl<T, S> IndexSet<T, S> {
         self.as_slice().binary_search_by_key(b, f)
     }
 
+    /// Checks if the values of this set are sorted.
+    #[inline]
+    pub fn is_sorted(&self) -> bool
+    where
+        T: PartialOrd,
+    {
+        self.as_slice().is_sorted()
+    }
+
+    /// Checks if this set is sorted using the given comparator function.
+    #[inline]
+    pub fn is_sorted_by<'a, F>(&'a self, cmp: F) -> bool
+    where
+        F: FnMut(&'a T, &'a T) -> bool,
+    {
+        self.as_slice().is_sorted_by(cmp)
+    }
+
+    /// Checks if this set is sorted using the given sort-key function.
+    #[inline]
+    pub fn is_sorted_by_key<'a, F, K>(&'a self, sort_key: F) -> bool
+    where
+        F: FnMut(&'a T) -> K,
+        K: PartialOrd,
+    {
+        self.as_slice().is_sorted_by_key(sort_key)
+    }
+
     /// Returns the index of the partition point of a sorted set according to the given predicate
     /// (the index of the first element of the second partition).
     ///
@@ -839,7 +1140,7 @@ impl<T, S> IndexSet<T, S> {
         self.as_slice().partition_point(pred)
     }
 
-    /// Reverses the order of the set’s values in place.
+    /// Reverses the order of the set's values in place.
     ///
     /// Computes in **O(n)** time and **O(1)** space.
     pub fn reverse(&mut self) {
@@ -862,7 +1163,7 @@ impl<T, S> IndexSet<T, S> {
 
     /// Get a value by index
     ///
-    /// Valid indices are *0 <= index < self.len()*
+    /// Valid indices are `0 <= index < self.len()`.
     ///
     /// Computes in **O(1)** time.
     pub fn get_index(&self, index: usize) -> Option<&T> {
@@ -871,7 +1172,7 @@ impl<T, S> IndexSet<T, S> {
 
     /// Returns a slice of values in the given range of indices.
     ///
-    /// Valid indices are *0 <= index < self.len()*
+    /// Valid indices are `0 <= index < self.len()`.
     ///
     /// Computes in **O(1)** time.
     pub fn get_range<R: RangeBounds<usize>>(&self, range: R) -> Option<&Slice<T>> {
@@ -896,7 +1197,7 @@ impl<T, S> IndexSet<T, S> {
 
     /// Remove the value by index
     ///
-    /// Valid indices are *0 <= index < self.len()*
+    /// Valid indices are `0 <= index < self.len()`.
     ///
     /// Like [`Vec::swap_remove`], the value is removed by swapping it with the
     /// last element of the set and popping it off. **This perturbs
@@ -909,7 +1210,7 @@ impl<T, S> IndexSet<T, S> {
 
     /// Remove the value by index
     ///
-    /// Valid indices are *0 <= index < self.len()*
+    /// Valid indices are `0 <= index < self.len()`.
     ///
     /// Like [`Vec::remove`], the value is removed by shifting all of the
     /// elements that follow it, preserving their relative order.
@@ -929,6 +1230,7 @@ impl<T, S> IndexSet<T, S> {
     /// ***Panics*** if `from` or `to` are out of bounds.
     ///
     /// Computes in **O(n)** time (average).
+    #[track_caller]
     pub fn move_index(&mut self, from: usize, to: usize) {
         self.map.move_index(from, to)
     }
@@ -938,6 +1240,7 @@ impl<T, S> IndexSet<T, S> {
     /// ***Panics*** if `a` or `b` are out of bounds.
     ///
     /// Computes in **O(1)** time (average).
+    #[track_caller]
     pub fn swap_indices(&mut self, a: usize, b: usize) {
         self.map.swap_indices(a, b)
     }
@@ -978,8 +1281,8 @@ impl<T, S> Index<usize> for IndexSet<T, S> {
     ///
     /// ***Panics*** if `index` is out of bounds.
     fn index(&self, index: usize) -> &T {
-        self.get_index(index)
-            .expect("IndexSet: index out of bounds")
+        assert_index_lt(index, self.len());
+        &self.map.as_entries()[index].key
     }
 }
 

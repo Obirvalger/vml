@@ -7,18 +7,18 @@
   </p>
 
   <p>
-    <a href="https://github.com/rustwasm/wasm-bindgen/actions/workflows/main.yml?query=branch%3Amain"><img src="https://github.com/rustwasm/wasm-bindgen/actions/workflows/main.yml/badge.svg?branch=main" alt="Build Status" /></a>
+    <a href="https://github.com/wasm-bindgen/wasm-bindgen/actions/workflows/main.yml?query=branch%3Amain"><img src="https://github.com/wasm-bindgen/wasm-bindgen/actions/workflows/main.yml/badge.svg?branch=main" alt="Build Status" /></a>
     <a href="https://crates.io/crates/wasm-bindgen"><img src="https://img.shields.io/crates/v/wasm-bindgen.svg?style=flat-square" alt="Crates.io version" /></a>
     <a href="https://crates.io/crates/wasm-bindgen"><img src="https://img.shields.io/crates/d/wasm-bindgen.svg?style=flat-square" alt="Download" /></a>
     <a href="https://docs.rs/wasm-bindgen"><img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square" alt="docs.rs docs" /></a>
   </p>
 
   <h3>
-    <a href="https://rustwasm.github.io/wasm-bindgen/">Guide (main branch)</a>
+    <a href="https://wasm-bindgen.github.io/wasm-bindgen/">Guide (main branch)</a>
     <span> | </span>
     <a href="https://docs.rs/wasm-bindgen">API Docs</a>
     <span> | </span>
-    <a href="https://github.com/rustwasm/wasm-bindgen/blob/master/CONTRIBUTING.md">Contributing</a>
+    <a href="https://github.com/wasm-bindgen/wasm-bindgen/blob/main/CONTRIBUTING.md">Contributing</a>
     <span> | </span>
     <a href="https://discord.gg/xMZ7CCY">Chat</a>
   </h3>
@@ -35,7 +35,7 @@ cargo install wasm-bindgen-cli
 ```
 
 Or, you can download it from the
-[release page](https://github.com/rustwasm/wasm-bindgen/releases).
+[release page](https://github.com/wasm-bindgen/wasm-bindgen/releases).
 
 If you have [`cargo-binstall`](https://crates.io/crates/cargo-binstall) installed,
 then you can install the pre-built artifacts by running:
@@ -87,7 +87,7 @@ greet("World!");
 
 * **Designed with the ["Web IDL bindings" proposal][webidl-bindings] in mind.**
   Eventually, there won't be any JavaScript shims between Rust-generated wasm
-  functions and native DOM methods. Because the wasm functions are statically
+  functions and native DOM methods. Because the Wasm functions are statically
   type checked, some of those native methods' dynamic type checks should become
   unnecessary, promising to unlock even-faster-than-JavaScript DOM access.
 
@@ -96,10 +96,7 @@ greet("World!");
 
 ## Guide
 
-[**📚 Read the `wasm-bindgen` guide here! 📚**](https://rustwasm.github.io/docs/wasm-bindgen/)
-
-You can find general documentation about using Rust and WebAssembly together
-[here](https://rustwasm.github.io/docs).
+[**📚 Read the `wasm-bindgen` guide here! 📚**](https://wasm-bindgen.github.io/wasm-bindgen/)
 
 ## API Docs
 
@@ -107,6 +104,22 @@ You can find general documentation about using Rust and WebAssembly together
 - [js-sys](https://docs.rs/js-sys)
 - [web-sys](https://docs.rs/web-sys)
 - [wasm-bindgen-futures](https://docs.rs/wasm-bindgen-futures)
+
+## MSRV Policy
+
+* Libraries that are released on [crates.io](https://crates.io) have a MSRV of v1.77.
+* CLI tools and their corresponding support libraries have a MSRV of v1.86.
+
+The project aims to maintain a 2-year MSRV policy for libraries (meaning we support Rust versions released within the last 2 years), but with a shorter MSRV policy for the CLI. Changes to the MSRV may be made in patch versions, and will be logged in the CHANGELOG and MSRV history below.
+
+### MSRV History
+
+| Version | Library MSRV | CLI MSRV | Date       |
+|---------|--------------|----------|------------|
+| 0.2.118 | 1.77         | 1.86     | 2026-04-10 |
+| 0.2.106 | 1.71         | 1.82     | 2025-11-27 |
+| 0.2.103 | 1.57         | 1.82     | 2025-09-17 |
+| 0.2.93  | 1.57         | 1.76     | 2024-08-13 |
 
 ## License
 
@@ -121,11 +134,10 @@ at your option.
 
 ## Contribution
 
-**[See the "Contributing" section of the guide for information on
-hacking on `wasm-bindgen`!][contributing]**
+**[See the "Contributing" section of the guide for information on hacking on `wasm-bindgen`!][contributing]**
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in this project by you, as defined in the Apache-2.0 license,
 shall be dual licensed as above, without any additional terms or conditions.
 
-[contributing]: https://rustwasm.github.io/docs/wasm-bindgen/contributing/index.html
+[contributing]: https://wasm-bindgen.github.io/wasm-bindgen/contributing/index.html

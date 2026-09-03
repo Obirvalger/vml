@@ -1,9 +1,11 @@
 use std::io::{self, Cursor, Read, Write};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_util::future::poll_fn;
 use futures_util::task::noop_waker_ref;
+use rustls::pki_types::ServerName;
 use rustls::{ClientConnection, Connection, ServerConnection};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 
@@ -11,7 +13,7 @@ use super::Stream;
 
 struct Good<'a>(&'a mut Connection);
 
-impl<'a> AsyncRead for Good<'a> {
+impl AsyncRead for Good<'_> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         _cx: &mut Context<'_>,
@@ -29,7 +31,7 @@ impl<'a> AsyncRead for Good<'a> {
     }
 }
 
-impl<'a> AsyncWrite for Good<'a> {
+impl AsyncWrite for Good<'_> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         _cx: &mut Context<'_>,
@@ -120,17 +122,52 @@ impl AsyncWrite for Expected {
     }
 }
 
+struct Eof;
+
+impl AsyncRead for Eof {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncWrite for Eof {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(0))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
 #[tokio::test]
 async fn stream_good() -> io::Result<()> {
-    stream_good_impl(false).await
+    stream_good_impl(false, false).await
 }
 
 #[tokio::test]
 async fn stream_good_vectored() -> io::Result<()> {
-    stream_good_impl(true).await
+    stream_good_impl(true, false).await
 }
 
-async fn stream_good_impl(vectored: bool) -> io::Result<()> {
+#[tokio::test]
+async fn stream_good_bufread() -> io::Result<()> {
+    stream_good_impl(false, true).await
+}
+
+async fn stream_good_impl(vectored: bool, bufread: bool) -> io::Result<()> {
     const FILE: &[u8] = include_bytes!("../../README.md");
 
     let (server, mut client) = make_pair();
@@ -145,7 +182,11 @@ async fn stream_good_impl(vectored: bool) -> io::Result<()> {
         let mut stream = Stream::new(&mut good, &mut client);
 
         let mut buf = Vec::new();
-        dbg!(stream.read_to_end(&mut buf).await)?;
+        if bufread {
+            dbg!(tokio::io::copy_buf(&mut stream, &mut buf).await)?;
+        } else {
+            dbg!(stream.read_to_end(&mut buf).await)?;
+        }
         assert_eq!(buf, FILE);
 
         dbg!(utils::write(&mut stream, b"Hello World!", vectored).await)?;
@@ -252,6 +293,23 @@ async fn stream_handshake_eof() -> io::Result<()> {
     Ok(()) as io::Result<()>
 }
 
+#[tokio::test]
+async fn stream_handshake_write_eof() -> io::Result<()> {
+    let (_, mut client) = make_pair();
+
+    let mut io = Eof;
+    let mut stream = Stream::new(&mut io, &mut client);
+
+    let mut cx = Context::from_waker(noop_waker_ref());
+    let r = stream.handshake(&mut cx);
+    assert_eq!(
+        r.map_err(|err| err.kind()),
+        Poll::Ready(Err(io::ErrorKind::WriteZero))
+    );
+
+    Ok(()) as io::Result<()>
+}
+
 // see https://github.com/tokio-rs/tls/issues/77
 #[tokio::test]
 async fn stream_handshake_regression_issues_77() -> io::Result<()> {
@@ -264,7 +322,7 @@ async fn stream_handshake_regression_issues_77() -> io::Result<()> {
     let r = stream.handshake(&mut cx);
     assert_eq!(
         r.map_err(|err| err.kind()),
-        Poll::Ready(Err(io::ErrorKind::UnexpectedEof))
+        Poll::Ready(Err(io::ErrorKind::InvalidData))
     );
 
     Ok(()) as io::Result<()>
@@ -289,12 +347,31 @@ async fn stream_eof() -> io::Result<()> {
     Ok(()) as io::Result<()>
 }
 
+#[tokio::test]
+async fn stream_write_zero() -> io::Result<()> {
+    let (server, mut client) = make_pair();
+    let mut server = Connection::from(server);
+    poll_fn(|cx| do_handshake(&mut client, &mut server, cx)).await?;
+
+    let mut io = Eof;
+    let mut stream = Stream::new(&mut io, &mut client);
+
+    stream.write_all(b"1").await.unwrap();
+    let result = stream.flush().await;
+    assert_eq!(
+        result.err().map(|e| e.kind()),
+        Some(io::ErrorKind::WriteZero)
+    );
+
+    Ok(()) as io::Result<()>
+}
+
 fn make_pair() -> (ServerConnection, ClientConnection) {
     let (sconfig, cconfig) = utils::make_configs();
-    let server = ServerConnection::new(sconfig).unwrap();
+    let server = ServerConnection::new(Arc::new(sconfig)).unwrap();
 
-    let domain = pki_types::ServerName::try_from("foobar.com").unwrap();
-    let client = ClientConnection::new(cconfig, domain).unwrap();
+    let domain = ServerName::try_from("foobar.com").unwrap();
+    let client = ClientConnection::new(Arc::new(cconfig), domain).unwrap();
 
     (server, client)
 }

@@ -1,6 +1,6 @@
 [package]
 name = "tera"
-version = "1.20.0"
+version = "1.20.1"
 authors = ["Vincent Prouillet <hello@prouilletvincent.com>"]
 license = "MIT"
 readme = "README.md"
@@ -11,7 +11,7 @@ keywords = ["template", "html", "django", "markup", "jinja2"]
 categories = ["template-engine"]
 edition = "2018"
 include = ["/src/**/*", "/LICENSE", "/README.md", "/CHANGELOG.md"]
-rust-version = "1.70"
+rust-version = "1.85"
 
 [dependencies]
 globwalk = "0.9.1"
@@ -23,7 +23,7 @@ lazy_static = "1.4"
 # used in striptags, spaceless & titles filters. Already pulled by globwalk
 regex = "1.7"
 # used in truncate filter and string iteration
-unic-segment = "0.9"
+unicode-segmentation = "1.12"
 
 # used in slugify filter
 slug = {version = "0.1", optional = true}

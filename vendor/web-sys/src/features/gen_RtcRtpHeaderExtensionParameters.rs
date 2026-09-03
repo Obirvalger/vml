@@ -4,12 +4,45 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = RTCRtpHeaderExtensionParameters)]
+    #[wasm_bindgen(
+        extends = "::js_sys::Object",
+        js_name = "RTCRtpHeaderExtensionParameters"
+    )]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `RtcRtpHeaderExtensionParameters` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
     pub type RtcRtpHeaderExtensionParameters;
+    #[doc = "Get the `encrypted` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[wasm_bindgen(method, getter = "encrypted")]
+    pub fn get_encrypted(this: &RtcRtpHeaderExtensionParameters) -> Option<bool>;
+    #[doc = "Change the `encrypted` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[wasm_bindgen(method, setter = "encrypted")]
+    pub fn set_encrypted(this: &RtcRtpHeaderExtensionParameters, val: bool);
+    #[doc = "Get the `id` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[wasm_bindgen(method, getter = "id")]
+    pub fn get_id(this: &RtcRtpHeaderExtensionParameters) -> Option<u16>;
+    #[doc = "Change the `id` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[wasm_bindgen(method, setter = "id")]
+    pub fn set_id(this: &RtcRtpHeaderExtensionParameters, val: u16);
+    #[doc = "Get the `uri` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[wasm_bindgen(method, getter = "uri")]
+    pub fn get_uri(this: &RtcRtpHeaderExtensionParameters) -> Option<::alloc::string::String>;
+    #[doc = "Change the `uri` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[wasm_bindgen(method, setter = "uri")]
+    pub fn set_uri(this: &RtcRtpHeaderExtensionParameters, val: &str);
 }
 impl RtcRtpHeaderExtensionParameters {
     #[doc = "Construct a new `RtcRtpHeaderExtensionParameters`."]
@@ -20,47 +53,19 @@ impl RtcRtpHeaderExtensionParameters {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `encrypted` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[deprecated = "Use `set_encrypted()` instead."]
     pub fn encrypted(&mut self, val: bool) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("encrypted"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_encrypted(val);
         self
     }
-    #[doc = "Change the `id` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[deprecated = "Use `set_id()` instead."]
     pub fn id(&mut self, val: u16) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("id"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_id(val);
         self
     }
-    #[doc = "Change the `uri` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RtcRtpHeaderExtensionParameters`*"]
+    #[deprecated = "Use `set_uri()` instead."]
     pub fn uri(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("uri"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_uri(val);
         self
     }
 }

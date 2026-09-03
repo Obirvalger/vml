@@ -1,10 +1,10 @@
 [package]
 name = "colorchoice"
-version = "1.0.1"
+version = "1.0.5"
 description = "Global override of color control"
-repository = "https://github.com/rust-cli/anstyle"
 categories = ["command-line-interface"]
 keywords = ["cli", "color", "no-std", "terminal", "ansi"]
+repository.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +12,7 @@ include.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [package.metadata.release]
 pre-release-replacements = [

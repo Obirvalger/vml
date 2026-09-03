@@ -8,17 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Iterators which split strings on Grapheme Cluster, Word or Sentence boundaries, according
-//! to the [Unicode Standard Annex #29](http://www.unicode.org/reports/tr29/) rules.
+//! Iterators which split strings on Grapheme Cluster, Word, or Sentence boundaries, according
+//! to the [Unicode Standard Annex #29](https://www.unicode.org/reports/tr29/) rules.
 //!
 //! ```rust
-//! extern crate unicode_segmentation;
-//!
 //! use unicode_segmentation::UnicodeSegmentation;
 //!
 //! fn main() {
 //!     let s = "a̐éö̲\r\n";
-//!     let g = UnicodeSegmentation::graphemes(s, true).collect::<Vec<&str>>();
+//!     let g = s.graphemes(true).collect::<Vec<&str>>();
 //!     let b: &[_] = &["a̐", "é", "ö̲", "\r\n"];
 //!     assert_eq!(g, b);
 //!
@@ -46,7 +44,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! unicode-segmentation = "1.9.0"
+//! unicode-segmentation = "1"
 //! ```
 
 #![deny(missing_docs, unsafe_code)]
@@ -57,12 +55,7 @@
 #![no_std]
 
 #[cfg(test)]
-#[macro_use]
 extern crate std;
-
-#[cfg(test)]
-#[macro_use]
-extern crate quickcheck;
 
 pub use grapheme::{GraphemeCursor, GraphemeIncomplete};
 pub use grapheme::{GraphemeIndices, Graphemes};
@@ -71,15 +64,10 @@ pub use tables::UNICODE_VERSION;
 pub use word::{UWordBoundIndices, UWordBounds, UnicodeWordIndices, UnicodeWords};
 
 mod grapheme;
+mod sentence;
 #[rustfmt::skip]
 mod tables;
-mod sentence;
 mod word;
-
-#[cfg(test)]
-mod test;
-#[cfg(test)]
-mod testdata;
 
 /// Methods for segmenting strings according to
 /// [Unicode Standard Annex #29](http://www.unicode.org/reports/tr29/).
@@ -109,7 +97,7 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&gr2[..], b);
     /// ```
-    fn graphemes<'a>(&'a self, is_extended: bool) -> Graphemes<'a>;
+    fn graphemes(&self, is_extended: bool) -> Graphemes<'_>;
 
     /// Returns an iterator over the grapheme clusters of `self` and their
     /// byte offsets. See `graphemes()` for more information.
@@ -124,7 +112,7 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&gr_inds[..], b);
     /// ```
-    fn grapheme_indices<'a>(&'a self, is_extended: bool) -> GraphemeIndices<'a>;
+    fn grapheme_indices(&self, is_extended: bool) -> GraphemeIndices<'_>;
 
     /// Returns an iterator over the words of `self`, separated on
     /// [UAX#29 word boundaries](http://www.unicode.org/reports/tr29/#Word_Boundaries).
@@ -146,7 +134,7 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&uw1[..], b);
     /// ```
-    fn unicode_words<'a>(&'a self) -> UnicodeWords<'a>;
+    fn unicode_words(&self) -> UnicodeWords<'_>;
 
     /// Returns an iterator over the words of `self`, separated on
     /// [UAX#29 word boundaries](http://www.unicode.org/reports/tr29/#Word_Boundaries), and their
@@ -170,7 +158,7 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&uwi1[..], b);
     /// ```
-    fn unicode_word_indices<'a>(&'a self) -> UnicodeWordIndices<'a>;
+    fn unicode_word_indices(&self) -> UnicodeWordIndices<'_>;
 
     /// Returns an iterator over substrings of `self` separated on
     /// [UAX#29 word boundaries](http://www.unicode.org/reports/tr29/#Word_Boundaries).
@@ -186,7 +174,7 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&swu1[..], b);
     /// ```
-    fn split_word_bounds<'a>(&'a self) -> UWordBounds<'a>;
+    fn split_word_bounds(&self) -> UWordBounds<'_>;
 
     /// Returns an iterator over substrings of `self`, split on UAX#29 word boundaries,
     /// and their offsets. See `split_word_bounds()` for more information.
@@ -201,7 +189,7 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&swi1[..], b);
     /// ```
-    fn split_word_bound_indices<'a>(&'a self) -> UWordBoundIndices<'a>;
+    fn split_word_bound_indices(&self) -> UWordBoundIndices<'_>;
 
     /// Returns an iterator over substrings of `self` separated on
     /// [UAX#29 sentence boundaries](http://www.unicode.org/reports/tr29/#Sentence_Boundaries).
@@ -223,7 +211,7 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&us1[..], b);
     /// ```
-    fn unicode_sentences<'a>(&'a self) -> UnicodeSentences<'a>;
+    fn unicode_sentences(&self) -> UnicodeSentences<'_>;
 
     /// Returns an iterator over substrings of `self` separated on
     /// [UAX#29 sentence boundaries](http://www.unicode.org/reports/tr29/#Sentence_Boundaries).
@@ -240,7 +228,7 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&ssb1[..], b);
     /// ```
-    fn split_sentence_bounds<'a>(&'a self) -> USentenceBounds<'a>;
+    fn split_sentence_bounds(&self) -> USentenceBounds<'_>;
 
     /// Returns an iterator over substrings of `self`, split on UAX#29 sentence boundaries,
     /// and their offsets. See `split_sentence_bounds()` for more information.
@@ -256,52 +244,52 @@ pub trait UnicodeSegmentation {
     ///
     /// assert_eq!(&ssi1[..], b);
     /// ```
-    fn split_sentence_bound_indices<'a>(&'a self) -> USentenceBoundIndices<'a>;
+    fn split_sentence_bound_indices(&self) -> USentenceBoundIndices<'_>;
 }
 
 impl UnicodeSegmentation for str {
     #[inline]
-    fn graphemes(&self, is_extended: bool) -> Graphemes {
+    fn graphemes(&self, is_extended: bool) -> Graphemes<'_> {
         grapheme::new_graphemes(self, is_extended)
     }
 
     #[inline]
-    fn grapheme_indices(&self, is_extended: bool) -> GraphemeIndices {
+    fn grapheme_indices(&self, is_extended: bool) -> GraphemeIndices<'_> {
         grapheme::new_grapheme_indices(self, is_extended)
     }
 
     #[inline]
-    fn unicode_words(&self) -> UnicodeWords {
+    fn unicode_words(&self) -> UnicodeWords<'_> {
         word::new_unicode_words(self)
     }
 
     #[inline]
-    fn unicode_word_indices(&self) -> UnicodeWordIndices {
+    fn unicode_word_indices(&self) -> UnicodeWordIndices<'_> {
         word::new_unicode_word_indices(self)
     }
 
     #[inline]
-    fn split_word_bounds(&self) -> UWordBounds {
+    fn split_word_bounds(&self) -> UWordBounds<'_> {
         word::new_word_bounds(self)
     }
 
     #[inline]
-    fn split_word_bound_indices(&self) -> UWordBoundIndices {
+    fn split_word_bound_indices(&self) -> UWordBoundIndices<'_> {
         word::new_word_bound_indices(self)
     }
 
     #[inline]
-    fn unicode_sentences(&self) -> UnicodeSentences {
+    fn unicode_sentences(&self) -> UnicodeSentences<'_> {
         sentence::new_unicode_sentences(self)
     }
 
     #[inline]
-    fn split_sentence_bounds(&self) -> USentenceBounds {
+    fn split_sentence_bounds(&self) -> USentenceBounds<'_> {
         sentence::new_sentence_bounds(self)
     }
 
     #[inline]
-    fn split_sentence_bound_indices(&self) -> USentenceBoundIndices {
+    fn split_sentence_bound_indices(&self) -> USentenceBoundIndices<'_> {
         sentence::new_sentence_bound_indices(self)
     }
 }

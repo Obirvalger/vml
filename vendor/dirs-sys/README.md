@@ -1,9 +1,6 @@
-[![crates.io](https://img.shields.io/crates/v/dirs-sys.svg)](https://crates.io/crates/dirs-sys)
-[![API documentation](https://docs.rs/dirs-sys/badge.svg)](https://docs.rs/dirs-sys/)
-![actively developed](https://img.shields.io/badge/maintenance-as--is-yellow.svg)
-[![TravisCI status](https://img.shields.io/travis/dirs-dev/dirs-sys-rs/master.svg?label=Linux/macOS%20build)](https://travis-ci.org/dirs-dev/dirs-sys-rs)
-[![AppVeyor status](https://img.shields.io/appveyor/ci/soc/dirs-sys-rs/master.svg?label=Windows%20build)](https://ci.appveyor.com/project/soc/dirs-sys-rs/branch/master)
-![License: MIT/Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-orange.svg)
+[![crates.io](https://img.shields.io/crates/v/dirs-sys.svg?style=for-the-badge)](https://crates.io/crates/dirs-sys)
+[![API documentation](https://img.shields.io/docsrs/dirs-sys/latest?style=for-the-badge)](https://docs.rs/dirs-sys/)
+![as-is](https://img.shields.io/badge/maintenance-as--is-yellow.svg?style=for-the-badge)
 
 # `dirs-sys`
 
@@ -25,9 +22,6 @@ Functions may change or disappear without warning or any kind of deprecation per
 
 This library is written in Rust, and supports Linux, Redox, macOS and Windows.
 Other platforms are also supported; they use the Linux conventions.
-
-The minimal required version of Rust is 1.13 except for Redox, where the minimum Rust version
-depends on the [`redox_users`](https://crates.io/crates/redox_users) crate.
 
 ## Build
 
@@ -53,9 +47,3 @@ Licensed under either of
    ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
-
-## Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.

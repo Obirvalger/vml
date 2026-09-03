@@ -2,6 +2,215 @@
 
 ## [Unreleased]
 
+## [v0.10.81] - 2026-06-12
+
+### Fixed
+
+* `SslContextRef::verify_mode` and `SslRef::verify_mode` no longer panic when the verify mode contains bits not modeled by `SslVerifyMode`.
+
+### Added
+
+* Added `SslVerifyMode::CLIENT_ONCE` and `SslVerifyMode::POST_HANDSHAKE`.
+* Added `X509CrlBuilder` and `X509RevokedBuilder`, for building and signing CRLs, along with the `CrlNumber` extension builder.
+* Added `Nid::BRAINPOOL_P224R1` and `Nid::BRAINPOOL_P224T1`.
+* Added `Asn1StringRef::to_string`, which converts the string to UTF-8 without truncating at interior NUL bytes.
+
+### Changed
+
+* Deprecated `Asn1StringRef::as_utf8`, which truncates at the first interior NUL byte, in favor of `Asn1StringRef::to_string`.
+
+## [v0.10.80] - 2026-05-16
+
+### Fixed
+
+* Fixed a buffer overflow in `CipherCtxRef::cipher_update_inplace` when used with AES key-wrap-with-padding ciphers.
+
+## [v0.10.79] - 2026-05-03
+
+### Changed
+
+* Bumped MSRV to 1.80.
+* Removed the `once_cell` dependency in favor of `std::sync::{LazyLock, OnceLock}`.
+* Deprecated `EcPointRef::mul`, `EcPointRef::mul_generator`, and `EcPointRef::invert` in favor of `mul2`, `mul_generator2`, and `invert2`, which take `&mut BigNumContextRef`. The deprecated methods accepted a shared reference despite mutating the `BN_CTX`, which was unsound under `Send + Sync`.
+
+### Added
+
+* Added `EcGroupRef::generator_opt`, which returns `Option<&EcPointRef>`.
+* Added `PKeyRef::seed_into`, which writes the algorithm-defined seed of an ML-DSA or ML-KEM private key into a caller-supplied buffer. The inverse of `PKey::private_key_from_seed`.
+* Added `PKey::private_key_from_seed`, which constructs ML-DSA and ML-KEM private keypairs from a `seed` `OSSL_PARAM` via `EVP_PKEY_fromdata`. Requires OpenSSL 3.5 or newer at runtime.
+* Added `PKeyRef::is_a` and the `KeyType` algorithm-name newtype, for identifying provider-supplied keys (such as ML-DSA) where `EVP_PKEY_id` returns `-1`.
+* Added `PKey::public_key_from_raw_bytes_ex` and `PKey::private_key_from_raw_bytes_ex`, which take a `KeyType` and accept an optional library context and property query string. Required for provider-supplied algorithms with no associated `Id`, such as ML-DSA.
+* Added `PkeyCtxRef::set_context_string`, which binds a context string to an ML-DSA signing or verification operation. Requires OpenSSL 3.5 or newer.
+* Added `EcPointRef::mul2`, `EcPointRef::mul_generator2`, and `EcPointRef::invert2`, which take `&mut BigNumContextRef`.
+
+### Fixed
+
+* `EcGroupRef::generator` no longer constructs a reference from a NULL pointer when the group has no generator set (e.g. a group built with `EcGroup::from_components` before `set_generator` is called), which was immediate undefined behavior. It now panics in that case and has been deprecated in favor of `EcGroupRef::generator_opt`.
+* `X509Ref::ocsp_responders` now validates each accessLocation as UTF-8 and returns an `ErrorStack` if any entry is not, rather than constructing a `&str` containing invalid UTF-8 (language-level UB triggerable by a malicious certificate).
+* Fixed a process abort that could occur when the SSL verify, PSK client, or PSK server callback fired after the underlying `SSL_CTX` had been swapped.
+* Fixed an output-buffer overflow in `CipherCtxRef::cipher_update` and `cipher_update_vec` when used with AES key-wrap-with-padding ciphers, which emit up to `input.len() + 15` bytes during the update call rather than the previously assumed `input.len() + block_size`.
+
+## [v0.10.78] - 2026-04-19
+
+### Added
+
+* Added support for OpenSSL 4.x.
+* Added support for LibreSSL 4.3.x.
+
+### Fixed
+
+* Fixed several soundness issues where safe Rust callers could trigger out-of-bounds reads or writes:
+    * `MdCtxRef::digest_final` now returns an error when the output buffer is shorter than the digest size.
+    * `PkeyCtxRef::derive` now checks the output buffer length on OpenSSL 1.1.x and LibreSSL, where some key types (X25519, X448, HKDF-extract) ignore the caller-supplied length.
+    * Callbacks for key-loading passwords and SSL PSK and cookie generation now reject values longer than the length of the slice.
+    * Fixed a dangling stack pointer in the SSL custom extension callback when using a fixed-length array.
+    * Fixed an inverted bounds assertion in AES key unwrap.
+* `Crypter::new` now panics, as documented, when an IV is required by the cipher but not provided (previously it silently used an all-zero IV).
+* Avoided a panic when formatting overlong OIDs; the value is now truncated with trailing dots.
+* Fixed Suite B flag assignments in `X509VerifyParam`.
+* Handle errors on `OPENSSL_malloc` in `PkeyCtxRef::set_rsa_oaep_label`.
+
+## [v0.10.77] - 2026-04-12
+
+### Added
+
+* Enabled `MdCtxRef::digest_sign`, `MdCtxRef::digest_sign_to_vec`, `MdCtxRef::digest_verify`, and `MdCtxRef::reset` on BoringSSL, LibreSSL, and AWS-LC.
+
+## [v0.10.76] - 2026-03-11
+
+### Added
+
+* Added brainpool curve NID constants.
+* Added `SubjectAlternativeName::dir_name2` for constructing directoryName SAN entries.
+* Added HKDF and generic KDF support.
+* Added `UpperHex` implementation for `BigNum` and `BigNumRef`.
+* Added `add_utf8_string` and `add_int` to `OsslParamBuilder`.
+* Added `Debug` implementation for `EcGroup`, `EcGroupRef`, `EcdsaSig` and `EcdsaSigRef`.
+* Enhanced `Debug` implementation for `Nid`.
+* Constified `PKey::from_raw`.
+* Exposed `from_str_x509()` for LibreSSL >= 3.6.0.
+
+### Fixed
+
+* Fixed use-after-free of error strings on BoringSSL/aws-lc.
+* Fixed cipher comparison (`is_ccm`, `is_ocb`) to use NID instead of unreliable pointer comparison. Added NID constants for `AES_*_OCB`.
+* Fixed invalid value parsing of OCSP revocation reason.
+* Fixed `BIO_METHOD` path for AWS-LC to use BoringSSL codepath.
+
+## [v0.10.75] - 2025-11-07
+
+### Added
+
+* Added support for `set_rsa_oaep_label` on AWS-LC/BoringSSL.
+* Added `Asn1GeneralizedTime::from_str`.
+* Added `OcspStatus::next_update` method.
+
+### Fixed
+
+* Fixed unsound OCSP `find_status` handling of optional next_update field. If an OCSP response does not have a `nextUpdate`, `OcspStatus::next_update` will store a sentinel value. Use `OcspStatus::next_update()` instead.
+
+### Deprecated
+
+* Deprecated `OcspStatus::next_update` field in favor of the `next_update()` method.
+
+## [v0.10.74] - 2025-10-14
+
+### Added
+
+* Added parameter generation support (`PkeyCtx::paramgen` and `PkeyCtx::paramgen_init`).
+* Added key generation methods for RSA, DSA, DH, and EC via `PkeyCtx`.
+* Added `Cipher::get_protocol_id`.
+* Added `EcPointRef::set_affine_coordinates`.
+* Added `EcGroup::order_bits` on BoringSSL, LibreSSL, and AWS-LC.
+* Added `X509::append_entry` on BoringSSL and AWS-LC.
+* Added XOF squeeze support on AWS-LC.
+* Added argon2d and argon2i KDF variants.
+
+### Changed
+
+* Bumped MSRV to 1.70.
+* The repository has moved to the rust-openssl github organization.
+
+### Fixed
+
+* Disabled AES-CFB128 ciphers for BoringSSL.
+
+### Removed
+
+* Removed support for OpenSSL <1.0.2.
+* Removed support for LibreSSL <3.5.
+
+## [v0.10.73] - 2025-05-28
+
+### Fixed
+
+* Fixed building on the latest BoringSSL.
+
+### Changed
+
+* Replaced ctest2 with ctest in systest.
+
+## [v0.10.72] - 2025-04-04
+
+### Fixed
+
+* Fixed use-after-free in `Md::fetch` and `Cipher::fetch` when `properties` is `Some(...)`. In practice this use-after-free most likely resulted in OpenSSL treating the `properties` as `b""`.
+
+### Added
+
+* Support for building with AWS-LC.
+
+## [v0.10.71] - 2025-02-15
+
+### Added
+
+* Added `Cipher::rc2_cbc` and `Cipher::rc2_40_cbc`.
+
+## [v0.10.70] - 2025-02-02
+
+### Fixed
+
+* Fixed improper lifetime constraints in `ssl::select_next_proto` that allowed a use after free.
+
+### Added
+
+* Added `SslMethod::dtls_client` and `SslMethod::dtls_server`.
+
+## [v0.10.69] - 2025-01-25
+
+### Fixed
+
+* Fixed the version constraint on `openssl-macros`.
+
+### Added
+
+* Added `SslContextBuilder::load_verify_locations`.
+* Added `Hasher::squeeze_xof`.
+* Added `SslContextBuilder::set_alpn_select_callback` support for boringssl.
+
+## [v0.10.68] - 2024-10-16
+
+### Fixed
+
+* Fixed building on Rust 1.63.0 (our MSRV) with OpenSSL 3.2 or newer.
+
+## [v0.10.67] - 2024-10-15
+
+### Added
+
+* Added support for LibreSSL 4.0.x.
+* Added `argon2id`
+
+### Fixed
+
+* Fixed a case where `MdCtxRef::digest_verify_final` could leave an error on the stack.
+* Fixed a case where `RsaRef::check_key` could leave an error on the stack.
+
+### Changed
+
+* `openssl` is now a 2021 edition crate
+* Explicitly specify the MSRV in `Cargo.toml`
+
 ## [v0.10.66] - 2024-07-21
 
 ### Fixed
@@ -121,7 +330,7 @@
 * Added `CipherCtx::copy`
 
 ### Changed
-* Updated `bitflags` dependecy to the 2.x series
+* Updated `bitflags` dependency to the 2.x series
 
 ## [v0.10.56] - 2023-08-06
 
@@ -908,72 +1117,87 @@
 
 Look at the [release tags] for information about older releases.
 
-[Unreleased]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.66...master
-[v0.10.66]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.65...openssl-v0.10.66
-[v0.10.65]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.64...openssl-v0.10.65
-[v0.10.64]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.63...openssl-v0.10.64
-[v0.10.63]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.62...openssl-v0.10.63
-[v0.10.62]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.61...openssl-v0.10.62
-[v0.10.61]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.60...openssl-v0.10.61
-[v0.10.60]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.59...openssl-v0.10.60
-[v0.10.59]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.58...openssl-v0.10.59
-[v0.10.58]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.57...openssl-v0.10.58
-[v0.10.57]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.56...openssl-v0.10.57
-[v0.10.56]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.55...openssl-v0.10.56
-[v0.10.55]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.54...openssl-v0.10.55
-[v0.10.54]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.53...openssl-v0.10.54
-[v0.10.53]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.52...openssl-v0.10.53
-[v0.10.52]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.51...openssl-v0.10.52
-[v0.10.51]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.50...openssl-v0.10.51
-[v0.10.50]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.49...openssl-v0.10.50
-[v0.10.49]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.48...openssl-v0.10.49
-[v0.10.48]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.47...openssl-v0.10.48
-[v0.10.47]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.46...openssl-v0.10.47
-[v0.10.46]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.45...openssl-v0.10.46
-[v0.10.45]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.44...openssl-v0.10.45
-[v0.10.44]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.43...openssl-v0.10.44
-[v0.10.43]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.42...openssl-v0.10.43
-[v0.10.42]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.41...openssl-v0.10.42
-[v0.10.41]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.40...openssl-v0.10.41
-[v0.10.40]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.39...openssl-v0.10.40
-[v0.10.39]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.38...openssl-v0.10.39
-[v0.10.38]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.37...openssl-v0.10.38
-[v0.10.37]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.36...openssl-v0.10.37
-[v0.10.36]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.35...openssl-v0.10.36
-[v0.10.35]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.34...openssl-v0.10.35
-[v0.10.34]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.33...openssl-v0.10.34
-[v0.10.33]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.32...openssl-v0.10.33
-[v0.10.32]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.31...openssl-v0.10.32
-[v0.10.31]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.30...openssl-v0.10.31
-[v0.10.30]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.29...openssl-v0.10.30
-[v0.10.29]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.28...openssl-v0.10.29
-[v0.10.28]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.27...openssl-v0.10.28
-[v0.10.27]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.26...openssl-v0.10.27
-[v0.10.26]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.25...openssl-v0.10.26
-[v0.10.25]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.24...openssl-v0.10.25
-[v0.10.24]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.23...openssl-v0.10.24
-[v0.10.23]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.22...openssl-v0.10.23
-[v0.10.22]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.21...openssl-v0.10.22
-[v0.10.21]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.20...openssl-v0.10.21
-[v0.10.20]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.19...openssl-v0.10.20
-[v0.10.19]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.18...openssl-v0.10.19
-[v0.10.18]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.17...openssl-v0.10.18
-[v0.10.17]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.16...openssl-v0.10.17
-[v0.10.16]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.15...openssl-v0.10.16
-[v0.10.15]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.14...openssl-v0.10.15
-[v0.10.14]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.13...openssl-v0.10.14
-[v0.10.13]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.12...openssl-v0.10.13
-[v0.10.12]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.11...openssl-v0.10.12
-[v0.10.11]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.10...openssl-v0.10.11
-[v0.10.10]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.9...openssl-v0.10.10
-[v0.10.9]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.8...openssl-v0.10.9
-[v0.10.8]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.7...openssl-v0.10.8
-[v0.10.7]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.6...openssl-v0.10.7
-[v0.10.6]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.5...openssl-v0.10.6
-[v0.10.5]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.4...openssl-v0.10.5
-[v0.10.4]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.3...openssl-v0.10.4
-[v0.10.3]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.2...openssl-v0.10.3
-[v0.10.2]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.1...openssl-v0.10.2
-[v0.10.1]: https://github.com/sfackler/rust-openssl/compare/openssl-v0.10.0...openssl-v0.10.1
-[v0.10.0]: https://github.com/sfackler/rust-openssl/compare/v0.9.23...openssl-v0.10.0
-[release tags]: https://github.com/sfackler/rust-openssl/releases
+[Unreleased]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.81...master
+[v0.10.81]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.80...openssl-v0.10.81
+[v0.10.80]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.79...openssl-v0.10.80
+[v0.10.79]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.78...openssl-v0.10.79
+[v0.10.78]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.77...openssl-v0.10.78
+[v0.10.77]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.76...openssl-v0.10.77
+[v0.10.76]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.75...openssl-v0.10.76
+[v0.10.75]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.74...openssl-v0.10.75
+[v0.10.74]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.73...openssl-v0.10.74
+[v0.10.73]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.72...openssl-v0.10.73
+[v0.10.72]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.71...openssl-v0.10.72
+[v0.10.71]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.70...openssl-v0.10.71
+[v0.10.70]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.69...openssl-v0.10.70
+[v0.10.69]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.68...openssl-v0.10.69
+[v0.10.68]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.67...openssl-v0.10.68
+[v0.10.67]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.66...openssl-v0.10.67
+[v0.10.66]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.65...openssl-v0.10.66
+[v0.10.65]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.64...openssl-v0.10.65
+[v0.10.64]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.63...openssl-v0.10.64
+[v0.10.63]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.62...openssl-v0.10.63
+[v0.10.62]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.61...openssl-v0.10.62
+[v0.10.61]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.60...openssl-v0.10.61
+[v0.10.60]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.59...openssl-v0.10.60
+[v0.10.59]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.58...openssl-v0.10.59
+[v0.10.58]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.57...openssl-v0.10.58
+[v0.10.57]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.56...openssl-v0.10.57
+[v0.10.56]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.55...openssl-v0.10.56
+[v0.10.55]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.54...openssl-v0.10.55
+[v0.10.54]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.53...openssl-v0.10.54
+[v0.10.53]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.52...openssl-v0.10.53
+[v0.10.52]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.51...openssl-v0.10.52
+[v0.10.51]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.50...openssl-v0.10.51
+[v0.10.50]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.49...openssl-v0.10.50
+[v0.10.49]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.48...openssl-v0.10.49
+[v0.10.48]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.47...openssl-v0.10.48
+[v0.10.47]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.46...openssl-v0.10.47
+[v0.10.46]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.45...openssl-v0.10.46
+[v0.10.45]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.44...openssl-v0.10.45
+[v0.10.44]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.43...openssl-v0.10.44
+[v0.10.43]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.42...openssl-v0.10.43
+[v0.10.42]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.41...openssl-v0.10.42
+[v0.10.41]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.40...openssl-v0.10.41
+[v0.10.40]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.39...openssl-v0.10.40
+[v0.10.39]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.38...openssl-v0.10.39
+[v0.10.38]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.37...openssl-v0.10.38
+[v0.10.37]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.36...openssl-v0.10.37
+[v0.10.36]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.35...openssl-v0.10.36
+[v0.10.35]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.34...openssl-v0.10.35
+[v0.10.34]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.33...openssl-v0.10.34
+[v0.10.33]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.32...openssl-v0.10.33
+[v0.10.32]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.31...openssl-v0.10.32
+[v0.10.31]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.30...openssl-v0.10.31
+[v0.10.30]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.29...openssl-v0.10.30
+[v0.10.29]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.28...openssl-v0.10.29
+[v0.10.28]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.27...openssl-v0.10.28
+[v0.10.27]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.26...openssl-v0.10.27
+[v0.10.26]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.25...openssl-v0.10.26
+[v0.10.25]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.24...openssl-v0.10.25
+[v0.10.24]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.23...openssl-v0.10.24
+[v0.10.23]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.22...openssl-v0.10.23
+[v0.10.22]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.21...openssl-v0.10.22
+[v0.10.21]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.20...openssl-v0.10.21
+[v0.10.20]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.19...openssl-v0.10.20
+[v0.10.19]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.18...openssl-v0.10.19
+[v0.10.18]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.17...openssl-v0.10.18
+[v0.10.17]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.16...openssl-v0.10.17
+[v0.10.16]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.15...openssl-v0.10.16
+[v0.10.15]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.14...openssl-v0.10.15
+[v0.10.14]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.13...openssl-v0.10.14
+[v0.10.13]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.12...openssl-v0.10.13
+[v0.10.12]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.11...openssl-v0.10.12
+[v0.10.11]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.10...openssl-v0.10.11
+[v0.10.10]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.9...openssl-v0.10.10
+[v0.10.9]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.8...openssl-v0.10.9
+[v0.10.8]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.7...openssl-v0.10.8
+[v0.10.7]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.6...openssl-v0.10.7
+[v0.10.6]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.5...openssl-v0.10.6
+[v0.10.5]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.4...openssl-v0.10.5
+[v0.10.4]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.3...openssl-v0.10.4
+[v0.10.3]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.2...openssl-v0.10.3
+[v0.10.2]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.1...openssl-v0.10.2
+[v0.10.1]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.0...openssl-v0.10.1
+[v0.10.0]: https://github.com/rust-openssl/rust-openssl/compare/v0.9.23...openssl-v0.10.0
+[release tags]: https://github.com/rust-openssl/rust-openssl/releases

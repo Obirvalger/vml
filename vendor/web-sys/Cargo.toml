@@ -10,38 +10,38 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
-rust-version = "1.57"
+edition = "2021"
+rust-version = "1.77"
 name = "web-sys"
-version = "0.3.69"
+version = "0.3.104"
 authors = ["The wasm-bindgen Developers"]
+build = false
+include = [
+    "/LICENSE-*",
+    "/src",
+]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = """
 Bindings for all Web APIs, a procedurally generated crate from WebIDL
 """
-homepage = "https://rustwasm.github.io/wasm-bindgen/web-sys/index.html"
-documentation = "https://rustwasm.github.io/wasm-bindgen/api/web_sys/"
-readme = "./README.md"
+homepage = "https://wasm-bindgen.github.io/wasm-bindgen/web-sys/index.html"
+documentation = "https://wasm-bindgen.github.io/wasm-bindgen/api/web_sys/"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/web-sys"
-resolver = "2"
+repository = "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys"
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg=web_sys_unstable_apis"]
 
-[lib]
-test = false
-doctest = false
-
-[dependencies.js-sys]
-version = "0.3.69"
-
-[dependencies.wasm-bindgen]
-version = "0.2.92"
-
 [features]
 AbortController = []
 AbortSignal = ["EventTarget"]
+AbstractRange = []
 AddEventListenerOptions = []
 AesCbcParams = []
 AesCtrParams = []
@@ -96,7 +96,7 @@ AudioContextState = []
 AudioData = []
 AudioDataCopyToOptions = []
 AudioDataInit = []
-AudioDecoder = []
+AudioDecoder = ["EventTarget"]
 AudioDecoderConfig = []
 AudioDecoderInit = []
 AudioDecoderSupport = []
@@ -104,7 +104,7 @@ AudioDestinationNode = [
     "AudioNode",
     "EventTarget",
 ]
-AudioEncoder = []
+AudioEncoder = ["EventTarget"]
 AudioEncoderConfig = []
 AudioEncoderInit = []
 AudioEncoderSupport = []
@@ -137,10 +137,22 @@ AudioWorkletNode = [
 AudioWorkletNodeOptions = []
 AudioWorkletProcessor = []
 AuthenticationExtensionsClientInputs = []
+AuthenticationExtensionsClientInputsJson = []
 AuthenticationExtensionsClientOutputs = []
+AuthenticationExtensionsClientOutputsJson = []
+AuthenticationExtensionsDevicePublicKeyInputs = []
+AuthenticationExtensionsDevicePublicKeyOutputs = []
+AuthenticationExtensionsLargeBlobInputs = []
+AuthenticationExtensionsLargeBlobOutputs = []
+AuthenticationExtensionsPrfInputs = []
+AuthenticationExtensionsPrfOutputs = []
+AuthenticationExtensionsPrfValues = []
+AuthenticationResponseJson = []
 AuthenticatorAssertionResponse = ["AuthenticatorResponse"]
+AuthenticatorAssertionResponseJson = []
 AuthenticatorAttachment = []
 AuthenticatorAttestationResponse = ["AuthenticatorResponse"]
+AuthenticatorAttestationResponseJson = []
 AuthenticatorResponse = []
 AuthenticatorSelectionCriteria = []
 AuthenticatorTransport = []
@@ -163,6 +175,7 @@ BiquadFilterNode = [
 ]
 BiquadFilterOptions = []
 BiquadFilterType = []
+BitrateMode = []
 Blob = []
 BlobEvent = ["Event"]
 BlobEventInit = []
@@ -257,11 +270,14 @@ ClipboardEventInit = []
 ClipboardItem = []
 ClipboardItemOptions = []
 ClipboardPermissionDescriptor = []
+ClipboardUnsanitizedFormats = []
 CloseEvent = ["Event"]
 CloseEventInit = []
 CodecState = []
 CollectedClientData = []
 ColorSpaceConversion = []
+CommandEvent = ["Event"]
+CommandEventInit = []
 Comment = [
     "CharacterData",
     "EventTarget",
@@ -307,10 +323,20 @@ ConvolverNode = [
     "EventTarget",
 ]
 ConvolverOptions = []
+CookieChangeEvent = ["Event"]
+CookieChangeEventInit = []
+CookieInit = []
+CookieListItem = []
+CookieSameSite = []
+CookieStore = ["EventTarget"]
+CookieStoreDeleteOptions = []
+CookieStoreGetOptions = []
+CookieStoreManager = []
 Coordinates = []
 CountQueuingStrategy = []
 Credential = []
 CredentialCreationOptions = []
+CredentialPropertiesOutput = []
 CredentialRequestOptions = []
 CredentialsContainer = []
 Crypto = []
@@ -355,6 +381,7 @@ CssTransition = [
     "Animation",
     "EventTarget",
 ]
+CssViewTransitionRule = ["CssRule"]
 CustomElementRegistry = []
 CustomEvent = ["Event"]
 CustomEventInit = []
@@ -435,6 +462,7 @@ DomStringList = []
 DomStringMap = []
 DomTokenList = []
 DomWindowResizeEventDetail = []
+DoubleRange = []
 DragEvent = [
     "Event",
     "MouseEvent",
@@ -488,6 +516,11 @@ ExtSRgb = []
 ExtShaderTextureLod = []
 ExtTextureFilterAnisotropic = []
 ExtTextureNorm16 = []
+ExtendableCookieChangeEvent = [
+    "Event",
+    "ExtendableEvent",
+]
+ExtendableCookieChangeEventInit = []
 ExtendableEvent = ["Event"]
 ExtendableEventInit = []
 ExtendableMessageEvent = [
@@ -536,7 +569,10 @@ FileSystemPermissionMode = []
 FileSystemReadWriteOptions = []
 FileSystemRemoveOptions = []
 FileSystemSyncAccessHandle = []
+FileSystemSyncAccessHandleMode = []
+FileSystemSyncAccessHandleOptions = []
 FileSystemWritableFileStream = ["WritableStream"]
+FillLightMode = []
 FillMode = []
 FlashClassification = []
 FlowControlType = []
@@ -545,6 +581,7 @@ FocusEvent = [
     "UiEvent",
 ]
 FocusEventInit = []
+FocusOptions = []
 FontData = []
 FontFace = []
 FontFaceDescriptors = []
@@ -564,26 +601,26 @@ GainNode = [
 ]
 GainOptions = []
 Gamepad = []
-GamepadAxisMoveEvent = [
-    "Event",
-    "GamepadEvent",
-]
-GamepadAxisMoveEventInit = []
 GamepadButton = []
-GamepadButtonEvent = [
-    "Event",
-    "GamepadEvent",
-]
-GamepadButtonEventInit = []
+GamepadEffectParameters = []
 GamepadEvent = ["Event"]
 GamepadEventInit = []
 GamepadHand = []
 GamepadHapticActuator = []
 GamepadHapticActuatorType = []
+GamepadHapticEffectType = []
+GamepadHapticsResult = []
 GamepadMappingType = []
 GamepadPose = []
-GamepadServiceTest = []
+GamepadTouch = []
 Geolocation = []
+GeolocationCoordinates = []
+GeolocationPosition = []
+GeolocationPositionError = []
+GestureEvent = [
+    "Event",
+    "UiEvent",
+]
 GetAnimationsOptions = []
 GetRootNodeOptions = []
 GetUserMediaRequest = []
@@ -611,6 +648,8 @@ GpuBufferMapState = []
 GpuCanvasAlphaMode = []
 GpuCanvasConfiguration = []
 GpuCanvasContext = []
+GpuCanvasToneMapping = []
+GpuCanvasToneMappingMode = []
 GpuColorDict = []
 GpuColorTargetState = []
 GpuCommandBuffer = []
@@ -626,6 +665,8 @@ GpuComputePassEncoder = []
 GpuComputePassTimestampWrites = []
 GpuComputePipeline = []
 GpuComputePipelineDescriptor = []
+GpuCopyExternalImageDestInfo = []
+GpuCopyExternalImageSourceInfo = []
 GpuCullMode = []
 GpuDepthStencilState = []
 GpuDevice = ["EventTarget"]
@@ -642,11 +683,6 @@ GpuFeatureName = []
 GpuFilterMode = []
 GpuFragmentState = []
 GpuFrontFace = []
-GpuImageCopyBuffer = []
-GpuImageCopyExternalImage = []
-GpuImageCopyTexture = []
-GpuImageCopyTextureTagged = []
-GpuImageDataLayout = []
 GpuIndexFormat = []
 GpuInternalError = ["GpuError"]
 GpuLoadOp = []
@@ -698,6 +734,9 @@ GpuStorageTextureBindingLayout = []
 GpuStoreOp = []
 GpuSupportedFeatures = []
 GpuSupportedLimits = []
+GpuTexelCopyBufferInfo = []
+GpuTexelCopyBufferLayout = []
+GpuTexelCopyTextureInfo = []
 GpuTexture = []
 GpuTextureAspect = []
 GpuTextureBindingLayout = []
@@ -736,6 +775,11 @@ HidReportInfo = []
 HidReportItem = []
 HidUnitSystem = []
 HiddenPluginEventInit = []
+Highlight = []
+HighlightHitResult = []
+HighlightRegistry = []
+HighlightType = []
+HighlightsFromPointOptions = []
 History = []
 HitRegionOptions = []
 HkdfParams = []
@@ -1208,7 +1252,9 @@ IdbOpenDbRequest = [
 IdbRequest = ["EventTarget"]
 IdbRequestReadyState = []
 IdbTransaction = ["EventTarget"]
+IdbTransactionDurability = []
 IdbTransactionMode = []
+IdbTransactionOptions = []
 IdbVersionChangeEvent = ["Event"]
 IdbVersionChangeEventInit = []
 IdleDeadline = []
@@ -1232,8 +1278,9 @@ ImageDecoder = []
 ImageDecoderInit = []
 ImageEncodeOptions = []
 ImageOrientation = []
-ImageTrack = ["EventTarget"]
+ImageTrack = []
 ImageTrackList = []
+InputDeviceInfo = ["MediaDeviceInfo"]
 InputEvent = [
     "Event",
     "UiEvent",
@@ -1251,6 +1298,7 @@ IterationCompositeOperation = []
 JsonWebKey = []
 KeyAlgorithm = []
 KeyEvent = []
+KeyFrameRequestEvent = ["Event"]
 KeyIdsInitData = []
 KeyboardEvent = [
     "Event",
@@ -1262,6 +1310,7 @@ KeyframeEffect = ["AnimationEffect"]
 KeyframeEffectOptions = []
 L10nElement = []
 L10nValue = []
+LargeBlobSupport = []
 LatencyMode = []
 LifecycleCallbacks = []
 LineAlignSetting = []
@@ -1278,6 +1327,11 @@ LockManager = []
 LockManagerSnapshot = []
 LockMode = []
 LockOptions = []
+MathMlElement = [
+    "Element",
+    "EventTarget",
+    "Node",
+]
 MediaCapabilities = []
 MediaCapabilitiesInfo = []
 MediaConfiguration = []
@@ -1327,6 +1381,7 @@ MediaSession = []
 MediaSessionAction = []
 MediaSessionActionDetails = []
 MediaSessionPlaybackState = []
+MediaSettingsRange = []
 MediaSource = ["EventTarget"]
 MediaSourceEndOfStreamError = []
 MediaSourceEnum = []
@@ -1356,6 +1411,7 @@ MediaStreamTrackGeneratorInit = []
 MediaStreamTrackProcessor = []
 MediaStreamTrackProcessorInit = []
 MediaStreamTrackState = []
+MediaTrackCapabilities = []
 MediaTrackConstraintSet = []
 MediaTrackConstraints = []
 MediaTrackSettings = []
@@ -1368,6 +1424,7 @@ MessageChannel = []
 MessageEvent = ["Event"]
 MessageEventInit = []
 MessagePort = ["EventTarget"]
+MeteringMode = []
 MidiAccess = ["EventTarget"]
 MidiConnectionEvent = ["Event"]
 MidiConnectionEventInit = []
@@ -1409,9 +1466,30 @@ MutationRecord = []
 NamedNodeMap = []
 NativeOsFileReadOptions = []
 NativeOsFileWriteAtomicOptions = []
+NavigateEvent = ["Event"]
+NavigateEventInit = []
+Navigation = ["EventTarget"]
+NavigationActivation = []
+NavigationApiType = []
+NavigationCurrentEntryChangeEvent = ["Event"]
+NavigationCurrentEntryChangeEventInit = []
+NavigationDestination = []
+NavigationFocusReset = []
+NavigationHistoryBehavior = []
+NavigationHistoryEntry = ["EventTarget"]
+NavigationInterceptOptions = []
+NavigationNavigateOptions = []
+NavigationOptions = []
+NavigationReloadOptions = []
+NavigationResult = []
+NavigationScrollBehavior = []
+NavigationTransition = []
 NavigationType = []
+NavigationUpdateCurrentEntryOptions = []
 Navigator = []
 NavigatorAutomationInformation = []
+NavigatorUaBrandVersion = []
+NavigatorUaData = []
 NetworkCommandOptions = []
 NetworkInformation = ["EventTarget"]
 NetworkResultOptions = []
@@ -1494,7 +1572,9 @@ PerformanceEntry = []
 PerformanceEntryEventInit = []
 PerformanceEntryFilterOptions = []
 PerformanceMark = ["PerformanceEntry"]
+PerformanceMarkOptions = []
 PerformanceMeasure = ["PerformanceEntry"]
+PerformanceMeasureOptions = []
 PerformanceNavigation = []
 PerformanceNavigationTiming = [
     "PerformanceEntry",
@@ -1514,11 +1594,17 @@ PermissionName = []
 PermissionState = []
 PermissionStatus = ["EventTarget"]
 Permissions = []
+PhotoCapabilities = []
+PhotoSettings = []
+PictureInPictureEvent = ["Event"]
+PictureInPictureEventInit = []
+PictureInPictureWindow = ["EventTarget"]
 PlaneLayout = []
 PlaybackDirection = []
 Plugin = []
 PluginArray = []
 PluginCrashedEventInit = []
+Point2d = []
 PointerEvent = [
     "Event",
     "MouseEvent",
@@ -1565,13 +1651,18 @@ PromiseRejectionEvent = ["Event"]
 PromiseRejectionEventInit = []
 PublicKeyCredential = ["Credential"]
 PublicKeyCredentialCreationOptions = []
+PublicKeyCredentialCreationOptionsJson = []
 PublicKeyCredentialDescriptor = []
+PublicKeyCredentialDescriptorJson = []
 PublicKeyCredentialEntity = []
+PublicKeyCredentialHints = []
 PublicKeyCredentialParameters = []
 PublicKeyCredentialRequestOptions = []
+PublicKeyCredentialRequestOptionsJson = []
 PublicKeyCredentialRpEntity = []
 PublicKeyCredentialType = []
 PublicKeyCredentialUserEntity = []
+PublicKeyCredentialUserEntityJson = []
 PushEncryptionKeyName = []
 PushEvent = [
     "Event",
@@ -1591,7 +1682,7 @@ QueryOptions = []
 QueuingStrategy = []
 QueuingStrategyInit = []
 RadioNodeList = ["NodeList"]
-Range = []
+Range = ["AbstractRange"]
 RcwnPerfStats = []
 RcwnStatus = []
 ReadableByteStreamController = []
@@ -1607,11 +1698,13 @@ ReadableStreamReaderMode = []
 ReadableStreamType = []
 ReadableWritablePair = []
 RecordingState = []
+RedEyeReduction = []
 ReferrerPolicy = []
 RegisterRequest = []
 RegisterResponse = []
 RegisteredKey = []
 RegistrationOptions = []
+RegistrationResponseJson = []
 Request = []
 RequestCache = []
 RequestCredentials = []
@@ -1621,6 +1714,7 @@ RequestInit = []
 RequestMediaKeySystemAccessNotification = []
 RequestMode = []
 RequestRedirect = []
+ResidentKeyRequirement = []
 ResizeObserver = []
 ResizeObserverBoxOptions = []
 ResizeObserverEntry = []
@@ -1647,6 +1741,13 @@ RtcDataChannelInit = []
 RtcDataChannelState = []
 RtcDataChannelType = []
 RtcDegradationPreference = []
+RtcEncodedAudioFrame = []
+RtcEncodedAudioFrameMetadata = []
+RtcEncodedAudioFrameOptions = []
+RtcEncodedVideoFrame = []
+RtcEncodedVideoFrameMetadata = []
+RtcEncodedVideoFrameOptions = []
+RtcEncodedVideoFrameType = []
 RtcFecParameters = []
 RtcIceCandidate = []
 RtcIceCandidateInit = []
@@ -1687,6 +1788,8 @@ RtcRtpHeaderExtensionCapability = []
 RtcRtpHeaderExtensionParameters = []
 RtcRtpParameters = []
 RtcRtpReceiver = []
+RtcRtpScriptTransform = []
+RtcRtpScriptTransformer = ["EventTarget"]
 RtcRtpSender = []
 RtcRtpSourceEntry = []
 RtcRtpSourceEntryType = []
@@ -1707,18 +1810,30 @@ RtcStatsReportInternal = []
 RtcStatsType = []
 RtcTrackEvent = ["Event"]
 RtcTrackEventInit = []
+RtcTransformEvent = ["Event"]
 RtcTransportStats = []
 RtcdtmfSender = ["EventTarget"]
 RtcdtmfToneChangeEvent = ["Event"]
 RtcdtmfToneChangeEventInit = []
 RtcrtpContributingSourceStats = []
 RtcrtpStreamStats = []
+SFrameTransform = ["EventTarget"]
+SFrameTransformErrorEvent = ["Event"]
+SFrameTransformErrorEventInit = []
+SFrameTransformErrorEventType = []
+SFrameTransformOptions = []
+SFrameTransformRole = []
 SaveFilePickerOptions = []
 Scheduler = []
 SchedulerPostTaskOptions = []
 Scheduling = []
 Screen = ["EventTarget"]
 ScreenColorGamut = []
+ScreenDetailed = [
+    "EventTarget",
+    "Screen",
+]
+ScreenDetails = ["EventTarget"]
 ScreenLuminance = []
 ScreenOrientation = ["EventTarget"]
 ScriptProcessorNode = [
@@ -1731,6 +1846,7 @@ ScrollAreaEvent = [
 ]
 ScrollBehavior = []
 ScrollBoxObject = []
+ScrollIntoViewContainer = []
 ScrollIntoViewOptions = []
 ScrollLogicalPosition = []
 ScrollOptions = []
@@ -1775,6 +1891,7 @@ SharedWorkerGlobalScope = [
     "EventTarget",
     "WorkerGlobalScope",
 ]
+ShowPopoverOptions = []
 SignResponse = []
 SocketElement = []
 SocketOptions = []
@@ -1805,6 +1922,9 @@ SpeechSynthesisEvent = ["Event"]
 SpeechSynthesisEventInit = []
 SpeechSynthesisUtterance = ["EventTarget"]
 SpeechSynthesisVoice = []
+StartViewTransitionOptions = []
+StaticRange = ["AbstractRange"]
+StaticRangeInit = []
 StereoPannerNode = [
     "AudioNode",
     "EventTarget",
@@ -2383,6 +2503,11 @@ TextTrackList = ["EventTarget"]
 TextTrackMode = []
 TimeEvent = ["Event"]
 TimeRanges = []
+ToggleEvent = ["Event"]
+ToggleEventInit = []
+TogglePopoverOptions = []
+TokenBinding = []
+TokenBindingStatus = []
 Touch = []
 TouchEvent = [
     "Event",
@@ -2405,6 +2530,9 @@ TreeView = []
 TreeWalker = []
 U2f = []
 U2fClientData = []
+ULongRange = []
+UaDataValues = []
+UaLowEntropyJson = []
 UdpMessageEventInit = []
 UdpOptions = []
 UiEvent = ["Event"]
@@ -2452,11 +2580,12 @@ VideoColorPrimaries = []
 VideoColorSpace = []
 VideoColorSpaceInit = []
 VideoConfiguration = []
-VideoDecoder = []
+VideoDecoder = ["EventTarget"]
 VideoDecoderConfig = []
 VideoDecoderInit = []
 VideoDecoderSupport = []
-VideoEncoder = []
+VideoEncoder = ["EventTarget"]
+VideoEncoderBitrateMode = []
 VideoEncoderConfig = []
 VideoEncoderEncodeOptions = []
 VideoEncoderInit = []
@@ -2466,6 +2595,7 @@ VideoFrame = []
 VideoFrameBufferInit = []
 VideoFrameCopyToOptions = []
 VideoFrameInit = []
+VideoFrameMetadata = []
 VideoMatrixCoefficients = []
 VideoPixelFormat = []
 VideoPlaybackQuality = []
@@ -2477,7 +2607,9 @@ VideoTrack = []
 VideoTrackList = ["EventTarget"]
 VideoTransferCharacteristics = []
 ViewTransition = []
+ViewTransitionTypeSet = []
 VisibilityState = []
+VisualViewport = ["EventTarget"]
 VoidCallback = []
 VrDisplay = ["EventTarget"]
 VrDisplayCapabilities = []
@@ -2669,14 +2801,42 @@ XrWebGlLayerInit = []
 XsltProcessor = []
 console = []
 css = []
+default = ["std"]
 gpu_buffer_usage = []
 gpu_color_write = []
 gpu_map_mode = []
 gpu_shader_stage = []
 gpu_texture_usage = []
+std = [
+    "wasm-bindgen/std",
+    "js-sys/std",
+]
 
-[target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-futures]
-version = "0.4.42"
+[lib]
+name = "web_sys"
+path = "src/lib.rs"
+test = false
+doctest = false
 
-[target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-test]
-version = "0.3.42"
+[dependencies.js-sys]
+version = "=0.3.104"
+default-features = false
+
+[dependencies.wasm-bindgen]
+version = "=0.2.127"
+default-features = false
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies.futures]
+version = "0.3"
+
+[lints.clippy]
+large_enum_variant = "allow"
+new_without_default = "allow"
+overly_complex_bool_expr = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(web_sys_unstable_apis)"]

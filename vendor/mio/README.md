@@ -7,7 +7,6 @@ overhead as possible over the OS abstractions.
 [![Crates.io][crates-badge]][crates-url]
 [![MIT licensed][mit-badge]][mit-url]
 [![Build Status][actions-badge]][actions-url]
-[![Build Status][cirrus-badge]][cirrus-url]
 
 [crates-badge]: https://img.shields.io/crates/v/mio.svg
 [crates-url]: https://crates.io/crates/mio
@@ -15,13 +14,11 @@ overhead as possible over the OS abstractions.
 [mit-url]: LICENSE
 [actions-badge]: https://github.com/tokio-rs/mio/workflows/CI/badge.svg
 [actions-url]: https://github.com/tokio-rs/mio/actions?query=workflow%3ACI+branch%3Amaster
-[cirrus-badge]: https://api.cirrus-ci.com/github/tokio-rs/mio.svg
-[cirrus-url]: https://cirrus-ci.com/github/tokio-rs/mio
 
 **API documentation**
 
+* [v1](https://docs.rs/mio/^1)
 * [v0.8](https://docs.rs/mio/^0.8)
-* [v0.7](https://docs.rs/mio/^0.7)
 
 This is a low level library, if you are looking for something easier to get
 started with, see [Tokio](https://tokio.rs).
@@ -32,10 +29,10 @@ To use `mio`, first add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-mio = "0.8"
+mio = "1"
 ```
 
-Next we can start using Mio. The following is quick introduction using
+Next we can start using Mio. The following is a quick introduction using
 `TcpListener` and `TcpStream`. Note that `features = ["os-poll", "net"]` must be
 specified for this example.
 
@@ -110,7 +107,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 ## Features
 
-* Non-blocking TCP, UDP
+* Non-blocking TCP, UDP, UDS
 * I/O event queue backed by epoll, kqueue, and IOCP
 * Zero allocations at runtime
 * Platform specific extensions
@@ -134,31 +131,41 @@ Currently supported platforms:
 * Linux
 * NetBSD
 * OpenBSD
+* WASI
 * Windows
+* Wine
 * iOS
 * macOS
-
-There are potentially others. If you find that Mio works on another platform,
-submit a PR to update the list!
+* Solaris
 
 Mio can handle interfacing with each of the event systems of the aforementioned
 platforms. The details of their implementation are further discussed in the
 `Poll` type of the API documentation (see above).
+
+Mio generally supports the same versions of the above mentioned platforms as
+Rust the language (rustc) does, unless otherwise noted.
 
 The Windows implementation for polling sockets is using the [wepoll] strategy.
 This uses the Windows AFD system to access socket readiness events.
 
 [wepoll]: https://github.com/piscisaureus/wepoll
 
-### Unsupported
+## MSRV Policy
 
-* Haiku, see [issue #1472]
-* Solaris, see [issue #1152]
-* Wine, see [issue #1444]
+The MSRV (Minimum Supported Rust Version) is fixed for a given minor (1.x)
+version. However it can be increased when bumping minor versions, i.e. going
+from 1.0 to 1.1 allows us to increase the MSRV. Users unable to increase their
+Rust version can use an older minor version instead. Below is a list of Mio versions
+and their MSRV:
 
-[issue #1472]: https://github.com/tokio-rs/mio/issues/1472
-[issue #1152]: https://github.com/tokio-rs/mio/issues/1152
-[issue #1444]: https://github.com/tokio-rs/mio/issues/1444
+ * v0.8: Rust 1.46.
+ * v1.0: Rust 1.70.
+ * v1.1: Rust 1.71.
+ * v1.2: Rust 1.71.
+
+Note however that Mio also has dependencies, which might have different MSRV
+policies. We try to stick to the above policy when updating dependencies, but
+this is not always possible.
 
 ## Unsupported flags
 

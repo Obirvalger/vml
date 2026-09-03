@@ -91,7 +91,7 @@ use {
     regex_automata::util::pool::Pool,
 };
 
-use crate::{default_types::DEFAULT_TYPES, pathutil::file_name, Error, Match};
+use crate::{Error, Match, default_types::DEFAULT_TYPES, pathutil::file_name};
 
 /// Glob represents a single glob in a set of file type definitions.
 ///
@@ -231,7 +231,9 @@ impl Types {
             has_selected: false,
             glob_to_selection: vec![],
             set: GlobSetBuilder::new().build().unwrap(),
-            matches: Arc::new(Pool::new(|| vec![])),
+            matches: Arc::new(Pool::with_available_parallelism_capacity(
+                || vec![],
+            )),
         }
     }
 
@@ -357,7 +359,9 @@ impl TypesBuilder {
             has_selected,
             glob_to_selection,
             set,
-            matches: Arc::new(Pool::new(|| vec![])),
+            matches: Arc::new(Pool::with_available_parallelism_capacity(
+                || vec![],
+            )),
         })
     }
 

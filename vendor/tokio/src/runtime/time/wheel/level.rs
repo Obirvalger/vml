@@ -1,4 +1,5 @@
-use crate::runtime::time::{EntryList, TimerHandle, TimerShared};
+use crate::runtime::time::{TimerHandle, TimerShared};
+use crate::util::linked_list::LinkedList;
 
 use std::{array, fmt, ptr::NonNull};
 
@@ -16,7 +17,7 @@ pub(crate) struct Level {
     occupied: u64,
 
     /// Slots. We access these via the EntryInner `current_list` as well, so this needs to be an `UnsafeCell`.
-    slot: [EntryList; LEVEL_MULT],
+    slot: [LinkedList<TimerShared>; LEVEL_MULT],
 }
 
 /// Indicates when a slot must be processed next.
@@ -42,7 +43,7 @@ impl Level {
         Level {
             level,
             occupied: 0,
-            slot: array::from_fn(|_| EntryList::default()),
+            slot: array::from_fn(|_| LinkedList::default()),
         }
     }
 
@@ -120,7 +121,7 @@ impl Level {
     }
 
     pub(crate) unsafe fn add_entry(&mut self, item: TimerHandle) {
-        let slot = slot_for(item.cached_when(), self.level);
+        let slot = slot_for(unsafe { item.registered_when() }, self.level);
 
         self.slot[slot].push_front(item);
 
@@ -128,7 +129,7 @@ impl Level {
     }
 
     pub(crate) unsafe fn remove_entry(&mut self, item: NonNull<TimerShared>) {
-        let slot = slot_for(unsafe { item.as_ref().cached_when() }, self.level);
+        let slot = slot_for(unsafe { item.as_ref().registered_when() }, self.level);
 
         unsafe { self.slot[slot].remove(item) };
         if self.slot[slot].is_empty() {
@@ -140,7 +141,7 @@ impl Level {
         }
     }
 
-    pub(crate) fn take_slot(&mut self, slot: usize) -> EntryList {
+    pub(crate) fn take_slot(&mut self, slot: usize) -> LinkedList<TimerShared> {
         self.occupied &= !occupied_bit(slot);
 
         std::mem::take(&mut self.slot[slot])

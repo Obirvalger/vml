@@ -28,7 +28,7 @@ pub struct CipherSuiteCommon {
     ///
     /// This is to be set on the assumption that messages are maximally sized --
     /// each is 2<sup>14</sup> bytes. It **does not** consider confidentiality limits for
-    /// QUIC connections - see the [`quic::KeyBuilder.confidentiality_limit`] field for
+    /// QUIC connections - see the [`quic::PacketKey::confidentiality_limit`] field for
     /// this context.
     ///
     /// For AES-GCM implementations, this should be set to 2<sup>24</sup> to limit attack
@@ -43,6 +43,7 @@ pub struct CipherSuiteCommon {
     /// ```
     /// [AEBounds]: https://eprint.iacr.org/2024/051.pdf
     /// [draft-irtf-aead-limits-08]: https://www.ietf.org/archive/id/draft-irtf-cfrg-aead-limits-08.html#section-5.1.1
+    /// [`quic::PacketKey::confidentiality_limit`]: crate::quic::PacketKey::confidentiality_limit
     ///
     /// For chacha20-poly1305 implementations, this should be set to `u64::MAX`:
     /// see <https://www.ietf.org/archive/id/draft-irtf-cfrg-aead-limits-08.html#section-5.2.1>
@@ -91,7 +92,7 @@ impl SupportedCipherSuite {
     }
 
     /// Return the inner `Tls13CipherSuite` for this suite, if it is a TLS1.3 suite.
-    pub fn tls13(&self) -> Option<&'static Tls13CipherSuite> {
+    pub const fn tls13(&self) -> Option<&'static Tls13CipherSuite> {
         match self {
             #[cfg(feature = "tls12")]
             Self::Tls12(_) => None,
@@ -240,26 +241,33 @@ pub enum ConnectionTrafficSecrets {
     },
 }
 
-test_for_each_provider! {
-    use provider::tls13::*;
+#[cfg(test)]
+#[macro_rules_attribute::apply(test_for_each_provider)]
+mod tests {
     use std::println;
+
+    use super::provider::tls13::*;
 
     #[test]
     fn test_scs_is_debug() {
-        println!("{:?}", provider::ALL_CIPHER_SUITES);
+        println!("{:?}", super::provider::ALL_CIPHER_SUITES);
     }
 
     #[test]
     fn test_can_resume_to() {
-        assert!(TLS13_AES_128_GCM_SHA256
-            .tls13()
-            .unwrap()
-            .can_resume_from(TLS13_CHACHA20_POLY1305_SHA256_INTERNAL)
-            .is_some());
-        assert!(TLS13_AES_256_GCM_SHA384
-            .tls13()
-            .unwrap()
-            .can_resume_from(TLS13_CHACHA20_POLY1305_SHA256_INTERNAL)
-            .is_none());
+        assert!(
+            TLS13_AES_128_GCM_SHA256
+                .tls13()
+                .unwrap()
+                .can_resume_from(TLS13_CHACHA20_POLY1305_SHA256_INTERNAL)
+                .is_some()
+        );
+        assert!(
+            TLS13_AES_256_GCM_SHA384
+                .tls13()
+                .unwrap()
+                .can_resume_from(TLS13_CHACHA20_POLY1305_SHA256_INTERNAL)
+                .is_none()
+        );
     }
 }

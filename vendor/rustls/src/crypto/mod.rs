@@ -1,27 +1,25 @@
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-#[cfg(not(feature = "std"))]
-use once_cell::race::OnceBox;
-#[cfg(feature = "std")]
-use once_cell::sync::OnceCell;
 use pki_types::PrivateKeyDer;
 use zeroize::Zeroize;
 
-use crate::sign::SigningKey;
-pub use crate::webpki::{
-    verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms,
-};
 #[cfg(all(doc, feature = "tls12"))]
 use crate::Tls12CipherSuite;
+use crate::msgs::ffdhe_groups::FfdheGroup;
+use crate::sign::SigningKey;
+use crate::sync::Arc;
+pub use crate::webpki::{
+    WebPkiSupportedAlgorithms, verify_tls12_signature, verify_tls13_signature,
+    verify_tls13_signature_with_raw_key,
+};
 #[cfg(doc)]
 use crate::{
-    client, crypto, server, sign, ClientConfig, ConfigBuilder, ServerConfig, SupportedCipherSuite,
-    Tls13CipherSuite,
+    ClientConfig, ConfigBuilder, ServerConfig, SupportedCipherSuite, Tls13CipherSuite, client,
+    crypto, server, sign,
 };
-use crate::{suites, Error, NamedGroup, ProtocolVersion, SupportedProtocolVersion};
+use crate::{Error, NamedGroup, ProtocolVersion, SupportedProtocolVersion, suites};
 
 /// *ring* based CryptoProvider.
 #[cfg(feature = "ring")]
@@ -63,7 +61,7 @@ pub use crate::suites::CipherSuiteCommon;
 /// This crate comes with two built-in options, provided as
 /// `CryptoProvider` structures:
 ///
-/// - [`crypto::aws_lc_rs::default_provider`]: (behind the `aws_lc_rs` feature,
+/// - [`crypto::aws_lc_rs::default_provider`]: (behind the `aws_lc_rs` crate feature,
 ///   which is enabled by default).  This provider uses the [aws-lc-rs](https://github.com/aws/aws-lc-rs)
 ///   crate.  The `fips` crate feature makes this option use FIPS140-3-approved cryptography.
 /// - [`crypto::ring::default_provider`]: (behind the `ring` crate feature, which
@@ -90,7 +88,8 @@ pub use crate::suites::CipherSuiteCommon;
 /// - _libraries_ should use [`ClientConfig::builder()`]/[`ServerConfig::builder()`]
 ///   or otherwise rely on the [`CryptoProvider::get_default()`] provider.
 /// - _applications_ should call [`CryptoProvider::install_default()`] early
-///   in their `fn main()`.
+///   in their `fn main()`. If _applications_ uses a custom provider based on the one built-in,
+///   they can activate the `custom-provider` feature to ensure its usage.
 ///
 /// # Using a specific `CryptoProvider`
 ///
@@ -105,19 +104,23 @@ pub use crate::suites::CipherSuiteCommon;
 /// - [`client::WebPkiServerVerifier::builder_with_provider()`]
 /// - [`server::WebPkiClientVerifier::builder_with_provider()`]
 ///
+/// If you install a custom provider and want to avoid any accidental use of a built-in provider, the feature
+/// `custom-provider` can be activated to ensure your custom provider is used everywhere
+/// and not a built-in one. This will disable any implicit use of a built-in provider.
+///
 /// # Making a custom `CryptoProvider`
 ///
-/// Your goal will be to populate a [`crypto::CryptoProvider`] struct instance.
+/// Your goal will be to populate an instance of this `CryptoProvider` struct.
 ///
 /// ## Which elements are required?
 ///
-/// There is no requirement that the individual elements (`SupportedCipherSuite`, `SupportedKxGroup`,
-/// `SigningKey`, etc.) come from the same crate.  It is allowed and expected that uninteresting
+/// There is no requirement that the individual elements ([`SupportedCipherSuite`], [`SupportedKxGroup`],
+/// [`SigningKey`], etc.) come from the same crate.  It is allowed and expected that uninteresting
 /// elements would be delegated back to one of the default providers (statically) or a parent
 /// provider (dynamically).
 ///
 /// For example, if we want to make a provider that just overrides key loading in the config builder
-/// API ([`ConfigBuilder::with_single_cert`] etc.), it might look like this:
+/// API (with [`ConfigBuilder::with_single_cert`], etc.), it might look like this:
 ///
 /// ```
 /// # #[cfg(feature = "aws_lc_rs")] {
@@ -157,8 +160,8 @@ pub use crate::suites::CipherSuiteCommon;
 ///
 /// # Example code
 ///
-/// See [provider-example/] for a full client and server example that uses
-/// cryptography from the [rust-crypto] and [dalek-cryptography] projects.
+/// See custom [`provider-example/`] for a full client and server example that uses
+/// cryptography from the [`RustCrypto`] and [`dalek-cryptography`] projects.
 ///
 /// ```shell
 /// $ cargo run --example client | head -3
@@ -168,9 +171,9 @@ pub use crate::suites::CipherSuiteCommon;
 /// Content-Length: 19899
 /// ```
 ///
-/// [provider-example/]: https://github.com/rustls/rustls/tree/main/provider-example/
-/// [rust-crypto]: https://github.com/rustcrypto
-/// [dalek-cryptography]: https://github.com/dalek-cryptography
+/// [`provider-example/`]: https://github.com/rustls/rustls/tree/main/provider-example/
+/// [`RustCrypto`]: https://github.com/RustCrypto
+/// [`dalek-cryptography`]: https://github.com/dalek-cryptography
 ///
 /// # FIPS-approved cryptography
 /// The `fips` crate feature enables use of the `aws-lc-rs` crate in FIPS mode.
@@ -209,7 +212,7 @@ pub struct CryptoProvider {
     /// Source of cryptographically secure random numbers.
     pub secure_random: &'static dyn SecureRandom,
 
-    /// Provider for loading private [SigningKey]s from [PrivateKeyDer].
+    /// Provider for loading private [`SigningKey`]s from [`PrivateKeyDer`].
     pub key_provider: &'static dyn KeyProvider,
 }
 
@@ -221,28 +224,15 @@ impl CryptoProvider {
     /// Call this early in your process to configure which provider is used for
     /// the provider.  The configuration should happen before any use of
     /// [`ClientConfig::builder()`] or [`ServerConfig::builder()`].
-    #[cfg(feature = "std")]
     pub fn install_default(self) -> Result<(), Arc<Self>> {
-        PROCESS_DEFAULT_PROVIDER.set(Arc::new(self))
-    }
-
-    /// Sets this `CryptoProvider` as the default for this process.
-    ///
-    /// This can be called successfully at most once in any process execution.
-    ///
-    /// Call this early in your process to configure which provider is used for
-    /// the provider.  The configuration should happen before any use of
-    /// [`ClientConfig::builder()`] or [`ServerConfig::builder()`].
-    #[cfg(not(feature = "std"))]
-    pub fn install_default(self) -> Result<(), Box<Arc<Self>>> {
-        PROCESS_DEFAULT_PROVIDER.set(Box::new(Arc::new(self)))
+        static_default::install_default(self)
     }
 
     /// Returns the default `CryptoProvider` for this process.
     ///
     /// This will be `None` if no default has been set yet.
     pub fn get_default() -> Option<&'static Arc<Self>> {
-        PROCESS_DEFAULT_PROVIDER.get()
+        static_default::get_default()
     }
 
     /// An internal function that:
@@ -256,7 +246,11 @@ impl CryptoProvider {
         }
 
         let provider = Self::from_crate_features()
-            .expect("no process-level CryptoProvider available -- call CryptoProvider::install_default() before this point");
+            .expect(r###"
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            "###);
         // Ignore the error resulting from us losing a race, and accept the outcome.
         let _ = provider.install_default();
         Self::get_default().unwrap()
@@ -265,15 +259,24 @@ impl CryptoProvider {
     /// Returns a provider named unambiguously by rustls crate features.
     ///
     /// This function returns `None` if the crate features are ambiguous (ie, specify two
-    /// providers), or specify no providers.  In both cases the application should
-    /// explicitly specify the provider to use with [`CryptoProvider::install_default`].
+    /// providers), or specify no providers, or the feature `custom-provider` is activated.
+    /// In all cases the application should explicitly specify the provider to use
+    /// with [`CryptoProvider::install_default`].
     fn from_crate_features() -> Option<Self> {
-        #[cfg(all(feature = "ring", not(feature = "aws_lc_rs")))]
+        #[cfg(all(
+            feature = "ring",
+            not(feature = "aws_lc_rs"),
+            not(feature = "custom-provider")
+        ))]
         {
             return Some(ring::default_provider());
         }
 
-        #[cfg(all(feature = "aws_lc_rs", not(feature = "ring")))]
+        #[cfg(all(
+            feature = "aws_lc_rs",
+            not(feature = "ring"),
+            not(feature = "custom-provider")
+        ))]
         {
             return Some(aws_lc_rs::default_provider());
         }
@@ -304,11 +307,6 @@ impl CryptoProvider {
     }
 }
 
-#[cfg(feature = "std")]
-static PROCESS_DEFAULT_PROVIDER: OnceCell<Arc<CryptoProvider>> = OnceCell::new();
-#[cfg(not(feature = "std"))]
-static PROCESS_DEFAULT_PROVIDER: OnceBox<Arc<CryptoProvider>> = OnceBox::new();
-
 /// A source of cryptographically secure randomness.
 pub trait SecureRandom: Send + Sync + Debug {
     /// Fill the given buffer with random bytes.
@@ -329,7 +327,7 @@ pub trait SecureRandom: Send + Sync + Debug {
     }
 }
 
-/// A mechanism for loading private [SigningKey]s from [PrivateKeyDer].
+/// A mechanism for loading private [`SigningKey`]s from [`PrivateKeyDer`].
 ///
 /// This trait is intended to be used with private key material that is sourced from DER,
 /// such as a private-key that may be present on-disk. It is not intended to be used with
@@ -397,6 +395,21 @@ pub trait SupportedKxGroup: Send + Sync + Debug {
         })
     }
 
+    /// FFDHE group the `SupportedKxGroup` operates in.
+    ///
+    /// Return `None` if this group is not a FFDHE one.
+    ///
+    /// The default implementation calls `FfdheGroup::from_named_group`: this function
+    /// is extremely linker-unfriendly so it is recommended all key exchange implementers
+    /// provide this function.
+    ///
+    /// `rustls::ffdhe_groups` contains suitable values to return from this,
+    /// for example [`rustls::ffdhe_groups::FFDHE2048`][crate::ffdhe_groups::FFDHE2048].
+    fn ffdhe_group(&self) -> Option<FfdheGroup<'static>> {
+        #[allow(deprecated)]
+        FfdheGroup::from_named_group(self.name())
+    }
+
     /// Named group the SupportedKxGroup operates in.
     ///
     /// If the `NamedGroup` enum does not have a name for the algorithm you are implementing,
@@ -406,6 +419,13 @@ pub trait SupportedKxGroup: Send + Sync + Debug {
     /// Return `true` if this is backed by a FIPS-approved implementation.
     fn fips(&self) -> bool {
         false
+    }
+
+    /// Return `true` if this should be offered/selected with the given version.
+    ///
+    /// The default implementation returns true for all versions.
+    fn usable_for_version(&self, _version: ProtocolVersion) -> bool {
+        true
     }
 }
 
@@ -468,6 +488,87 @@ pub trait ActiveKeyExchange: Send + Sync {
         Ok(complete_res)
     }
 
+    /// For hybrid key exchanges, returns the [`NamedGroup`] and key share
+    /// for the classical half of this key exchange.
+    ///
+    /// There is no requirement for a hybrid scheme (or any other!) to implement
+    /// `hybrid_component()`. It only enables an optimization; described below.
+    ///
+    /// "Hybrid" means a key exchange algorithm which is constructed from two
+    /// (or more) independent component algorithms. Usually one is post-quantum-secure,
+    /// and the other is "classical".  See
+    /// <https://datatracker.ietf.org/doc/draft-ietf-tls-hybrid-design/11/>
+    ///
+    /// # Background
+    /// Rustls always sends a presumptive key share in its `ClientHello`, using
+    /// (absent any other information) the first item in [`CryptoProvider::kx_groups`].
+    /// If the server accepts the client's selection, it can complete the handshake
+    /// using that key share.  If not, the server sends a `HelloRetryRequest` instructing
+    /// the client to send a different key share instead.
+    ///
+    /// This request costs an extra round trip, and wastes the key exchange computation
+    /// (in [`SupportedKxGroup::start()`]) the client already did.  We would
+    /// like to avoid those wastes if possible.
+    ///
+    /// It is early days for post-quantum-secure hybrid key exchange deployment.
+    /// This means (commonly) continuing to offer both the hybrid and classical
+    /// key exchanges, so the handshake can be completed without a `HelloRetryRequest`
+    /// for servers that support the offered hybrid or classical schemes.
+    ///
+    /// Implementing `hybrid_component()` enables two optimizations:
+    ///
+    /// 1. Sending both the hybrid and classical key shares in the `ClientHello`.
+    ///
+    /// 2. Performing the classical key exchange setup only once.  This is important
+    ///    because the classical key exchange setup is relatively expensive.
+    ///    This optimization is permitted and described in
+    ///    <https://www.ietf.org/archive/id/draft-ietf-tls-hybrid-design-11.html#section-3.2>
+    ///
+    /// Both of these only happen if the classical algorithm appears separately in
+    /// the client's [`CryptoProvider::kx_groups`], and if the hybrid algorithm appears
+    /// first in that list.
+    ///
+    /// # How it works
+    /// This function is only called by rustls for clients.  It is called when
+    /// constructing the initial `ClientHello`.  rustls follows these steps:
+    ///
+    /// 1. If the return value is `None`, nothing further happens.
+    /// 2. If the given [`NamedGroup`] does not appear in
+    ///    [`CryptoProvider::kx_groups`], nothing further happens.
+    /// 3. The given key share is added to the `ClientHello`, after the hybrid entry.
+    ///
+    /// Then, one of three things may happen when the server replies to the `ClientHello`:
+    ///
+    /// 1. The server sends a `HelloRetryRequest`.  Everything is thrown away and
+    ///    we start again.
+    /// 2. The server agrees to our hybrid key exchange: rustls calls
+    ///    [`ActiveKeyExchange::complete()`] consuming `self`.
+    /// 3. The server agrees to our classical key exchange: rustls calls
+    ///    [`ActiveKeyExchange::complete_hybrid_component()`] which
+    ///    discards the hybrid key data, and completes just the classical key exchange.
+    fn hybrid_component(&self) -> Option<(NamedGroup, &[u8])> {
+        None
+    }
+
+    /// Completes the classical component of the key exchange, given the peer's public key.
+    ///
+    /// This is only called if `hybrid_component` returns `Some(_)`.
+    ///
+    /// This method must return an error if `peer_pub_key` is invalid: either
+    /// mis-encoded, or an invalid public key (such as, but not limited to, being
+    /// in a small order subgroup).
+    ///
+    /// The shared secret is returned as a [`SharedSecret`] which can be constructed
+    /// from a `&[u8]`.
+    ///
+    /// See the documentation on [`Self::hybrid_component()`] for explanation.
+    fn complete_hybrid_component(
+        self: Box<Self>,
+        _peer_pub_key: &[u8],
+    ) -> Result<SharedSecret, Error> {
+        unreachable!("only called if `hybrid_component()` implemented")
+    }
+
     /// Return the public key being used.
     ///
     /// For ECDHE, the encoding required is defined in
@@ -476,6 +577,21 @@ pub trait ActiveKeyExchange: Send + Sync {
     /// For FFDHE, the encoding required is defined in
     /// [RFC8446 section 4.2.8.1](https://www.rfc-editor.org/rfc/rfc8446#section-4.2.8.1).
     fn pub_key(&self) -> &[u8];
+
+    /// FFDHE group the `ActiveKeyExchange` is operating in.
+    ///
+    /// Return `None` if this group is not a FFDHE one.
+    ///
+    /// The default implementation calls `FfdheGroup::from_named_group`: this function
+    /// is extremely linker-unfriendly so it is recommended all key exchange implementers
+    /// provide this function.
+    ///
+    /// `rustls::ffdhe_groups` contains suitable values to return from this,
+    /// for example [`rustls::ffdhe_groups::FFDHE2048`][crate::ffdhe_groups::FFDHE2048].
+    fn ffdhe_group(&self) -> Option<FfdheGroup<'static>> {
+        #[allow(deprecated)]
+        FfdheGroup::from_named_group(self.group())
+    }
 
     /// Return the group being used.
     fn group(&self) -> NamedGroup;
@@ -493,7 +609,7 @@ pub struct CompletedKeyExchange {
     pub secret: SharedSecret,
 }
 
-/// The result from [`ActiveKeyExchange::complete`].
+/// The result from [`ActiveKeyExchange::complete`] or [`ActiveKeyExchange::complete_hybrid_component`].
 pub struct SharedSecret {
     buf: Vec<u8>,
     offset: usize,
@@ -535,6 +651,12 @@ impl From<&[u8]> for SharedSecret {
     }
 }
 
+impl From<Vec<u8>> for SharedSecret {
+    fn from(buf: Vec<u8>) -> Self {
+        Self { buf, offset: 0 }
+    }
+}
+
 /// This function returns a [`CryptoProvider`] that uses
 /// FIPS140-3-approved cryptography.
 ///
@@ -568,10 +690,48 @@ impl From<&[u8]> for SharedSecret {
 ///     .with_no_client_auth();
 /// # }
 /// ```
-#[cfg(any(feature = "fips", docsrs))]
-#[cfg_attr(docsrs, doc(cfg(feature = "fips")))]
+#[cfg(all(feature = "aws_lc_rs", any(feature = "fips", rustls_docsrs)))]
+#[cfg_attr(rustls_docsrs, doc(cfg(feature = "fips")))]
 pub fn default_fips_provider() -> CryptoProvider {
     aws_lc_rs::default_provider()
+}
+
+mod static_default {
+    #[cfg(not(feature = "std"))]
+    use alloc::boxed::Box;
+    #[cfg(feature = "std")]
+    use std::sync::OnceLock;
+
+    #[cfg(not(feature = "std"))]
+    use once_cell::race::OnceBox;
+
+    use super::CryptoProvider;
+    use crate::sync::Arc;
+
+    #[cfg(feature = "std")]
+    pub(crate) fn install_default(
+        default_provider: CryptoProvider,
+    ) -> Result<(), Arc<CryptoProvider>> {
+        PROCESS_DEFAULT_PROVIDER.set(Arc::new(default_provider))
+    }
+
+    #[cfg(not(feature = "std"))]
+    pub(crate) fn install_default(
+        default_provider: CryptoProvider,
+    ) -> Result<(), Arc<CryptoProvider>> {
+        PROCESS_DEFAULT_PROVIDER
+            .set(Box::new(Arc::new(default_provider)))
+            .map_err(|e| *e)
+    }
+
+    pub(crate) fn get_default() -> Option<&'static Arc<CryptoProvider>> {
+        PROCESS_DEFAULT_PROVIDER.get()
+    }
+
+    #[cfg(feature = "std")]
+    static PROCESS_DEFAULT_PROVIDER: OnceLock<Arc<CryptoProvider>> = OnceLock::new();
+    #[cfg(not(feature = "std"))]
+    static PROCESS_DEFAULT_PROVIDER: OnceBox<Arc<CryptoProvider>> = OnceBox::new();
 }
 
 #[cfg(test)]

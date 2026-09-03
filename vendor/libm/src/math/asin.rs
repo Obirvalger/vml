@@ -66,7 +66,7 @@ fn comp_r(z: f64) -> f64 {
 /// Computes the inverse sine (arc sine) of the argument `x`.
 /// Arguments to asin must be in the range -1 to 1.
 /// Returns values in radians, in the range of -pi/2 to pi/2.
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn asin(mut x: f64) -> f64 {
     let z: f64;
     let r: f64;
@@ -90,7 +90,7 @@ pub fn asin(mut x: f64) -> f64 {
     /* |x| < 0.5 */
     if ix < 0x3fe00000 {
         /* if 0x1p-1022 <= |x| < 0x1p-26, avoid raising underflow */
-        if ix < 0x3e500000 && ix >= 0x00100000 {
+        if (0x00100000..0x3e500000).contains(&ix) {
             return x;
         } else {
             return x + x * comp_r(x * x);
@@ -111,9 +111,5 @@ pub fn asin(mut x: f64) -> f64 {
         c = (z - f * f) / (s + f);
         x = 0.5 * PIO2_HI - (2.0 * s * r - (PIO2_LO - 2.0 * c) - (0.5 * PIO2_HI - 2.0 * f));
     }
-    if hx >> 31 != 0 {
-        -x
-    } else {
-        x
-    }
+    if hx >> 31 != 0 { -x } else { x }
 }

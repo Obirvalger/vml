@@ -299,13 +299,14 @@
 //! [macro]: crate::json
 //! [`serde-json-core`]: https://github.com/rust-embedded-community/serde-json-core
 
-#![doc(html_root_url = "https://docs.rs/serde_json/1.0.120")]
+#![doc(html_root_url = "https://docs.rs/serde_json/1.0.151")]
 // Ignored clippy lints
 #![allow(
     clippy::collapsible_else_if,
     clippy::comparison_chain,
     clippy::deprecated_cfg_attr,
     clippy::doc_markdown,
+    clippy::elidable_lifetime_names,
     clippy::excessive_precision,
     clippy::explicit_auto_deref,
     clippy::float_cmp,
@@ -314,9 +315,12 @@
     clippy::match_single_binding,
     clippy::needless_doctest_main,
     clippy::needless_late_init,
+    clippy::needless_lifetimes,
     clippy::return_self_not_must_use,
     clippy::transmute_ptr_to_ptr,
+    clippy::unbuffered_bytes,
     clippy::unconditional_recursion, // https://github.com/rust-lang/rust-clippy/issues/12133
+    clippy::uninlined_format_args,
     clippy::unnecessary_wraps
 )]
 // Ignored clippy_pedantic lints
@@ -340,6 +344,7 @@
     clippy::wildcard_imports,
     // things are often more readable this way
     clippy::cast_lossless,
+    clippy::items_after_statements,
     clippy::module_name_repetitions,
     clippy::redundant_else,
     clippy::shadow_unrelated,
@@ -362,6 +367,7 @@
 #![deny(missing_docs)]
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
 
 #[cfg(not(any(feature = "std", feature = "alloc")))]
 compile_error! {
@@ -372,6 +378,15 @@ extern crate alloc;
 
 #[cfg(feature = "std")]
 extern crate std;
+
+extern crate serde_core as serde;
+
+// Not public API. Used from macro-generated code.
+#[doc(hidden)]
+pub mod __private {
+    #[doc(hidden)]
+    pub use alloc::vec;
+}
 
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]

@@ -1,4 +1,7 @@
-#![cfg_attr(not(all(feature = "rt", feature = "net")), allow(dead_code))]
+#![cfg_attr(
+    not(all(feature = "rt", feature = "net", feature = "io-uring", tokio_unstable)),
+    allow(dead_code)
+)]
 mod driver;
 use driver::{Direction, Tick};
 pub(crate) use driver::{Driver, Handle, ReadyEvent};
@@ -14,3 +17,6 @@ use scheduled_io::ScheduledIo;
 
 mod metrics;
 use metrics::IoDriverMetrics;
+
+use crate::util::ptr_expose::PtrExposeDomain;
+static EXPOSE_IO: PtrExposeDomain<ScheduledIo> = PtrExposeDomain::new();

@@ -4,12 +4,27 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = ReadableStreamGetReaderOptions)]
+    #[wasm_bindgen(
+        extends = "::js_sys::Object",
+        js_name = "ReadableStreamGetReaderOptions"
+    )]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `ReadableStreamGetReaderOptions` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ReadableStreamGetReaderOptions`*"]
     pub type ReadableStreamGetReaderOptions;
+    #[cfg(feature = "ReadableStreamReaderMode")]
+    #[doc = "Get the `mode` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamGetReaderOptions`, `ReadableStreamReaderMode`*"]
+    #[wasm_bindgen(method, getter = "mode")]
+    pub fn get_mode(this: &ReadableStreamGetReaderOptions) -> Option<ReadableStreamReaderMode>;
+    #[cfg(feature = "ReadableStreamReaderMode")]
+    #[doc = "Change the `mode` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamGetReaderOptions`, `ReadableStreamReaderMode`*"]
+    #[wasm_bindgen(method, setter = "mode")]
+    pub fn set_mode(this: &ReadableStreamGetReaderOptions, val: ReadableStreamReaderMode);
 }
 impl ReadableStreamGetReaderOptions {
     #[doc = "Construct a new `ReadableStreamGetReaderOptions`."]
@@ -21,17 +36,9 @@ impl ReadableStreamGetReaderOptions {
         ret
     }
     #[cfg(feature = "ReadableStreamReaderMode")]
-    #[doc = "Change the `mode` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamGetReaderOptions`, `ReadableStreamReaderMode`*"]
+    #[deprecated = "Use `set_mode()` instead."]
     pub fn mode(&mut self, val: ReadableStreamReaderMode) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("mode"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_mode(val);
         self
     }
 }

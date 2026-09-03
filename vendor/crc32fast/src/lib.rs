@@ -30,23 +30,15 @@
 //!
 //! - A fast baseline implementation which processes up to 16 bytes per iteration
 //! - An optimized implementation for modern `x86` using `sse` and `pclmulqdq` instructions
+//! - Wider `x86` implementations using `vpclmulqdq` on 256-bit (`avx2`) and 512-bit (`avx512f`)
+//!   registers (available when built with Rust 1.89 or newer)
+//! - An optimized implementation for `aarch64` using `crc32` instructions
 //!
 //! Calling the [`Hasher::new`] constructor at runtime will perform a feature detection to select the most
 //! optimal implementation for the current CPU feature set.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-
-#[deny(missing_docs)]
-#[cfg(test)]
-#[macro_use]
-extern crate quickcheck;
-
-#[macro_use]
-extern crate cfg_if;
-
-#[cfg(feature = "std")]
-use std as core;
-
+#![deny(missing_docs)]
 use core::fmt;
 use core::hash;
 
@@ -192,7 +184,7 @@ impl hash::Hasher for Hasher {
 mod test {
     use super::Hasher;
 
-    quickcheck! {
+    quickcheck::quickcheck! {
         fn combine(bytes_1: Vec<u8>, bytes_2: Vec<u8>) -> bool {
             let mut hash_a = Hasher::new();
             hash_a.update(&bytes_1);
@@ -209,23 +201,17 @@ mod test {
         fn combine_from_len(bytes_1: Vec<u8>, bytes_2: Vec<u8>) -> bool {
             let mut hash_a = Hasher::new();
             hash_a.update(&bytes_1);
-            let a = hash_a.finalize();
 
             let mut hash_b = Hasher::new();
             hash_b.update(&bytes_2);
-            let b = hash_b.finalize();
 
             let mut hash_ab = Hasher::new();
             hash_ab.update(&bytes_1);
             hash_ab.update(&bytes_2);
             let ab = hash_ab.finalize();
 
-            let mut reconstructed = Hasher::new_with_initial_len(a, bytes_1.len() as u64);
-            let hash_b_reconstructed = Hasher::new_with_initial_len(b, bytes_2.len() as u64);
-
-            reconstructed.combine(&hash_b_reconstructed);
-
-            reconstructed.finalize() == ab
+            hash_a.combine(&hash_b);
+            hash_a.finalize() == ab
         }
     }
 }

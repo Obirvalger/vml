@@ -4,13 +4,12 @@
 //! of spawned tasks and allows asynchronously awaiting the output of those
 //! tasks as they complete. See the documentation for the [`JoinSet`] type for
 //! details.
-use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::{fmt, panic};
 
 use crate::runtime::Handle;
-#[cfg(tokio_unstable)]
 use crate::task::Id;
 use crate::task::{unconstrained, AbortHandle, JoinError, JoinHandle, LocalSet};
 use crate::util::IdleNotifiedSet;
@@ -32,25 +31,35 @@ use crate::util::IdleNotifiedSet;
 /// ```
 /// use tokio::task::JoinSet;
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut set = JoinSet::new();
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let mut set = JoinSet::new();
 ///
-///     for i in 0..10 {
-///         set.spawn(async move { i });
-///     }
-///
-///     let mut seen = [false; 10];
-///     while let Some(res) = set.join_next().await {
-///         let idx = res.unwrap();
-///         seen[idx] = true;
-///     }
-///
-///     for i in 0..10 {
-///         assert!(seen[i]);
-///     }
+/// for i in 0..10 {
+///     set.spawn(async move { i });
 /// }
+///
+/// let mut seen = [false; 10];
+/// while let Some(res) = set.join_next().await {
+///     let idx = res.unwrap();
+///     seen[idx] = true;
+/// }
+///
+/// for i in 0..10 {
+///     assert!(seen[i]);
+/// }
+/// # }
 /// ```
+///
+/// # Task ID guarantees
+///
+/// While a task is tracked in a `JoinSet`, that task's ID is unique relative
+/// to all other running tasks in Tokio. For this purpose, tracking a task in a
+/// `JoinSet` is equivalent to holding a [`JoinHandle`] to it. See the [task ID]
+/// documentation for more info.
+///
+/// [`JoinHandle`]: crate::task::JoinHandle
+/// [task ID]: crate::task::Id
 #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
 pub struct JoinSet<T> {
     inner: IdleNotifiedSet<JoinHandle<T>>,
@@ -158,9 +167,9 @@ impl<T: 'static> JoinSet<T> {
         self.insert(handle.spawn(task))
     }
 
-    /// Spawn the provided task on the current [`LocalSet`] and store it in this
-    /// `JoinSet`, returning an [`AbortHandle`] that can be used to remotely
-    /// cancel the task.
+    /// Spawn the provided task on the current [`LocalSet`] or [`LocalRuntime`]
+    /// and store it in this `JoinSet`, returning an [`AbortHandle`] that can
+    /// be used to remotely cancel the task.
     ///
     /// The provided future will start running in the background immediately
     /// when this method is called, even if you don't await anything on this
@@ -168,9 +177,10 @@ impl<T: 'static> JoinSet<T> {
     ///
     /// # Panics
     ///
-    /// This method panics if it is called outside of a `LocalSet`.
+    /// This method panics if it is called outside of a `LocalSet` or `LocalRuntime`.
     ///
     /// [`LocalSet`]: crate::task::LocalSet
+    /// [`LocalRuntime`]: crate::runtime::LocalRuntime
     /// [`AbortHandle`]: crate::task::AbortHandle
     #[track_caller]
     pub fn spawn_local<F>(&mut self, task: F) -> AbortHandle
@@ -210,6 +220,8 @@ impl<T: 'static> JoinSet<T> {
     /// Spawn multiple blocking tasks and wait for them.
     ///
     /// ```
+    /// # #[cfg(not(target_family = "wasm"))]
+    /// # {
     /// use tokio::task::JoinSet;
     ///
     /// #[tokio::main]
@@ -230,6 +242,7 @@ impl<T: 'static> JoinSet<T> {
     ///         assert!(seen[i]);
     ///     }
     /// }
+    /// # }
     /// ```
     ///
     /// # Panics
@@ -275,13 +288,13 @@ impl<T: 'static> JoinSet<T> {
     ///
     /// Returns `None` if the set is empty.
     ///
-    /// # Cancel Safety
+    /// # Cancel safety
     ///
-    /// This method is cancel safe. If `join_next` is used as the event in a `tokio::select!`
-    /// statement and some other branch completes first, it is guaranteed that no tasks were
-    /// removed from this `JoinSet`.
+    /// This method is cancel safe. If `join_next` is used as a branch in
+    /// `tokio::select!` and another branch completes first, it is guaranteed
+    /// that no tasks were removed from this `JoinSet`.
     pub async fn join_next(&mut self) -> Option<Result<T, JoinError>> {
-        crate::future::poll_fn(|cx| self.poll_join_next(cx)).await
+        std::future::poll_fn(|cx| self.poll_join_next(cx)).await
     }
 
     /// Waits until one of the tasks in the set completes and returns its
@@ -292,23 +305,21 @@ impl<T: 'static> JoinSet<T> {
     /// When this method returns an error, then the id of the task that failed can be accessed
     /// using the [`JoinError::id`] method.
     ///
-    /// # Cancel Safety
+    /// # Cancel safety
     ///
-    /// This method is cancel safe. If `join_next_with_id` is used as the event in a `tokio::select!`
-    /// statement and some other branch completes first, it is guaranteed that no tasks were
-    /// removed from this `JoinSet`.
+    /// This method is cancel safe. If `join_next_with_id` is used as a branch
+    /// in `tokio::select!` and another branch completes first, it is
+    /// guaranteed that no tasks were removed from this `JoinSet`.
     ///
     /// [task ID]: crate::task::Id
     /// [`JoinError::id`]: fn@crate::task::JoinError::id
-    #[cfg(tokio_unstable)]
-    #[cfg_attr(docsrs, doc(cfg(tokio_unstable)))]
     pub async fn join_next_with_id(&mut self) -> Option<Result<(Id, T), JoinError>> {
-        crate::future::poll_fn(|cx| self.poll_join_next_with_id(cx)).await
+        std::future::poll_fn(|cx| self.poll_join_next_with_id(cx)).await
     }
 
     /// Tries to join one of the tasks in the set that has completed and return its output.
     ///
-    /// Returns `None` if the set is empty.
+    /// Returns `None` if there are no completed tasks, or if the set is empty.
     pub fn try_join_next(&mut self) -> Option<Result<T, JoinError>> {
         // Loop over all notified `JoinHandle`s to find one that's ready, or until none are left.
         loop {
@@ -331,15 +342,13 @@ impl<T: 'static> JoinSet<T> {
     /// Tries to join one of the tasks in the set that has completed and return its output,
     /// along with the [task ID] of the completed task.
     ///
-    /// Returns `None` if the set is empty.
+    /// Returns `None` if there are no completed tasks, or if the set is empty.
     ///
     /// When this method returns an error, then the id of the task that failed can be accessed
     /// using the [`JoinError::id`] method.
     ///
     /// [task ID]: crate::task::Id
     /// [`JoinError::id`]: fn@crate::task::JoinError::id
-    #[cfg(tokio_unstable)]
-    #[cfg_attr(docsrs, doc(cfg(tokio_unstable)))]
     pub fn try_join_next_with_id(&mut self) -> Option<Result<(Id, T), JoinError>> {
         // Loop over all notified `JoinHandle`s to find one that's ready, or until none are left.
         loop {
@@ -374,6 +383,79 @@ impl<T: 'static> JoinSet<T> {
         while self.join_next().await.is_some() {}
     }
 
+    /// Awaits the completion of all tasks in this `JoinSet`, returning a vector of their results.
+    ///
+    /// The results will be stored in the order they completed not the order they were spawned.
+    /// This is a convenience method that is equivalent to calling [`join_next`] in
+    /// a loop. If any tasks on the `JoinSet` fail with an [`JoinError`], then this call
+    /// to `join_all` will panic and all remaining tasks on the `JoinSet` are
+    /// cancelled. To handle errors in any other way, manually call [`join_next`]
+    /// in a loop.
+    ///
+    /// # Examples
+    ///
+    /// Spawn multiple tasks and `join_all` them.
+    ///
+    /// ```
+    /// use tokio::task::JoinSet;
+    /// use std::time::Duration;
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let mut set = JoinSet::new();
+    ///
+    /// for i in 0..3 {
+    ///     set.spawn(async move {
+    ///         tokio::time::sleep(Duration::from_secs(3 - i)).await;
+    ///         i
+    ///     });
+    /// }
+    ///
+    /// let output = set.join_all().await;
+    /// assert_eq!(output, vec![2, 1, 0]);
+    /// # }
+    /// ```
+    ///
+    /// Equivalent implementation of `join_all`, using [`join_next`] and loop.
+    ///
+    /// ```
+    /// use tokio::task::JoinSet;
+    /// use std::panic;
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let mut set = JoinSet::new();
+    ///
+    /// for i in 0..3 {
+    ///     set.spawn(async move {i});
+    /// }
+    ///
+    /// let mut output = Vec::new();
+    /// while let Some(res) = set.join_next().await{
+    ///     match res {
+    ///         Ok(t) => output.push(t),
+    ///         Err(err) if err.is_panic() => panic::resume_unwind(err.into_panic()),
+    ///         Err(err) => panic!("{err}"),
+    ///     }
+    /// }
+    /// assert_eq!(output.len(),3);
+    /// # }
+    /// ```
+    /// [`join_next`]: fn@Self::join_next
+    /// [`JoinError::id`]: fn@crate::task::JoinError::id
+    pub async fn join_all(mut self) -> Vec<T> {
+        let mut output = Vec::with_capacity(self.len());
+
+        while let Some(res) = self.join_next().await {
+            match res {
+                Ok(t) => output.push(t),
+                Err(err) if err.is_panic() => panic::resume_unwind(err.into_panic()),
+                Err(err) => panic!("{err}"),
+            }
+        }
+        output
+    }
+
     /// Aborts all tasks on this `JoinSet`.
     ///
     /// This does not remove the tasks from the `JoinSet`. To wait for the tasks to complete
@@ -404,17 +486,17 @@ impl<T: 'static> JoinSet<T> {
     /// This function returns:
     ///
     ///  * `Poll::Pending` if the `JoinSet` is not empty but there is no task whose output is
-    ///     available right now.
+    ///    available right now.
     ///  * `Poll::Ready(Some(Ok(value)))` if one of the tasks in this `JoinSet` has completed.
-    ///     The `value` is the return value of one of the tasks that completed.
+    ///    The `value` is the return value of one of the tasks that completed.
     ///  * `Poll::Ready(Some(Err(err)))` if one of the tasks in this `JoinSet` has panicked or been
-    ///     aborted. The `err` is the `JoinError` from the panicked/aborted task.
+    ///    aborted. The `err` is the `JoinError` from the panicked/aborted task.
     ///  * `Poll::Ready(None)` if the `JoinSet` is empty.
     ///
     /// Note that this method may return `Poll::Pending` even if one of the tasks has completed.
     /// This can happen if the [coop budget] is reached.
     ///
-    /// [coop budget]: crate::task#cooperative-scheduling
+    /// [coop budget]: crate::task::coop#cooperative-scheduling
     pub fn poll_join_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<T, JoinError>>> {
         // The call to `pop_notified` moves the entry to the `idle` list. It is moved back to
         // the `notified` list if the waker is notified in the `poll` call below.
@@ -458,21 +540,19 @@ impl<T: 'static> JoinSet<T> {
     /// This function returns:
     ///
     ///  * `Poll::Pending` if the `JoinSet` is not empty but there is no task whose output is
-    ///     available right now.
+    ///    available right now.
     ///  * `Poll::Ready(Some(Ok((id, value))))` if one of the tasks in this `JoinSet` has completed.
-    ///     The `value` is the return value of one of the tasks that completed, and
+    ///    The `value` is the return value of one of the tasks that completed, and
     ///    `id` is the [task ID] of that task.
     ///  * `Poll::Ready(Some(Err(err)))` if one of the tasks in this `JoinSet` has panicked or been
-    ///     aborted. The `err` is the `JoinError` from the panicked/aborted task.
+    ///    aborted. The `err` is the `JoinError` from the panicked/aborted task.
     ///  * `Poll::Ready(None)` if the `JoinSet` is empty.
     ///
     /// Note that this method may return `Poll::Pending` even if one of the tasks has completed.
     /// This can happen if the [coop budget] is reached.
     ///
-    /// [coop budget]: crate::task#cooperative-scheduling
+    /// [coop budget]: crate::task::coop#cooperative-scheduling
     /// [task ID]: crate::task::Id
-    #[cfg(tokio_unstable)]
-    #[cfg_attr(docsrs, doc(cfg(tokio_unstable)))]
     pub fn poll_join_next_with_id(
         &mut self,
         cx: &mut Context<'_>,
@@ -537,20 +617,20 @@ impl<T> Default for JoinSet<T> {
 /// ```
 /// use tokio::task::JoinSet;
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut set: JoinSet<_> = (0..10).map(|i| async move { i }).collect();
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let mut set: JoinSet<_> = (0..10).map(|i| async move { i }).collect();
 ///
-///     let mut seen = [false; 10];
-///     while let Some(res) = set.join_next().await {
-///         let idx = res.unwrap();
-///         seen[idx] = true;
-///     }
-///
-///     for i in 0..10 {
-///         assert!(seen[i]);
-///     }
+/// let mut seen = [false; 10];
+/// while let Some(res) = set.join_next().await {
+///     let idx = res.unwrap();
+///     seen[idx] = true;
 /// }
+///
+/// for i in 0..10 {
+///      assert!(seen[i]);
+/// }
+/// # }
 /// ```
 ///
 /// [`collect`]: std::iter::Iterator::collect
@@ -566,6 +646,51 @@ where
             set.spawn(task);
         });
         set
+    }
+}
+
+/// Extend a [`JoinSet`] with futures from an iterator.
+///
+/// This is equivalent to calling [`JoinSet::spawn`] on each element of the iterator.
+///
+/// # Examples
+///
+/// ```
+/// # #[cfg(not(target_family = "wasm"))]
+/// # {
+/// use tokio::task::JoinSet;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut set: JoinSet<_> = (0..5).map(|i| async move { i }).collect();
+///
+///     set.extend((5..10).map(|i| async move { i }));
+///
+///     let mut seen = [false; 10];
+///     while let Some(res) = set.join_next().await {
+///         let idx = res.unwrap();
+///         seen[idx] = true;
+///     }
+///
+///     for i in 0..10 {
+///         assert!(seen[i]);
+///     }
+/// }
+/// # }
+/// ```
+impl<T, F> std::iter::Extend<F> for JoinSet<T>
+where
+    F: Future<Output = T>,
+    F: Send + 'static,
+    T: Send + 'static,
+{
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = F>,
+    {
+        iter.into_iter().for_each(|task| {
+            self.spawn(task);
+        });
     }
 }
 
@@ -668,8 +793,8 @@ impl<'a, T: 'static> Builder<'a, T> {
             .insert(self.builder.spawn_blocking_on(f, handle)?))
     }
 
-    /// Spawn the provided task on the current [`LocalSet`] with this builder's
-    /// settings, and store it in the [`JoinSet`].
+    /// Spawn the provided task on the current [`LocalSet`] or [`LocalRuntime`]
+    /// with this builder's settings, and store it in the [`JoinSet`].
     ///
     /// # Returns
     ///
@@ -677,9 +802,10 @@ impl<'a, T: 'static> Builder<'a, T> {
     ///
     /// # Panics
     ///
-    /// This method panics if it is called outside of a `LocalSet`.
+    /// This method panics if it is called outside of a `LocalSet` or `LocalRuntime`.
     ///
     /// [`LocalSet`]: crate::task::LocalSet
+    /// [`LocalRuntime`]: crate::runtime::LocalRuntime
     /// [`AbortHandle`]: crate::task::AbortHandle
     #[track_caller]
     pub fn spawn_local<F>(self, future: F) -> std::io::Result<AbortHandle>

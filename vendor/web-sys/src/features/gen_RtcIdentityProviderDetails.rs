@@ -4,12 +4,32 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = RTCIdentityProviderDetails)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "RTCIdentityProviderDetails")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `RtcIdentityProviderDetails` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProviderDetails`*"]
     pub type RtcIdentityProviderDetails;
+    #[doc = "Get the `domain` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProviderDetails`*"]
+    #[wasm_bindgen(method, getter = "domain")]
+    pub fn get_domain(this: &RtcIdentityProviderDetails) -> ::alloc::string::String;
+    #[doc = "Change the `domain` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProviderDetails`*"]
+    #[wasm_bindgen(method, setter = "domain")]
+    pub fn set_domain(this: &RtcIdentityProviderDetails, val: &str);
+    #[doc = "Get the `protocol` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProviderDetails`*"]
+    #[wasm_bindgen(method, getter = "protocol")]
+    pub fn get_protocol(this: &RtcIdentityProviderDetails) -> Option<::alloc::string::String>;
+    #[doc = "Change the `protocol` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProviderDetails`*"]
+    #[wasm_bindgen(method, setter = "protocol")]
+    pub fn set_protocol(this: &RtcIdentityProviderDetails, val: &str);
 }
 impl RtcIdentityProviderDetails {
     #[doc = "Construct a new `RtcIdentityProviderDetails`."]
@@ -18,38 +38,17 @@ impl RtcIdentityProviderDetails {
     pub fn new(domain: &str) -> Self {
         #[allow(unused_mut)]
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
-        ret.domain(domain);
+        ret.set_domain(domain);
         ret
     }
-    #[doc = "Change the `domain` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProviderDetails`*"]
+    #[deprecated = "Use `set_domain()` instead."]
     pub fn domain(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r =
-            ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("domain"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_domain(val);
         self
     }
-    #[doc = "Change the `protocol` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProviderDetails`*"]
+    #[deprecated = "Use `set_protocol()` instead."]
     pub fn protocol(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("protocol"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_protocol(val);
         self
     }
 }

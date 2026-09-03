@@ -1,8 +1,8 @@
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use crate::server::ClientHello;
+use crate::sync::Arc;
 use crate::{server, sign};
 
 /// Something which never stores sessions.
@@ -26,11 +26,11 @@ impl server::StoresServerSessions for NoServerSessionStorage {
 
 #[cfg(any(feature = "std", feature = "hashbrown"))]
 mod cache {
-    use alloc::sync::Arc;
     use alloc::vec::Vec;
     use core::fmt::{Debug, Formatter};
 
     use crate::lock::Mutex;
+    use crate::sync::Arc;
     use crate::{limited_cache, server};
 
     /// An implementer of `StoresServerSessions` that stores everything
@@ -166,43 +166,33 @@ impl server::ProducesTickets for NeverProducesTickets {
     }
 }
 
-/// Something which always resolves to the same cert chain.
-#[derive(Debug)]
-pub(super) struct AlwaysResolvesChain(Arc<sign::CertifiedKey>);
+/// An exemplar `ResolvesServerCert` implementation that always resolves to a single
+/// [RFC 7250] raw public key.
+///
+/// [RFC 7250]: https://tools.ietf.org/html/rfc7250
+#[derive(Clone, Debug)]
+pub struct AlwaysResolvesServerRawPublicKeys(Arc<sign::CertifiedKey>);
 
-impl AlwaysResolvesChain {
-    /// Creates an `AlwaysResolvesChain`, using the supplied `CertifiedKey`.
-    pub(super) fn new(certified_key: sign::CertifiedKey) -> Self {
-        Self(Arc::new(certified_key))
-    }
-
-    /// Creates an `AlwaysResolvesChain`, using the supplied `CertifiedKey` and OCSP response.
-    ///
-    /// If non-empty, the given OCSP response is attached.
-    pub(super) fn new_with_extras(certified_key: sign::CertifiedKey, ocsp: Vec<u8>) -> Self {
-        let mut r = Self::new(certified_key);
-
-        {
-            let cert = Arc::make_mut(&mut r.0);
-            if !ocsp.is_empty() {
-                cert.ocsp = Some(ocsp);
-            }
-        }
-
-        r
+impl AlwaysResolvesServerRawPublicKeys {
+    /// Create a new `AlwaysResolvesServerRawPublicKeys` instance.
+    pub fn new(certified_key: Arc<sign::CertifiedKey>) -> Self {
+        Self(certified_key)
     }
 }
 
-impl server::ResolvesServerCert for AlwaysResolvesChain {
+impl server::ResolvesServerCert for AlwaysResolvesServerRawPublicKeys {
     fn resolve(&self, _client_hello: ClientHello<'_>) -> Option<Arc<sign::CertifiedKey>> {
-        Some(Arc::clone(&self.0))
+        Some(self.0.clone())
+    }
+
+    fn only_raw_public_keys(&self) -> bool {
+        true
     }
 }
 
 #[cfg(any(feature = "std", feature = "hashbrown"))]
 mod sni_resolver {
     use alloc::string::{String, ToString};
-    use alloc::sync::Arc;
     use core::fmt::Debug;
 
     use pki_types::{DnsName, ServerName};
@@ -210,7 +200,8 @@ mod sni_resolver {
     use crate::error::Error;
     use crate::hash_map::HashMap;
     use crate::server::ClientHello;
-    use crate::webpki::{verify_server_name, ParsedCertificate};
+    use crate::sync::Arc;
+    use crate::webpki::{ParsedCertificate, verify_server_name};
     use crate::{server, sign};
 
     /// Something that resolves do different cert chains/keys based
@@ -281,9 +272,20 @@ mod sni_resolver {
         #[test]
         fn test_resolvesservercertusingsni_requires_sni() {
             let rscsni = ResolvesServerCertUsingSni::new();
-            assert!(rscsni
-                .resolve(ClientHello::new(&None, &[], None, &[]))
-                .is_none());
+            assert!(
+                rscsni
+                    .resolve(ClientHello {
+                        server_name: &None,
+                        signature_schemes: &[],
+                        alpn: None,
+                        server_cert_types: None,
+                        client_cert_types: None,
+                        cipher_suites: &[],
+                        certificate_authorities: None,
+                        named_groups: None,
+                    })
+                    .is_none()
+            );
         }
 
         #[test]
@@ -292,9 +294,20 @@ mod sni_resolver {
             let name = DnsName::try_from("hello.com")
                 .unwrap()
                 .to_owned();
-            assert!(rscsni
-                .resolve(ClientHello::new(&Some(name), &[], None, &[]))
-                .is_none());
+            assert!(
+                rscsni
+                    .resolve(ClientHello {
+                        server_name: &Some(name),
+                        signature_schemes: &[],
+                        alpn: None,
+                        server_cert_types: None,
+                        client_cert_types: None,
+                        cipher_suites: &[],
+                        certificate_authorities: None,
+                        named_groups: None,
+                    })
+                    .is_none()
+            );
         }
     }
 }

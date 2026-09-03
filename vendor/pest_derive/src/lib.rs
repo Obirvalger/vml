@@ -12,6 +12,7 @@
     html_favicon_url = "https://raw.githubusercontent.com/pest-parser/pest/master/pest-logo.svg"
 )]
 #![warn(missing_docs, rust_2018_idioms, unused_qualifications)]
+#![allow(clippy::doc_overindented_list_items)]
 //! # pest. The Elegant Parser
 //!
 //! pest is a general purpose parser written in Rust with a focus on accessibility, correctness,
@@ -180,7 +181,7 @@
 //! | `e?`                  | optionally matches `e`                                     |
 //! | `&e`                  | matches `e` without making progress                        |
 //! | `!e`                  | matches if `e` doesn't match without making progress       |
-//! | `PUSH(e)`             | matches `e` and pushes it's captured string down the stack |
+//! | `PUSH(e)`             | matches `e` and pushes its captured string down the stack  |
 //!
 //! where `e`, `e1`, and `e2` are expressions.
 //!
@@ -191,7 +192,7 @@
 //! // input: ab_bb_b
 //!
 //! identifier = @{ "a" ~ ("b"|"_")* ~ "b" }
-//! // matches:      a     b_bb_b       nothing -> error!      
+//! // matches:      a     b_bb_b       nothing -> error!
 //!
 //! identifier = @{ "a" ~ ("_"* ~ "b")* }
 //! // matches:      a     b, _bb, _b   in three repetitions

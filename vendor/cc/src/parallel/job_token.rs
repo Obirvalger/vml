@@ -1,8 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::Error;
-
-use super::once_lock::OnceLock;
+use crate::{utilities::OnceLock, Error};
 
 pub(crate) struct JobToken(PhantomData<()>);
 
@@ -82,7 +80,7 @@ mod inherited_jobserver {
 
     pub(super) struct JobServer {
         /// Implicit token for this process which is obtained and will be
-        /// released in parent. Since JobTokens only give back what they got,
+        /// released in parent. Since `JobTokens` only give back what they got,
         /// there should be at most one global implicit token in the wild.
         ///
         /// Since Rust does not execute any `Drop` for global variables,
@@ -166,7 +164,7 @@ mod inherited_jobserver {
         helper_thread: Option<HelperThread>,
     }
 
-    impl<'a> ActiveJobServer<'a> {
+    impl ActiveJobServer<'_> {
         pub(super) async fn acquire(&mut self) -> Result<JobToken, Error> {
             let mut has_requested_token = false;
 
@@ -220,14 +218,11 @@ mod inherited_jobserver {
 mod inprocess_jobserver {
     use super::JobToken;
 
-    use crate::parallel::async_executor::YieldOnce;
+    use crate::{parallel::async_executor::YieldOnce, utilities::cargo_env_var_os};
 
-    use std::{
-        env::var,
-        sync::atomic::{
-            AtomicU32,
-            Ordering::{AcqRel, Acquire},
-        },
+    use std::sync::atomic::{
+        AtomicU32,
+        Ordering::{AcqRel, Acquire},
     };
 
     pub(crate) struct JobServer(AtomicU32);
@@ -235,25 +230,21 @@ mod inprocess_jobserver {
     impl JobServer {
         pub(super) fn new() -> Self {
             // Use `NUM_JOBS` if set (it's configured by Cargo) and otherwise
-            // just fall back to a semi-reasonable number.
-            //
-            // Note that we could use `num_cpus` here but it's an extra
-            // dependency that will almost never be used, so
-            // it's generally not too worth it.
-            let mut parallelism = 4;
-            // TODO: Use std::thread::available_parallelism as an upper bound
-            // when MSRV is bumped.
-            if let Ok(amt) = var("NUM_JOBS") {
-                if let Ok(amt) = amt.parse() {
-                    parallelism = amt;
-                }
-            }
+            // just fall back to the number of cores on the local machine, or a reasonable
+            // default if that cannot be determined.
+
+            let parallelism = cargo_env_var_os("NUM_JOBS")
+                .and_then(|j| j.to_str()?.parse::<u32>().ok())
+                .or_else(|| Some(std::thread::available_parallelism().ok()?.get() as u32))
+                .unwrap_or(4);
 
             Self(AtomicU32::new(parallelism))
         }
 
         pub(super) async fn acquire(&self) -> JobToken {
             loop {
+                // TODO: use try_fetch once msrv bump to 1.95
+                #[allow(deprecated)]
                 let res = self
                     .0
                     .fetch_update(AcqRel, Acquire, |tokens| tokens.checked_sub(1));

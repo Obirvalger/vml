@@ -14,9 +14,9 @@
  * ====================================================
  */
 
-use super::{k_cosf, k_sinf, rem_pio2f};
-
 use core::f64::consts::FRAC_PI_2;
+
+use super::{k_cosf, k_sinf, rem_pio2f};
 
 /* Small multiples of pi/2 rounded to double precision. */
 const S1_PIO2: f64 = 1. * FRAC_PI_2; /* 0x3FF921FB, 0x54442D18 */
@@ -24,7 +24,10 @@ const S2_PIO2: f64 = 2. * FRAC_PI_2; /* 0x400921FB, 0x54442D18 */
 const S3_PIO2: f64 = 3. * FRAC_PI_2; /* 0x4012D97C, 0x7F3321D2 */
 const S4_PIO2: f64 = 4. * FRAC_PI_2; /* 0x401921FB, 0x54442D18 */
 
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+/// The sine of `x` (f32).
+///
+/// `x` is specified in radians.
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn sinf(x: f32) -> f32 {
     let x64 = x as f64;
 

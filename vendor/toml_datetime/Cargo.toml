@@ -11,10 +11,10 @@
 
 [package]
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.66"
 name = "toml_datetime"
-version = "0.6.6"
-authors = ["Alex Crichton <alex@alexcrichton.com>"]
+version = "0.6.11"
+build = false
 include = [
     "build.rs",
     "src/**/*",
@@ -22,12 +22,14 @@ include = [
     "Cargo.lock",
     "LICENSE*",
     "README.md",
-    "benches/**/*",
     "examples/**/*",
-    "tests/**/*",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "A TOML-compatible datetime type"
-homepage = "https://github.com/toml-rs/toml"
 readme = "README.md"
 keywords = [
     "encoding",
@@ -47,6 +49,7 @@ all-features = true
 rustdoc-args = [
     "--cfg",
     "docsrs",
+    "--generate-link-to-definition",
 ]
 
 [[package.metadata.release.pre-release-replacements]]
@@ -84,9 +87,16 @@ replace = """
 [Unreleased]: https://github.com/toml-rs/toml/compare/{{tag_name}}...HEAD"""
 search = "<!-- next-url -->"
 
+[lib]
+name = "toml_datetime"
+path = "src/lib.rs"
+
 [dependencies.serde]
 version = "1.0.145"
 optional = true
+
+[dev-dependencies.snapbox]
+version = "0.6.21"
 
 [lints.clippy]
 bool_assert_comparison = "allow"
@@ -115,7 +125,6 @@ inconsistent_struct_constructor = "warn"
 inefficient_to_string = "warn"
 infinite_loop = "warn"
 invalid_upcast_comparisons = "warn"
-items_after_statements = "warn"
 large_digit_groups = "warn"
 large_stack_arrays = "warn"
 large_types_passed_by_value = "warn"
@@ -123,10 +132,9 @@ let_and_return = "allow"
 linkedlist = "warn"
 lossy_float_literal = "warn"
 macro_use_imports = "warn"
-match_wildcard_for_single_variants = "warn"
 mem_forget = "warn"
 mutex_integer = "warn"
-needless_continue = "warn"
+needless_continue = "allow"
 needless_for_each = "warn"
 negative_feature_names = "warn"
 path_buf_push_overwrite = "warn"
@@ -135,10 +143,10 @@ rc_mutex = "warn"
 redundant_feature_names = "warn"
 ref_option_ref = "warn"
 rest_pat_in_fully_bound_structs = "warn"
+result_large_err = "allow"
 same_functions_in_if_condition = "warn"
 self_named_module_files = "warn"
 semicolon_if_nothing_returned = "warn"
-single_match_else = "warn"
 str_to_string = "warn"
 string_add = "warn"
 string_add_assign = "warn"
@@ -146,14 +154,19 @@ string_lit_as_bytes = "warn"
 string_to_string = "warn"
 todo = "warn"
 trait_duplication_in_bounds = "warn"
+uninlined_format_args = "warn"
 verbose_file_reads = "warn"
 wildcard_imports = "warn"
 zero_sized_map_values = "warn"
 
 [lints.rust]
-rust_2018_idioms = "warn"
+unnameable_types = "allow"
 unreachable_pub = "warn"
 unsafe_op_in_unsafe_fn = "warn"
 unused_lifetimes = "warn"
 unused_macro_rules = "warn"
 unused_qualifications = "warn"
+
+[lints.rust.rust_2018_idioms]
+level = "warn"
+priority = -1

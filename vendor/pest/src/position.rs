@@ -111,6 +111,10 @@ impl<'i> Position<'i> {
     /// This is an O(n) operation, where n is the number of chars in the input.
     /// You better use [`pair.line_col()`](struct.Pair.html#method.line_col) instead.
     ///
+    /// # Panics
+    ///
+    /// Panics if the position is out of bounds.
+    ///
     /// # Examples
     ///
     /// ```
@@ -170,6 +174,10 @@ impl<'i> Position<'i> {
     }
 
     /// Returns the entire line of the input that contains this `Position`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the position is out of bounds (e.g., beyond the end of the input).
     ///
     /// # Examples
     ///
@@ -441,7 +449,7 @@ impl<'i> Position<'i> {
     }
 }
 
-impl<'i> fmt::Debug for Position<'i> {
+impl fmt::Debug for Position<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Position").field("pos", &self.pos).finish()
     }
@@ -453,7 +461,7 @@ impl<'i> PartialEq for Position<'i> {
     }
 }
 
-impl<'i> Eq for Position<'i> {}
+impl Eq for Position<'_> {}
 
 #[allow(clippy::non_canonical_partial_ord_impl)]
 impl<'i> PartialOrd for Position<'i> {
@@ -466,6 +474,9 @@ impl<'i> PartialOrd for Position<'i> {
     }
 }
 
+/// # Panics
+///
+/// Panics when comparing positions from different input strings.
 impl<'i> Ord for Position<'i> {
     fn cmp(&self, other: &Position<'i>) -> Ordering {
         self.partial_cmp(other)
@@ -473,7 +484,7 @@ impl<'i> Ord for Position<'i> {
     }
 }
 
-impl<'i> Hash for Position<'i> {
+impl Hash for Position<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.input as *const str).hash(state);
         self.pos.hash(state);

@@ -56,3 +56,17 @@ fn trait_works_generic_helper<E: rust_embed::Embed>() {
   assert_eq!(num_files, 7);
   assert!(E::get("gg.html").is_none(), "gg.html should not exist");
 }
+
+/// Test that iter() can be boxed into a trait object.
+/// This is required for libraries like i18n-embed that need to return
+/// `Box<dyn Iterator<Item = String>>` from a trait implementation.
+#[test]
+fn iter_can_be_boxed() {
+  fn get_boxed_iter<E: rust_embed::Embed>() -> Box<dyn Iterator<Item = String>> {
+    Box::new(E::iter().map(|filename| filename.to_string()))
+  }
+
+  let filenames: Vec<String> = get_boxed_iter::<Asset>().collect();
+  assert_eq!(filenames.len(), 7);
+  assert!(filenames.contains(&"index.html".to_string()));
+}

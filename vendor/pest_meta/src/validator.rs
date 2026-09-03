@@ -10,8 +10,10 @@
 //! Helpers for validating pest grammars that could help with debugging
 //! and provide a more user-friendly error message.
 
-use once_cell::sync::Lazy;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::LazyLock,
+};
 
 use pest::error::{Error, ErrorVariant, InputLocation};
 use pest::iterators::Pairs;
@@ -20,7 +22,7 @@ use pest::Span;
 
 use crate::parser::{ParserExpr, ParserNode, ParserRule, Rule};
 
-static RUST_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static RUST_KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "abstract", "alignof", "as", "become", "box", "break", "const", "continue", "crate", "do",
         "else", "enum", "extern", "false", "final", "fn", "for", "if", "impl", "in", "let", "loop",
@@ -33,7 +35,7 @@ static RUST_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     .collect()
 });
 
-static PEST_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static PEST_KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "_", "ANY", "DROP", "EOI", "PEEK", "PEEK_ALL", "POP", "POP_ALL", "PUSH", "SOI",
     ]
@@ -42,7 +44,7 @@ static PEST_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     .collect()
 });
 
-static BUILTINS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static BUILTINS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "ANY",
         "DROP",
@@ -226,6 +228,8 @@ pub fn validate_ast<'a, 'i: 'a>(rules: &'a Vec<ParserRule<'i>>) -> Vec<Error<Rul
     errors.extend(validate_choices(rules));
     errors.extend(validate_whitespace_comment(rules));
     errors.extend(validate_left_recursion(rules));
+    #[cfg(feature = "grammar-extras")]
+    errors.extend(validate_tag_silent_rules(rules));
 
     errors.sort_by_key(|error| match error.location {
         InputLocation::Span(span) => span,
@@ -233,6 +237,78 @@ pub fn validate_ast<'a, 'i: 'a>(rules: &'a Vec<ParserRule<'i>>) -> Vec<Error<Rul
     });
 
     errors
+}
+
+#[cfg(feature = "grammar-extras")]
+fn validate_tag_silent_rules<'a, 'i: 'a>(rules: &'a [ParserRule<'i>]) -> Vec<Error<Rule>> {
+    use crate::ast::RuleType;
+
+    fn to_type_hash_map<'a, 'i: 'a>(
+        rules: &'a [ParserRule<'i>],
+    ) -> HashMap<String, (&'a ParserNode<'i>, RuleType)> {
+        rules
+            .iter()
+            .map(|r| (r.name.clone(), (&r.node, r.ty)))
+            .collect()
+    }
+    let mut result = vec![];
+
+    fn check_silent_builtin<'a, 'i: 'a>(
+        expr: &ParserExpr<'i>,
+        rules_ref: &HashMap<String, (&'a ParserNode<'i>, RuleType)>,
+        span: Span<'a>,
+    ) -> Option<Error<Rule>> {
+        match &expr {
+            ParserExpr::Ident(rule_name) => {
+                let rule = rules_ref.get(rule_name);
+                if matches!(rule, Some((_, RuleType::Silent))) {
+                    return Some(Error::<Rule>::new_from_span(
+                        ErrorVariant::CustomError {
+                            message: "tags on silent rules will not appear in the output"
+                                .to_owned(),
+                        },
+                        span,
+                    ));
+                } else if BUILTINS.contains(rule_name.as_str()) {
+                    return Some(Error::new_from_span(
+                        ErrorVariant::CustomError {
+                            message: "tags on built-in rules will not appear in the output"
+                                .to_owned(),
+                        },
+                        span,
+                    ));
+                }
+            }
+            ParserExpr::Rep(node)
+            | ParserExpr::RepMinMax(node, _, _)
+            | ParserExpr::RepMax(node, _)
+            | ParserExpr::RepMin(node, _)
+            | ParserExpr::RepOnce(node)
+            | ParserExpr::RepExact(node, _)
+            | ParserExpr::Opt(node)
+            | ParserExpr::Push(node)
+            | ParserExpr::PosPred(node)
+            | ParserExpr::NegPred(node) => {
+                return check_silent_builtin(&node.expr, rules_ref, span);
+            }
+            _ => {}
+        };
+        None
+    }
+
+    let rules_map = to_type_hash_map(rules);
+    for rule in rules {
+        let rules_ref = &rules_map;
+        let mut errors = rule.node.clone().filter_map_top_down(|node1| {
+            if let ParserExpr::NodeTag(node2, _) = node1.expr {
+                check_silent_builtin(&node2.expr, rules_ref, node1.span)
+            } else {
+                None
+            }
+        });
+        result.append(&mut errors);
+    }
+    result
 }
 
 /// Checks if `expr` is non-progressing, that is the expression does not
@@ -249,7 +325,7 @@ pub fn validate_ast<'a, 'i: 'a>(rules: &'a Vec<ParserRule<'i>>) -> Vec<Error<Rul
 ///
 /// # Assumptions
 /// - In `ParserExpr::RepMinMax(inner,min,max)`, `min<=max`
-/// - All rules identiers have a matching definition
+/// - All rules identifiers have a matching definition
 /// - There is no left-recursion (if only this one is broken returns false)
 /// - Every expression is being checked
 fn is_non_progressing<'i>(
@@ -326,6 +402,8 @@ fn is_non_progressing<'i>(
             min == 0 || is_non_progressing(&inner.expr, rules, trace)
         }
         ParserExpr::Push(ref inner) => is_non_progressing(&inner.expr, rules, trace),
+        #[cfg(feature = "grammar-extras")]
+        ParserExpr::PushLiteral(_) => true,
         ParserExpr::RepOnce(ref inner) => is_non_progressing(&inner.expr, rules, trace),
         #[cfg(feature = "grammar-extras")]
         ParserExpr::NodeTag(ref inner, _) => is_non_progressing(&inner.expr, rules, trace),
@@ -343,7 +421,7 @@ fn is_non_progressing<'i>(
 /// # Assumptions
 /// - In `ParserExpr::RepMinMax(inner,min,max)`, `min<=max`
 /// - In `ParserExpr::PeekSlice(max,Some(min))`, `max>=min`
-/// - All rules identiers have a matching definition
+/// - All rules identifiers have a matching definition
 /// - There is no left-recursion
 /// - All rules are being checked
 fn is_non_failing<'i>(
@@ -381,7 +459,7 @@ fn is_non_failing<'i>(
             } else {
                 // referring to another rule R that was already seen
                 // WARNING: this might mean there is a circular non-failing path
-                //   it's not obvious wether this can happen without left-recursion
+                //   it's not obvious whether this can happen without left-recursion
                 //   and thus breaking the assumption. Until there is answer to
                 //   this, to avoid changing behaviour we return:
                 false
@@ -420,6 +498,8 @@ fn is_non_failing<'i>(
         ParserExpr::Push(ref inner) | ParserExpr::PosPred(ref inner) => {
             is_non_failing(&inner.expr, rules, trace)
         }
+        #[cfg(feature = "grammar-extras")]
+        ParserExpr::PushLiteral(_) => true,
         #[cfg(feature = "grammar-extras")]
         ParserExpr::NodeTag(ref inner, _) => is_non_failing(&inner.expr, rules, trace),
     }
@@ -593,7 +673,13 @@ fn left_recursion<'a, 'i: 'a>(rules: HashMap<String, &'a ParserNode<'i>>) -> Vec
                 None
             }
             ParserExpr::Seq(ref lhs, ref rhs) => {
-                if is_non_failing(&lhs.expr, rules, &mut vec![trace.last().unwrap().clone()]) {
+                if is_non_failing(&lhs.expr, rules, &mut vec![trace.last().unwrap().clone()])
+                    || is_non_progressing(
+                        &lhs.expr,
+                        rules,
+                        &mut vec![trace.last().unwrap().clone()],
+                    )
+                {
                     check_expr(rhs, rules, trace)
                 } else {
                     check_expr(lhs, rules, trace)
@@ -913,6 +999,19 @@ mod tests {
         let push = ParserExpr::Push(progressing_node.clone());
 
         assert!(!is_non_progressing(&push, &HashMap::new(), &mut Vec::new()));
+    }
+
+    #[cfg(feature = "grammar-extras")]
+    #[test]
+    fn push_literal_is_non_progressing() {
+        let a = "";
+        let non_progressing_node = Box::new(ParserNode {
+            expr: ParserExpr::PushLiteral("a".to_string()),
+            span: Span::new(a, 0, 0).unwrap(),
+        });
+        let push = ParserExpr::Push(non_progressing_node.clone());
+
+        assert!(is_non_progressing(&push, &HashMap::new(), &mut Vec::new()));
     }
 
     #[test]
@@ -1583,6 +1682,16 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "grammar-extras")]
+    #[test]
+    fn push_literal_is_non_failing() {
+        assert!(is_non_failing(
+            &ParserExpr::PushLiteral("a".to_string()),
+            &HashMap::new(),
+            &mut Vec::new()
+        ));
+    }
+
     #[test]
     #[should_panic(expected = "grammar error
 
@@ -1737,6 +1846,22 @@ mod tests {
     #[test]
     #[should_panic(expected = "grammar error
 
+ --> 1:14
+  |
+1 | a = { !\"a\" ~ a }
+  |              ^
+  |
+  = rule a is left-recursive (a -> a); pest::pratt_parser might be useful in this case")]
+    fn non_progressing_left_recursion() {
+        let input = "a = { !\"a\" ~ a }";
+        unwrap_or_report(consume_rules(
+            PestParser::parse(Rule::grammar_rules, input).unwrap(),
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "grammar error
+
  --> 1:7
   |
 1 | a = { \"a\"* | \"a\" | \"b\" }
@@ -1792,6 +1917,49 @@ mod tests {
     #[test]
     fn skip_can_be_defined() {
         let input = "skip = { \"\" }";
+        unwrap_or_report(consume_rules(
+            PestParser::parse(Rule::grammar_rules, input).unwrap(),
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "grammar error
+
+ --> 1:7
+  |
+1 | a = { #b = b } b = _{ ASCII_DIGIT+ }
+  |       ^----^
+  |
+  = tags on silent rules will not appear in the output")]
+    #[cfg(feature = "grammar-extras")]
+    fn tag_on_silent_rule() {
+        let input = "a = { #b = b } b = _{ ASCII_DIGIT+ }";
+        unwrap_or_report(consume_rules(
+            PestParser::parse(Rule::grammar_rules, input).unwrap(),
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "grammar error
+
+ --> 1:7
+  |
+1 | a = { #b = ASCII_DIGIT+ }
+  |       ^---------------^
+  |
+  = tags on built-in rules will not appear in the output")]
+    #[cfg(feature = "grammar-extras")]
+    fn tag_on_builtin_rule() {
+        let input = "a = { #b = ASCII_DIGIT+ }";
+        unwrap_or_report(consume_rules(
+            PestParser::parse(Rule::grammar_rules, input).unwrap(),
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "grammar-extras")]
+    fn tag_on_normal_rule() {
+        let input = "a = { #b = b } b = { ASCII_DIGIT+ }";
         unwrap_or_report(consume_rules(
             PestParser::parse(Rule::grammar_rules, input).unwrap(),
         ));

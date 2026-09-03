@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use thiserror::Error;
 
-use crate::{connection::send_buffer::SendBuffer, frame, VarInt};
+use crate::{VarInt, connection::send_buffer::SendBuffer, frame};
 
 #[derive(Debug)]
 pub(super) struct Send {
@@ -32,7 +32,7 @@ impl Send {
 
     /// Whether the stream has been reset
     pub(super) fn is_reset(&self) -> bool {
-        matches!(self.state, SendState::ResetSent { .. })
+        matches!(self.state, SendState::ResetSent)
     }
 
     pub(super) fn finish(&mut self) -> Result<(), FinishError> {
@@ -163,7 +163,7 @@ impl<'a> BytesArray<'a> {
     }
 }
 
-impl<'a> BytesSource for BytesArray<'a> {
+impl BytesSource for BytesArray<'_> {
     fn pop_chunk(&mut self, limit: usize) -> (Bytes, usize) {
         // The loop exists to skip empty chunks while still marking them as
         // consumed
@@ -208,7 +208,7 @@ impl<'a> ByteSlice<'a> {
     }
 }
 
-impl<'a> BytesSource for ByteSlice<'a> {
+impl BytesSource for ByteSlice<'_> {
     fn pop_chunk(&mut self, limit: usize) -> (Bytes, usize) {
         let limit = limit.min(self.data.len());
         if limit == 0 {
@@ -227,7 +227,7 @@ impl<'a> BytesSource for ByteSlice<'a> {
 ///
 /// The purpose of this data type is to defer conversion as long as possible,
 /// so that no heap allocation is required in case no data is writable.
-pub trait BytesSource {
+pub(super) trait BytesSource {
     /// Returns the next chunk from the source of owned chunks.
     ///
     /// This method will consume parts of the source.

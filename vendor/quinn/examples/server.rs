@@ -10,10 +10,10 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use proto::crypto::rustls::QuicServerConfig;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject};
 use tracing::{error, info, info_span};
 use tracing_futures::Instrument as _;
 
@@ -69,19 +69,22 @@ fn main() {
 #[tokio::main]
 async fn run(options: Opt) -> Result<()> {
     let (certs, key) = if let (Some(key_path), Some(cert_path)) = (&options.key, &options.cert) {
-        let key = fs::read(key_path).context("failed to read private key")?;
-        let key = if key_path.extension().map_or(false, |x| x == "der") {
-            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key))
+        let key = if key_path.extension().is_some_and(|x| x == "der") {
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+                fs::read(key_path).context("failed to read private key file")?,
+            ))
         } else {
-            rustls_pemfile::private_key(&mut &*key)
-                .context("malformed PKCS #1 private key")?
-                .ok_or_else(|| anyhow::Error::msg("no private keys found"))?
+            PrivateKeyDer::from_pem_file(key_path)
+                .context("failed to read PEM from private key file")?
         };
-        let cert_chain = fs::read(cert_path).context("failed to read certificate chain")?;
-        let cert_chain = if cert_path.extension().map_or(false, |x| x == "der") {
-            vec![CertificateDer::from(cert_chain)]
+
+        let cert_chain = if cert_path.extension().is_some_and(|x| x == "der") {
+            vec![CertificateDer::from(
+                fs::read(cert_path).context("failed to read certificate chain file")?,
+            )]
         } else {
-            rustls_pemfile::certs(&mut &*cert_chain)
+            CertificateDer::pem_file_iter(cert_path)
+                .context("failed to read PEM from certificate chain file")?
                 .collect::<Result<_, _>>()
                 .context("invalid PEM-encoded certificate")?
         };
@@ -100,7 +103,7 @@ async fn run(options: Opt) -> Result<()> {
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
                 info!("generating self-signed certificate");
                 let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-                let key = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
+                let key = PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der());
                 let cert = cert.cert.into();
                 fs::create_dir_all(path).context("failed to create certificate directory")?;
                 fs::write(&cert_path, &cert).context("failed to write certificate")?;
@@ -140,7 +143,7 @@ async fn run(options: Opt) -> Result<()> {
     while let Some(conn) = endpoint.accept().await {
         if options
             .connection_limit
-            .map_or(false, |n| endpoint.open_connections() >= n)
+            .is_some_and(|n| endpoint.open_connections() >= n)
         {
             info!("refusing due to open connection limit");
             conn.refuse();

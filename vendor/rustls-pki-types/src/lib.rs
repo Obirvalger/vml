@@ -1,8 +1,7 @@
 //! This crate provides types for representing X.509 certificates, keys and other types as
 //! commonly used in the rustls ecosystem. It is intended to be used by crates that need to work
 //! with such X.509 types, such as [rustls](https://crates.io/crates/rustls),
-//! [rustls-webpki](https://crates.io/crates/rustls-webpki),
-//! [rustls-pemfile](https://crates.io/crates/rustls-pemfile), and others.
+//! [rustls-webpki](https://crates.io/crates/rustls-webpki), and others.
 //!
 //! Some of these crates used to define their own trivial wrappers around DER-encoded bytes.
 //! However, in order to avoid inconvenient dependency edges, these were all disconnected. By
@@ -19,7 +18,18 @@
 //! base64-encoded DER, PEM objects are delimited by header and footer lines which indicate the type
 //! of object contained in the PEM blob.
 //!
-//! The [rustls-pemfile](https://docs.rs/rustls-pemfile) crate can be used to parse PEM files.
+//! Types here can be created from:
+//!
+//! - DER using (for example) [`PrivatePkcs8KeyDer::from()`].
+//! - PEM using (for example) [`pem::PemObject::from_pem_slice()`].
+//!
+//! The [`pem::PemObject`] trait contains the full selection of ways to construct
+//! these types from PEM encodings.  That includes ways to open and read from a file,
+//! from a slice, or from an `std::io` stream.
+//!
+//! There is also a lower-level API that allows a given PEM file to be fully consumed
+//! in one pass, even if it contains different data types: see the implementation of
+//! the [`pem::PemObject`] trait on the `(pem::SectionKind, Vec<u8>)` tuple.
 //!
 //! ## Creating new certificates and keys
 //!
@@ -50,9 +60,13 @@
 //! in the browser.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![warn(unreachable_pub, clippy::use_self)]
-#![deny(missing_docs)]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![warn(
+    missing_docs,
+    clippy::exhaustive_enums,
+    clippy::exhaustive_structs,
+    clippy::use_self
+)]
+#![cfg_attr(rustls_pki_types_docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -62,6 +76,8 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::ops::Deref;
 use core::time::Duration;
+#[cfg(feature = "alloc")]
+use pem::{PemObject, PemObjectFilter, SectionKind};
 #[cfg(all(
     feature = "std",
     not(all(target_family = "wasm", target_os = "unknown"))
@@ -70,7 +86,19 @@ use std::time::SystemTime;
 #[cfg(all(target_family = "wasm", target_os = "unknown", feature = "web"))]
 use web_time::SystemTime;
 
+pub mod alg_id;
+mod base64;
 mod server_name;
+
+/// Low-level PEM decoding APIs.
+///
+/// These APIs allow decoding PEM format in an iterator, which means you
+/// can load multiple different types of PEM section from a file in a single
+/// pass.
+#[cfg(feature = "alloc")]
+pub mod pem;
+
+pub use alg_id::AlgorithmIdentifier;
 pub use server_name::{
     AddrParseError, DnsName, InvalidDnsNameError, IpAddr, Ipv4Addr, Ipv6Addr, ServerName,
 };
@@ -78,6 +106,23 @@ pub use server_name::{
 /// A DER-encoded X.509 private key, in one of several formats
 ///
 /// See variant inner types for more detailed information.
+///
+/// This can load several types of PEM-encoded private key, and then reveal
+/// which types were found:
+///
+/// ```rust
+/// # #[cfg(all(feature = "alloc", feature = "std"))] {
+/// use rustls_pki_types::{PrivateKeyDer, pem::PemObject};
+///
+/// // load from a PEM file
+/// let pkcs8 = PrivateKeyDer::from_pem_file("tests/data/nistp256key.pkcs8.pem").unwrap();
+/// let pkcs1 = PrivateKeyDer::from_pem_file("tests/data/rsa1024.pkcs1.pem").unwrap();
+/// let sec1 = PrivateKeyDer::from_pem_file("tests/data/nistp256key.pem").unwrap();
+/// assert!(matches!(pkcs8, PrivateKeyDer::Pkcs8(_)));
+/// assert!(matches!(pkcs1, PrivateKeyDer::Pkcs1(_)));
+/// assert!(matches!(sec1, PrivateKeyDer::Sec1(_)));
+/// # }
+/// ```
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq)]
 pub enum PrivateKeyDer<'a> {
@@ -89,7 +134,18 @@ pub enum PrivateKeyDer<'a> {
     Pkcs8(PrivatePkcs8KeyDer<'a>),
 }
 
-impl<'a> PrivateKeyDer<'a> {
+#[cfg(feature = "alloc")]
+impl zeroize::Zeroize for PrivateKeyDer<'static> {
+    fn zeroize(&mut self) {
+        match self {
+            Self::Pkcs1(key) => key.zeroize(),
+            Self::Sec1(key) => key.zeroize(),
+            Self::Pkcs8(key) => key.zeroize(),
+        }
+    }
+}
+
+impl PrivateKeyDer<'_> {
     /// Clone the private key to a `'static` value
     #[cfg(feature = "alloc")]
     pub fn clone_key(&self) -> PrivateKeyDer<'static> {
@@ -107,6 +163,18 @@ impl<'a> PrivateKeyDer<'a> {
             PrivateKeyDer::Pkcs1(key) => key.secret_pkcs1_der(),
             PrivateKeyDer::Sec1(key) => key.secret_sec1_der(),
             PrivateKeyDer::Pkcs8(key) => key.secret_pkcs8_der(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl PemObject for PrivateKeyDer<'static> {
+    fn from_pem(kind: SectionKind, value: Vec<u8>) -> Option<Self> {
+        match kind {
+            SectionKind::RsaPrivateKey => Some(Self::Pkcs1(value.into())),
+            SectionKind::EcPrivateKey => Some(Self::Sec1(value.into())),
+            SectionKind::PrivateKey => Some(Self::Pkcs8(value.into())),
+            _ => None,
         }
     }
 }
@@ -214,7 +282,7 @@ impl<'a> TryFrom<&'a [u8]> for PrivateKeyDer<'a> {
 static INVALID_KEY_DER_ERR: &str = "unknown or invalid key format";
 
 #[cfg(feature = "alloc")]
-impl<'a> TryFrom<Vec<u8>> for PrivateKeyDer<'a> {
+impl TryFrom<Vec<u8>> for PrivateKeyDer<'_> {
     type Error = &'static str;
 
     fn try_from(key: Vec<u8>) -> Result<Self, Self::Error> {
@@ -229,8 +297,20 @@ impl<'a> TryFrom<Vec<u8>> for PrivateKeyDer<'a> {
 /// A DER-encoded plaintext RSA private key; as specified in PKCS#1/RFC 3447
 ///
 /// RSA private keys are identified in PEM context as `RSA PRIVATE KEY` and when stored in a
-/// file usually use a `.pem` or `.key` extension. For more on PEM files, refer to the crate
-/// documentation.
+/// file usually use a `.pem` or `.key` extension.
+///
+/// ```rust
+/// # #[cfg(all(feature = "alloc", feature = "std"))] {
+/// use rustls_pki_types::{PrivatePkcs1KeyDer, pem::PemObject};
+///
+/// // load from a PEM file
+/// PrivatePkcs1KeyDer::from_pem_file("tests/data/rsa1024.pkcs1.pem").unwrap();
+///
+/// // or from a PEM byte slice...
+/// # let byte_slice = include_bytes!("../tests/data/rsa1024.pkcs1.pem");
+/// PrivatePkcs1KeyDer::from_pem_slice(byte_slice).unwrap();
+/// # }
+/// ```
 #[derive(PartialEq, Eq)]
 pub struct PrivatePkcs1KeyDer<'a>(Der<'a>);
 
@@ -247,6 +327,18 @@ impl PrivatePkcs1KeyDer<'_> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl zeroize::Zeroize for PrivatePkcs1KeyDer<'static> {
+    fn zeroize(&mut self) {
+        self.0.0.zeroize()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl PemObjectFilter for PrivatePkcs1KeyDer<'static> {
+    const KIND: SectionKind = SectionKind::RsaPrivateKey;
+}
+
 impl<'a> From<&'a [u8]> for PrivatePkcs1KeyDer<'a> {
     fn from(slice: &'a [u8]) -> Self {
         Self(Der(BytesInner::Borrowed(slice)))
@@ -254,7 +346,7 @@ impl<'a> From<&'a [u8]> for PrivatePkcs1KeyDer<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> From<Vec<u8>> for PrivatePkcs1KeyDer<'a> {
+impl From<Vec<u8>> for PrivatePkcs1KeyDer<'_> {
     fn from(vec: Vec<u8>) -> Self {
         Self(Der(BytesInner::Owned(vec)))
     }
@@ -273,6 +365,19 @@ impl fmt::Debug for PrivatePkcs1KeyDer<'_> {
 /// Sec1 private keys are identified in PEM context as `EC PRIVATE KEY` and when stored in a
 /// file usually use a `.pem` or `.key` extension. For more on PEM files, refer to the crate
 /// documentation.
+///
+/// ```rust
+/// # #[cfg(all(feature = "alloc", feature = "std"))] {
+/// use rustls_pki_types::{PrivateSec1KeyDer, pem::PemObject};
+///
+/// // load from a PEM file
+/// PrivateSec1KeyDer::from_pem_file("tests/data/nistp256key.pem").unwrap();
+///
+/// // or from a PEM byte slice...
+/// # let byte_slice = include_bytes!("../tests/data/nistp256key.pem");
+/// PrivateSec1KeyDer::from_pem_slice(byte_slice).unwrap();
+/// # }
+/// ```
 #[derive(PartialEq, Eq)]
 pub struct PrivateSec1KeyDer<'a>(Der<'a>);
 
@@ -289,6 +394,18 @@ impl PrivateSec1KeyDer<'_> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl zeroize::Zeroize for PrivateSec1KeyDer<'static> {
+    fn zeroize(&mut self) {
+        self.0.0.zeroize()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl PemObjectFilter for PrivateSec1KeyDer<'static> {
+    const KIND: SectionKind = SectionKind::EcPrivateKey;
+}
+
 impl<'a> From<&'a [u8]> for PrivateSec1KeyDer<'a> {
     fn from(slice: &'a [u8]) -> Self {
         Self(Der(BytesInner::Borrowed(slice)))
@@ -296,7 +413,7 @@ impl<'a> From<&'a [u8]> for PrivateSec1KeyDer<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> From<Vec<u8>> for PrivateSec1KeyDer<'a> {
+impl From<Vec<u8>> for PrivateSec1KeyDer<'_> {
     fn from(vec: Vec<u8>) -> Self {
         Self(Der(BytesInner::Owned(vec)))
     }
@@ -315,6 +432,20 @@ impl fmt::Debug for PrivateSec1KeyDer<'_> {
 /// PKCS#8 private keys are identified in PEM context as `PRIVATE KEY` and when stored in a
 /// file usually use a `.pem` or `.key` extension. For more on PEM files, refer to the crate
 /// documentation.
+///
+/// ```rust
+/// # #[cfg(all(feature = "alloc", feature = "std"))] {
+/// use rustls_pki_types::{PrivatePkcs8KeyDer, pem::PemObject};
+///
+/// // load from a PEM file
+/// PrivatePkcs8KeyDer::from_pem_file("tests/data/nistp256key.pkcs8.pem").unwrap();
+/// PrivatePkcs8KeyDer::from_pem_file("tests/data/rsa1024.pkcs8.pem").unwrap();
+///
+/// // or from a PEM byte slice...
+/// # let byte_slice = include_bytes!("../tests/data/nistp256key.pkcs8.pem");
+/// PrivatePkcs8KeyDer::from_pem_slice(byte_slice).unwrap();
+/// # }
+/// ```
 #[derive(PartialEq, Eq)]
 pub struct PrivatePkcs8KeyDer<'a>(Der<'a>);
 
@@ -331,6 +462,18 @@ impl PrivatePkcs8KeyDer<'_> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl zeroize::Zeroize for PrivatePkcs8KeyDer<'static> {
+    fn zeroize(&mut self) {
+        self.0.0.zeroize()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl PemObjectFilter for PrivatePkcs8KeyDer<'static> {
+    const KIND: SectionKind = SectionKind::PrivateKey;
+}
+
 impl<'a> From<&'a [u8]> for PrivatePkcs8KeyDer<'a> {
     fn from(slice: &'a [u8]) -> Self {
         Self(Der(BytesInner::Borrowed(slice)))
@@ -338,7 +481,7 @@ impl<'a> From<&'a [u8]> for PrivatePkcs8KeyDer<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> From<Vec<u8>> for PrivatePkcs8KeyDer<'a> {
+impl From<Vec<u8>> for PrivatePkcs8KeyDer<'_> {
     fn from(vec: Vec<u8>) -> Self {
         Self(Der(BytesInner::Owned(vec)))
     }
@@ -362,7 +505,8 @@ impl fmt::Debug for PrivatePkcs8KeyDer<'_> {
 /// The most common way to get one of these is to call [`rustls_webpki::anchor_from_trusted_cert()`].
 ///
 /// [`rustls_webpki::anchor_from_trusted_cert()`]: https://docs.rs/rustls-webpki/latest/webpki/fn.anchor_from_trusted_cert.html
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(clippy::exhaustive_structs)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TrustAnchor<'a> {
     /// Value of the `subject` field of the trust anchor
     pub subject: Der<'a>,
@@ -393,8 +537,35 @@ impl TrustAnchor<'_> {
 ///
 /// Certificate revocation lists are identified in PEM context as `X509 CRL` and when stored in a
 /// file usually use a `.crl` extension. For more on PEM files, refer to the crate documentation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// ```rust
+/// # #[cfg(all(feature = "alloc", feature = "std"))] {
+/// use rustls_pki_types::{CertificateRevocationListDer, pem::PemObject};
+///
+/// // load several from a PEM file
+/// let crls: Vec<_> = CertificateRevocationListDer::pem_file_iter("tests/data/crl.pem")
+///     .unwrap()
+///     .collect();
+/// assert!(crls.len() >= 1);
+///
+/// // or one from a PEM byte slice...
+/// # let byte_slice = include_bytes!("../tests/data/crl.pem");
+/// CertificateRevocationListDer::from_pem_slice(byte_slice).unwrap();
+///
+/// // or several from a PEM byte slice
+/// let crls: Vec<_> = CertificateRevocationListDer::pem_slice_iter(byte_slice)
+///     .collect();
+/// assert!(crls.len() >= 1);
+/// # }
+/// ```
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct CertificateRevocationListDer<'a>(Der<'a>);
+
+#[cfg(feature = "alloc")]
+impl PemObjectFilter for CertificateRevocationListDer<'static> {
+    const KIND: SectionKind = SectionKind::Crl;
+}
 
 impl AsRef<[u8]> for CertificateRevocationListDer<'_> {
     fn as_ref(&self) -> &[u8] {
@@ -417,7 +588,7 @@ impl<'a> From<&'a [u8]> for CertificateRevocationListDer<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> From<Vec<u8>> for CertificateRevocationListDer<'a> {
+impl From<Vec<u8>> for CertificateRevocationListDer<'_> {
     fn from(vec: Vec<u8>) -> Self {
         Self(Der::from(vec))
     }
@@ -427,8 +598,26 @@ impl<'a> From<Vec<u8>> for CertificateRevocationListDer<'a> {
 ///
 /// Certificate signing requests are identified in PEM context as `CERTIFICATE REQUEST` and when stored in a
 /// file usually use a `.csr` extension. For more on PEM files, refer to the crate documentation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// ```rust
+/// # #[cfg(all(feature = "alloc", feature = "std"))] {
+/// use rustls_pki_types::{CertificateSigningRequestDer, pem::PemObject};
+///
+/// // load from a PEM file
+/// CertificateSigningRequestDer::from_pem_file("tests/data/csr.pem").unwrap();
+///
+/// // or from a PEM byte slice...
+/// # let byte_slice = include_bytes!("../tests/data/csr.pem");
+/// CertificateSigningRequestDer::from_pem_slice(byte_slice).unwrap();
+/// # }
+/// ```
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct CertificateSigningRequestDer<'a>(Der<'a>);
+
+#[cfg(feature = "alloc")]
+impl PemObjectFilter for CertificateSigningRequestDer<'static> {
+    const KIND: SectionKind = SectionKind::Csr;
+}
 
 impl AsRef<[u8]> for CertificateSigningRequestDer<'_> {
     fn as_ref(&self) -> &[u8] {
@@ -451,7 +640,7 @@ impl<'a> From<&'a [u8]> for CertificateSigningRequestDer<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> From<Vec<u8>> for CertificateSigningRequestDer<'a> {
+impl From<Vec<u8>> for CertificateSigningRequestDer<'_> {
     fn from(vec: Vec<u8>) -> Self {
         Self(Der::from(vec))
     }
@@ -462,8 +651,41 @@ impl<'a> From<Vec<u8>> for CertificateSigningRequestDer<'a> {
 /// Certificates are identified in PEM context as `CERTIFICATE` and when stored in a
 /// file usually use a `.pem`, `.cer` or `.crt` extension. For more on PEM files, refer to the
 /// crate documentation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// ```rust
+/// # #[cfg(all(feature = "alloc", feature = "std"))] {
+/// use rustls_pki_types::{CertificateDer, pem::PemObject};
+///
+/// // load several from a PEM file
+/// let certs: Vec<_> = CertificateDer::pem_file_iter("tests/data/certificate.chain.pem")
+///     .unwrap()
+///     .collect();
+/// assert_eq!(certs.len(), 3);
+///
+/// // or one from a PEM byte slice...
+/// # let byte_slice = include_bytes!("../tests/data/certificate.chain.pem");
+/// CertificateDer::from_pem_slice(byte_slice).unwrap();
+///
+/// // or several from a PEM byte slice
+/// let certs: Vec<_> = CertificateDer::pem_slice_iter(byte_slice)
+///     .collect();
+/// assert_eq!(certs.len(), 3);
+/// # }
+/// ```
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct CertificateDer<'a>(Der<'a>);
+
+impl<'a> CertificateDer<'a> {
+    /// A const constructor to create a `CertificateDer` from a slice of DER.
+    pub const fn from_slice(bytes: &'a [u8]) -> Self {
+        Self(Der::from_slice(bytes))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl PemObjectFilter for CertificateDer<'static> {
+    const KIND: SectionKind = SectionKind::Certificate;
+}
 
 impl AsRef<[u8]> for CertificateDer<'_> {
     fn as_ref(&self) -> &[u8] {
@@ -486,7 +708,7 @@ impl<'a> From<&'a [u8]> for CertificateDer<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> From<Vec<u8>> for CertificateDer<'a> {
+impl From<Vec<u8>> for CertificateDer<'_> {
     fn from(vec: Vec<u8>) -> Self {
         Self(Der::from(vec))
     }
@@ -496,7 +718,7 @@ impl CertificateDer<'_> {
     /// Converts this certificate into its owned variant, unfreezing borrowed content (if any)
     #[cfg(feature = "alloc")]
     pub fn into_owned(self) -> CertificateDer<'static> {
-        CertificateDer(Der(self.0 .0.into_owned()))
+        CertificateDer(Der(self.0.0.into_owned()))
     }
 }
 
@@ -505,8 +727,28 @@ impl CertificateDer<'_> {
 pub type SubjectPublicKeyInfo<'a> = SubjectPublicKeyInfoDer<'a>;
 
 /// A DER-encoded SubjectPublicKeyInfo (SPKI), as specified in RFC 5280.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Public keys are identified in PEM context as a `PUBLIC KEY`.
+///
+/// ```rust
+/// # #[cfg(all(feature = "alloc", feature = "std"))] {
+/// use rustls_pki_types::{SubjectPublicKeyInfoDer, pem::PemObject};
+///
+/// // load from a PEM file
+/// SubjectPublicKeyInfoDer::from_pem_file("tests/data/spki.pem").unwrap();
+///
+/// // or from a PEM byte slice...
+/// # let byte_slice = include_bytes!("../tests/data/spki.pem");
+/// SubjectPublicKeyInfoDer::from_pem_slice(byte_slice).unwrap();
+/// # }
+/// ```
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct SubjectPublicKeyInfoDer<'a>(Der<'a>);
+
+#[cfg(feature = "alloc")]
+impl PemObjectFilter for SubjectPublicKeyInfoDer<'static> {
+    const KIND: SectionKind = SectionKind::PublicKey;
+}
 
 impl AsRef<[u8]> for SubjectPublicKeyInfoDer<'_> {
     fn as_ref(&self) -> &[u8] {
@@ -529,7 +771,7 @@ impl<'a> From<&'a [u8]> for SubjectPublicKeyInfoDer<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> From<Vec<u8>> for SubjectPublicKeyInfoDer<'a> {
+impl From<Vec<u8>> for SubjectPublicKeyInfoDer<'_> {
     fn from(vec: Vec<u8>) -> Self {
         Self(Der::from(vec))
     }
@@ -539,13 +781,13 @@ impl SubjectPublicKeyInfoDer<'_> {
     /// Converts this SubjectPublicKeyInfo into its owned variant, unfreezing borrowed content (if any)
     #[cfg(feature = "alloc")]
     pub fn into_owned(self) -> SubjectPublicKeyInfoDer<'static> {
-        SubjectPublicKeyInfoDer(Der(self.0 .0.into_owned()))
+        SubjectPublicKeyInfoDer(Der(self.0.0.into_owned()))
     }
 }
 
 /// A TLS-encoded Encrypted Client Hello (ECH) configuration list (`ECHConfigList`); as specified in
-/// [draft-ietf-tls-esni-18 §4](https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni-18#section-4)
-#[derive(Clone, Eq, PartialEq)]
+/// [RFC 9849 §4](https://datatracker.ietf.org/doc/html/rfc9849#section-4)
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct EchConfigListBytes<'a>(BytesInner<'a>);
 
 impl EchConfigListBytes<'_> {
@@ -554,6 +796,55 @@ impl EchConfigListBytes<'_> {
     pub fn into_owned(self) -> EchConfigListBytes<'static> {
         EchConfigListBytes(self.0.into_owned())
     }
+}
+
+#[cfg(feature = "alloc")]
+impl EchConfigListBytes<'static> {
+    /// Convert an iterator over PEM items into an `EchConfigListBytes` and private key.
+    ///
+    /// This handles the "ECHConfig file" format specified in
+    /// <https://www.ietf.org/archive/id/draft-farrell-tls-pemesni-05.html#name-echconfig-file>
+    ///
+    /// Use it like:
+    ///
+    /// ```rust
+    /// # #[cfg(all(feature = "alloc", feature = "std"))] {
+    /// # use rustls_pki_types::{EchConfigListBytes, pem::PemObject};
+    /// let (config, key) = EchConfigListBytes::config_and_key_from_iter(
+    ///     PemObject::pem_file_iter("tests/data/ech.pem").unwrap()
+    /// ).unwrap();
+    /// # }
+    /// ```
+    pub fn config_and_key_from_iter(
+        iter: impl Iterator<Item = Result<(SectionKind, Vec<u8>), pem::Error>>,
+    ) -> Result<(Self, PrivatePkcs8KeyDer<'static>), pem::Error> {
+        let mut key = None;
+        let mut config = None;
+
+        for item in iter {
+            let (kind, data) = item?;
+            match kind {
+                SectionKind::PrivateKey => {
+                    key = PrivatePkcs8KeyDer::from_pem(kind, data);
+                }
+                SectionKind::EchConfigList => {
+                    config = Self::from_pem(kind, data);
+                }
+                _ => continue,
+            };
+
+            if let (Some(_key), Some(_config)) = (&key, &config) {
+                return Ok((config.take().unwrap(), key.take().unwrap()));
+            }
+        }
+
+        Err(pem::Error::NoItemsFound)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl PemObjectFilter for EchConfigListBytes<'static> {
+    const KIND: SectionKind = SectionKind::EchConfigList;
 }
 
 impl fmt::Debug for EchConfigListBytes<'_> {
@@ -583,7 +874,7 @@ impl<'a> From<&'a [u8]> for EchConfigListBytes<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> From<Vec<u8>> for EchConfigListBytes<'a> {
+impl From<Vec<u8>> for EchConfigListBytes<'_> {
     fn from(vec: Vec<u8>) -> Self {
         Self(BytesInner::Owned(vec))
     }
@@ -636,6 +927,14 @@ pub trait SignatureVerificationAlgorithm: Send + Sync + fmt::Debug {
     /// for signature verification.
     fn signature_alg_id(&self) -> AlgorithmIdentifier;
 
+    /// Return the FIPS status of this algorithm or implementation.
+    fn fips_status(&self) -> FipsStatus {
+        match self.fips() {
+            true => FipsStatus::Pending,
+            false => FipsStatus::Unvalidated,
+        }
+    }
+
     /// Return `true` if this is backed by a FIPS-approved implementation.
     fn fips(&self) -> bool {
         false
@@ -643,72 +942,14 @@ pub trait SignatureVerificationAlgorithm: Send + Sync + fmt::Debug {
 }
 
 /// A detail-less error when a signature is not valid.
+#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, Copy, Clone)]
 pub struct InvalidSignature;
-
-/// A DER encoding of the PKIX AlgorithmIdentifier type:
-///
-/// ```ASN.1
-/// AlgorithmIdentifier  ::=  SEQUENCE  {
-///     algorithm               OBJECT IDENTIFIER,
-///     parameters              ANY DEFINED BY algorithm OPTIONAL  }
-///                                -- contains a value of the type
-///                                -- registered for use with the
-///                                -- algorithm object identifier value
-/// ```
-/// (from <https://www.rfc-editor.org/rfc/rfc5280#section-4.1.1.2>)
-///
-/// The outer sequence encoding is *not included*, so this is the DER encoding
-/// of an OID for `algorithm` plus the `parameters` value.
-///
-/// For example, this is the `rsaEncryption` algorithm:
-///
-/// ```
-/// let rsa_encryption = rustls_pki_types::AlgorithmIdentifier::from_slice(
-///     &[
-///         // algorithm: 1.2.840.113549.1.1.1
-///         0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01,
-///         // parameters: NULL
-///         0x05, 0x00
-///     ]
-/// );
-/// ```
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct AlgorithmIdentifier(&'static [u8]);
-
-impl AlgorithmIdentifier {
-    /// Makes a new `AlgorithmIdentifier` from a static octet slice.
-    ///
-    /// This does not validate the contents of the slice.
-    pub const fn from_slice(bytes: &'static [u8]) -> Self {
-        Self(bytes)
-    }
-}
-
-impl AsRef<[u8]> for AlgorithmIdentifier {
-    fn as_ref(&self) -> &[u8] {
-        self.0
-    }
-}
-
-impl fmt::Debug for AlgorithmIdentifier {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        hex(f, self.0)
-    }
-}
-
-impl Deref for AlgorithmIdentifier {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        self.as_ref()
-    }
-}
 
 /// A timestamp, tracking the number of non-leap seconds since the Unix epoch.
 ///
 /// The Unix epoch is defined January 1, 1970 00:00:00 UTC.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UnixTime(u64);
 
 impl UnixTime {
@@ -731,12 +972,12 @@ impl UnixTime {
     /// Convert a `Duration` since the start of 1970 to a `UnixTime`
     ///
     /// The `duration` must be relative to the Unix epoch.
-    pub fn since_unix_epoch(duration: Duration) -> Self {
+    pub const fn since_unix_epoch(duration: Duration) -> Self {
         Self(duration.as_secs())
     }
 
     /// Number of seconds since the Unix epoch
-    pub fn as_secs(&self) -> u64 {
+    pub const fn as_secs(&self) -> u64 {
         self.0
     }
 }
@@ -746,7 +987,7 @@ impl UnixTime {
 /// This wrapper type is used to represent DER-encoded data in a way that is agnostic to whether
 /// the data is owned (by a `Vec<u8>`) or borrowed (by a `&[u8]`). Support for the owned
 /// variant is only available when the `alloc` feature is enabled.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Der<'a>(BytesInner<'a>);
 
 impl<'a> Der<'a> {
@@ -806,6 +1047,16 @@ impl BytesInner<'_> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl zeroize::Zeroize for BytesInner<'static> {
+    fn zeroize(&mut self) {
+        match self {
+            BytesInner::Owned(vec) => vec.zeroize(),
+            BytesInner::Borrowed(_) => (),
+        }
+    }
+}
+
 impl AsRef<[u8]> for BytesInner<'_> {
     fn as_ref(&self) -> &[u8] {
         match &self {
@@ -813,6 +1064,12 @@ impl AsRef<[u8]> for BytesInner<'_> {
             BytesInner::Owned(vec) => vec.as_ref(),
             BytesInner::Borrowed(slice) => slice,
         }
+    }
+}
+
+impl core::hash::Hash for BytesInner<'_> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        state.write(self.as_ref());
     }
 }
 
@@ -824,13 +1081,39 @@ impl PartialEq for BytesInner<'_> {
 
 impl Eq for BytesInner<'_> {}
 
+/// FIPS validation status of an algorithm or implementation.
+#[allow(clippy::exhaustive_enums)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum FipsStatus {
+    /// Not FIPS tested, or unapproved algorithm.
+    Unvalidated,
+    /// In queue for FIPS validation.
+    Pending,
+    /// FIPS certified, with named certificate.
+    #[non_exhaustive]
+    Certified {
+        /// A name, number or URL referencing the FIPS certificate.
+        certificate: &'static str,
+    },
+}
+
+impl FipsStatus {
+    /// Construct a [`FipsStatus::Certified`].
+    ///
+    /// The argument should be a name, number or URL referencing the FIPS certificate.
+    /// This is for human presentation purposes, it is not for automated use.
+    pub const fn certified(certificate: &'static str) -> Self {
+        Self::Certified { certificate }
+    }
+}
+
 // Format an iterator of u8 into a hex string
 fn hex<'a>(f: &mut fmt::Formatter<'_>, payload: impl IntoIterator<Item = &'a u8>) -> fmt::Result {
     for (i, b) in payload.into_iter().enumerate() {
         if i == 0 {
             write!(f, "0x")?;
         }
-        write!(f, "{:02x}", b)?;
+        write!(f, "{b:02x}")?;
     }
     Ok(())
 }
@@ -842,13 +1125,19 @@ mod tests {
     #[test]
     fn der_debug() {
         let der = Der::from_slice(&[0x01, 0x02, 0x03]);
-        assert_eq!(format!("{:?}", der), "0x010203");
+        assert_eq!(format!("{der:?}"), "0x010203");
     }
 
     #[test]
     fn alg_id_debug() {
         let alg_id = AlgorithmIdentifier::from_slice(&[0x01, 0x02, 0x03]);
-        assert_eq!(format!("{:?}", alg_id), "0x010203");
+        assert_eq!(format!("{alg_id:?}"), "0x010203");
+    }
+
+    #[test]
+    fn fips_status_debug() {
+        let fips = FipsStatus::certified("hello");
+        assert_eq!(format!("{fips:?}"), "Certified { certificate: \"hello\" }");
     }
 
     #[test]

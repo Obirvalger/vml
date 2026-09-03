@@ -8,9 +8,9 @@
 
 use crate::future::Future;
 use crate::loom::cell::UnsafeCell;
-use crate::runtime::task::{JoinHandle, LocalNotified, Notified, Schedule, Task};
-use crate::util::linked_list::{Link, LinkedList};
-use crate::util::sharded_list;
+use crate::runtime::task::{JoinHandle, LocalNotified, Notified, Schedule, SpawnLocation, Task};
+use crate::util::linked_list::LinkedList;
+use crate::util::sharded_list::ShardedList;
 
 use crate::loom::sync::atomic::{AtomicBool, Ordering};
 use std::marker::PhantomData;
@@ -56,12 +56,10 @@ cfg_not_has_atomic_u64! {
 }
 
 pub(crate) struct OwnedTasks<S: 'static> {
-    list: List<S>,
+    list: ShardedList<Task<S>>,
     pub(crate) id: NonZeroU64,
     closed: AtomicBool,
 }
-
-type List<S> = sharded_list::ShardedList<Task<S>, <Task<S> as Link>::Target>;
 
 pub(crate) struct LocalOwnedTasks<S: 'static> {
     inner: UnsafeCell<OwnedTasksInner<S>>,
@@ -70,7 +68,7 @@ pub(crate) struct LocalOwnedTasks<S: 'static> {
 }
 
 struct OwnedTasksInner<S: 'static> {
-    list: LinkedList<Task<S>, <Task<S> as Link>::Target>,
+    list: LinkedList<Task<S>>,
     closed: bool,
 }
 
@@ -78,7 +76,7 @@ impl<S: 'static> OwnedTasks<S> {
     pub(crate) fn new(num_cores: usize) -> Self {
         let shard_size = Self::gen_shared_list_size(num_cores);
         Self {
-            list: List::new(shard_size),
+            list: ShardedList::new(shard_size),
             closed: AtomicBool::new(false),
             id: get_next_id(),
         }
@@ -91,13 +89,36 @@ impl<S: 'static> OwnedTasks<S> {
         task: T,
         scheduler: S,
         id: super::Id,
+        spawned_at: SpawnLocation,
     ) -> (JoinHandle<T::Output>, Option<Notified<S>>)
     where
         S: Schedule,
         T: Future + Send + 'static,
         T::Output: Send + 'static,
     {
-        let (task, notified, join) = super::new_task(task, scheduler, id);
+        let (task, notified, join) = super::new_task(task, scheduler, id, spawned_at);
+        let notified = unsafe { self.bind_inner(task, notified) };
+        (join, notified)
+    }
+
+    /// Bind a task that isn't safe to transfer across thread boundaries.
+    ///
+    /// # Safety
+    ///
+    /// Only use this in `LocalRuntime` where the task cannot move
+    pub(crate) unsafe fn bind_local<T>(
+        &self,
+        task: T,
+        scheduler: S,
+        id: super::Id,
+        spawned_at: SpawnLocation,
+    ) -> (JoinHandle<T::Output>, Option<Notified<S>>)
+    where
+        S: Schedule,
+        T: Future + 'static,
+        T::Output: 'static,
+    {
+        let (task, notified, join) = super::new_task(task, scheduler, id, spawned_at);
         let notified = unsafe { self.bind_inner(task, notified) };
         (join, notified)
     }
@@ -166,8 +187,16 @@ impl<S: 'static> OwnedTasks<S> {
         self.list.shard_size()
     }
 
-    pub(crate) fn active_tasks_count(&self) -> usize {
+    pub(crate) fn num_alive_tasks(&self) -> usize {
         self.list.len()
+    }
+
+    cfg_unstable_metrics! {
+        cfg_64bit_metrics! {
+            pub(crate) fn spawned_tasks_count(&self) -> u64 {
+                self.list.added()
+            }
+        }
     }
 
     pub(crate) fn remove(&self, task: &Task<S>) -> Option<Task<S>> {
@@ -232,13 +261,14 @@ impl<S: 'static> LocalOwnedTasks<S> {
         task: T,
         scheduler: S,
         id: super::Id,
+        spawned_at: SpawnLocation,
     ) -> (JoinHandle<T::Output>, Option<Notified<S>>)
     where
         S: Schedule,
         T: Future + 'static,
         T::Output: 'static,
     {
-        let (task, notified, join) = super::new_task(task, scheduler, id);
+        let (task, notified, join) = super::new_task(task, scheduler, id, spawned_at);
 
         unsafe {
             // safety: We just created the task, so we have exclusive access

@@ -1,22 +1,22 @@
-extern crate openssl;
-extern crate openssl_probe;
-
-use self::openssl::error::ErrorStack;
-use self::openssl::hash::MessageDigest;
-use self::openssl::nid::Nid;
-use self::openssl::pkcs12::Pkcs12;
-use self::openssl::pkey::{PKey, Private};
-use self::openssl::ssl::{
+use openssl::error::ErrorStack;
+use openssl::hash::MessageDigest;
+use openssl::nid::Nid;
+use openssl::pkcs12::Pkcs12;
+use openssl::pkey::{PKey, Private};
+use openssl::ssl::{
     self, MidHandshakeSslStream, SslAcceptor, SslConnector, SslContextBuilder, SslMethod,
     SslVerifyMode,
 };
-use self::openssl::x509::{store::X509StoreBuilder, X509VerifyResult, X509};
-use std::error;
-use std::fmt;
-use std::io;
-use std::sync::Once;
+use openssl::x509::store::X509StoreBuilder;
+use openssl::x509::{X509VerifyResult, X509};
+use openssl_probe::ProbeResult;
+use std::sync::LazyLock;
+use std::{error, fmt, io};
 
-use {Protocol, TlsAcceptorBuilder, TlsConnectorBuilder};
+use crate::{Protocol, TlsAcceptorBuilder, TlsConnectorBuilder};
+use log::debug;
+
+static PROBE_RESULT: LazyLock<ProbeResult> = LazyLock::new(openssl_probe::probe);
 
 #[cfg(have_min_max_version)]
 fn supported_protocols(
@@ -24,7 +24,7 @@ fn supported_protocols(
     max: Option<Protocol>,
     ctx: &mut SslContextBuilder,
 ) -> Result<(), ErrorStack> {
-    use self::openssl::ssl::SslVersion;
+    use openssl::ssl::SslVersion;
 
     fn cvt(p: Protocol) -> SslVersion {
         match p {
@@ -32,6 +32,7 @@ fn supported_protocols(
             Protocol::Tlsv10 => SslVersion::TLS1,
             Protocol::Tlsv11 => SslVersion::TLS1_1,
             Protocol::Tlsv12 => SslVersion::TLS1_2,
+            Protocol::Tlsv13 => SslVersion::TLS1_3,
         }
     }
 
@@ -47,7 +48,7 @@ fn supported_protocols(
     max: Option<Protocol>,
     ctx: &mut SslContextBuilder,
 ) -> Result<(), ErrorStack> {
-    use self::openssl::ssl::SslOptions;
+    use openssl::ssl::SslOptions;
 
     let no_ssl_mask = SslOptions::NO_SSLV2
         | SslOptions::NO_SSLV3
@@ -70,9 +71,17 @@ fn supported_protocols(
                 | SslOptions::NO_TLSV1
                 | SslOptions::NO_TLSV1_1
         }
+        Some(Protocol::Tlsv13) => {
+            SslOptions::NO_SSLV2
+                | SslOptions::NO_SSLV3
+                | SslOptions::NO_TLSV1
+                | SslOptions::NO_TLSV1_1
+                | SslOptions::NO_TLSV1_2
+        }
     };
     options |= match max {
-        None | Some(Protocol::Tlsv12) => SslOptions::empty(),
+        // NO_TLSV1_3 may be unavailalbe in the old versions
+        None | Some(Protocol::Tlsv12 | Protocol::Tlsv13) => SslOptions::empty(),
         Some(Protocol::Tlsv11) => SslOptions::NO_TLSV1_2,
         Some(Protocol::Tlsv10) => SslOptions::NO_TLSV1_1 | SslOptions::NO_TLSV1_2,
         Some(Protocol::Sslv3) => {
@@ -83,11 +92,6 @@ fn supported_protocols(
     ctx.set_options(options);
 
     Ok(())
-}
-
-fn init_trust() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(openssl_probe::init_ssl_cert_env_vars);
 }
 
 #[cfg(target_os = "android")]
@@ -115,6 +119,7 @@ pub enum Error {
     Ssl(ssl::Error, X509VerifyResult),
     EmptyChain,
     NotPkcs8,
+    AlpnTooLong,
 }
 
 impl error::Error for Error {
@@ -124,6 +129,7 @@ impl error::Error for Error {
             Error::Ssl(ref e, _) => error::Error::source(e),
             Error::EmptyChain => None,
             Error::NotPkcs8 => None,
+            Error::AlpnTooLong => None,
         }
     }
 }
@@ -139,6 +145,7 @@ impl fmt::Display for Error {
                 "at least one certificate must be provided to create an identity"
             ),
             Error::NotPkcs8 => write!(fmt, "expected PKCS#8 PEM"),
+            Error::AlpnTooLong => write!(fmt, "ALPN too long"),
         }
     }
 }
@@ -195,6 +202,11 @@ impl Certificate {
     pub fn from_pem(buf: &[u8]) -> Result<Certificate, Error> {
         let cert = X509::from_pem(buf)?;
         Ok(Certificate(cert))
+    }
+
+    pub fn stack_from_pem(buf: &[u8]) -> Result<Vec<Certificate>, Error> {
+        let certs = X509::stack_from_pem(buf)?;
+        Ok(certs.into_iter().map(Certificate).collect())
     }
 
     pub fn to_der(&self) -> Result<Vec<u8>, Error> {
@@ -272,9 +284,20 @@ pub struct TlsConnector {
 
 impl TlsConnector {
     pub fn new(builder: &TlsConnectorBuilder) -> Result<TlsConnector, Error> {
-        init_trust();
-
         let mut connector = SslConnector::builder(SslMethod::tls())?;
+
+        // We need to load these separately so an error on one doesn't prevent the other from loading.
+        if let Some(cert_file) = &PROBE_RESULT.cert_file {
+            if let Err(e) = connector.load_verify_locations(Some(cert_file), None) {
+                debug!("load_verify_locations cert file error: {:?}", e);
+            }
+        }
+        for cert_dir in &PROBE_RESULT.cert_dir {
+            if let Err(e) = connector.load_verify_locations(None, Some(cert_dir)) {
+                debug!("load_verify_locations cert dir error: {:?}", e);
+            }
+        }
+
         if let Some(ref identity) = builder.identity {
             connector.set_certificate(&identity.0.cert)?;
             connector.set_private_key(&identity.0.pkey)?;
@@ -298,23 +321,8 @@ impl TlsConnector {
         }
 
         #[cfg(feature = "alpn")]
-        {
-            if !builder.alpn.is_empty() {
-                // Wire format is each alpn preceded by its length as a byte.
-                let mut alpn_wire_format = Vec::with_capacity(
-                    builder
-                        .alpn
-                        .iter()
-                        .map(|s| s.as_bytes().len())
-                        .sum::<usize>()
-                        + builder.alpn.len(),
-                );
-                for alpn in builder.alpn.iter().map(|s| s.as_bytes()) {
-                    alpn_wire_format.push(alpn.len() as u8);
-                    alpn_wire_format.extend(alpn);
-                }
-                connector.set_alpn_protos(&alpn_wire_format)?;
-            }
+        if !builder.alpn.is_empty() {
+            connector.set_alpn_protos(&alpn_wire_format(&builder.alpn)?)?;
         }
 
         #[cfg(target_os = "android")]
@@ -346,6 +354,24 @@ impl TlsConnector {
     }
 }
 
+#[cfg(any(feature = "alpn", feature = "alpn-accept"))]
+fn alpn_wire_format(alpn_list: &[Box<str>]) -> Result<Vec<u8>, Error> {
+    // Wire format is each alpn preceded by its length as a byte.
+    let mut alpn_wire_format =
+        Vec::with_capacity(alpn_list.iter().map(|s| s.len()).sum::<usize>() + alpn_list.len());
+    for alpn in alpn_list.iter().map(|s| s.as_bytes()) {
+        let len_byte = alpn.len().try_into().map_err(|_| Error::AlpnTooLong)?;
+
+        if alpn_wire_format.capacity() - alpn_wire_format.len() >= 1 {
+            alpn_wire_format.push(len_byte);
+        }
+        if alpn_wire_format.capacity() - alpn_wire_format.len() >= alpn.len() {
+            alpn_wire_format.extend(alpn);
+        }
+    }
+    Ok(alpn_wire_format)
+}
+
 impl fmt::Debug for TlsConnector {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("TlsConnector")
@@ -365,6 +391,23 @@ impl TlsAcceptor {
         let mut acceptor = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
         acceptor.set_private_key(&builder.identity.0.pkey)?;
         acceptor.set_certificate(&builder.identity.0.cert)?;
+        #[cfg(feature = "alpn-accept")]
+        if !builder.accept_alpn.is_empty() {
+            let alpn_wire_format = alpn_wire_format(&builder.accept_alpn)?;
+            acceptor.set_alpn_protos(&alpn_wire_format)?;
+            // set up ALPN selection routine - as select_next_proto
+            acceptor.set_alpn_select_callback(move |_: &mut openssl::ssl::SslRef, client_list: &[u8]| {
+                openssl::ssl::select_next_proto(&alpn_wire_format, client_list).and_then(|selected| {
+                    if selected.is_empty() || selected.len() > client_list.len() {
+                        return None;
+                    }
+                    // return string from the client list to separate it from alpn_wire_format's lifetime
+                    // https://github.com/rust-openssl/rust-openssl/pull/2360#issuecomment-2651522324
+                    client_list.windows(selected.len()).find(|&item| item == selected)
+                })
+                .ok_or(openssl::ssl::AlpnError::NOACK)
+            });
+        }
         for cert in builder.identity.0.chain.iter() {
             // https://www.openssl.org/docs/manmaster/man3/SSL_CTX_add_extra_chain_cert.html
             // specifies that "When sending a certificate chain, extra chain certificates are
@@ -456,9 +499,7 @@ impl<S: io::Read + io::Write> TlsStream<S> {
         match self.0.shutdown() {
             Ok(_) => Ok(()),
             Err(ref e) if e.code() == ssl::ErrorCode::ZERO_RETURN => Ok(()),
-            Err(e) => Err(e
-                .into_io_error()
-                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e))),
+            Err(e) => Err(e.into_io_error().unwrap_or_else(io::Error::other)),
         }
     }
 }

@@ -359,31 +359,107 @@ impl DerefMut for SetSighandlerData {
 }
 pub use crate::sigabi::*;
 
+/// UNSTABLE
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 #[repr(C)]
-pub struct RtSigInfo {
-    pub arg: usize,
-    pub code: i32,
-    pub uid: u32,
-    pub pid: u32, // TODO: usize?
+pub struct ProcSchemeAttrs {
+    pub pid: u32,
+    pub euid: u32,
+    pub egid: u32,
+    pub ens: u32,
+    pub debug_name: [u8; 32],
 }
-
-impl Deref for RtSigInfo {
+impl Deref for ProcSchemeAttrs {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self as *const Self as *const u8, mem::size_of::<Self>()) }
+    }
+}
+impl DerefMut for ProcSchemeAttrs {
+    fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts(
-                self as *const RtSigInfo as *const u8,
-                mem::size_of::<RtSigInfo>(),
+            slice::from_raw_parts_mut(
+                self as *mut ProcSchemeAttrs as *mut u8,
+                mem::size_of::<ProcSchemeAttrs>(),
+            )
+        }
+    }
+}
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct CtxtStsBuf {
+    pub status: usize,
+    pub excp: crate::Exception,
+}
+impl Deref for CtxtStsBuf {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self as *const Self as *const u8, mem::size_of::<Self>()) }
+    }
+}
+impl DerefMut for CtxtStsBuf {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            slice::from_raw_parts_mut(
+                self as *mut CtxtStsBuf as *mut u8,
+                mem::size_of::<CtxtStsBuf>(),
             )
         }
     }
 }
 
-impl DerefMut for RtSigInfo {
-    fn deref_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            slice::from_raw_parts_mut(self as *mut RtSigInfo as *mut u8, mem::size_of::<RtSigInfo>())
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlobalSchemes {
+    Debug = 1,
+    Event = 2,
+    Memory = 3,
+    Pipe = 4,
+    Serio = 5,
+    Irq = 6,
+    Time = 7,
+    Sys = 8,
+    Proc = 9,
+    Acpi = 10,
+    Dtb = 11,
+}
+impl GlobalSchemes {
+    pub fn try_from_raw(raw: u8) -> Option<Self> {
+        match raw {
+            1 => Some(Self::Debug),
+            2 => Some(Self::Event),
+            3 => Some(Self::Memory),
+            4 => Some(Self::Pipe),
+            5 => Some(Self::Serio),
+            6 => Some(Self::Irq),
+            7 => Some(Self::Time),
+            8 => Some(Self::Sys),
+            9 => Some(Self::Proc),
+            10 => Some(Self::Acpi),
+            11 => Some(Self::Dtb),
+            _ => None,
         }
     }
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::Event => "event",
+            Self::Memory => "memory",
+            Self::Pipe => "pipe",
+            Self::Serio => "serio",
+            Self::Irq => "irq",
+            Self::Time => "time",
+            Self::Sys => "sys",
+            Self::Proc => "kernel.proc",
+            Self::Acpi => "kernel.acpi",
+            Self::Dtb => "kernel.dtb",
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct KernelSchemeInfo {
+    pub scheme_id: u8,
+    pub fd: usize,
 }

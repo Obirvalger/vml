@@ -4,12 +4,32 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = RTCIdentityProvider)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "RTCIdentityProvider")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `RtcIdentityProvider` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProvider`*"]
     pub type RtcIdentityProvider;
+    #[doc = "Get the `generateAssertion` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProvider`*"]
+    #[wasm_bindgen(method, getter = "generateAssertion")]
+    pub fn get_generate_assertion(this: &RtcIdentityProvider) -> ::js_sys::Function;
+    #[doc = "Change the `generateAssertion` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProvider`*"]
+    #[wasm_bindgen(method, setter = "generateAssertion")]
+    pub fn set_generate_assertion(this: &RtcIdentityProvider, val: &::js_sys::Function);
+    #[doc = "Get the `validateAssertion` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProvider`*"]
+    #[wasm_bindgen(method, getter = "validateAssertion")]
+    pub fn get_validate_assertion(this: &RtcIdentityProvider) -> ::js_sys::Function;
+    #[doc = "Change the `validateAssertion` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProvider`*"]
+    #[wasm_bindgen(method, setter = "validateAssertion")]
+    pub fn set_validate_assertion(this: &RtcIdentityProvider, val: &::js_sys::Function);
 }
 impl RtcIdentityProvider {
     #[doc = "Construct a new `RtcIdentityProvider`."]
@@ -21,42 +41,18 @@ impl RtcIdentityProvider {
     ) -> Self {
         #[allow(unused_mut)]
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
-        ret.generate_assertion(generate_assertion);
-        ret.validate_assertion(validate_assertion);
+        ret.set_generate_assertion(generate_assertion);
+        ret.set_validate_assertion(validate_assertion);
         ret
     }
-    #[doc = "Change the `generateAssertion` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProvider`*"]
+    #[deprecated = "Use `set_generate_assertion()` instead."]
     pub fn generate_assertion(&mut self, val: &::js_sys::Function) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("generateAssertion"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_generate_assertion(val);
         self
     }
-    #[doc = "Change the `validateAssertion` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RtcIdentityProvider`*"]
+    #[deprecated = "Use `set_validate_assertion()` instead."]
     pub fn validate_assertion(&mut self, val: &::js_sys::Function) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("validateAssertion"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_validate_assertion(val);
         self
     }
 }

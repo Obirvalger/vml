@@ -7,7 +7,6 @@
 //! Internet protocols, including SSL/TLS, which is the basis for HTTPS,
 //! the secure protocol for browsing the web.
 
-use cfg_if::cfg_if;
 use foreign_types::{ForeignType, ForeignTypeRef, Opaque};
 use libc::{c_int, c_long, c_uint, c_void};
 use std::cmp::{self, Ordering};
@@ -20,11 +19,10 @@ use std::mem;
 use std::net::IpAddr;
 use std::path::Path;
 use std::ptr;
-use std::slice;
 use std::str;
 
 use crate::asn1::{
-    Asn1BitStringRef, Asn1Enumerated, Asn1IntegerRef, Asn1Object, Asn1ObjectRef,
+    Asn1BitStringRef, Asn1Enumerated, Asn1Integer, Asn1IntegerRef, Asn1Object, Asn1ObjectRef,
     Asn1OctetStringRef, Asn1StringRef, Asn1TimeRef, Asn1Type,
 };
 use crate::bio::MemBioSlice;
@@ -37,11 +35,12 @@ use crate::pkey::{HasPrivate, HasPublic, PKey, PKeyRef, Public};
 use crate::ssl::SslRef;
 use crate::stack::{Stack, StackRef, Stackable};
 use crate::string::OpensslString;
-use crate::util::{ForeignTypeExt, ForeignTypeRefExt};
+use crate::util::{self, ForeignTypeExt, ForeignTypeRefExt};
 use crate::{cvt, cvt_n, cvt_p, cvt_p_const};
 use openssl_macros::corresponds;
 
-#[cfg(any(ossl102, boringssl, libressl261))]
+pub use crate::x509::extension::CrlNumber;
+
 pub mod verify;
 
 pub mod extension;
@@ -122,8 +121,8 @@ impl X509StoreContextRef {
     /// This corresponds to [`X509_STORE_CTX_init`] before calling `with_context` and to
     /// [`X509_STORE_CTX_cleanup`] after calling `with_context`.
     ///
-    /// [`X509_STORE_CTX_init`]:  https://www.openssl.org/docs/manmaster/crypto/X509_STORE_CTX_init.html
-    /// [`X509_STORE_CTX_cleanup`]:  https://www.openssl.org/docs/manmaster/crypto/X509_STORE_CTX_cleanup.html
+    /// [`X509_STORE_CTX_init`]:  https://docs.openssl.org/master/man3/X509_STORE_CTX_init/
+    /// [`X509_STORE_CTX_cleanup`]:  https://docs.openssl.org/master/man3/X509_STORE_CTX_cleanup/
     pub fn init<F, T>(
         &mut self,
         trust: &store::X509StoreRef,
@@ -136,7 +135,7 @@ impl X509StoreContextRef {
     {
         struct Cleanup<'a>(&'a mut X509StoreContextRef);
 
-        impl<'a> Drop for Cleanup<'a> {
+        impl Drop for Cleanup<'_> {
             fn drop(&mut self) {
                 unsafe {
                     ffi::X509_STORE_CTX_cleanup(self.0.as_ptr());
@@ -480,7 +479,7 @@ impl X509Ref {
 
     /// Retrieves the path length extension from a certificate, if it exists.
     #[corresponds(X509_get_pathlen)]
-    #[cfg(any(ossl110, boringssl))]
+    #[cfg(any(ossl110, boringssl, awslc))]
     pub fn pathlen(&self) -> Option<u32> {
         let v = unsafe { ffi::X509_get_pathlen(self.as_ptr()) };
         u32::try_from(v).ok()
@@ -488,7 +487,7 @@ impl X509Ref {
 
     /// Returns this certificate's subject key id, if it exists.
     #[corresponds(X509_get0_subject_key_id)]
-    #[cfg(any(ossl110, boringssl))]
+    #[cfg(any(ossl110, boringssl, awslc))]
     pub fn subject_key_id(&self) -> Option<&Asn1OctetStringRef> {
         unsafe {
             let data = ffi::X509_get0_subject_key_id(self.as_ptr());
@@ -498,7 +497,7 @@ impl X509Ref {
 
     /// Returns this certificate's authority key id, if it exists.
     #[corresponds(X509_get0_authority_key_id)]
-    #[cfg(any(ossl110, boringssl))]
+    #[cfg(any(ossl110, boringssl, awslc))]
     pub fn authority_key_id(&self) -> Option<&Asn1OctetStringRef> {
         unsafe {
             let data = ffi::X509_get0_authority_key_id(self.as_ptr());
@@ -601,9 +600,24 @@ impl X509Ref {
 
     /// Returns the list of OCSP responder URLs specified in the certificate's Authority Information
     /// Access field.
+    ///
+    /// Returns an error if any URL contains bytes that are not valid UTF-8, since OpenSSL
+    /// does not enforce that the underlying `IA5String` is ASCII.
     #[corresponds(X509_get1_ocsp)]
     pub fn ocsp_responders(&self) -> Result<Stack<OpensslString>, ErrorStack> {
-        unsafe { cvt_p(ffi::X509_get1_ocsp(self.as_ptr())).map(|p| Stack::from_ptr(p)) }
+        unsafe {
+            let stack: Stack<OpensslString> =
+                cvt_p(ffi::X509_get1_ocsp(self.as_ptr())).map(|p| Stack::from_ptr(p))?;
+            for entry in &stack {
+                let bytes = CStr::from_ptr(entry.as_ptr()).to_bytes();
+                if str::from_utf8(bytes).is_err() {
+                    return Err(ErrorStack::internal_error(
+                        "OCSP responder URL contained invalid UTF-8",
+                    ));
+                }
+            }
+            Ok(stack)
+        }
     }
 
     /// Checks that this certificate issued `subject`.
@@ -662,7 +676,7 @@ impl X509Ref {
             if ptr.is_null() {
                 None
             } else {
-                Some(slice::from_raw_parts(ptr, len as usize))
+                Some(util::from_raw_parts(ptr, len as usize))
             }
         }
     }
@@ -874,7 +888,7 @@ impl Eq for X509 {}
 /// A context object required to construct certain `X509` extension values.
 pub struct X509v3Context<'a>(ffi::X509V3_CTX, PhantomData<(&'a X509Ref, &'a ConfRef)>);
 
-impl<'a> X509v3Context<'a> {
+impl X509v3Context<'_> {
     pub fn as_ptr(&self) -> *mut ffi::X509V3_CTX {
         &self.0 as *const _ as *mut _
     }
@@ -1072,7 +1086,6 @@ impl X509NameBuilder {
 
     /// Add a name entry
     #[corresponds(X509_NAME_add_entry)]
-    #[cfg(any(ossl101, libressl350))]
     pub fn append_entry(&mut self, ne: &X509NameEntryRef) -> std::result::Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::X509_NAME_add_entry(
@@ -1086,10 +1099,7 @@ impl X509NameBuilder {
     }
 
     /// Add a field entry by str.
-    ///
-    /// This corresponds to [`X509_NAME_add_entry_by_txt`].
-    ///
-    /// [`X509_NAME_add_entry_by_txt`]: https://www.openssl.org/docs/manmaster/crypto/X509_NAME_add_entry_by_txt.html
+    #[corresponds(X509_NAME_add_entry_by_txt)]
     pub fn append_entry_by_text(&mut self, field: &str, value: &str) -> Result<(), ErrorStack> {
         unsafe {
             let field = CString::new(field).unwrap();
@@ -1108,10 +1118,7 @@ impl X509NameBuilder {
     }
 
     /// Add a field entry by str with a specific type.
-    ///
-    /// This corresponds to [`X509_NAME_add_entry_by_txt`].
-    ///
-    /// [`X509_NAME_add_entry_by_txt`]: https://www.openssl.org/docs/manmaster/crypto/X509_NAME_add_entry_by_txt.html
+    #[corresponds(X509_NAME_add_entry_by_txt)]
     pub fn append_entry_by_text_with_type(
         &mut self,
         field: &str,
@@ -1135,10 +1142,7 @@ impl X509NameBuilder {
     }
 
     /// Add a field entry by NID.
-    ///
-    /// This corresponds to [`X509_NAME_add_entry_by_NID`].
-    ///
-    /// [`X509_NAME_add_entry_by_NID`]: https://www.openssl.org/docs/manmaster/crypto/X509_NAME_add_entry_by_NID.html
+    #[corresponds(X509_NAME_add_entry_by_NID)]
     pub fn append_entry_by_nid(&mut self, field: Nid, value: &str) -> Result<(), ErrorStack> {
         unsafe {
             assert!(value.len() <= crate::SLenType::MAX as usize);
@@ -1156,10 +1160,7 @@ impl X509NameBuilder {
     }
 
     /// Add a field entry by NID with a specific type.
-    ///
-    /// This corresponds to [`X509_NAME_add_entry_by_NID`].
-    ///
-    /// [`X509_NAME_add_entry_by_NID`]: https://www.openssl.org/docs/manmaster/crypto/X509_NAME_add_entry_by_NID.html
+    #[corresponds(X509_NAME_add_entry_by_NID)]
     pub fn append_entry_by_nid_with_type(
         &mut self,
         field: Nid,
@@ -1219,7 +1220,7 @@ impl X509Name {
         ///
         /// This corresponds to [`d2i_X509_NAME`].
         ///
-        /// [`d2i_X509_NAME`]: https://www.openssl.org/docs/manmaster/man3/d2i_X509_NAME.html
+        /// [`d2i_X509_NAME`]: https://docs.openssl.org/master/man3/d2i_X509_NAME/
         from_der,
         X509Name,
         ffi::d2i_X509_NAME
@@ -1266,7 +1267,6 @@ impl X509NameRef {
 
     /// Copies the name to a new `X509Name`.
     #[corresponds(X509_NAME_dup)]
-    #[cfg(any(boringssl, ossl110, libressl270))]
     pub fn to_owned(&self) -> Result<X509Name, ErrorStack> {
         unsafe { cvt_p(ffi::X509_NAME_dup(self.as_ptr())).map(|n| X509Name::from_ptr(n)) }
     }
@@ -1276,7 +1276,7 @@ impl X509NameRef {
         ///
         /// This corresponds to [`i2d_X509_NAME`].
         ///
-        /// [`i2d_X509_NAME`]: https://www.openssl.org/docs/manmaster/crypto/i2d_X509_NAME.html
+        /// [`i2d_X509_NAME`]: https://docs.openssl.org/master/man3/i2d_X509_NAME/
         to_der,
         ffi::i2d_X509_NAME
     }
@@ -1337,27 +1337,21 @@ foreign_type_and_impl_send_sync! {
 
 impl X509NameEntryRef {
     /// Returns the field value of an `X509NameEntry`.
-    ///
-    /// This corresponds to [`X509_NAME_ENTRY_get_data`].
-    ///
-    /// [`X509_NAME_ENTRY_get_data`]: https://www.openssl.org/docs/manmaster/crypto/X509_NAME_ENTRY_get_data.html
+    #[corresponds(X509_NAME_ENTRY_get_data)]
     pub fn data(&self) -> &Asn1StringRef {
         unsafe {
             let data = ffi::X509_NAME_ENTRY_get_data(self.as_ptr());
-            Asn1StringRef::from_ptr(data)
+            Asn1StringRef::from_ptr(data as *mut _)
         }
     }
 
     /// Returns the `Asn1Object` value of an `X509NameEntry`.
     /// This is useful for finding out about the actual `Nid` when iterating over all `X509NameEntries`.
-    ///
-    /// This corresponds to [`X509_NAME_ENTRY_get_object`].
-    ///
-    /// [`X509_NAME_ENTRY_get_object`]: https://www.openssl.org/docs/manmaster/crypto/X509_NAME_ENTRY_get_object.html
+    #[corresponds(X509_NAME_ENTRY_get_object)]
     pub fn object(&self) -> &Asn1ObjectRef {
         unsafe {
             let object = ffi::X509_NAME_ENTRY_get_object(self.as_ptr());
-            Asn1ObjectRef::from_ptr(object)
+            Asn1ObjectRef::from_ptr(object as *mut _)
         }
     }
 }
@@ -1373,10 +1367,7 @@ pub struct X509ReqBuilder(X509Req);
 
 impl X509ReqBuilder {
     /// Returns a builder for a certificate request.
-    ///
-    /// This corresponds to [`X509_REQ_new`].
-    ///
-    ///[`X509_REQ_new`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_new.html
+    #[corresponds(X509_REQ_new)]
     pub fn new() -> Result<X509ReqBuilder, ErrorStack> {
         unsafe {
             ffi::init();
@@ -1385,10 +1376,7 @@ impl X509ReqBuilder {
     }
 
     /// Set the numerical value of the version field.
-    ///
-    /// This corresponds to [`X509_REQ_set_version`].
-    ///
-    ///[`X509_REQ_set_version`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_set_version.html
+    #[corresponds(X509_REQ_set_version)]
     #[allow(clippy::useless_conversion)]
     pub fn set_version(&mut self, version: i32) -> Result<(), ErrorStack> {
         unsafe {
@@ -1401,10 +1389,7 @@ impl X509ReqBuilder {
     }
 
     /// Set the issuer name.
-    ///
-    /// This corresponds to [`X509_REQ_set_subject_name`].
-    ///
-    /// [`X509_REQ_set_subject_name`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_set_subject_name.html
+    #[corresponds(X509_REQ_set_subject_name)]
     pub fn set_subject_name(&mut self, subject_name: &X509NameRef) -> Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::X509_REQ_set_subject_name(
@@ -1416,10 +1401,7 @@ impl X509ReqBuilder {
     }
 
     /// Set the public key.
-    ///
-    /// This corresponds to [`X509_REQ_set_pubkey`].
-    ///
-    /// [`X509_REQ_set_pubkey`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_set_pubkey.html
+    #[corresponds(X509_REQ_set_pubkey)]
     pub fn set_pubkey<T>(&mut self, key: &PKeyRef<T>) -> Result<(), ErrorStack>
     where
         T: HasPublic,
@@ -1466,10 +1448,7 @@ impl X509ReqBuilder {
     }
 
     /// Sign the request using a private key.
-    ///
-    /// This corresponds to [`X509_REQ_sign`].
-    ///
-    /// [`X509_REQ_sign`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_sign.html
+    #[corresponds(X509_REQ_sign)]
     pub fn sign<T>(&mut self, key: &PKeyRef<T>, hash: MessageDigest) -> Result<(), ErrorStack>
     where
         T: HasPrivate,
@@ -1513,7 +1492,7 @@ impl X509Req {
         ///
         /// This corresponds to [`PEM_read_bio_X509_REQ`].
         ///
-        /// [`PEM_read_bio_X509_REQ`]: https://www.openssl.org/docs/manmaster/crypto/PEM_read_bio_X509_REQ.html
+        /// [`PEM_read_bio_X509_REQ`]: https://docs.openssl.org/master/man3/PEM_read_bio_X509_REQ/
         from_pem,
         X509Req,
         ffi::PEM_read_bio_X509_REQ
@@ -1524,7 +1503,7 @@ impl X509Req {
         ///
         /// This corresponds to [`d2i_X509_REQ`].
         ///
-        /// [`d2i_X509_REQ`]: https://www.openssl.org/docs/manmaster/crypto/d2i_X509_REQ.html
+        /// [`d2i_X509_REQ`]: https://docs.openssl.org/master/man3/d2i_X509_REQ/
         from_der,
         X509Req,
         ffi::d2i_X509_REQ
@@ -1539,7 +1518,7 @@ impl X509ReqRef {
         ///
         /// This corresponds to [`PEM_write_bio_X509_REQ`].
         ///
-        /// [`PEM_write_bio_X509_REQ`]: https://www.openssl.org/docs/manmaster/crypto/PEM_write_bio_X509_REQ.html
+        /// [`PEM_write_bio_X509_REQ`]: https://docs.openssl.org/master/man3/PEM_write_bio_X509_REQ/
         to_pem,
         ffi::PEM_write_bio_X509_REQ
     }
@@ -1549,7 +1528,7 @@ impl X509ReqRef {
         ///
         /// This corresponds to [`i2d_X509_REQ`].
         ///
-        /// [`i2d_X509_REQ`]: https://www.openssl.org/docs/manmaster/crypto/i2d_X509_REQ.html
+        /// [`i2d_X509_REQ`]: https://docs.openssl.org/master/man3/i2d_X509_REQ/
         to_der,
         ffi::i2d_X509_REQ
     }
@@ -1562,20 +1541,14 @@ impl X509ReqRef {
     }
 
     /// Returns the numerical value of the version field of the certificate request.
-    ///
-    /// This corresponds to [`X509_REQ_get_version`]
-    ///
-    /// [`X509_REQ_get_version`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_get_version.html
+    #[corresponds(X509_REQ_get_version)]
     #[allow(clippy::unnecessary_cast)]
     pub fn version(&self) -> i32 {
         unsafe { X509_REQ_get_version(self.as_ptr()) as i32 }
     }
 
     /// Returns the subject name of the certificate request.
-    ///
-    /// This corresponds to [`X509_REQ_get_subject_name`]
-    ///
-    /// [`X509_REQ_get_subject_name`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_get_subject_name.html
+    #[corresponds(X509_REQ_get_subject_name)]
     pub fn subject_name(&self) -> &X509NameRef {
         unsafe {
             let name = X509_REQ_get_subject_name(self.as_ptr());
@@ -1584,10 +1557,7 @@ impl X509ReqRef {
     }
 
     /// Returns the public key of the certificate request.
-    ///
-    /// This corresponds to [`X509_REQ_get_pubkey"]
-    ///
-    /// [`X509_REQ_get_pubkey`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_get_pubkey.html
+    #[corresponds(X509_REQ_get_pubkey)]
     pub fn public_key(&self) -> Result<PKey<Public>, ErrorStack> {
         unsafe {
             let key = cvt_p(ffi::X509_REQ_get_pubkey(self.as_ptr()))?;
@@ -1598,10 +1568,7 @@ impl X509ReqRef {
     /// Check if the certificate request is signed using the given public key.
     ///
     /// Returns `true` if verification succeeds.
-    ///
-    /// This corresponds to [`X509_REQ_verify"].
-    ///
-    /// [`X509_REQ_verify`]: https://www.openssl.org/docs/manmaster/crypto/X509_REQ_verify.html
+    #[corresponds(X509_REQ_verify)]
     pub fn verify<T>(&self, key: &PKeyRef<T>) -> Result<bool, ErrorStack>
     where
         T: HasPublic,
@@ -1610,8 +1577,7 @@ impl X509ReqRef {
     }
 
     /// Returns the extensions of the certificate request.
-    ///
-    /// This corresponds to [`X509_REQ_get_extensions"]
+    #[corresponds(X509_REQ_get_extensions)]
     pub fn extensions(&self) -> Result<Stack<X509Extension>, ErrorStack> {
         unsafe {
             let extensions = cvt_p(ffi::X509_REQ_get_extensions(self.as_ptr()))?;
@@ -1644,6 +1610,49 @@ impl CrlReason {
 
     /// Returns the raw OpenSSL value represented by this type.
     pub const fn as_raw(&self) -> c_int {
+        self.0
+    }
+}
+
+/// A builder used to construct an `X509Revoked`.
+pub struct X509RevokedBuilder(X509Revoked);
+
+impl X509RevokedBuilder {
+    /// Creates a new builder.
+    #[corresponds(X509_REVOKED_new)]
+    pub fn new() -> Result<Self, ErrorStack> {
+        unsafe {
+            ffi::init();
+            cvt_p(ffi::X509_REVOKED_new()).map(|p| X509RevokedBuilder(X509Revoked(p)))
+        }
+    }
+
+    /// Set the revocation date of the `X509Revoked`.
+    #[corresponds(X509_REVOKED_set_revocationDate)]
+    pub fn set_revocation_date(&mut self, date: &Asn1TimeRef) -> Result<(), ErrorStack> {
+        unsafe {
+            cvt(ffi::X509_REVOKED_set_revocationDate(
+                self.0.as_ptr(),
+                date.as_ptr(),
+            ))
+            .map(|_| ())
+        }
+    }
+
+    /// Set the serial number of the `X509Revoked`.
+    #[corresponds(X509_REVOKED_set_serialNumber)]
+    pub fn set_serial_number(&mut self, serial: &Asn1IntegerRef) -> Result<(), ErrorStack> {
+        unsafe {
+            cvt(ffi::X509_REVOKED_set_serialNumber(
+                self.0.as_ptr(),
+                serial.as_ptr(),
+            ))
+            .map(|_| ())
+        }
+    }
+
+    /// Consumes the builder, returning the `X509Revoked`.
+    pub fn build(self) -> X509Revoked {
         self.0
     }
 }
@@ -1681,8 +1690,7 @@ impl X509RevokedRef {
     }
 
     /// Copies the entry to a new `X509Revoked`.
-    #[corresponds(X509_NAME_dup)]
-    #[cfg(any(boringssl, ossl110, libressl270))]
+    #[corresponds(X509_REVOKED_dup)]
     pub fn to_owned(&self) -> Result<X509Revoked, ErrorStack> {
         unsafe { cvt_p(ffi::X509_REVOKED_dup(self.as_ptr())).map(|n| X509Revoked::from_ptr(n)) }
     }
@@ -1742,7 +1750,7 @@ impl X509RevokedRef {
 /// this is as defined in RFC 5280 Section 5.3.1.
 pub enum ReasonCode {}
 
-// SAFETY: CertificateIssuer is defined to be a stack of GeneralName in the RFC
+// SAFETY: ReasonCode is defined to be an Asn1Enumerated in the RFC
 // and in OpenSSL.
 unsafe impl ExtensionType for ReasonCode {
     const NID: Nid = Nid::from_raw(ffi::NID_crl_reason);
@@ -1773,6 +1781,158 @@ unsafe impl ExtensionType for AuthorityInformationAccess {
     type Output = Stack<AccessDescription>;
 }
 
+// SAFETY: CrlNumber is defined to be an Asn1Integer in the RFC
+// and in OpenSSL.
+unsafe impl ExtensionType for CrlNumber {
+    const NID: Nid = Nid::CRL_NUMBER;
+
+    type Output = Asn1Integer;
+}
+
+/// A builder used to construct a version 2 `X509Crl`.
+pub struct X509CrlBuilder(X509Crl);
+
+impl X509CrlBuilder {
+    /// Creates a new builder.
+    #[corresponds(X509_CRL_new)]
+    pub fn new() -> Result<Self, ErrorStack> {
+        unsafe {
+            ffi::init();
+            let ptr = cvt_p(ffi::X509_CRL_new())?;
+            cvt(ffi::X509_CRL_set_version(ptr, 1)).map(|_| ())?;
+
+            Ok(Self(X509Crl(ptr)))
+        }
+    }
+
+    /// Set the issuer name of the CRL.
+    #[corresponds(X509_CRL_set_issuer_name)]
+    pub fn set_issuer_name(&mut self, issuer_name: &X509NameRef) -> Result<(), ErrorStack> {
+        unsafe {
+            cvt(ffi::X509_CRL_set_issuer_name(
+                self.0.as_ptr(),
+                issuer_name.as_ptr(),
+            ))
+            .map(|_| ())
+        }
+    }
+
+    /// Set the lastUpdate (thisUpdate) time indicating when the CRL was issued.
+    #[corresponds(X509_CRL_set1_lastUpdate)]
+    pub fn set_last_update(&mut self, t: &Asn1TimeRef) -> Result<(), ErrorStack> {
+        unsafe { cvt(ffi::X509_CRL_set1_lastUpdate(self.0.as_ptr(), t.as_ptr())).map(|_| ()) }
+    }
+
+    /// Set the nextUpdate timestamp indicating when a newer CRL is expected.
+    #[corresponds(X509_CRL_set1_nextUpdate)]
+    pub fn set_next_update(&mut self, t: &Asn1TimeRef) -> Result<(), ErrorStack> {
+        unsafe { cvt(ffi::X509_CRL_set1_nextUpdate(self.0.as_ptr(), t.as_ptr())).map(|_| ()) }
+    }
+
+    /// Add an X509 extension value to the CRL.
+    ///
+    /// This works just as `append_extension` except it takes ownership of the `X509Extension`.
+    pub fn append_extension(&mut self, extension: X509Extension) -> Result<(), ErrorStack> {
+        self.append_extension2(&extension)
+    }
+
+    /// Add an X509 extension value to the CRL.
+    #[corresponds(X509_CRL_add_ext)]
+    pub fn append_extension2(&mut self, extension: &X509ExtensionRef) -> Result<(), ErrorStack> {
+        unsafe {
+            cvt(ffi::X509_CRL_add_ext(
+                self.0.as_ptr(),
+                extension.as_ptr(),
+                -1,
+            ))
+            .map(|_| ())
+        }
+    }
+
+    /// Add a revoked certificate to the CRL.
+    #[corresponds(X509_CRL_add0_revoked)]
+    pub fn add_revoked(&mut self, revoked: X509Revoked) -> Result<(), ErrorStack> {
+        unsafe {
+            let r = cvt(ffi::X509_CRL_add0_revoked(
+                self.0.as_ptr(),
+                revoked.as_ptr(),
+            ))
+            .map(|_| ());
+            std::mem::forget(revoked);
+            r
+        }
+    }
+
+    /// Sort the CRL.
+    #[corresponds(X509_CRL_sort)]
+    pub fn sort(&mut self) -> Result<(), ErrorStack> {
+        unsafe { cvt(ffi::X509_CRL_sort(self.0.as_ptr())).map(|_| ()) }
+    }
+
+    /// Signs the CRL with a private key.
+    #[corresponds(X509_CRL_sign)]
+    pub fn sign<T>(&mut self, key: &PKeyRef<T>, hash: MessageDigest) -> Result<(), ErrorStack>
+    where
+        T: HasPrivate,
+    {
+        unsafe {
+            cvt(ffi::X509_CRL_sign(
+                self.0.as_ptr(),
+                key.as_ptr(),
+                hash.as_ptr(),
+            ))
+            .map(|_| ())
+        }
+    }
+
+    /// Consumes the builder, returning the CRL.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of nextUpdate, revoked, AuthorityKeyIdentifier or CrlNumber is missing
+    pub fn build(self) -> Result<X509Crl, ErrorStack> {
+        unsafe {
+            let loc = ffi::X509_CRL_get_ext_by_NID(
+                self.0.as_ptr(),
+                Nid::AUTHORITY_KEY_IDENTIFIER.as_raw(),
+                -1,
+            );
+            assert!(
+                loc >= 0,
+                "CRL must have an Authority Key Identifier extension"
+            );
+            let ext = ffi::X509_CRL_get_ext(self.0.as_ptr(), loc);
+            assert_eq!(
+                ffi::X509_EXTENSION_get_critical(ext),
+                0,
+                "Authority Key Identifier extension must not be critical"
+            );
+
+            let loc = ffi::X509_CRL_get_ext_by_NID(self.0.as_ptr(), Nid::CRL_NUMBER.as_raw(), -1);
+            assert!(loc >= 0, "CRL must have a Crl Number extension");
+            let ext = ffi::X509_CRL_get_ext(self.0.as_ptr(), loc);
+            assert_eq!(
+                ffi::X509_EXTENSION_get_critical(ext),
+                0,
+                "Crl Number extension must not be critical"
+            );
+
+            assert!(
+                !X509_CRL_get0_nextUpdate(self.0.as_ptr()).is_null(),
+                "CRL must have nextUpdate time set"
+            );
+            let revoked = self.0.get_revoked();
+            assert!(
+                // XXX - switch to is_none_or() once MSRV is 1.82.
+                revoked.is_none() || revoked.is_some_and(|r| !r.is_empty()),
+                "Revoked must be absent or non-empty"
+            );
+        }
+
+        Ok(self.0)
+    }
+}
+
 foreign_type_and_impl_send_sync! {
     type CType = ffi::X509_CRL;
     fn drop = ffi::X509_CRL_free;
@@ -1787,7 +1947,7 @@ foreign_type_and_impl_send_sync! {
 ///
 /// Corresponds to the return value from the [`X509_CRL_get0_by_*`] methods.
 ///
-/// [`X509_CRL_get0_by_*`]: https://www.openssl.org/docs/man1.1.0/man3/X509_CRL_get0_by_serial.html
+/// [`X509_CRL_get0_by_*`]: https://docs.openssl.org/master/man3/X509_CRL_get0_by_serial/
 pub enum CrlStatus<'a> {
     /// The certificate is not present in the list
     NotRevoked,
@@ -1925,7 +2085,7 @@ impl X509CrlRef {
         unsafe {
             let name = X509_CRL_get_issuer(self.as_ptr());
             assert!(!name.is_null());
-            X509NameRef::from_ptr(name)
+            X509NameRef::from_ptr(name as *mut _)
         }
     }
 
@@ -2013,10 +2173,7 @@ impl X509VerifyResult {
     }
 
     /// Return a human readable error string from the verification error.
-    ///
-    /// This corresponds to [`X509_verify_cert_error_string`].
-    ///
-    /// [`X509_verify_cert_error_string`]: https://www.openssl.org/docs/manmaster/crypto/X509_verify_cert_error_string.html
+    #[corresponds(X509_verify_cert_error_string)]
     #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn error_string(&self) -> &'static str {
         ffi::init();
@@ -2056,11 +2213,11 @@ impl GeneralName {
         let s = cvt_p(ffi::ASN1_STRING_type_new(asn1_type.as_raw()))?;
         ffi::ASN1_STRING_set(s, value.as_ptr().cast(), value.len().try_into().unwrap());
 
-        #[cfg(boringssl)]
+        #[cfg(any(boringssl, awslc))]
         {
             (*gn.as_ptr()).d.ptr = s.cast();
         }
-        #[cfg(not(boringssl))]
+        #[cfg(not(any(boringssl, awslc)))]
         {
             (*gn.as_ptr()).d = s.cast();
         }
@@ -2097,11 +2254,11 @@ impl GeneralName {
             let gn = cvt_p(ffi::GENERAL_NAME_new())?;
             (*gn).type_ = ffi::GEN_RID;
 
-            #[cfg(boringssl)]
+            #[cfg(any(boringssl, awslc))]
             {
                 (*gn).d.registeredID = oid.as_ptr();
             }
-            #[cfg(not(boringssl))]
+            #[cfg(not(any(boringssl, awslc)))]
             {
                 (*gn).d = oid.as_ptr().cast();
             }
@@ -2139,6 +2296,35 @@ impl GeneralName {
             Ok(GeneralName::from_ptr(gn))
         }
     }
+
+    pub(crate) fn new_dir_name(name: &X509NameRef) -> Result<GeneralName, ErrorStack> {
+        unsafe {
+            ffi::init();
+            let gn = cvt_p(ffi::GENERAL_NAME_new())?;
+            (*gn).type_ = ffi::GEN_DIRNAME;
+
+            let dup = match name.to_owned() {
+                Ok(dup) => dup,
+                Err(e) => {
+                    ffi::GENERAL_NAME_free(gn);
+                    return Err(e);
+                }
+            };
+
+            #[cfg(any(boringssl, awslc))]
+            {
+                (*gn).d.directoryName = dup.as_ptr();
+            }
+            #[cfg(not(any(boringssl, awslc)))]
+            {
+                (*gn).d = dup.as_ptr().cast();
+            }
+
+            std::mem::forget(dup);
+
+            Ok(GeneralName::from_ptr(gn))
+        }
+    }
 }
 
 impl GeneralNameRef {
@@ -2148,16 +2334,16 @@ impl GeneralNameRef {
                 return None;
             }
 
-            #[cfg(boringssl)]
+            #[cfg(any(boringssl, awslc))]
             let d = (*self.as_ptr()).d.ptr;
-            #[cfg(not(boringssl))]
+            #[cfg(not(any(boringssl, awslc)))]
             let d = (*self.as_ptr()).d;
 
             let ptr = ASN1_STRING_get0_data(d as *mut _);
             let len = ffi::ASN1_STRING_length(d as *mut _);
 
             #[allow(clippy::unnecessary_cast)]
-            let slice = slice::from_raw_parts(ptr as *const u8, len as usize);
+            let slice = util::from_raw_parts(ptr as *const u8, len as usize);
             // IA5Strings are stated to be ASCII (specifically IA5). Hopefully
             // OpenSSL checks that when loading a certificate but if not we'll
             // use this instead of from_utf8_unchecked just in case.
@@ -2177,9 +2363,9 @@ impl GeneralNameRef {
                 return None;
             }
 
-            #[cfg(boringssl)]
+            #[cfg(any(boringssl, awslc))]
             let d = (*self.as_ptr()).d.ptr;
-            #[cfg(not(boringssl))]
+            #[cfg(not(any(boringssl, awslc)))]
             let d = (*self.as_ptr()).d;
 
             Some(X509NameRef::from_const_ptr(d as *const _))
@@ -2202,16 +2388,16 @@ impl GeneralNameRef {
             if (*self.as_ptr()).type_ != ffi::GEN_IPADD {
                 return None;
             }
-            #[cfg(boringssl)]
+            #[cfg(any(boringssl, awslc))]
             let d: *const ffi::ASN1_STRING = std::mem::transmute((*self.as_ptr()).d);
-            #[cfg(not(boringssl))]
+            #[cfg(not(any(boringssl, awslc)))]
             let d = (*self.as_ptr()).d;
 
             let ptr = ASN1_STRING_get0_data(d as *mut _);
             let len = ffi::ASN1_STRING_length(d as *mut _);
 
             #[allow(clippy::unnecessary_cast)]
-            Some(slice::from_raw_parts(ptr as *const u8, len as usize))
+            Some(util::from_raw_parts(ptr as *const u8, len as usize))
         }
     }
 }
@@ -2355,148 +2541,20 @@ impl Stackable for X509Object {
     type StackType = ffi::stack_st_X509_OBJECT;
 }
 
-cfg_if! {
-    if #[cfg(any(boringssl, ossl110, libressl273))] {
-        use ffi::{X509_getm_notAfter, X509_getm_notBefore, X509_up_ref, X509_get0_signature};
-    } else {
-        #[allow(bad_style)]
-        unsafe fn X509_getm_notAfter(x: *mut ffi::X509) -> *mut ffi::ASN1_TIME {
-            (*(*(*x).cert_info).validity).notAfter
-        }
+use ffi::{X509_get0_signature, X509_getm_notAfter, X509_getm_notBefore, X509_up_ref};
 
-        #[allow(bad_style)]
-        unsafe fn X509_getm_notBefore(x: *mut ffi::X509) -> *mut ffi::ASN1_TIME {
-            (*(*(*x).cert_info).validity).notBefore
-        }
+use ffi::{
+    ASN1_STRING_get0_data, X509_ALGOR_get0, X509_REQ_get_subject_name, X509_REQ_get_version,
+    X509_STORE_CTX_get0_chain, X509_set1_notAfter, X509_set1_notBefore,
+};
 
-        #[allow(bad_style)]
-        unsafe fn X509_up_ref(x: *mut ffi::X509) {
-            ffi::CRYPTO_add_lock(
-                &mut (*x).references,
-                1,
-                ffi::CRYPTO_LOCK_X509,
-                "mod.rs\0".as_ptr() as *const _,
-                line!() as c_int,
-            );
-        }
+use ffi::X509_OBJECT_free;
+use ffi::X509_OBJECT_get0_X509;
 
-        #[allow(bad_style)]
-        unsafe fn X509_get0_signature(
-            psig: *mut *const ffi::ASN1_BIT_STRING,
-            palg: *mut *const ffi::X509_ALGOR,
-            x: *const ffi::X509,
-        ) {
-            if !psig.is_null() {
-                *psig = (*x).signature;
-            }
-            if !palg.is_null() {
-                *palg = (*x).sig_alg;
-            }
-        }
-    }
-}
-
-cfg_if! {
-    if #[cfg(any(boringssl, ossl110, libressl350))] {
-        use ffi::{
-            X509_ALGOR_get0, ASN1_STRING_get0_data, X509_STORE_CTX_get0_chain, X509_set1_notAfter,
-            X509_set1_notBefore, X509_REQ_get_version, X509_REQ_get_subject_name,
-        };
-    } else {
-        use ffi::{
-            ASN1_STRING_data as ASN1_STRING_get0_data,
-            X509_STORE_CTX_get_chain as X509_STORE_CTX_get0_chain,
-            X509_set_notAfter as X509_set1_notAfter,
-            X509_set_notBefore as X509_set1_notBefore,
-        };
-
-        #[allow(bad_style)]
-        unsafe fn X509_REQ_get_version(x: *mut ffi::X509_REQ) -> ::libc::c_long {
-            ffi::ASN1_INTEGER_get((*(*x).req_info).version)
-        }
-
-        #[allow(bad_style)]
-        unsafe fn X509_REQ_get_subject_name(x: *mut ffi::X509_REQ) -> *mut ::ffi::X509_NAME {
-            (*(*x).req_info).subject
-        }
-
-        #[allow(bad_style)]
-        unsafe fn X509_ALGOR_get0(
-            paobj: *mut *const ffi::ASN1_OBJECT,
-            pptype: *mut c_int,
-            pval: *mut *mut ::libc::c_void,
-            alg: *const ffi::X509_ALGOR,
-        ) {
-            if !paobj.is_null() {
-                *paobj = (*alg).algorithm;
-            }
-            assert!(pptype.is_null());
-            assert!(pval.is_null());
-        }
-    }
-}
-
-cfg_if! {
-    if #[cfg(any(ossl110, boringssl, libressl270))] {
-        use ffi::X509_OBJECT_get0_X509;
-    } else {
-        #[allow(bad_style)]
-        unsafe fn X509_OBJECT_get0_X509(x: *mut ffi::X509_OBJECT) -> *mut ffi::X509 {
-            if (*x).type_ == ffi::X509_LU_X509 {
-                (*x).data.x509
-            } else {
-                ptr::null_mut()
-            }
-        }
-    }
-}
-
-cfg_if! {
-    if #[cfg(any(ossl110, libressl350, boringssl))] {
-        use ffi::X509_OBJECT_free;
-    } else {
-        #[allow(bad_style)]
-        unsafe fn X509_OBJECT_free(x: *mut ffi::X509_OBJECT) {
-            ffi::X509_OBJECT_free_contents(x);
-            ffi::CRYPTO_free(x as *mut libc::c_void);
-        }
-    }
-}
-
-cfg_if! {
-    if #[cfg(any(ossl110, libressl350, boringssl))] {
-        use ffi::{
-            X509_CRL_get_issuer, X509_CRL_get0_nextUpdate, X509_CRL_get0_lastUpdate,
-            X509_CRL_get_REVOKED,
-            X509_REVOKED_get0_revocationDate, X509_REVOKED_get0_serialNumber,
-        };
-    } else {
-        #[allow(bad_style)]
-        unsafe fn X509_CRL_get0_lastUpdate(x: *const ffi::X509_CRL) -> *mut ffi::ASN1_TIME {
-            (*(*x).crl).lastUpdate
-        }
-        #[allow(bad_style)]
-        unsafe fn X509_CRL_get0_nextUpdate(x: *const ffi::X509_CRL) -> *mut ffi::ASN1_TIME {
-            (*(*x).crl).nextUpdate
-        }
-        #[allow(bad_style)]
-        unsafe fn X509_CRL_get_issuer(x: *const ffi::X509_CRL) -> *mut ffi::X509_NAME {
-            (*(*x).crl).issuer
-        }
-        #[allow(bad_style)]
-        unsafe fn X509_CRL_get_REVOKED(x: *const ffi::X509_CRL) -> *mut ffi::stack_st_X509_REVOKED {
-            (*(*x).crl).revoked
-        }
-        #[allow(bad_style)]
-        unsafe fn X509_REVOKED_get0_serialNumber(x: *const ffi::X509_REVOKED) -> *mut ffi::ASN1_INTEGER {
-            (*x).serialNumber
-        }
-        #[allow(bad_style)]
-        unsafe fn X509_REVOKED_get0_revocationDate(x: *const ffi::X509_REVOKED) -> *mut ffi::ASN1_TIME {
-            (*x).revocationDate
-        }
-    }
-}
+use ffi::{
+    X509_CRL_get0_lastUpdate, X509_CRL_get0_nextUpdate, X509_CRL_get_REVOKED, X509_CRL_get_issuer,
+    X509_REVOKED_get0_revocationDate, X509_REVOKED_get0_serialNumber,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct X509PurposeId(c_int);
@@ -2545,18 +2603,13 @@ impl X509PurposeRef {
     ///  - "any",
     ///  - "ocsphelper",
     ///  - "timestampsign"
+    ///
     /// The index can be used with `X509PurposeRef::from_idx()` to get the purpose.
     #[allow(clippy::unnecessary_cast)]
     pub fn get_by_sname(sname: &str) -> Result<c_int, ErrorStack> {
         unsafe {
             let sname = CString::new(sname).unwrap();
-            cfg_if! {
-                if #[cfg(any(ossl110, libressl280, boringssl))] {
-                    let purpose = cvt_n(ffi::X509_PURPOSE_get_by_sname(sname.as_ptr() as *const _))?;
-                } else {
-                    let purpose = cvt_n(ffi::X509_PURPOSE_get_by_sname(sname.as_ptr() as *mut _))?;
-                }
-            }
+            let purpose = cvt_n(ffi::X509_PURPOSE_get_by_sname(sname.as_ptr() as *const _))?;
             Ok(purpose)
         }
     }
@@ -2582,13 +2635,7 @@ impl X509PurposeRef {
     /// - `X509_PURPOSE_TIMESTAMP_SIGN`
     pub fn purpose(&self) -> X509PurposeId {
         unsafe {
-            cfg_if! {
-                if #[cfg(any(ossl110, libressl280, boringssl))] {
-                    let x509_purpose = self.as_ptr() as *const ffi::X509_PURPOSE;
-                } else {
-                    let x509_purpose = self.as_ptr() as *mut ffi::X509_PURPOSE;
-                }
-            }
+            let x509_purpose = self.as_ptr() as *const ffi::X509_PURPOSE;
             X509PurposeId::from_raw(ffi::X509_PURPOSE_get_id(x509_purpose))
         }
     }

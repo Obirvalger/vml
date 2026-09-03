@@ -12,6 +12,7 @@ use std::{
 use crate::{
     ext_slice::ByteSlice,
     utf8::{self, Utf8Error},
+    BString,
 };
 
 /// Concatenate the elements given by the iterator together into a single
@@ -141,6 +142,88 @@ pub trait ByteVec: private::Sealed {
     where
         Self: Sized;
 
+    /// Convert this type to a `BString`.
+    ///
+    /// `BString` is useful if you want its trait implementations such as `Debug`, `PartialEq`, and
+    /// `PartialOrd`, or if you want to declare at an interface boundary (field or parameter) that
+    /// something uses "conventionally UTF-8" owned strings.
+    ///
+    /// This is a zero-cost conversion.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use bstr::ByteVec;
+    ///
+    /// let v = vec![b'a', b'b', b'c'];
+    /// let b = v.to_bstring();
+    /// println!("{b}");
+    /// assert_eq!(b, "abc");
+    /// assert_ne!(b, "hello");
+    /// ```
+    #[inline]
+    fn to_bstring(self) -> BString
+    where
+        Self: Sized,
+    {
+        BString::new(self.into_vec())
+    }
+
+    /// Convert a `&Vec<u8>` to a `&BString`, without copying.
+    ///
+    /// `BString` is useful if you want its trait implementations such as `Debug`, `PartialEq`, and
+    /// `PartialOrd`, or if you want to declare at an interface boundary (field or parameter) that
+    /// something uses "conventionally UTF-8" owned strings.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use bstr::ByteVec;
+    ///
+    /// let mut v = vec![b'a', b'b', b'c'];
+    /// let b = v.as_bstring();
+    /// println!("{b}");
+    /// assert_eq!(b, "abc");
+    /// assert_ne!(b, "hello");
+    /// // no references to `b` after this point
+    /// v.push(b'd');
+    /// assert_eq!(v, [b'a', b'b', b'c', b'd']);
+    /// ```
+    #[inline]
+    fn as_bstring(&self) -> &BString {
+        BString::from_vec_ref(self.as_vec())
+    }
+
+    /// Convert a `&mut Vec<u8>` to a `&mut BString`, without copying.
+    ///
+    /// `BString` is useful if you want its trait implementations such as `Debug`, `PartialEq`, and
+    /// `PartialOrd`, or if you want to declare at an interface boundary (field or parameter) that
+    /// something uses "conventionally UTF-8" owned strings.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use bstr::ByteVec;
+    ///
+    /// let mut v = vec![b'a', b'b', b'c'];
+    /// let b = v.as_bstring_mut();
+    /// println!("{b}");
+    /// assert_eq!(b, "abc");
+    /// assert_ne!(b, "hello");
+    /// b.push_str("de");
+    /// assert_eq!(v, [b'a', b'b', b'c', b'd', b'e']);
+    /// ```
+    #[inline]
+    fn as_bstring_mut(&mut self) -> &mut BString {
+        BString::from_vec_mut(self.as_vec_mut())
+    }
+
     /// Create a new owned byte string from the given byte slice.
     ///
     /// # Examples
@@ -185,7 +268,7 @@ pub trait ByteVec: private::Sealed {
         fn imp(os_str: OsString) -> Result<Vec<u8>, OsString> {
             use std::os::unix::ffi::OsStringExt;
 
-            Ok(Vec::from(os_str.into_vec()))
+            Ok(os_str.into_vec())
         }
 
         #[cfg(not(unix))]
@@ -220,10 +303,10 @@ pub trait ByteVec: private::Sealed {
     /// ```
     #[inline]
     #[cfg(feature = "std")]
-    fn from_os_str_lossy<'a>(os_str: &'a OsStr) -> Cow<'a, [u8]> {
+    fn from_os_str_lossy(os_str: &OsStr) -> Cow<'_, [u8]> {
         #[cfg(unix)]
         #[inline]
-        fn imp<'a>(os_str: &'a OsStr) -> Cow<'a, [u8]> {
+        fn imp(os_str: &OsStr) -> Cow<'_, [u8]> {
             use std::os::unix::ffi::OsStrExt;
 
             Cow::Borrowed(os_str.as_bytes())
@@ -231,7 +314,7 @@ pub trait ByteVec: private::Sealed {
 
         #[cfg(not(unix))]
         #[inline]
-        fn imp<'a>(os_str: &'a OsStr) -> Cow<'a, [u8]> {
+        fn imp(os_str: &OsStr) -> Cow<'_, [u8]> {
             match os_str.to_string_lossy() {
                 Cow::Borrowed(x) => Cow::Borrowed(x.as_bytes()),
                 Cow::Owned(x) => Cow::Owned(Vec::from(x)),
@@ -289,7 +372,7 @@ pub trait ByteVec: private::Sealed {
     /// ```
     #[inline]
     #[cfg(feature = "std")]
-    fn from_path_lossy<'a>(path: &'a Path) -> Cow<'a, [u8]> {
+    fn from_path_lossy(path: &Path) -> Cow<'_, [u8]> {
         Vec::from_os_str_lossy(path.as_os_str())
     }
 
@@ -958,7 +1041,7 @@ pub trait ByteVec: private::Sealed {
         R: ops::RangeBounds<usize>,
         B: AsRef<[u8]>,
     {
-        self.as_vec_mut().splice(range, replace_with.as_ref().iter().cloned());
+        self.as_vec_mut().splice(range, replace_with.as_ref().iter().copied());
     }
 
     /// Creates a draining iterator that removes the specified range in this

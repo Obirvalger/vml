@@ -1,27 +1,26 @@
-extern crate schannel;
+use schannel::cert_context::{CertContext, HashAlgorithm, KeySpec};
+use schannel::cert_store::{CertAdd, CertStore, Memory, PfxImportOptions};
+use schannel::crypt_prov::{AcquireOptions, ProviderType};
+use schannel::schannel_cred::{Direction, Protocol, SchannelCred};
+use schannel::tls_stream;
+use std::{error, fmt, io, str};
 
-use self::schannel::cert_context::{CertContext, HashAlgorithm, KeySpec};
-use self::schannel::cert_store::{CertAdd, CertStore, Memory, PfxImportOptions};
-use self::schannel::crypt_prov::{AcquireOptions, ProviderType};
-use self::schannel::schannel_cred::{Direction, Protocol, SchannelCred};
-use self::schannel::tls_stream;
-use std::error;
-use std::fmt;
-use std::io;
-use std::str;
-
-use {TlsAcceptorBuilder, TlsConnectorBuilder};
+use crate::{TlsAcceptorBuilder, TlsConnectorBuilder};
 
 const SEC_E_NO_CREDENTIALS: u32 = 0x8009030E;
 
-static PROTOCOLS: &'static [Protocol] = &[
+static PROTOCOLS: &[Protocol] = &[
     Protocol::Ssl3,
     Protocol::Tls10,
     Protocol::Tls11,
     Protocol::Tls12,
+    Protocol::Tls13,
 ];
 
-fn convert_protocols(min: Option<::Protocol>, max: Option<::Protocol>) -> &'static [Protocol] {
+fn convert_protocols(
+    min: Option<crate::Protocol>,
+    max: Option<crate::Protocol>,
+) -> &'static [Protocol] {
     let mut protocols = PROTOCOLS;
     if let Some(p) = max.and_then(|max| protocols.get(..=max as usize)) {
         protocols = p;
@@ -101,7 +100,7 @@ impl Identity {
         }
 
         let mut store = Memory::new()?.into_store();
-        let mut cert_iter = pem::PemBlock::new(pem).into_iter();
+        let mut cert_iter = pem::PemBlock::new(pem);
         let leaf = cert_iter.next().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -124,7 +123,7 @@ impl Identity {
             Ok(container) => container,
             Err(_) => options.new_keyset(true).acquire(type_)?,
         };
-        container.import().import_pkcs8_pem(&key)?;
+        container.import().import_pkcs8_pem(key)?;
 
         cert.set_key_prov_info()
             .container(&name)
@@ -172,19 +171,29 @@ impl Certificate {
         }
     }
 
+    pub fn stack_from_pem(buf: &[u8]) -> Result<Vec<Certificate>, Error> {
+        pem::PemBlock::new(buf)
+            .map(|pem| {
+                CertContext::from_pem(std::str::from_utf8(pem).map_err(io::Error::other)?)
+                    .map(Certificate)
+            })
+            .map(|res| res.map_err(Error))
+            .collect()
+    }
+
     pub fn to_der(&self) -> Result<Vec<u8>, Error> {
         Ok(self.0.to_der().to_vec())
     }
 }
 
-pub struct MidHandshakeTlsStream<S>(tls_stream::MidHandshakeTlsStream<S>);
+pub struct MidHandshakeTlsStream<S>(Box<tls_stream::MidHandshakeTlsStream<S>>);
 
 impl<S> fmt::Debug for MidHandshakeTlsStream<S>
 where
     S: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, fmt)
+        fmt::Debug::fmt(&*self.0, fmt)
     }
 }
 
@@ -220,7 +229,7 @@ impl<S> From<tls_stream::HandshakeError<S>> for HandshakeError<S> {
         match e {
             tls_stream::HandshakeError::Failure(e) => HandshakeError::Failure(e.into()),
             tls_stream::HandshakeError::Interrupted(s) => {
-                HandshakeError::WouldBlock(MidHandshakeTlsStream(s))
+                HandshakeError::WouldBlock(MidHandshakeTlsStream(Box::new(s)))
             }
         }
     }
@@ -236,14 +245,14 @@ impl<S> From<io::Error> for HandshakeError<S> {
 pub struct TlsConnector {
     cert: Option<CertContext>,
     roots: CertStore,
-    min_protocol: Option<::Protocol>,
-    max_protocol: Option<::Protocol>,
+    min_protocol: Option<crate::Protocol>,
+    max_protocol: Option<crate::Protocol>,
     use_sni: bool,
     accept_invalid_hostnames: bool,
     accept_invalid_certs: bool,
     disable_built_in_roots: bool,
     #[cfg(feature = "alpn")]
-    alpn: Vec<String>,
+    alpn: Vec<Box<str>>,
 }
 
 impl TlsConnector {
@@ -289,10 +298,8 @@ impl TlsConnector {
         } else if self.disable_built_in_roots {
             let roots_copy = self.roots.clone();
             builder.verify_callback(move |res| {
-                if let Err(err) = res.result() {
-                    // Propagate previous error encountered during normal cert validation.
-                    return Err(err);
-                }
+                // Propagate previous error encountered during normal cert validation.
+                res.result()?;
 
                 if let Some(chain) = res.chain() {
                     if chain
@@ -303,8 +310,7 @@ impl TlsConnector {
                     }
                 }
 
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
+                Err(io::Error::other(
                     "unable to find any user-specified roots in the final cert chain",
                 ))
             });
@@ -327,8 +333,10 @@ impl TlsConnector {
 #[derive(Clone)]
 pub struct TlsAcceptor {
     cert: CertContext,
-    min_protocol: Option<::Protocol>,
-    max_protocol: Option<::Protocol>,
+    min_protocol: Option<crate::Protocol>,
+    max_protocol: Option<crate::Protocol>,
+    #[cfg(feature = "alpn-accept")]
+    accept_alpn: Vec<Box<str>>,
 }
 
 impl TlsAcceptor {
@@ -337,6 +345,8 @@ impl TlsAcceptor {
             cert: builder.identity.0.cert.clone(),
             min_protocol: builder.min_protocol,
             max_protocol: builder.max_protocol,
+            #[cfg(feature = "alpn-accept")]
+            accept_alpn: builder.accept_alpn.clone(),
         })
     }
 
@@ -349,7 +359,13 @@ impl TlsAcceptor {
         builder.cert(self.cert.clone());
         // FIXME we're probably missing the certificate chain?
         let cred = builder.acquire(Direction::Inbound)?;
-        match tls_stream::Builder::new().accept(cred, stream) {
+        let mut builder = tls_stream::Builder::new();
+        #[cfg(feature = "alpn-accept")]
+        if !self.accept_alpn.is_empty() {
+            let accept_alpn: Vec<&[u8]> = self.accept_alpn.iter().map(|s| s.as_bytes()).collect();
+            builder.request_application_protocols(accept_alpn.as_slice());
+        }
+        match builder.accept(cred, stream) {
             Ok(s) => Ok(TlsStream(s)),
             Err(e) => Err(e.into()),
         }
@@ -458,6 +474,7 @@ mod pem {
 
     impl<'a> Iterator for PemBlock<'a> {
         type Item = &'a [u8];
+
         fn next(&mut self) -> Option<Self::Item> {
             let last = self.pem_block.len();
             if self.cur_end >= last {
@@ -469,7 +486,7 @@ mod pem {
                 Some(end) => end + begin + 1,
                 None => last,
             };
-            return Some(&self.pem_block[begin..self.cur_end].as_bytes());
+            Some(&self.pem_block.as_bytes()[begin..self.cur_end])
         }
     }
 

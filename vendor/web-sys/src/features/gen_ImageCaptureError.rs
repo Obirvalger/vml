@@ -4,7 +4,7 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (is_type_of = | _ | false , extends = :: js_sys :: Object , js_name = ImageCaptureError , typescript_type = "ImageCaptureError")]
+    # [wasm_bindgen (is_type_of = | _ | false , extends = "::js_sys::Object" , js_name = "ImageCaptureError" , typescript_type = "ImageCaptureError")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `ImageCaptureError` class."]
     #[doc = ""]
@@ -12,20 +12,20 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ImageCaptureError`*"]
     pub type ImageCaptureError;
-    # [wasm_bindgen (structural , method , getter , js_class = "ImageCaptureError" , js_name = code)]
+    #[wasm_bindgen(method, getter, js_class = "ImageCaptureError", js_name = "code")]
     #[doc = "Getter for the `code` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageCaptureError/code)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ImageCaptureError`*"]
     pub fn code(this: &ImageCaptureError) -> u16;
-    # [wasm_bindgen (structural , method , getter , js_class = "ImageCaptureError" , js_name = message)]
+    #[wasm_bindgen(method, getter, js_class = "ImageCaptureError", js_name = "message")]
     #[doc = "Getter for the `message` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageCaptureError/message)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ImageCaptureError`*"]
-    pub fn message(this: &ImageCaptureError) -> String;
+    pub fn message(this: &ImageCaptureError) -> ::alloc::string::String;
 }
 impl ImageCaptureError {
     #[doc = "The `ImageCaptureError.FRAME_GRAB_ERROR` const."]

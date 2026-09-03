@@ -5,12 +5,13 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
 
+/// A list of all the attributes can be found here: https://wasm-bindgen.github.io/wasm-bindgen/reference/attributes/index.html
 #[proc_macro_attribute]
 pub fn wasm_bindgen(attr: TokenStream, input: TokenStream) -> TokenStream {
     match wasm_bindgen_macro_support::expand(attr.into(), input.into()) {
         Ok(tokens) => {
-            if cfg!(feature = "xxx_debug_only_print_generated_code") {
-                println!("{}", tokens);
+            if cfg!(xxx_debug_only_print_generated_code) {
+                println!("{tokens}");
             }
             tokens.into()
         }
@@ -24,7 +25,7 @@ pub fn wasm_bindgen(attr: TokenStream, input: TokenStream) -> TokenStream {
 /// The module can be specified in a few ways:
 /// - You can use `inline_js = "..."` to create an inline JS file.
 /// - You can use `module = "/foo/bar"` to reference a file relative to the
-/// root of the crate the macro is invoked in.
+///   root of the crate the macro is invoked in.
 ///
 /// The returned URL can be used for things like creating workers/worklets:
 /// ```no_run
@@ -35,8 +36,8 @@ pub fn wasm_bindgen(attr: TokenStream, input: TokenStream) -> TokenStream {
 pub fn link_to(input: TokenStream) -> TokenStream {
     match wasm_bindgen_macro_support::expand_link_to(input.into()) {
         Ok(tokens) => {
-            if cfg!(feature = "xxx_debug_only_print_generated_code") {
-                println!("{}", tokens);
+            if cfg!(xxx_debug_only_print_generated_code) {
+                println!("{tokens}");
             }
             tokens.into()
         }
@@ -51,8 +52,21 @@ pub fn link_to(input: TokenStream) -> TokenStream {
 pub fn __wasm_bindgen_class_marker(attr: TokenStream, input: TokenStream) -> TokenStream {
     match wasm_bindgen_macro_support::expand_class_marker(attr.into(), input.into()) {
         Ok(tokens) => {
-            if cfg!(feature = "xxx_debug_only_print_generated_code") {
-                println!("{}", tokens);
+            if cfg!(xxx_debug_only_print_generated_code) {
+                println!("{tokens}");
+            }
+            tokens.into()
+        }
+        Err(diagnostic) => (quote! { #diagnostic }).into(),
+    }
+}
+
+#[proc_macro_derive(BindgenedStruct, attributes(wasm_bindgen))]
+pub fn __wasm_bindgen_struct_marker(item: TokenStream) -> TokenStream {
+    match wasm_bindgen_macro_support::expand_struct_marker(item.into()) {
+        Ok(tokens) => {
+            if cfg!(xxx_debug_only_print_generated_code) {
+                println!("{tokens}");
             }
             tokens.into()
         }

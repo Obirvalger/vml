@@ -1,5 +1,5 @@
-use crate::{packet::SpaceId, MtuDiscoveryConfig, MAX_UDP_PAYLOAD};
-use std::{cmp, time::Instant};
+use crate::{Instant, MAX_UDP_PAYLOAD, MtuDiscoveryConfig, packet::SpaceId};
+use std::cmp;
 use tracing::trace;
 
 /// Implements Datagram Packetization Layer Path Maximum Transmission Unit Discovery
@@ -54,6 +54,15 @@ impl MtuDiscovery {
             state,
             black_hole_detector: BlackHoleDetector::new(min_mtu),
         }
+    }
+
+    pub(super) fn reset(&mut self, current_mtu: u16, min_mtu: u16) {
+        self.current_mtu = current_mtu;
+        if let Some(state) = self.state.take() {
+            self.state = Some(EnabledMtuDiscovery::new(state.config));
+            self.on_peer_max_udp_payload_size_received(state.peer_max_udp_payload_size);
+        }
+        self.black_hole_detector = BlackHoleDetector::new(min_mtu);
     }
 
     /// Returns the current MTU
@@ -377,28 +386,25 @@ impl BlackHoleDetector {
     }
 
     fn on_probe_acked(&mut self, pn: u64, len: u16) {
-        debug_assert!(
-            pn >= self.largest_post_loss_packet,
-            "ACKs are delivered in order"
-        );
         // MTU probes are always larger than the previous MTU, so no previous loss bursts are
-        // suspicious.
+        // suspicious. At most one MTU probe is in flight at a time, so we don't need to worry about
+        // reordering between them.
         self.suspicious_loss_bursts.clear();
         self.acked_mtu = len;
+        // This might go backwards, but that's okay: a successful ACK means we haven't yet judged a
+        // more recently sent packet lost, and we just want to track the largest packet that's been
+        // successfully delivered more recently than a loss.
         self.largest_post_loss_packet = pn;
     }
 
     fn on_non_probe_acked(&mut self, pn: u64, len: u16) {
-        debug_assert!(
-            pn >= self.largest_post_loss_packet,
-            "ACKs are delivered in order"
-        );
         if len <= self.acked_mtu {
             // We've already seen a larger packet since the most recent suspicious loss burst;
             // nothing to do.
             return;
         }
         self.acked_mtu = len;
+        // This might go backwards, but that's okay as described in `on_probe_acked`.
         self.largest_post_loss_packet = pn;
         // Loss bursts packets smaller than this are retroactively deemed non-suspicious.
         self.suspicious_loss_bursts
@@ -411,7 +417,7 @@ impl BlackHoleDetector {
         let end_last_burst = self
             .current_loss_burst
             .as_ref()
-            .map_or(false, |current| pn - current.latest_non_probe != 1);
+            .is_some_and(|current| pn - current.latest_non_probe != 1);
 
         if end_last_burst {
             self.finish_loss_burst();
@@ -512,10 +518,10 @@ const BLACK_HOLE_THRESHOLD: usize = 3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::packet::SpaceId;
+    use crate::Duration;
     use crate::MAX_UDP_PAYLOAD;
+    use crate::packet::SpaceId;
     use assert_matches::assert_matches;
-    use std::time::Duration;
 
     fn default_mtud() -> MtuDiscovery {
         let config = MtuDiscoveryConfig::default();
@@ -725,6 +731,7 @@ mod tests {
         assert!(completed(&mtud));
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic]
     fn mtu_discovery_with_peer_max_udp_payload_size_after_search_panics() {

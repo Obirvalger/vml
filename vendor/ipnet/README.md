@@ -32,6 +32,16 @@ fn main() {
     let net4 = Ipv4Net::new(Ipv4Addr::new(10, 1, 1, 0), 24).unwrap();
     let net6 = Ipv6Net::new(Ipv6Addr::new(0xfd, 0, 0, 0, 0, 0, 0, 0), 24).unwrap();
 
+    // They can also be created by a constructor that panics when the prefix length is invalid,
+
+    let net4 = Ipv4Net::new_assert(Ipv4Addr::new(10, 1, 1, 0), 24);
+    let net6 = Ipv6Net::new_assert(Ipv6Addr::new(0xfd, 0, 0, 0, 0, 0, 0, 0), 24);
+
+    // or does not compile when called from a const context.
+
+    const NET4: Ipv4Net = Ipv4Net::new_assert(Ipv4Addr::new(10, 1, 1, 0), 24);
+    const NET6: Ipv6Net = Ipv6Net::new_assert(Ipv6Addr::new(0xfd, 0, 0, 0, 0, 0, 0, 0), 24);
+
     // They can also be created from string representations.
 
     let net4 = Ipv4Net::from_str("10.1.1.0/24").unwrap();
@@ -143,7 +153,7 @@ fn main() {
 extern crate ipnet;
 use ipnet::IpNet;
 
-fn main() {}
+fn main() {
     // Example input list of overlapping and adjacent prefixes.
 
     let strings = vec![
@@ -174,7 +184,7 @@ fn main() {}
 ## Future
 
 * Implementing `std::ops::{Add, Sub, BitAnd, BitOr}` for `Ipv4Addr` and `Ipv6Addr` would be useful as these are common operations on IP addresses. If done, the extension traits provided in this module would be removed and the major version incremented. Implementing these requires a change to the standard library. I've started a thread on this topic on the [Rust Internals](https://internals.rust-lang.org/t/pre-rfc-implementing-add-sub-bitand-bitor-for-ipaddr-ipv4addr-ipv6addr/) discussion board.
-* The results of `hosts()` and potentially `subnets()` should be represented as a `Range` rather than the custom `IpAddrRange` and `IpSubnets` types provided in this module. This requires the target types to have `Add` and `Step` implemented for them. Implementing `Add` for `IpAddr`, `Ipv4Addr`, and `Ipv6Addr` requires a change to the standard library (see above). And `Step` is still unstable so exploring this will also wait until it has stablized.
+* The results of `hosts()` and potentially `subnets()` should be represented as a `Range` rather than the custom `IpAddrRange` and `IpSubnets` types provided in this module. This requires the target types to have `Add` and `Step` implemented for them. Implementing `Add` for `IpAddr`, `Ipv4Addr`, and `Ipv6Addr` requires a change to the standard library (see above). And `Step` is still unstable so exploring this will also wait until it has stabilized.
 
 ## License
 

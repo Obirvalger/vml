@@ -2,36 +2,33 @@ use std::cmp::Ordering;
 
 use crate::asn1::{Asn1Object, Asn1OctetString, Asn1Time};
 use crate::bn::{BigNum, MsbOption};
+use crate::error::ErrorStack;
 use crate::hash::MessageDigest;
 use crate::nid::Nid;
-use crate::pkey::{PKey, Private};
+use crate::pkey::{PKey, PKeyRef, Private};
 use crate::rsa::Rsa;
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 use crate::ssl::SslFiletype;
 use crate::stack::Stack;
 use crate::x509::extension::{
     AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectAlternativeName,
     SubjectKeyIdentifier,
 };
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 use crate::x509::store::X509Lookup;
 use crate::x509::store::X509StoreBuilder;
-#[cfg(any(ossl102, boringssl, libressl261))]
 use crate::x509::verify::{X509VerifyFlags, X509VerifyParam};
-#[cfg(any(ossl102, boringssl))]
+#[cfg(any(ossl110, boringssl, awslc))]
 use crate::x509::X509PurposeId;
-#[cfg(any(ossl102, boringssl, libressl261))]
-use crate::x509::X509PurposeRef;
+use crate::x509::{CrlNumber, X509CrlBuilder, X509PurposeRef, X509Ref, X509RevokedBuilder};
 #[cfg(ossl110)]
 use crate::x509::{CrlReason, X509Builder};
 use crate::x509::{
     CrlStatus, X509Crl, X509Extension, X509Name, X509Req, X509StoreContext, X509VerifyResult, X509,
 };
-
 #[cfg(ossl110)]
 use foreign_types::ForeignType;
 use hex::{self, FromHex};
-#[cfg(any(ossl102, boringssl, libressl261))]
 use libc::time_t;
 
 use super::{AuthorityInformationAccess, CertificateIssuer, ReasonCode};
@@ -58,10 +55,10 @@ fn test_debug() {
     let cert = include_bytes!("../../test/cert.pem");
     let cert = X509::from_pem(cert).unwrap();
     let debugged = format!("{:#?}", cert);
-    #[cfg(boringssl)]
-    assert!(debugged.contains(r#"serial_number: "8771f7bdee982fa5""#));
-    #[cfg(not(boringssl))]
-    assert!(debugged.contains(r#"serial_number: "8771F7BDEE982FA5""#));
+    assert!(
+        debugged.contains(r#"serial_number: "8771F7BDEE982FA5""#)
+            || debugged.contains(r#"serial_number: "8771f7bdee982fa5""#)
+    );
     assert!(debugged.contains(r#"signature_algorithm: sha256WithRSAEncryption"#));
     assert!(debugged.contains(r#"countryName = "AU""#));
     assert!(debugged.contains(r#"stateOrProvinceName = "Some-State""#));
@@ -114,7 +111,7 @@ fn test_nid_values() {
     assert_eq!(email.data().as_slice(), b"test@example.com");
 
     let friendly = subject.entries_by_nid(Nid::FRIENDLYNAME).next().unwrap();
-    assert_eq!(&**friendly.data().as_utf8().unwrap(), "Example");
+    assert_eq!(friendly.data().to_string().unwrap(), "Example");
 }
 
 #[test]
@@ -137,7 +134,7 @@ fn test_nameref_iterator() {
 
     let friendly = all_entries.next().unwrap();
     assert_eq!(friendly.object().nid().as_raw(), Nid::FRIENDLYNAME.as_raw());
-    assert_eq!(&**friendly.data().as_utf8().unwrap(), "Example");
+    assert_eq!(friendly.data().to_string().unwrap(), "Example");
 
     if all_entries.next().is_some() {
         panic!();
@@ -172,7 +169,7 @@ fn test_subject_alt_name() {
 }
 
 #[test]
-#[cfg(any(ossl110, boringssl))]
+#[cfg(any(ossl110, boringssl, awslc))]
 fn test_retrieve_pathlen() {
     let cert = include_bytes!("../../test/root-ca.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -188,7 +185,7 @@ fn test_retrieve_pathlen() {
 }
 
 #[test]
-#[cfg(any(ossl110, boringssl))]
+#[cfg(any(ossl110, boringssl, awslc))]
 fn test_subject_key_id() {
     let cert = include_bytes!("../../test/certv3.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -201,7 +198,7 @@ fn test_subject_key_id() {
 }
 
 #[test]
-#[cfg(any(ossl110, boringssl))]
+#[cfg(any(ossl110, boringssl, awslc))]
 fn test_authority_key_id() {
     let cert = include_bytes!("../../test/certv3.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -223,10 +220,10 @@ fn test_authority_issuer_and_serial() {
     assert_eq!(1, authority_issuer.len());
     let dn = authority_issuer[0].directory_name().unwrap();
     let mut o = dn.entries_by_nid(Nid::ORGANIZATIONNAME);
-    let o = o.next().unwrap().data().as_utf8().unwrap();
+    let o = o.next().unwrap().data().to_string().unwrap();
     assert_eq!(o.as_bytes(), b"PyCA");
     let mut cn = dn.entries_by_nid(Nid::COMMONNAME);
-    let cn = cn.next().unwrap().data().as_utf8().unwrap();
+    let cn = cn.next().unwrap().data().to_string().unwrap();
     assert_eq!(cn.as_bytes(), b"cryptography.io");
 
     let authority_serial = cert.authority_serial().unwrap();
@@ -383,6 +380,7 @@ fn x509_extension_new_from_der() {
 #[test]
 fn x509_extension_to_der() {
     let builder = X509::builder().unwrap();
+    let bn = BigNum::from_u32(42).unwrap();
 
     for (ext, expected) in [
         (
@@ -412,6 +410,13 @@ fn x509_extension_to_der() {
                 .build()
                 .unwrap(),
             b"0\x22\x06\x03U\x1d%\x04\x1b0\x19\x06\x08+\x06\x01\x05\x05\x07\x03\x01\x06\x03\x887\x01\x06\x08+\x06\x01\x05\x05\x07\x03\x02",
+        ),
+        (
+            CrlNumber::new(bn)
+                .unwrap()
+                .build()
+                .unwrap(),
+            b"\x30\x0a\x06\x03\x55\x1d\x14\x04\x03\x02\x01\x2a",
         ),
     ] {
         assert_eq!(&ext.to_der().unwrap(), expected);
@@ -557,7 +562,6 @@ fn test_verify_fails() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, libressl261))]
 fn test_verify_fails_with_crl_flag_set_and_no_crl() {
     let cert = include_bytes!("../../test/cert.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -584,7 +588,6 @@ fn test_verify_fails_with_crl_flag_set_and_no_crl() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, libressl261))]
 fn test_verify_cert_with_purpose() {
     let cert = include_bytes!("../../test/cert.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -611,7 +614,6 @@ fn test_verify_cert_with_purpose() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, libressl261))]
 fn test_verify_cert_with_wrong_purpose_fails() {
     let cert = include_bytes!("../../test/cert.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -836,7 +838,6 @@ fn test_name_cmp() {
 }
 
 #[test]
-#[cfg(any(boringssl, ossl110, libressl270))]
 fn test_name_to_owned() {
     let cert = include_bytes!("../../test/cert.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -846,7 +847,6 @@ fn test_name_to_owned() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, libressl261))]
 fn test_verify_param_set_time_fails_verification() {
     const TEST_T_2030: time_t = 1893456000;
 
@@ -877,7 +877,6 @@ fn test_verify_param_set_time_fails_verification() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, libressl261))]
 fn test_verify_param_set_time() {
     const TEST_T_2020: time_t = 1577836800;
 
@@ -901,7 +900,6 @@ fn test_verify_param_set_time() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, libressl261))]
 fn test_verify_param_set_depth() {
     let cert = include_bytes!("../../test/leaf.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -928,7 +926,6 @@ fn test_verify_param_set_depth() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, libressl261))]
 #[allow(clippy::bool_to_int_with_if)]
 fn test_verify_param_set_depth_fails_verification() {
     let cert = include_bytes!("../../test/leaf.pem");
@@ -944,13 +941,17 @@ fn test_verify_param_set_depth_fails_verification() {
     store_bldr.add_cert(ca).unwrap();
     let mut verify_params = X509VerifyParam::new().unwrap();
     // OpenSSL 1.1.0+ considers the root certificate to not be part of the chain, while 1.0.2 and LibreSSL do
-    let expected_depth = if cfg!(any(ossl110, boringssl)) { 0 } else { 1 };
+    let expected_depth = if cfg!(any(ossl110, boringssl, awslc)) {
+        0
+    } else {
+        1
+    };
     verify_params.set_depth(expected_depth);
     store_bldr.set_param(&verify_params).unwrap();
     let store = store_bldr.build();
 
     // OpenSSL 1.1.0+ added support for X509_V_ERR_CERT_CHAIN_TOO_LONG, while 1.0.2 simply ignores the intermediate
-    let expected_error = if cfg!(any(ossl110, libressl261)) {
+    let expected_error = if cfg!(any(ossl110, libressl)) {
         "certificate chain too long"
     } else {
         "unable to get local issuer certificate"
@@ -970,7 +971,7 @@ fn test_verify_param_set_depth_fails_verification() {
 }
 
 #[test]
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 fn test_load_cert_file() {
     let cert = include_bytes!("../../test/cert.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -1003,7 +1004,7 @@ fn test_verify_param_auth_level() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl))]
+#[cfg(any(ossl110, boringssl, awslc))]
 fn test_set_purpose() {
     let cert = include_bytes!("../../test/leaf.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -1028,7 +1029,7 @@ fn test_set_purpose() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl))]
+#[cfg(any(ossl110, boringssl, awslc))]
 fn test_set_purpose_fails_verification() {
     let cert = include_bytes!("../../test/leaf.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -1063,7 +1064,6 @@ fn test_set_purpose_fails_verification() {
 }
 
 #[test]
-#[cfg(any(ossl101, libressl350))]
 fn test_add_name_entry() {
     let cert = include_bytes!("../../test/cert.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -1081,7 +1081,7 @@ fn test_add_name_entry() {
 }
 
 #[test]
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 fn test_load_crl_file_fail() {
     let mut store_bldr = X509StoreBuilder::new().unwrap();
     let lookup = store_bldr.add_lookup(X509Lookup::file()).unwrap();
@@ -1151,6 +1151,74 @@ fn other_name_as_subject_alternative_name() {
     }
 }
 
+#[cfg(ossl110)]
+#[test]
+fn dir_name_as_subject_alternative_name() {
+    // Build original name
+    let mut b = X509Name::builder().unwrap();
+    b.append_entry_by_nid(Nid::COMMONNAME, "dir.example")
+        .unwrap();
+    b.append_entry_by_nid(Nid::COUNTRYNAME, "US").unwrap();
+    let name = b.build();
+
+    // Build a separate literal copy for the SAN
+    let mut b2 = X509Name::builder().unwrap();
+    b2.append_entry_by_nid(Nid::COMMONNAME, "dir.example")
+        .unwrap();
+    b2.append_entry_by_nid(Nid::COUNTRYNAME, "US").unwrap();
+    let name_copy = b2.build();
+
+    // Build certificate with the SAN entry
+    let mut builder = X509Builder::new().unwrap();
+    let san = SubjectAlternativeName::new()
+        .dir_name2(name_copy)
+        .build(&builder.x509v3_context(None, None))
+        .unwrap();
+    builder.append_extension(san).unwrap();
+    let cert = builder.build();
+
+    // Original X509Name still intact
+    assert_eq!(
+        name.entries_by_nid(Nid::COMMONNAME)
+            .next()
+            .unwrap()
+            .data()
+            .as_slice(),
+        b"dir.example"
+    );
+    assert_eq!(
+        name.entries_by_nid(Nid::COUNTRYNAME)
+            .next()
+            .unwrap()
+            .data()
+            .as_slice(),
+        b"US"
+    );
+
+    // Extract SAN directoryName
+    let alt_names = cert.subject_alt_names().unwrap();
+    let dirname = alt_names.iter().find_map(|n| n.directory_name()).unwrap();
+
+    assert_eq!(
+        dirname
+            .entries_by_nid(Nid::COMMONNAME)
+            .next()
+            .unwrap()
+            .data()
+            .as_slice(),
+        b"dir.example"
+    );
+    assert_eq!(
+        dirname
+            .entries_by_nid(Nid::COUNTRYNAME)
+            .next()
+            .unwrap()
+            .data()
+            .as_slice(),
+        b"US"
+    );
+}
+
 #[test]
 fn test_dist_point() {
     let cert = include_bytes!("../../test/certv3.pem");
@@ -1191,4 +1259,126 @@ fn test_store_all_certificates() {
     };
 
     assert_eq!(store.all_certificates().len(), 1);
+}
+
+#[test]
+fn test_ocsp_responders_invalid_utf8() {
+    let cert = include_bytes!("../../test/aia_bad_utf8_cert.pem");
+    let cert = X509::from_pem(cert).unwrap();
+    assert!(cert.ocsp_responders().is_err());
+}
+
+#[test]
+fn test_x509_revoked_builder() {
+    let mut builder = X509RevokedBuilder::new().unwrap();
+    let bn = BigNum::from_u32(1024).unwrap();
+    let d = Asn1Time::from_unix(0).unwrap();
+
+    builder
+        .set_serial_number(&bn.to_asn1_integer().unwrap())
+        .unwrap();
+    builder.set_revocation_date(&d).unwrap();
+
+    let revoked = builder.build();
+
+    assert_eq!(revoked.serial_number().to_bn().unwrap(), bn);
+    assert_eq!(
+        revoked.revocation_date().compare(&d).unwrap(),
+        Ordering::Equal
+    )
+}
+
+fn build_ca() -> Result<(PKey<Private>, X509), ErrorStack> {
+    let rsa = Rsa::generate(2048)?;
+    let pkey = PKey::from_rsa(rsa)?;
+
+    let mut name = X509Name::builder()?;
+    name.append_entry_by_nid(Nid::COMMONNAME, "foorbar.com")?;
+    let name = name.build();
+
+    // Build certificate
+    let mut builder = X509::builder()?;
+    builder.set_version(2)?;
+    builder.set_subject_name(&name)?;
+    builder.set_issuer_name(&name)?;
+    builder.set_pubkey(&pkey)?;
+    builder.set_not_before(&*Asn1Time::days_from_now(0)?)?;
+    builder.set_not_after(&*Asn1Time::days_from_now(365)?)?;
+
+    let exts = {
+        let ctx = builder.x509v3_context(None, None);
+        let san = SubjectAlternativeName::new()
+            .dns("foobar.com")
+            .build(&ctx)?;
+        vec![san]
+    };
+
+    for ext in exts {
+        builder.append_extension(ext)?;
+    }
+
+    builder.sign(&pkey, MessageDigest::sha256())?;
+    let ca_cert = builder.build();
+    Ok((pkey, ca_cert))
+}
+
+fn build_crl(
+    key: &PKeyRef<Private>,
+    cert: &X509Ref,
+    extensions: Vec<X509Extension>,
+) -> Result<X509Crl, ErrorStack> {
+    let mut builder = X509RevokedBuilder::new()?;
+    let bn = BigNum::from_u32(1024)?;
+    let d = Asn1Time::from_unix(0)?;
+
+    builder.set_serial_number(&*bn.to_asn1_integer()?)?;
+    builder.set_revocation_date(&d)?;
+    let revoked = builder.build();
+    let revokeds = vec![revoked];
+
+    let mut builder = X509CrlBuilder::new()?;
+
+    builder.set_issuer_name(cert.issuer_name())?;
+    builder.set_last_update(&*Asn1Time::days_from_now(0)?)?;
+    builder.set_next_update(&*Asn1Time::days_from_now(30)?)?;
+
+    for ext in extensions {
+        builder.append_extension(ext)?;
+    }
+    for revoked in revokeds {
+        builder.add_revoked(revoked)?;
+    }
+
+    builder.sign(key, MessageDigest::sha256())?;
+
+    builder.build()
+}
+
+#[test]
+fn test_x509_crl_builder() {
+    let (pkey, ca_cert) = build_ca().unwrap();
+
+    let dummy = X509::builder().unwrap();
+    let ctx = dummy.x509v3_context(Some(ca_cert.as_ref()), None);
+    let aki = AuthorityKeyIdentifier::new()
+        .issuer(true)
+        .build(&ctx)
+        .unwrap();
+    let n = CrlNumber::new(BigNum::from_u32(42).unwrap())
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let exts = vec![aki, n];
+    let crl = build_crl(&pkey, &ca_cert, exts).unwrap();
+    assert!(crl.verify(&pkey).unwrap());
+
+    assert_eq!(crl.get_revoked().unwrap().len(), 1);
+
+    let (critical, n) = crl
+        .extension::<CrlNumber>()
+        .unwrap()
+        .expect("Crl Number extension should be present");
+    assert!(!critical, "Crl Number extension is not critical");
+    assert_eq!(n.to_bn().unwrap().to_string(), "42");
 }

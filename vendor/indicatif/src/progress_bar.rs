@@ -161,7 +161,7 @@ impl ProgressBar {
     }
 
     /// Sets the tab width (default: 8). All tabs will be expanded to this many spaces.
-    pub fn set_tab_width(&mut self, tab_width: usize) {
+    pub fn set_tab_width(&self, tab_width: usize) {
         let mut state = self.state();
         state.set_tab_width(tab_width);
         state.draw(true, Instant::now()).unwrap();
@@ -235,6 +235,15 @@ impl ProgressBar {
         }
     }
 
+    /// Decrease the position of the progress bar by `delta`
+    pub fn dec(&self, delta: u64) {
+        self.pos.dec(delta);
+        let now = Instant::now();
+        if self.pos.allow(now) {
+            self.tick_inner(now);
+        }
+    }
+
     /// A quick convenience check if the progress bar is hidden
     pub fn is_hidden(&self) -> bool {
         self.state().draw_target.is_hidden()
@@ -288,6 +297,11 @@ impl ProgressBar {
     /// Increase the length of the progress bar
     pub fn inc_length(&self, delta: u64) {
         self.state().inc_length(Instant::now(), delta);
+    }
+
+    /// Decrease the length of the progress bar
+    pub fn dec_length(&self, delta: u64) {
+        self.state().dec_length(Instant::now(), delta);
     }
 
     /// Sets the current prefix of the progress bar

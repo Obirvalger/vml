@@ -4,12 +4,52 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = ConstrainLongRange)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "ConstrainLongRange")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `ConstrainLongRange` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
     pub type ConstrainLongRange;
+    #[doc = "Get the `exact` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[wasm_bindgen(method, getter = "exact")]
+    pub fn get_exact(this: &ConstrainLongRange) -> Option<i32>;
+    #[doc = "Change the `exact` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[wasm_bindgen(method, setter = "exact")]
+    pub fn set_exact(this: &ConstrainLongRange, val: i32);
+    #[doc = "Get the `ideal` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[wasm_bindgen(method, getter = "ideal")]
+    pub fn get_ideal(this: &ConstrainLongRange) -> Option<i32>;
+    #[doc = "Change the `ideal` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[wasm_bindgen(method, setter = "ideal")]
+    pub fn set_ideal(this: &ConstrainLongRange, val: i32);
+    #[doc = "Get the `max` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[wasm_bindgen(method, getter = "max")]
+    pub fn get_max(this: &ConstrainLongRange) -> Option<i32>;
+    #[doc = "Change the `max` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[wasm_bindgen(method, setter = "max")]
+    pub fn set_max(this: &ConstrainLongRange, val: i32);
+    #[doc = "Get the `min` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[wasm_bindgen(method, getter = "min")]
+    pub fn get_min(this: &ConstrainLongRange) -> Option<i32>;
+    #[doc = "Change the `min` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[wasm_bindgen(method, setter = "min")]
+    pub fn set_min(this: &ConstrainLongRange, val: i32);
 }
 impl ConstrainLongRange {
     #[doc = "Construct a new `ConstrainLongRange`."]
@@ -20,56 +60,24 @@ impl ConstrainLongRange {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `exact` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[deprecated = "Use `set_exact()` instead."]
     pub fn exact(&mut self, val: i32) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("exact"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_exact(val);
         self
     }
-    #[doc = "Change the `ideal` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[deprecated = "Use `set_ideal()` instead."]
     pub fn ideal(&mut self, val: i32) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("ideal"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_ideal(val);
         self
     }
-    #[doc = "Change the `max` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[deprecated = "Use `set_max()` instead."]
     pub fn max(&mut self, val: i32) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("max"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_max(val);
         self
     }
-    #[doc = "Change the `min` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ConstrainLongRange`*"]
+    #[deprecated = "Use `set_min()` instead."]
     pub fn min(&mut self, val: i32) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("min"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_min(val);
         self
     }
 }

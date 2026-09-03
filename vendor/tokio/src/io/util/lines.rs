@@ -5,7 +5,7 @@ use pin_project_lite::pin_project;
 use std::io;
 use std::mem;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// Reads lines from an [`AsyncBufRead`].
@@ -49,7 +49,7 @@ where
     ///
     /// # Cancel safety
     ///
-    /// This method is cancellation safe.
+    /// This method is cancel safe.
     ///
     /// # Examples
     ///
@@ -67,7 +67,7 @@ where
     /// # }
     /// ```
     pub async fn next_line(&mut self) -> io::Result<Option<String>> {
-        use crate::future::poll_fn;
+        use std::future::poll_fn;
 
         poll_fn(|cx| Pin::new(&mut *self).poll_next_line(cx)).await
     }

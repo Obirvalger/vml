@@ -1,4 +1,4 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 
 use super::{Authority, Parts, PathAndQuery, Scheme};
 use crate::Uri;
@@ -44,8 +44,8 @@ impl Builder {
     /// ```
     pub fn scheme<T>(self, scheme: T) -> Self
     where
-        Scheme: TryFrom<T>,
-        <Scheme as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Scheme>,
+        <T as TryInto<Scheme>>::Error: Into<crate::Error>,
     {
         self.map(move |mut parts| {
             let scheme = scheme.try_into().map_err(Into::into)?;
@@ -68,8 +68,8 @@ impl Builder {
     /// ```
     pub fn authority<T>(self, auth: T) -> Self
     where
-        Authority: TryFrom<T>,
-        <Authority as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Authority>,
+        <T as TryInto<Authority>>::Error: Into<crate::Error>,
     {
         self.map(move |mut parts| {
             let auth = auth.try_into().map_err(Into::into)?;
@@ -92,11 +92,21 @@ impl Builder {
     /// ```
     pub fn path_and_query<T>(self, p_and_q: T) -> Self
     where
-        PathAndQuery: TryFrom<T>,
-        <PathAndQuery as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<PathAndQuery>,
+        <T as TryInto<PathAndQuery>>::Error: Into<crate::Error>,
     {
         self.map(move |mut parts| {
-            let p_and_q = p_and_q.try_into().map_err(Into::into)?;
+            let p_and_q = match p_and_q.try_into() {
+                Ok(p_and_q) => p_and_q,
+                Err(err) => {
+                    let err = err.into();
+                    if err.is_empty_uri() {
+                        PathAndQuery::empty()
+                    } else {
+                        return Err(err);
+                    }
+                }
+            };
             parts.path_and_query = Some(p_and_q);
             Ok(parts)
         })
@@ -203,9 +213,49 @@ mod tests {
     }
 
     #[test]
+    fn build_from_empty_path_and_query() {
+        let uri = Builder::new()
+            .scheme(Scheme::HTTP)
+            .authority("localhost:8080")
+            .path_and_query("")
+            .build()
+            .unwrap();
+
+        assert_eq!(uri, "http://localhost:8080");
+        assert_eq!(uri.path(), "/");
+    }
+
+    #[test]
+    fn empty_path_and_query_remains_strict() {
+        assert!(PathAndQuery::try_from("").is_err());
+    }
+
+    #[test]
+    fn authority_form_path_and_query_remains_strict() {
+        assert!(Builder::new()
+            .path_and_query("localhost:8080")
+            .build()
+            .is_err());
+    }
+
+    #[test]
     fn build_from_uri() {
         let original_uri = Uri::default();
         let uri = Builder::from(original_uri.clone()).build().unwrap();
         assert_eq!(original_uri, uri);
+    }
+
+    #[test]
+    fn build_star_for_http2() {
+        let uri = Builder::new()
+            .scheme("https")
+            .authority("example.com")
+            .path_and_query("*")
+            .build()
+            .unwrap();
+
+        assert_eq!(uri.scheme(), Some(&Scheme::HTTPS));
+        assert_eq!(uri.host(), Some("example.com"));
+        assert_eq!(uri.path(), "*");
     }
 }

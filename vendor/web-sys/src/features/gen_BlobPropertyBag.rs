@@ -4,12 +4,34 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = BlobPropertyBag)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "BlobPropertyBag")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `BlobPropertyBag` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `BlobPropertyBag`*"]
     pub type BlobPropertyBag;
+    #[cfg(feature = "EndingTypes")]
+    #[doc = "Get the `endings` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `BlobPropertyBag`, `EndingTypes`*"]
+    #[wasm_bindgen(method, getter = "endings")]
+    pub fn get_endings(this: &BlobPropertyBag) -> Option<EndingTypes>;
+    #[cfg(feature = "EndingTypes")]
+    #[doc = "Change the `endings` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `BlobPropertyBag`, `EndingTypes`*"]
+    #[wasm_bindgen(method, setter = "endings")]
+    pub fn set_endings(this: &BlobPropertyBag, val: EndingTypes);
+    #[doc = "Get the `type` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `BlobPropertyBag`*"]
+    #[wasm_bindgen(method, getter = "type")]
+    pub fn get_type(this: &BlobPropertyBag) -> Option<::alloc::string::String>;
+    #[doc = "Change the `type` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `BlobPropertyBag`*"]
+    #[wasm_bindgen(method, setter = "type")]
+    pub fn set_type(this: &BlobPropertyBag, val: &str);
 }
 impl BlobPropertyBag {
     #[doc = "Construct a new `BlobPropertyBag`."]
@@ -21,34 +43,14 @@ impl BlobPropertyBag {
         ret
     }
     #[cfg(feature = "EndingTypes")]
-    #[doc = "Change the `endings` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `BlobPropertyBag`, `EndingTypes`*"]
+    #[deprecated = "Use `set_endings()` instead."]
     pub fn endings(&mut self, val: EndingTypes) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("endings"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_endings(val);
         self
     }
-    #[doc = "Change the `type` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `BlobPropertyBag`*"]
+    #[deprecated = "Use `set_type()` instead."]
     pub fn type_(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("type"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_type(val);
         self
     }
 }

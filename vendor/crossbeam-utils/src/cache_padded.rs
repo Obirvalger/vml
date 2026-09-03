@@ -29,6 +29,11 @@ use core::ops::{Deref, DerefMut};
 ///
 /// The alignment of `CachePadded<T>` is the maximum of N bytes and the alignment of `T`.
 ///
+/// # Layout
+///
+/// Since crossbeam-utils 0.8.22, this type is `#[repr(C)]` and is guaranteed that the pointer to
+/// `CachePadded<T>` has the same address as the pointer to the underlying `T`.
+///
 /// # Examples
 ///
 /// Alignment and padding:
@@ -67,7 +72,7 @@ use core::ops::{Deref, DerefMut};
 // - https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-optimization-manual.pdf
 // - https://github.com/facebook/folly/blob/1b5288e6eea6df074758f877c849b6e73bbb9fbb/folly/lang/Align.h#L107
 //
-// ARM's big.LITTLE architecture has asymmetric cores and "big" cores have 128-byte cache line size.
+// aarch64/arm64ec's big.LITTLE architecture has asymmetric cores and "big" cores have 128-byte cache line size.
 //
 // Sources:
 // - https://www.mono-project.com/news/2016/09/12/arm64-icache/
@@ -81,6 +86,7 @@ use core::ops::{Deref, DerefMut};
     any(
         target_arch = "x86_64",
         target_arch = "aarch64",
+        target_arch = "arm64ec",
         target_arch = "powerpc64",
     ),
     repr(align(128))
@@ -130,6 +136,7 @@ use core::ops::{Deref, DerefMut};
     not(any(
         target_arch = "x86_64",
         target_arch = "aarch64",
+        target_arch = "arm64ec",
         target_arch = "powerpc64",
         target_arch = "arm",
         target_arch = "mips",
@@ -143,6 +150,7 @@ use core::ops::{Deref, DerefMut};
     )),
     repr(align(64))
 )]
+#[repr(C)]
 pub struct CachePadded<T> {
     value: T,
 }

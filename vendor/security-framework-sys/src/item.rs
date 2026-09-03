@@ -14,7 +14,7 @@ extern "C" {
     pub static kSecMatchTrustedOnly: CFStringRef;
     pub static kSecMatchCaseInsensitive: CFStringRef;
     #[cfg(target_os = "macos")]
-    pub static kSecMatchSubjectWholeString: CFStringRef; 
+    pub static kSecMatchSubjectWholeString: CFStringRef;
 
     pub static kSecReturnData: CFStringRef;
     pub static kSecReturnAttributes: CFStringRef;
@@ -28,21 +28,34 @@ extern "C" {
     pub static kSecAttrLabel: CFStringRef;
     pub static kSecAttrIsPermanent: CFStringRef;
     pub static kSecAttrPublicKeyHash: CFStringRef;
+    pub static kSecAttrSerialNumber: CFStringRef;
     pub static kSecPrivateKeyAttrs: CFStringRef;
     pub static kSecPublicKeyAttrs: CFStringRef;
+
+    pub static kSecAttrCanEncrypt: CFStringRef;
+    pub static kSecAttrCanDecrypt: CFStringRef;
+    pub static kSecAttrCanDerive: CFStringRef;
+    pub static kSecAttrCanWrap: CFStringRef;
+    pub static kSecAttrCanUnwrap: CFStringRef;
+    pub static kSecAttrCanSign: CFStringRef;
+    pub static kSecAttrCanVerify: CFStringRef;
 
     pub static kSecAttrKeyClass: CFStringRef;
     pub static kSecAttrKeyClassPublic: CFStringRef;
     pub static kSecAttrKeyClassPrivate: CFStringRef;
     pub static kSecAttrKeyClassSymmetric: CFStringRef;
 
+    #[cfg(target_os = "macos")]
     pub static kSecUseKeychain: CFStringRef;
     #[cfg(any(feature = "OSX_10_15", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))]
     pub static kSecUseDataProtectionKeychain: CFStringRef;
-    #[cfg(any(feature = "OSX_10_12", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))]
     pub static kSecAttrTokenID: CFStringRef;
-    #[cfg(any(feature = "OSX_10_12", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))]
     pub static kSecAttrTokenIDSecureEnclave: CFStringRef;
+    pub static kSecUseAuthenticationContext: CFStringRef;
+    pub static kSecUseAuthenticationUI: CFStringRef;
+    pub static kSecUseAuthenticationUISkip: CFStringRef;
+    pub static kSecAttrSynchronizable: CFStringRef;
+    pub static kSecAttrSynchronizableAny: CFStringRef;
 
     pub static kSecAttrKeySizeInBits: CFStringRef;
 
@@ -62,10 +75,14 @@ extern "C" {
     pub static kSecAttrKeyTypeRC2: CFStringRef;
     #[cfg(target_os = "macos")]
     pub static kSecAttrKeyTypeCAST: CFStringRef;
+    #[deprecated(note = "Deprecated by Apple")]
     pub static kSecAttrKeyTypeEC: CFStringRef;
 
     pub static kSecAttrAccessGroup: CFStringRef;
     pub static kSecAttrAccessGroupToken: CFStringRef;
+
+    pub static kSecKeyKeyExchangeParameterRequestedSize: CFStringRef;
+    pub static kSecKeyKeyExchangeParameterSharedInfo: CFStringRef;
 
     pub static kSecAttrAuthenticationType: CFStringRef;
     pub static kSecAttrComment: CFStringRef;

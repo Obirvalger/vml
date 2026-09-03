@@ -1,8 +1,9 @@
-use std::path::{is_separator, Path};
+use std::fmt::Write;
+use std::path::{Path, is_separator};
 
 use regex_automata::meta::Regex;
 
-use crate::{new_regex, Candidate, Error, ErrorKind};
+use crate::{Candidate, Error, ErrorKind, new_regex};
 
 /// Describes a matching strategy for a particular pattern.
 ///
@@ -70,12 +71,19 @@ impl MatchStrategy {
 ///
 /// It cannot be used directly to match file paths, but it can be converted
 /// to a regular expression string or a matcher.
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Glob {
     glob: String,
     re: String,
     opts: GlobOptions,
     tokens: Tokens,
+}
+
+impl AsRef<Glob> for Glob {
+    fn as_ref(&self) -> &Glob {
+        self
+    }
 }
 
 impl PartialEq for Glob {
@@ -88,6 +96,21 @@ impl std::hash::Hash for Glob {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.glob.hash(state);
         self.opts.hash(state);
+    }
+}
+
+impl std::fmt::Debug for Glob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            f.debug_struct("Glob")
+                .field("glob", &self.glob)
+                .field("re", &self.re)
+                .field("opts", &self.opts)
+                .field("tokens", &self.tokens)
+                .finish()
+        } else {
+            f.debug_tuple("Glob").field(&self.glob).finish()
+        }
     }
 }
 
@@ -193,6 +216,7 @@ pub struct GlobBuilder<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 struct GlobOptions {
     /// Whether to match case insensitively.
     case_insensitive: bool,
@@ -205,6 +229,11 @@ struct GlobOptions {
     /// Whether or not an empty case in an alternate will be removed.
     /// e.g., when enabled, `{,a}` will match "" and "a".
     empty_alternates: bool,
+    /// Whether or not an unclosed character class is allowed. When an unclosed
+    /// character class is found, the opening `[` is treated as a literal `[`.
+    /// When this isn't enabled, an opening `[` without a corresponding `]` is
+    /// treated as an error.
+    allow_unclosed_class: bool,
 }
 
 impl GlobOptions {
@@ -214,11 +243,13 @@ impl GlobOptions {
             literal_separator: false,
             backslash_escape: !is_separator('\\'),
             empty_alternates: false,
+            allow_unclosed_class: false,
         }
     }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 struct Tokens(Vec<Token>);
 
 impl std::ops::Deref for Tokens {
@@ -235,6 +266,7 @@ impl std::ops::DerefMut for Tokens {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 enum Token {
     Literal(char),
     Any,
@@ -308,11 +340,7 @@ impl Glob {
             let Token::Literal(c) = *t else { return None };
             lit.push(c);
         }
-        if lit.is_empty() {
-            None
-        } else {
-            Some(lit)
-        }
+        if lit.is_empty() { None } else { Some(lit) }
     }
 
     /// Returns an extension if this pattern matches a file path if and only
@@ -353,11 +381,7 @@ impl Glob {
                 _ => return None,
             }
         }
-        if lit.is_empty() {
-            None
-        } else {
-            Some(lit)
-        }
+        if lit.is_empty() { None } else { Some(lit) }
     }
 
     /// This is like `ext`, but returns an extension even if it isn't sufficient
@@ -420,11 +444,7 @@ impl Glob {
         if need_sep {
             lit.push('/');
         }
-        if lit.is_empty() {
-            None
-        } else {
-            Some(lit)
-        }
+        if lit.is_empty() { None } else { Some(lit) }
     }
 
     /// Returns a literal suffix of this pattern if the entire pattern matches
@@ -473,11 +493,7 @@ impl Glob {
             let Token::Literal(c) = *t else { return None };
             lit.push(c);
         }
-        if lit.is_empty() || lit == "/" {
-            None
-        } else {
-            Some((lit, entire))
-        }
+        if lit.is_empty() || lit == "/" { None } else { Some((lit, entire)) }
     }
 
     /// If this pattern only needs to inspect the basename of a file path,
@@ -563,25 +579,27 @@ impl<'a> GlobBuilder<'a> {
     pub fn build(&self) -> Result<Glob, Error> {
         let mut p = Parser {
             glob: &self.glob,
-            stack: vec![Tokens::default()],
+            alternates_stack: Vec::new(),
+            branches: vec![Tokens::default()],
             chars: self.glob.chars().peekable(),
             prev: None,
             cur: None,
+            found_unclosed_class: false,
             opts: &self.opts,
         };
         p.parse()?;
-        if p.stack.is_empty() {
-            Err(Error {
-                glob: Some(self.glob.to_string()),
-                kind: ErrorKind::UnopenedAlternates,
-            })
-        } else if p.stack.len() > 1 {
+        if p.branches.is_empty() {
+            // OK because of how the the branches/alternate_stack are managed.
+            // If we end up here, then there *must* be a bug in the parser
+            // somewhere.
+            unreachable!()
+        } else if p.branches.len() > 1 {
             Err(Error {
                 glob: Some(self.glob.to_string()),
                 kind: ErrorKind::UnclosedAlternates,
             })
         } else {
-            let tokens = p.stack.pop().unwrap();
+            let tokens = p.branches.pop().unwrap();
             Ok(Glob {
                 glob: self.glob.to_string(),
                 re: tokens.to_regex_with(&self.opts),
@@ -628,6 +646,22 @@ impl<'a> GlobBuilder<'a> {
     /// By default this is false.
     pub fn empty_alternates(&mut self, yes: bool) -> &mut GlobBuilder<'a> {
         self.opts.empty_alternates = yes;
+        self
+    }
+
+    /// Toggle whether unclosed character classes are allowed. When allowed,
+    /// a `[` without a matching `]` is treated literally instead of resulting
+    /// in a parse error.
+    ///
+    /// For example, if this is set then the glob `[abc` will be treated as the
+    /// literal string `[abc` instead of returning an error.
+    ///
+    /// By default, this is false. Generally speaking, enabling this leads to
+    /// worse failure modes since the glob parser becomes more permissive. You
+    /// might want to enable this when compatibility (e.g., with POSIX glob
+    /// implementations) is more important than good error messages.
+    pub fn allow_unclosed_class(&mut self, yes: bool) -> &mut GlobBuilder<'a> {
+        self.opts.allow_unclosed_class = yes;
         self
     }
 }
@@ -732,7 +766,9 @@ impl Tokens {
 /// Convert a Unicode scalar value to an escaped string suitable for use as
 /// a literal in a non-Unicode regex.
 fn char_to_escaped_literal(c: char) -> String {
-    bytes_to_escaped_literal(&c.to_string().into_bytes())
+    let mut buf = [0; 4];
+    let bytes = c.encode_utf8(&mut buf).as_bytes();
+    bytes_to_escaped_literal(bytes)
 }
 
 /// Converts an arbitrary sequence of bytes to a UTF-8 string. All non-ASCII
@@ -741,22 +777,41 @@ fn bytes_to_escaped_literal(bs: &[u8]) -> String {
     let mut s = String::with_capacity(bs.len());
     for &b in bs {
         if b <= 0x7F {
-            s.push_str(&regex_syntax::escape(
+            regex_syntax::escape_into(
                 char::from(b).encode_utf8(&mut [0; 4]),
-            ));
+                &mut s,
+            );
         } else {
-            s.push_str(&format!("\\x{:02x}", b));
+            write!(&mut s, "\\x{:02x}", b).unwrap();
         }
     }
     s
 }
 
 struct Parser<'a> {
+    /// The glob to parse.
     glob: &'a str,
-    stack: Vec<Tokens>,
+    /// Marks the index in `stack` where the alternation started.
+    alternates_stack: Vec<usize>,
+    /// The set of active alternation branches being parsed.
+    /// Tokens are added to the end of the last one.
+    branches: Vec<Tokens>,
+    /// A character iterator over the glob pattern to parse.
     chars: std::iter::Peekable<std::str::Chars<'a>>,
+    /// The previous character seen.
     prev: Option<char>,
+    /// The current character.
     cur: Option<char>,
+    /// Whether we failed to find a closing `]` for a character
+    /// class. This can only be true when `GlobOptions::allow_unclosed_class`
+    /// is enabled. When enabled, it is impossible to ever parse another
+    /// character class with this glob. That's because classes cannot be
+    /// nested *and* the only way this happens is when there is never a `]`.
+    ///
+    /// We track this state so that we don't end up spending quadratic time
+    /// trying to parse something like `[[[[[[[[[[[[[[[[[[[[[[[...`.
+    found_unclosed_class: bool,
+    /// Glob options, which may influence parsing.
     opts: &'a GlobOptions,
 }
 
@@ -770,7 +825,7 @@ impl<'a> Parser<'a> {
             match c {
                 '?' => self.push_token(Token::Any)?,
                 '*' => self.parse_star()?,
-                '[' => self.parse_class()?,
+                '[' if !self.found_unclosed_class => self.parse_class()?,
                 '{' => self.push_alternate()?,
                 '}' => self.pop_alternate()?,
                 ',' => self.parse_comma()?,
@@ -782,36 +837,37 @@ impl<'a> Parser<'a> {
     }
 
     fn push_alternate(&mut self) -> Result<(), Error> {
-        if self.stack.len() > 1 {
-            return Err(self.error(ErrorKind::NestedAlternates));
-        }
-        Ok(self.stack.push(Tokens::default()))
+        self.alternates_stack.push(self.branches.len());
+        self.branches.push(Tokens::default());
+        Ok(())
     }
 
     fn pop_alternate(&mut self) -> Result<(), Error> {
-        let mut alts = vec![];
-        while self.stack.len() >= 2 {
-            alts.push(self.stack.pop().unwrap());
-        }
-        self.push_token(Token::Alternates(alts))
+        let Some(start) = self.alternates_stack.pop() else {
+            return Err(self.error(ErrorKind::UnopenedAlternates));
+        };
+        assert!(start <= self.branches.len());
+        let alts = Token::Alternates(self.branches.drain(start..).collect());
+        self.push_token(alts)?;
+        Ok(())
     }
 
     fn push_token(&mut self, tok: Token) -> Result<(), Error> {
-        if let Some(ref mut pat) = self.stack.last_mut() {
+        if let Some(ref mut pat) = self.branches.last_mut() {
             return Ok(pat.push(tok));
         }
         Err(self.error(ErrorKind::UnopenedAlternates))
     }
 
     fn pop_token(&mut self) -> Result<Token, Error> {
-        if let Some(ref mut pat) = self.stack.last_mut() {
+        if let Some(ref mut pat) = self.branches.last_mut() {
             return Ok(pat.pop().unwrap());
         }
         Err(self.error(ErrorKind::UnopenedAlternates))
     }
 
     fn have_tokens(&self) -> Result<bool, Error> {
-        match self.stack.last() {
+        match self.branches.last() {
             None => Err(self.error(ErrorKind::UnopenedAlternates)),
             Some(ref pat) => Ok(!pat.is_empty()),
         }
@@ -820,11 +876,11 @@ impl<'a> Parser<'a> {
     fn parse_comma(&mut self) -> Result<(), Error> {
         // If we aren't inside a group alternation, then don't
         // treat commas specially. Otherwise, we need to start
-        // a new alternate.
-        if self.stack.len() <= 1 {
+        // a new alternate branch.
+        if self.alternates_stack.is_empty() {
             self.push_token(Token::Literal(','))
         } else {
-            Ok(self.stack.push(Tokens::default()))
+            Ok(self.branches.push(Tokens::default()))
         }
     }
 
@@ -861,7 +917,7 @@ impl<'a> Parser<'a> {
         }
 
         if !prev.map(is_separator).unwrap_or(false) {
-            if self.stack.len() <= 1
+            if self.branches.len() <= 1
                 || (prev != Some(',') && prev != Some('{'))
             {
                 self.push_token(Token::ZeroOrMore)?;
@@ -874,7 +930,7 @@ impl<'a> Parser<'a> {
                 assert!(self.bump().is_none());
                 true
             }
-            Some(',') | Some('}') if self.stack.len() >= 2 => true,
+            Some(',') | Some('}') if self.branches.len() >= 2 => true,
             Some(c) if is_separator(c) => {
                 assert!(self.bump().map(is_separator).unwrap_or(false));
                 false
@@ -904,6 +960,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_class(&mut self) -> Result<(), Error> {
+        // Save parser state for potential rollback to literal '[' parsing.
+        let saved_chars = self.chars.clone();
+        let saved_prev = self.prev;
+        let saved_cur = self.cur;
+
         fn add_to_last_range(
             glob: &str,
             r: &mut (char, char),
@@ -931,11 +992,17 @@ impl<'a> Parser<'a> {
         let mut first = true;
         let mut in_range = false;
         loop {
-            let c = match self.bump() {
-                Some(c) => c,
-                // The only way to successfully break this loop is to observe
-                // a ']'.
-                None => return Err(self.error(ErrorKind::UnclosedClass)),
+            let Some(c) = self.bump() else {
+                return if self.opts.allow_unclosed_class == true {
+                    self.chars = saved_chars;
+                    self.cur = saved_cur;
+                    self.prev = saved_prev;
+                    self.found_unclosed_class = true;
+
+                    self.push_token(Token::Literal('['))
+                } else {
+                    Err(self.error(ErrorKind::UnclosedClass))
+                };
             };
             match c {
                 ']' => {
@@ -991,7 +1058,7 @@ impl<'a> Parser<'a> {
     }
 
     fn peek(&mut self) -> Option<char> {
-        self.chars.peek().map(|&ch| ch)
+        self.chars.peek().copied()
     }
 }
 
@@ -1020,6 +1087,7 @@ mod tests {
         litsep: Option<bool>,
         bsesc: Option<bool>,
         ealtre: Option<bool>,
+        unccls: Option<bool>,
     }
 
     macro_rules! syntax {
@@ -1062,6 +1130,10 @@ mod tests {
                 if let Some(ealtre) = $options.ealtre {
                     builder.empty_alternates(ealtre);
                 }
+                if let Some(unccls) = $options.unccls {
+                    builder.allow_unclosed_class(unccls);
+                }
+
                 let pat = builder.build().unwrap();
                 assert_eq!(format!("(?-u){}", $re), pat.regex());
             }
@@ -1202,25 +1274,80 @@ mod tests {
     syntaxerr!(err_unclosed4, "[!]", ErrorKind::UnclosedClass);
     syntaxerr!(err_range1, "[z-a]", ErrorKind::InvalidRange('z', 'a'));
     syntaxerr!(err_range2, "[z--]", ErrorKind::InvalidRange('z', '-'));
+    syntaxerr!(err_alt1, "{a,b", ErrorKind::UnclosedAlternates);
+    syntaxerr!(err_alt2, "{a,{b,c}", ErrorKind::UnclosedAlternates);
+    syntaxerr!(err_alt3, "a,b}", ErrorKind::UnopenedAlternates);
+    syntaxerr!(err_alt4, "{a,b}}", ErrorKind::UnopenedAlternates);
 
-    const CASEI: Options =
-        Options { casei: Some(true), litsep: None, bsesc: None, ealtre: None };
-    const SLASHLIT: Options =
-        Options { casei: None, litsep: Some(true), bsesc: None, ealtre: None };
+    const CASEI: Options = Options {
+        casei: Some(true),
+        litsep: None,
+        bsesc: None,
+        ealtre: None,
+        unccls: None,
+    };
+    const SLASHLIT: Options = Options {
+        casei: None,
+        litsep: Some(true),
+        bsesc: None,
+        ealtre: None,
+        unccls: None,
+    };
     const NOBSESC: Options = Options {
         casei: None,
         litsep: None,
         bsesc: Some(false),
         ealtre: None,
+        unccls: None,
     };
-    const BSESC: Options =
-        Options { casei: None, litsep: None, bsesc: Some(true), ealtre: None };
+    const BSESC: Options = Options {
+        casei: None,
+        litsep: None,
+        bsesc: Some(true),
+        ealtre: None,
+        unccls: None,
+    };
     const EALTRE: Options = Options {
         casei: None,
         litsep: None,
         bsesc: Some(true),
         ealtre: Some(true),
+        unccls: None,
     };
+    const UNCCLS: Options = Options {
+        casei: None,
+        litsep: None,
+        bsesc: None,
+        ealtre: None,
+        unccls: Some(true),
+    };
+
+    toregex!(allow_unclosed_class_single, r"[", r"^\[$", &UNCCLS);
+    toregex!(allow_unclosed_class_many, r"[abc", r"^\[abc$", &UNCCLS);
+    toregex!(allow_unclosed_class_empty1, r"[]", r"^\[\]$", &UNCCLS);
+    toregex!(allow_unclosed_class_empty2, r"[][", r"^\[\]\[$", &UNCCLS);
+    toregex!(allow_unclosed_class_negated_unclosed, r"[!", r"^\[!$", &UNCCLS);
+    toregex!(allow_unclosed_class_negated_empty, r"[!]", r"^\[!\]$", &UNCCLS);
+    toregex!(
+        allow_unclosed_class_brace1,
+        r"{[abc,xyz}",
+        r"^(?:\[abc|xyz)$",
+        &UNCCLS
+    );
+    toregex!(
+        allow_unclosed_class_brace2,
+        r"{[abc,[xyz}",
+        r"^(?:\[abc|\[xyz)$",
+        &UNCCLS
+    );
+    toregex!(
+        allow_unclosed_class_brace3,
+        r"{[abc],[xyz}",
+        r"^(?:[abc]|\[xyz)$",
+        &UNCCLS
+    );
+
+    toregex!(re_empty, "", "^$");
 
     toregex!(re_casei, "a", "(?i)^a$", &CASEI);
 
@@ -1261,7 +1388,9 @@ mod tests {
     toregex!(re32, "/a**", r"^/a.*.*$");
     toregex!(re33, "/**a", r"^/.*.*a$");
     toregex!(re34, "/a**b", r"^/a.*.*b$");
-    toregex!(re35, "{a,b}", r"^(?:b|a)$");
+    toregex!(re35, "{a,b}", r"^(?:a|b)$");
+    toregex!(re36, "{a,{b,c}}", r"^(?:a|(?:b|c))$");
+    toregex!(re37, "{{a,b},{c,d}}", r"^(?:(?:a|b)|(?:c|d))$");
 
     matches!(match1, "a", "a");
     matches!(match2, "a*b", "a_b");
@@ -1349,6 +1478,9 @@ mod tests {
     matches!(matchalt14, "foo{,.txt}", "foo.txt");
     nmatches!(matchalt15, "foo{,.txt}", "foo");
     matches!(matchalt16, "foo{,.txt}", "foo", EALTRE);
+    matches!(matchalt17, "{a,b{c,d}}", "bc");
+    matches!(matchalt18, "{a,b{c,d}}", "bd");
+    matches!(matchalt19, "{a,b{c,d}}", "a");
 
     matches!(matchslash1, "abc/def", "abc/def", SLASHLIT);
     #[cfg(unix)]

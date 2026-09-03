@@ -32,13 +32,13 @@ pub fn get_openssl(target: &str) -> (Vec<PathBuf>, PathBuf) {
 }
 
 fn resolve_with_wellknown_homebrew_location(dir: &str) -> Option<PathBuf> {
-    let versions = ["openssl@3", "openssl@3.0", "openssl@1.1"];
+    let versions = ["openssl@4", "openssl@3", "openssl@3.0"];
 
     // Check up default aarch 64 Homebrew installation location first
     // for quick resolution if possible.
     //  `pkg-config` on brew doesn't necessarily contain settings for openssl apparently.
     for version in &versions {
-        let homebrew = Path::new(dir).join(format!("opt/{}", version));
+        let homebrew = Path::new(dir).join(format!("opt/{version}"));
         if homebrew.exists() {
             return Some(homebrew);
         }
@@ -92,8 +92,11 @@ fn find_openssl_dir(target: &str) -> OsString {
     try_pkg_config();
     try_vcpkg();
 
-    // FreeBSD and OpenBSD ship with Libre|OpenSSL but don't include a pkg-config file
-    if host == target && (target.contains("freebsd") || target.contains("openbsd")) {
+    // FreeBSD, OpenBSD, and AIX ship with Libre|OpenSSL
+    // TODO: see of this is still needed for OpenBSD
+    if host == target
+        && (target.contains("freebsd") || target.contains("openbsd") || target.contains("aix"))
+    {
         return OsString::from("/usr");
     }
 
@@ -102,19 +105,27 @@ fn find_openssl_dir(target: &str) -> OsString {
         return OsString::from("/usr/local");
     }
 
+    let msg_header =
+        "Could not find directory of OpenSSL installation, and this `-sys` crate cannot
+proceed without this knowledge. If OpenSSL is installed and this crate had
+trouble finding it,  you can set the `OPENSSL_DIR` environment variable for the
+compilation process.";
+
+    println!(
+        "cargo:warning={} See stderr section below for further information.",
+        msg_header.replace('\n', " ")
+    );
+
     let mut msg = format!(
         "
 
-Could not find directory of OpenSSL installation, and this `-sys` crate cannot
-proceed without this knowledge. If OpenSSL is installed and this crate had
-trouble finding it,  you can set the `OPENSSL_DIR` environment variable for the
-compilation process.
+{}
 
 Make sure you also have the development packages of openssl installed.
 For example, `libssl-dev` on Ubuntu or `openssl-devel` on Fedora.
 
 If you're in a situation where you think the directory *should* be found
-automatically, please open a bug at https://github.com/sfackler/rust-openssl
+automatically, please open a bug at https://github.com/rust-openssl/rust-openssl
 and include information about your system as well as this message.
 
 $HOST = {}
@@ -122,6 +133,7 @@ $TARGET = {}
 openssl-sys = {}
 
 ",
+        msg_header,
         host,
         target,
         env!("CARGO_PKG_VERSION")
@@ -181,13 +193,14 @@ installation. If there isn't one installed then you can try the rust-openssl
 README for more information about how to download precompiled binaries of
 OpenSSL:
 
-https://github.com/sfackler/rust-openssl#windows
+https://github.com/rust-openssl/rust-openssl#windows
 
 ",
         );
     }
 
-    panic!("{}", msg);
+    eprintln!("{msg}");
+    std::process::exit(101); // same as panic previously
 }
 
 /// Attempt to find OpenSSL through pkg-config.
@@ -212,7 +225,7 @@ fn try_pkg_config() {
     {
         Ok(lib) => lib,
         Err(e) => {
-            println!("run pkg_config fail: {:?}", e);
+            println!("\n\nCould not find openssl via pkg-config:\n{e}\n");
             return;
         }
     };
@@ -245,7 +258,7 @@ fn try_vcpkg() {
     {
         Ok(lib) => lib,
         Err(e) => {
-            println!("note: vcpkg did not find openssl: {}", e);
+            println!("note: vcpkg did not find openssl: {e}");
             return;
         }
     };
@@ -255,6 +268,7 @@ fn try_vcpkg() {
     println!("cargo:rustc-link-lib=user32");
     println!("cargo:rustc-link-lib=gdi32");
     println!("cargo:rustc-link-lib=crypt32");
+    println!("cargo:rustc-link-lib=advapi32");
 
     process::exit(0);
 }

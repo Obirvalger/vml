@@ -6,7 +6,7 @@
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use std::sync::LockResult;
+use std::sync::{LockResult, TryLockError};
 use std::time::Duration;
 
 // All types in this file are marked with PhantomData to ensure that
@@ -96,12 +96,24 @@ impl<T> RwLock<T> {
         RwLock(PhantomData, parking_lot::RwLock::new(t))
     }
 
-    pub(crate) fn read(&self) -> LockResult<RwLockReadGuard<'_, T>> {
-        Ok(RwLockReadGuard(PhantomData, self.1.read()))
+    pub(crate) fn read(&self) -> RwLockReadGuard<'_, T> {
+        RwLockReadGuard(PhantomData, self.1.read())
     }
 
-    pub(crate) fn write(&self) -> LockResult<RwLockWriteGuard<'_, T>> {
-        Ok(RwLockWriteGuard(PhantomData, self.1.write()))
+    pub(crate) fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
+        self.1
+            .try_read()
+            .map(|guard| RwLockReadGuard(PhantomData, guard))
+    }
+
+    pub(crate) fn write(&self) -> RwLockWriteGuard<'_, T> {
+        RwLockWriteGuard(PhantomData, self.1.write())
+    }
+
+    pub(crate) fn try_write(&self) -> Option<RwLockWriteGuard<'_, T>> {
+        self.1
+            .try_write()
+            .map(|guard| RwLockWriteGuard(PhantomData, guard))
     }
 }
 

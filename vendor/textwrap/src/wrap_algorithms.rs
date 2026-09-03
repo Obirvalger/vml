@@ -32,7 +32,7 @@ use crate::core::{Fragment, Word};
 /// enabled, a more complex algorithm is available which will look at
 /// an entire paragraph at a time in order to find optimal line breaks
 /// ([`WrapAlgorithm::OptimalFit`]).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum WrapAlgorithm {
     /// Wrap words using a fast and simple algorithm.
     ///
@@ -115,17 +115,6 @@ impl PartialEq for WrapAlgorithm {
             #[cfg(feature = "smawk")]
             (WrapAlgorithm::OptimalFit(a), WrapAlgorithm::OptimalFit(b)) => a == b,
             (_, _) => false,
-        }
-    }
-}
-
-impl std::fmt::Debug for WrapAlgorithm {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WrapAlgorithm::FirstFit => f.write_str("FirstFit"),
-            #[cfg(feature = "smawk")]
-            WrapAlgorithm::OptimalFit(penalties) => write!(f, "OptimalFit({:?})", penalties),
-            WrapAlgorithm::Custom(_) => f.write_str("Custom(...)"),
         }
     }
 }
@@ -344,10 +333,7 @@ impl Default for WrapAlgorithm {
 ///
 /// Apologies to anyone who actually knows how to build a house and
 /// knows how long each step takes :-)
-pub fn wrap_first_fit<'a, T: Fragment>(
-    fragments: &'a [T],
-    line_widths: &[f64],
-) -> Vec<&'a [T]> {
+pub fn wrap_first_fit<'a, T: Fragment>(fragments: &'a [T], line_widths: &[f64]) -> Vec<&'a [T]> {
     // The final line width is used for all remaining lines.
     let default_line_width = line_widths.last().copied().unwrap_or(0.0);
     let mut lines = Vec::new();

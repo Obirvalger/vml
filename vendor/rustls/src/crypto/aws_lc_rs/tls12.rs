@@ -3,8 +3,8 @@ use alloc::boxed::Box;
 use aws_lc_rs::{aead, tls_prf};
 
 use crate::crypto::cipher::{
-    make_tls12_aad, AeadKey, InboundOpaqueMessage, Iv, KeyBlockShape, MessageDecrypter,
-    MessageEncrypter, Nonce, Tls12AeadAlgorithm, UnsupportedOperationError, NONCE_LEN,
+    AeadKey, InboundOpaqueMessage, Iv, KeyBlockShape, MessageDecrypter, MessageEncrypter,
+    NONCE_LEN, Nonce, Tls12AeadAlgorithm, UnsupportedOperationError, make_tls12_aad,
 };
 use crate::crypto::tls12::Prf;
 use crate::crypto::{ActiveKeyExchange, KeyExchangeAlgorithm};
@@ -285,7 +285,7 @@ impl MessageDecrypter for GcmMessageDecrypter {
         let payload = &mut msg.payload;
         let plain_len = self
             .dec_key
-            .open_within(nonce, aad, payload, GCM_EXPLICIT_NONCE_LEN..)
+            .open_in_place(nonce, aad, &mut payload[GCM_EXPLICIT_NONCE_LEN..])
             .map_err(|_| Error::DecryptError)?
             .len();
 
@@ -293,8 +293,11 @@ impl MessageDecrypter for GcmMessageDecrypter {
             return Err(Error::PeerSentOversizedRecord);
         }
 
-        payload.truncate(plain_len);
-        Ok(msg.into_plain_message())
+        Ok(
+            msg.into_plain_message_range(
+                GCM_EXPLICIT_NONCE_LEN..GCM_EXPLICIT_NONCE_LEN + plain_len,
+            ),
+        )
     }
 }
 

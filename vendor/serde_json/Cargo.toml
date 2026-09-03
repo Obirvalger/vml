@@ -11,14 +11,15 @@
 
 [package]
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.71"
 name = "serde_json"
-version = "1.0.120"
+version = "1.0.151"
 authors = [
     "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
     "David Tolnay <dtolnay@gmail.com>",
 ]
 build = "build.rs"
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -45,16 +46,41 @@ features = [
     "raw_value",
     "unbounded_depth",
 ]
-rustdoc-args = ["--generate-link-to-definition"]
 targets = ["x86_64-unknown-linux-gnu"]
+rustdoc-args = [
+    "--generate-link-to-definition",
+    "--generate-macro-expansion",
+    "--extern-html-root-url=core=https://doc.rust-lang.org",
+    "--extern-html-root-url=alloc=https://doc.rust-lang.org",
+    "--extern-html-root-url=std=https://doc.rust-lang.org",
+]
 
 [package.metadata.playground]
-features = ["raw_value"]
+features = [
+    "float_roundtrip",
+    "raw_value",
+    "unbounded_depth",
+]
+
+[features]
+alloc = ["serde_core/alloc"]
+arbitrary_precision = []
+default = ["std"]
+float_roundtrip = []
+preserve_order = [
+    "indexmap",
+    "std",
+]
+raw_value = []
+std = [
+    "memchr/std",
+    "serde_core/std",
+]
+unbounded_depth = []
 
 [lib]
 name = "serde_json"
 path = "src/lib.rs"
-doc-scrape-examples = false
 
 [[test]]
 name = "compiletest"
@@ -91,12 +117,16 @@ optional = true
 [dependencies.itoa]
 version = "1.0"
 
-[dependencies.ryu]
-version = "1.0"
-
-[dependencies.serde]
-version = "1.0.194"
+[dependencies.memchr]
+version = "2"
 default-features = false
+
+[dependencies.serde_core]
+version = "1.0.220"
+default-features = false
+
+[dependencies.zmij]
+version = "1.0"
 
 [dev-dependencies.automod]
 version = "1.0.11"
@@ -124,18 +154,9 @@ version = "1.0.166"
 version = "0.1.8"
 
 [dev-dependencies.trybuild]
-version = "1.0.81"
+version = "1.0.108"
 features = ["diff"]
 
-[features]
-alloc = ["serde/alloc"]
-arbitrary_precision = []
-default = ["std"]
-float_roundtrip = []
-preserve_order = [
-    "indexmap",
-    "std",
-]
-raw_value = []
-std = ["serde/std"]
-unbounded_depth = []
+[target."cfg(any())".dependencies.serde]
+version = "1.0.220"
+default-features = false

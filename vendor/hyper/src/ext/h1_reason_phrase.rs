@@ -42,9 +42,10 @@ impl ReasonPhrase {
     /// Converts a static byte slice to a reason phrase.
     pub const fn from_static(reason: &'static [u8]) -> Self {
         // TODO: this can be made const once MSRV is >= 1.57.0
-        if find_invalid_byte(reason).is_some() {
-            panic!("invalid byte in static reason phrase");
-        }
+        assert!(
+            find_invalid_byte(reason).is_none(),
+            "invalid byte in static reason phrase"
+        );
         Self(Bytes::from_static(reason))
     }
 
@@ -174,26 +175,26 @@ mod tests {
 
     #[test]
     fn basic_valid() {
-        const PHRASE: &'static [u8] = b"OK";
+        const PHRASE: &[u8] = b"OK";
         assert_eq!(ReasonPhrase::from_static(PHRASE).as_bytes(), PHRASE);
         assert_eq!(ReasonPhrase::try_from(PHRASE).unwrap().as_bytes(), PHRASE);
     }
 
     #[test]
     fn empty_valid() {
-        const PHRASE: &'static [u8] = b"";
+        const PHRASE: &[u8] = b"";
         assert_eq!(ReasonPhrase::from_static(PHRASE).as_bytes(), PHRASE);
         assert_eq!(ReasonPhrase::try_from(PHRASE).unwrap().as_bytes(), PHRASE);
     }
 
     #[test]
     fn obs_text_valid() {
-        const PHRASE: &'static [u8] = b"hyp\xe9r";
+        const PHRASE: &[u8] = b"hyp\xe9r";
         assert_eq!(ReasonPhrase::from_static(PHRASE).as_bytes(), PHRASE);
         assert_eq!(ReasonPhrase::try_from(PHRASE).unwrap().as_bytes(), PHRASE);
     }
 
-    const NEWLINE_PHRASE: &'static [u8] = b"hyp\ner";
+    const NEWLINE_PHRASE: &[u8] = b"hyp\ner";
 
     #[test]
     #[should_panic]
@@ -206,7 +207,7 @@ mod tests {
         assert!(ReasonPhrase::try_from(NEWLINE_PHRASE).is_err());
     }
 
-    const CR_PHRASE: &'static [u8] = b"hyp\rer";
+    const CR_PHRASE: &[u8] = b"hyp\rer";
 
     #[test]
     #[should_panic]

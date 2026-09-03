@@ -4,12 +4,42 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = DeviceRotationRateInit)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "DeviceRotationRateInit")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `DeviceRotationRateInit` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
     pub type DeviceRotationRateInit;
+    #[doc = "Get the `alpha` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[wasm_bindgen(method, getter = "alpha")]
+    pub fn get_alpha(this: &DeviceRotationRateInit) -> Option<f64>;
+    #[doc = "Change the `alpha` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[wasm_bindgen(method, setter = "alpha")]
+    pub fn set_alpha(this: &DeviceRotationRateInit, val: Option<f64>);
+    #[doc = "Get the `beta` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[wasm_bindgen(method, getter = "beta")]
+    pub fn get_beta(this: &DeviceRotationRateInit) -> Option<f64>;
+    #[doc = "Change the `beta` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[wasm_bindgen(method, setter = "beta")]
+    pub fn set_beta(this: &DeviceRotationRateInit, val: Option<f64>);
+    #[doc = "Get the `gamma` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[wasm_bindgen(method, getter = "gamma")]
+    pub fn get_gamma(this: &DeviceRotationRateInit) -> Option<f64>;
+    #[doc = "Change the `gamma` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[wasm_bindgen(method, setter = "gamma")]
+    pub fn set_gamma(this: &DeviceRotationRateInit, val: Option<f64>);
 }
 impl DeviceRotationRateInit {
     #[doc = "Construct a new `DeviceRotationRateInit`."]
@@ -20,43 +50,19 @@ impl DeviceRotationRateInit {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `alpha` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[deprecated = "Use `set_alpha()` instead."]
     pub fn alpha(&mut self, val: Option<f64>) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("alpha"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_alpha(val);
         self
     }
-    #[doc = "Change the `beta` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[deprecated = "Use `set_beta()` instead."]
     pub fn beta(&mut self, val: Option<f64>) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("beta"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_beta(val);
         self
     }
-    #[doc = "Change the `gamma` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `DeviceRotationRateInit`*"]
+    #[deprecated = "Use `set_gamma()` instead."]
     pub fn gamma(&mut self, val: Option<f64>) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("gamma"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_gamma(val);
         self
     }
 }

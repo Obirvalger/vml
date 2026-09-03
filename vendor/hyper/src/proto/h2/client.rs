@@ -11,25 +11,23 @@ use crate::rt::{Read, Write};
 use bytes::Bytes;
 use futures_channel::mpsc::{Receiver, Sender};
 use futures_channel::{mpsc, oneshot};
-use futures_util::future::{Either, FusedFuture, FutureExt as _};
-use futures_util::ready;
-use futures_util::stream::{StreamExt as _, StreamFuture};
+use futures_core::{ready, FusedFuture, FusedStream, Stream};
 use h2::client::{Builder, Connection, SendRequest};
 use h2::SendStream;
 use http::{Method, StatusCode};
 use pin_project_lite::pin_project;
 
 use super::ping::{Ponger, Recorder};
-use super::{ping, H2Upgraded, PipeToSendStream, SendBuf};
+use super::{ping, PipeToSendStream, SendBuf};
 use crate::body::{Body, Incoming as IncomingBody};
 use crate::client::dispatch::{Callback, SendWhen, TrySendError};
+use crate::common::either::Either;
 use crate::common::io::Compat;
 use crate::common::time::Time;
 use crate::ext::Protocol;
 use crate::headers;
-use crate::proto::h2::UpgradedSendStream;
 use crate::proto::Dispatched;
-use crate::rt::bounds::Http2ClientConnExec;
+use crate::rt::bounds::{Http2ClientConnExec, Http2UpgradedExec};
 use crate::upgrade::Upgraded;
 use crate::{Request, Response};
 use h2::client::ResponseFuture;
@@ -68,7 +66,7 @@ pub(crate) struct Config {
     pub(crate) initial_conn_window_size: u32,
     pub(crate) initial_stream_window_size: u32,
     pub(crate) initial_max_send_streams: usize,
-    pub(crate) max_frame_size: u32,
+    pub(crate) max_frame_size: Option<u32>,
     pub(crate) max_header_list_size: u32,
     pub(crate) keep_alive_interval: Option<Duration>,
     pub(crate) keep_alive_timeout: Duration,
@@ -76,6 +74,10 @@ pub(crate) struct Config {
     pub(crate) max_concurrent_reset_streams: Option<usize>,
     pub(crate) max_send_buffer_size: usize,
     pub(crate) max_pending_accept_reset_streams: Option<usize>,
+    pub(crate) max_local_error_reset_streams: Option<usize>,
+    pub(crate) header_table_size: Option<u32>,
+    pub(crate) max_concurrent_streams: Option<u32>,
+    pub(crate) reset_stream_duration: Option<Duration>,
 }
 
 impl Default for Config {
@@ -85,7 +87,7 @@ impl Default for Config {
             initial_conn_window_size: DEFAULT_CONN_WINDOW,
             initial_stream_window_size: DEFAULT_STREAM_WINDOW,
             initial_max_send_streams: DEFAULT_INITIAL_MAX_SEND_STREAMS,
-            max_frame_size: DEFAULT_MAX_FRAME_SIZE,
+            max_frame_size: Some(DEFAULT_MAX_FRAME_SIZE),
             max_header_list_size: DEFAULT_MAX_HEADER_LIST_SIZE,
             keep_alive_interval: None,
             keep_alive_timeout: Duration::from_secs(20),
@@ -93,6 +95,10 @@ impl Default for Config {
             max_concurrent_reset_streams: None,
             max_send_buffer_size: DEFAULT_MAX_SEND_BUF_SIZE,
             max_pending_accept_reset_streams: None,
+            max_local_error_reset_streams: Some(1024),
+            header_table_size: None,
+            max_concurrent_streams: None,
+            reset_stream_duration: None,
         }
     }
 }
@@ -103,15 +109,27 @@ fn new_builder(config: &Config) -> Builder {
         .initial_max_send_streams(config.initial_max_send_streams)
         .initial_window_size(config.initial_stream_window_size)
         .initial_connection_window_size(config.initial_conn_window_size)
-        .max_frame_size(config.max_frame_size)
         .max_header_list_size(config.max_header_list_size)
         .max_send_buffer_size(config.max_send_buffer_size)
+        .max_local_error_reset_streams(config.max_local_error_reset_streams)
         .enable_push(false);
+    if let Some(max) = config.max_frame_size {
+        builder.max_frame_size(max);
+    }
     if let Some(max) = config.max_concurrent_reset_streams {
         builder.max_concurrent_reset_streams(max);
     }
     if let Some(max) = config.max_pending_accept_reset_streams {
         builder.max_pending_accept_reset_streams(max);
+    }
+    if let Some(size) = config.header_table_size {
+        builder.header_table_size(size);
+    }
+    if let Some(max) = config.max_concurrent_streams {
+        builder.max_concurrent_streams(max);
+    }
+    if let Some(dur) = config.reset_stream_duration {
+        builder.reset_stream_duration(dur);
     }
     builder
 }
@@ -140,7 +158,7 @@ where
     T: Read + Write + Unpin,
     B: Body + 'static,
     B::Data: Send + 'static,
-    E: Http2ClientConnExec<B, T> + Unpin,
+    E: Http2ClientConnExec<B, T> + Clone + Unpin,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
     let (h2_tx, mut conn) = new_builder(config)
@@ -152,10 +170,8 @@ where
     // 'Client' has been dropped. This is to get around a bug
     // in h2 where dropping all SendRequests won't notify a
     // parked Connection.
-    let (conn_drop_ref, rx) = mpsc::channel(1);
+    let (conn_drop_ref, conn_drop_rx) = mpsc::channel(1);
     let (cancel_tx, conn_eof) = oneshot::channel();
-
-    let conn_drop_rx = rx.into_future();
 
     let ping_config = new_ping_config(config);
 
@@ -164,9 +180,9 @@ where
         let (recorder, ponger) = ping::channel(pp, ping_config, timer);
 
         let conn: Conn<_, B> = Conn::new(ponger, conn);
-        (Either::Left(conn), recorder)
+        (Either::left(conn), recorder)
     } else {
-        (Either::Right(conn), ping::disabled())
+        (Either::right(conn), ping::disabled())
     };
     let conn: ConnMapErr<T, B> = ConnMapErr {
         conn,
@@ -293,7 +309,7 @@ pin_project! {
         T: Unpin,
     {
         #[pin]
-        drop_rx: StreamFuture<Receiver<Infallible>>,
+        drop_rx: Receiver<Infallible>,
         #[pin]
         cancel_tx: Option<oneshot::Sender<Infallible>>,
         #[pin]
@@ -308,7 +324,7 @@ where
 {
     fn new(
         conn: ConnMapErr<T, B>,
-        drop_rx: StreamFuture<Receiver<Infallible>>,
+        drop_rx: Receiver<Infallible>,
         cancel_tx: oneshot::Sender<Infallible>,
     ) -> Self {
         Self {
@@ -329,12 +345,12 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
 
-        if !this.conn.is_terminated() && this.conn.poll_unpin(cx).is_ready() {
+        if !this.conn.is_terminated() && Pin::new(&mut this.conn).poll(cx).is_ready() {
             // ok or err, the `conn` has finished.
             return Poll::Ready(());
         }
 
-        if !this.drop_rx.is_terminated() && this.drop_rx.poll_unpin(cx).is_ready() {
+        if !this.drop_rx.is_terminated() && Pin::new(&mut this.drop_rx).poll_next(cx).is_ready() {
             // mpsc has been dropped, hopefully polling
             // the connection some more should start shutdown
             // and then close.
@@ -348,7 +364,7 @@ where
 
 pin_project! {
     #[project = H2ClientFutureProject]
-    pub enum H2ClientFuture<B, T>
+    pub enum H2ClientFuture<B, T, E>
     where
         B: http_body::Body,
         B: 'static,
@@ -363,7 +379,7 @@ pin_project! {
         },
         Send {
             #[pin]
-            send_when: SendWhen<B>,
+            send_when: SendWhen<B, E>,
         },
         Task {
             #[pin]
@@ -372,11 +388,12 @@ pin_project! {
     }
 }
 
-impl<B, T> Future for H2ClientFuture<B, T>
+impl<B, T, E> Future for H2ClientFuture<B, T, E>
 where
     B: http_body::Body + 'static,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     T: Read + Write + Unpin,
+    E: Http2UpgradedExec<B::Data>,
 {
     type Output = ();
 
@@ -430,6 +447,12 @@ where
     pub(crate) fn is_extended_connect_protocol_enabled(&self) -> bool {
         self.h2_tx.is_extended_connect_protocol_enabled()
     }
+    pub(crate) fn current_max_send_streams(&self) -> usize {
+        self.h2_tx.current_max_send_streams()
+    }
+    pub(crate) fn current_max_recv_streams(&self) -> usize {
+        self.h2_tx.current_max_recv_streams()
+    }
 }
 
 pin_project! {
@@ -443,6 +466,7 @@ pin_project! {
         conn_drop_ref: Option<Sender<Infallible>>,
         #[pin]
         ping: Option<Recorder>,
+        cancel_rx: Option<oneshot::Receiver<()>>,
     }
 }
 
@@ -456,7 +480,27 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> std::task::Poll<Self::Output> {
         let mut this = self.project();
 
-        match this.pipe.poll_unpin(cx) {
+        // Check if the client cancelled the request (e.g. dropped the
+        // response future due to a timeout). If so, reset the h2 stream
+        // so that a RST_STREAM is sent and flow-control capacity is freed.
+        let cancel_result = this.cancel_rx.as_mut().map(|rx| Pin::new(rx).poll(cx));
+        match cancel_result {
+            Some(Poll::Ready(Ok(()))) => {
+                debug!("client request body send cancelled, resetting stream");
+                this.pipe.as_mut().send_reset(h2::Reason::CANCEL);
+                drop(this.conn_drop_ref.take().expect("Future polled twice"));
+                drop(this.ping.take().expect("Future polled twice"));
+                return Poll::Ready(());
+            }
+            Some(Poll::Ready(Err(_))) => {
+                // Sender dropped without cancelling (normal response or error).
+                // Stop polling the receiver.
+                *this.cancel_rx = None;
+            }
+            Some(Poll::Pending) | None => {}
+        }
+
+        match Pin::new(&mut this.pipe).poll(cx) {
             Poll::Ready(result) => {
                 if let Err(_e) = result {
                     debug!("client request body error: {}", _e);
@@ -466,7 +510,7 @@ where
                 return Poll::Ready(());
             }
             Poll::Pending => (),
-        };
+        }
         Poll::Pending
     }
 }
@@ -475,12 +519,16 @@ impl<B, E, T> ClientTask<B, E, T>
 where
     B: Body + 'static + Unpin,
     B::Data: Send,
-    E: Http2ClientConnExec<B, T> + Unpin,
+    E: Http2ClientConnExec<B, T> + Clone + Unpin,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     T: Read + Write + Unpin,
 {
     fn poll_pipe(&mut self, f: FutCtx<B>, cx: &mut Context<'_>) {
         let ping = self.ping.clone();
+
+        // A one-shot channel so that send_task can tell pipe_task to
+        // reset the stream when the client cancels the request.
+        let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
 
         let send_stream = if !f.is_connect {
             if !f.eos {
@@ -501,6 +549,7 @@ where
                             pipe,
                             conn_drop_ref: Some(conn_drop_ref),
                             ping: Some(ping),
+                            cancel_rx: Some(cancel_rx),
                         };
                         // Clear send task
                         self.executor
@@ -520,6 +569,8 @@ where
                     fut: f.fut,
                     ping: Some(ping),
                     send_stream: Some(send_stream),
+                    exec: self.executor.clone(),
+                    cancel_tx: Some(cancel_tx),
                 },
                 call_back: Some(f.cb),
             },
@@ -528,28 +579,39 @@ where
 }
 
 pin_project! {
-    pub(crate) struct ResponseFutMap<B>
+    pub(crate) struct ResponseFutMap<B, E>
     where
         B: Body,
         B: 'static,
     {
         #[pin]
         fut: ResponseFuture,
-        #[pin]
         ping: Option<Recorder>,
         #[pin]
         send_stream: Option<Option<SendStream<SendBuf<<B as Body>::Data>>>>,
+        exec: E,
+        cancel_tx: Option<oneshot::Sender<()>>,
     }
 }
 
-impl<B> Future for ResponseFutMap<B>
+impl<B: Body + 'static, E> ResponseFutMap<B, E> {
+    /// Signal the `pipe_task` to reset the stream (e.g. on client cancellation).
+    pub(crate) fn cancel(self: Pin<&mut Self>) {
+        if let Some(cancel_tx) = self.project().cancel_tx.take() {
+            let _ = cancel_tx.send(());
+        }
+    }
+}
+
+impl<B, E> Future for ResponseFutMap<B, E>
 where
     B: Body + 'static,
+    E: Http2UpgradedExec<B::Data>,
 {
     type Output = Result<Response<crate::body::Incoming>, (crate::Error, Option<Request<B>>)>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.as_mut().project();
 
         let result = ready!(this.fut.poll(cx));
 
@@ -576,13 +638,10 @@ where
                     let mut res = Response::from_parts(parts, IncomingBody::empty());
 
                     let (pending, on_upgrade) = crate::upgrade::pending();
-                    let io = H2Upgraded {
-                        ping,
-                        send_stream: unsafe { UpgradedSendStream::new(send_stream) },
-                        recv_stream,
-                        buf: Bytes::new(),
-                    };
-                    let upgraded = Upgraded::new(io, Bytes::new());
+
+                    let (h2_up, up_task) = super::upgrade::pair(send_stream, recv_stream, ping);
+                    self.exec.execute_upgrade(up_task);
+                    let upgraded = Upgraded::new(h2_up, Bytes::new());
 
                     pending.fulfill(upgraded);
                     res.extensions_mut().insert(on_upgrade);
@@ -611,7 +670,7 @@ where
     B: Body + 'static + Unpin,
     B::Data: Send,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
-    E: Http2ClientConnExec<B, T> + Unpin,
+    E: Http2ClientConnExec<B, T> + Clone + Unpin,
     T: Read + Write + Unpin,
 {
     type Output = crate::Result<Dispatched>;
@@ -629,7 +688,7 @@ where
                         Poll::Ready(Err(crate::Error::new_h2(err)))
                     };
                 }
-            };
+            }
 
             // If we were waiting on pending open
             // continue where we left off.
@@ -647,7 +706,7 @@ where
                     }
                     let (head, body) = req.into_parts();
                     let mut req = ::http::Request::from_parts(head, ());
-                    super::strip_connection_headers(req.headers_mut(), true);
+                    super::strip_connection_headers(req.headers_mut(), super::MessageKind::Request);
                     if let Some(len) = body.size_hint().exact() {
                         if len != 0 || headers::method_has_defined_payload_semantics(req.method()) {
                             headers::set_content_length_if_missing(req.headers_mut(), len);
@@ -661,9 +720,9 @@ where
                         && headers::content_length_parse_all(req.headers())
                             .map_or(false, |len| len != 0)
                     {
-                        warn!("h2 connect request with non-zero body not supported");
+                        debug!("h2 connect request with non-zero body not supported");
                         cb.send(Err(TrySendError {
-                            error: crate::Error::new_h2(h2::Reason::INTERNAL_ERROR.into()),
+                            error: crate::Error::new_user_invalid_connect(),
                             message: None,
                         }));
                         continue;
@@ -713,7 +772,6 @@ where
                         }
                     }
                     self.poll_pipe(f, cx);
-                    continue;
                 }
 
                 Poll::Ready(None) => {
@@ -722,6 +780,9 @@ where
                 }
 
                 Poll::Pending => match ready!(Pin::new(&mut self.conn_eof).poll(cx)) {
+                    // As of Rust 1.82, this pattern is no longer needed, and emits a warning.
+                    // But we cannot remove it as long as MSRV is less than that.
+                    #[allow(unused)]
                     Ok(never) => match never {},
                     Err(_conn_is_eof) => {
                         trace!("connection task is closed, closing dispatch task");

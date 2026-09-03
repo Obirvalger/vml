@@ -3,6 +3,12 @@ use winnow::prelude::*;
 mod parser;
 mod parser_ast;
 mod parser_lexer;
+#[cfg(test)]
+mod test_parser;
+#[cfg(test)]
+mod test_parser_ast;
+#[cfg(test)]
+mod test_parser_lexer;
 
 fn main() -> Result<(), lexopt::Error> {
     let args = Args::parse()?;
@@ -10,7 +16,7 @@ fn main() -> Result<(), lexopt::Error> {
     let input = args.input.as_deref().unwrap_or("1 + 1");
     if let Err(err) = calc(input, args.implementation) {
         println!("FAILED");
-        println!("{}", err);
+        println!("{err}");
     }
 
     Ok(())
@@ -20,20 +26,21 @@ fn calc(
     input: &str,
     imp: Impl,
 ) -> Result<(), winnow::error::ParseError<&str, winnow::error::ContextError>> {
-    println!("{} =", input);
+    println!("{input} =");
     match imp {
         Impl::Eval => {
             let result = parser::expr.parse(input)?;
-            println!("  {}", result);
+            println!("  {result}");
         }
         Impl::Ast => {
             let result = parser_ast::expr.parse(input)?;
             println!("  {:#?}={}", result, result.eval());
         }
         Impl::Lexer => {
-            let tokens = parser_lexer::lex.parse(input)?;
-            println!("  {:#?}", tokens);
-            let result = parser_lexer::expr.parse(tokens.as_slice()).unwrap();
+            let tokens = parser_lexer::tokens.parse(input)?;
+            println!("  {tokens:#?}");
+            let tokens = parser_lexer::Tokens::new(&tokens);
+            let result = parser_lexer::expr.parse(tokens).unwrap();
             println!("  {:#?}={}", result, result.eval());
         }
     }
@@ -46,16 +53,12 @@ struct Args {
     implementation: Impl,
 }
 
+#[derive(Default)]
 enum Impl {
+    #[default]
     Eval,
     Ast,
     Lexer,
-}
-
-impl Default for Impl {
-    fn default() -> Self {
-        Self::Eval
-    }
 }
 
 impl Args {

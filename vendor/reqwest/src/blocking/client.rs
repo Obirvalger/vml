@@ -1,4 +1,4 @@
-#[cfg(any(feature = "native-tls", feature = "__rustls",))]
+#[cfg(any(feature = "__native-tls", feature = "__rustls",))]
 use std::any::Any;
 use std::convert::TryInto;
 use std::fmt;
@@ -6,22 +6,32 @@ use std::future::Future;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::task::{ready, Poll};
 use std::thread;
 use std::time::Duration;
 
 use http::header::HeaderValue;
 use log::{error, trace};
 use tokio::sync::{mpsc, oneshot};
+use tower::Layer;
+use tower::Service;
 
 use super::request::{Request, RequestBuilder};
 use super::response::Response;
 use super::wait;
+use crate::connect::sealed::{Conn, Unnameable};
+#[cfg(unix)]
+use crate::connect::uds::UnixSocketProvider;
+use crate::connect::BoxedConnectorService;
 use crate::dns::Resolve;
+use crate::error::BoxError;
 #[cfg(feature = "__tls")]
 use crate::tls;
+#[cfg(feature = "__rustls")]
+use crate::tls::CertificateRevocationList;
 #[cfg(feature = "__tls")]
 use crate::Certificate;
-#[cfg(any(feature = "native-tls", feature = "__rustls"))]
+#[cfg(any(feature = "__native-tls", feature = "__rustls"))]
 use crate::Identity;
 use crate::{async_impl, header, redirect, IntoUrl, Method, Proxy};
 
@@ -82,13 +92,15 @@ impl ClientBuilder {
     /// Constructs a new `ClientBuilder`.
     ///
     /// This is the same as `Client::builder()`.
-    pub fn new() -> ClientBuilder {
+    pub fn new() -> Self {
         ClientBuilder {
             inner: async_impl::ClientBuilder::new(),
             timeout: Timeout::default(),
         }
     }
+}
 
+impl ClientBuilder {
     /// Returns a `Client` that uses this `ClientBuilder` configuration.
     ///
     /// # Errors
@@ -199,7 +211,7 @@ impl ClientBuilder {
 
     /// Enable auto gzip decompression by checking the `Content-Encoding` response header.
     ///
-    /// If auto gzip decompresson is turned on:
+    /// If auto gzip decompression is turned on:
     ///
     /// - When sending a request and if the request's headers do not already contain
     ///   an `Accept-Encoding` **and** `Range` values, the `Accept-Encoding` header is set to `gzip`.
@@ -265,7 +277,7 @@ impl ClientBuilder {
 
     /// Enable auto deflate decompression by checking the `Content-Encoding` response header.
     ///
-    /// If auto deflate decompresson is turned on:
+    /// If auto deflate decompression is turned on:
     ///
     /// - When sending a request and if the request's headers do not already contain
     ///   an `Accept-Encoding` **and** `Range` values, the `Accept-Encoding` header is set to `deflate`.
@@ -330,6 +342,13 @@ impl ClientBuilder {
         self.with_inner(move |inner| inner.redirect(policy))
     }
 
+    /// Set a request retry policy.
+    ///
+    /// Default behavior is to retry protocol NACKs.
+    pub fn retry(self, policy: crate::retry::Builder) -> ClientBuilder {
+        self.with_inner(move |inner| inner.retry(policy))
+    }
+
     /// Enable or disable automatic setting of the `Referer` header.
     ///
     /// Default is `true`.
@@ -351,7 +370,7 @@ impl ClientBuilder {
     /// Clear all `Proxies`, so `Client` will use no proxy anymore.
     ///
     /// # Note
-    /// To add a proxy exclusion list, use [crate::proxy::Proxy::no_proxy()]
+    /// To add a proxy exclusion list, use [Proxy::no_proxy()]
     /// on all desired proxies instead.
     ///
     /// This also disables the automatic usage of the "system" proxy.
@@ -465,7 +484,7 @@ impl ClientBuilder {
 
     /// Sets the `SETTINGS_INITIAL_WINDOW_SIZE` option for HTTP2 stream-level flow control.
     ///
-    /// Default is currently 65,535 but may change internally to optimize for common uses.
+    /// Default may change internally to optimize for common uses.
     #[cfg(feature = "http2")]
     #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
     pub fn http2_initial_stream_window_size(self, sz: impl Into<Option<u32>>) -> ClientBuilder {
@@ -474,7 +493,7 @@ impl ClientBuilder {
 
     /// Sets the max connection-level flow control for HTTP2
     ///
-    /// Default is currently 65,535 but may change internally to optimize for common uses.
+    /// Default may change internally to optimize for common uses.
     #[cfg(feature = "http2")]
     #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
     pub fn http2_initial_connection_window_size(self, sz: impl Into<Option<u32>>) -> ClientBuilder {
@@ -500,12 +519,153 @@ impl ClientBuilder {
         self.with_inner(|inner| inner.http2_max_frame_size(sz))
     }
 
+    /// Sets the maximum size of received header frames for HTTP2.
+    ///
+    /// Default is currently 16KB, but can change.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_max_header_list_size(self, max_header_size_bytes: u32) -> ClientBuilder {
+        self.with_inner(|inner| inner.http2_max_header_list_size(max_header_size_bytes))
+    }
+
+    /// Sets an interval for HTTP2 Ping frames should be sent to keep a connection alive.
+    ///
+    /// Pass `None` to disable HTTP2 keep-alive.
+    /// Default is currently disabled.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_keep_alive_interval(self, interval: impl Into<Option<Duration>>) -> ClientBuilder {
+        self.with_inner(|inner| inner.http2_keep_alive_interval(interval))
+    }
+
+    /// Sets a timeout for receiving an acknowledgement of the keep-alive ping.
+    ///
+    /// If the ping is not acknowledged within the timeout, the connection will be closed.
+    /// Does nothing if `http2_keep_alive_interval` is disabled.
+    /// Default is currently disabled.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_keep_alive_timeout(self, timeout: Duration) -> ClientBuilder {
+        self.with_inner(|inner| inner.http2_keep_alive_timeout(timeout))
+    }
+
+    /// Sets whether HTTP2 keep-alive should apply while the connection is idle.
+    ///
+    /// If disabled, keep-alive pings are only sent while there are open request/responses streams.
+    /// If enabled, pings are also sent when no streams are active.
+    /// Does nothing if `http2_keep_alive_interval` is disabled.
+    /// Default is `false`.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_keep_alive_while_idle(self, enabled: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.http2_keep_alive_while_idle(enabled))
+    }
+
     /// This requires the optional `http3` feature to be
     /// enabled.
     #[cfg(feature = "http3")]
     #[cfg_attr(docsrs, doc(cfg(feature = "http3")))]
     pub fn http3_prior_knowledge(self) -> ClientBuilder {
         self.with_inner(|inner| inner.http3_prior_knowledge())
+    }
+
+    /// Maximum duration of inactivity to accept before timing out the QUIC connection.
+    ///
+    /// Please see docs in [`TransportConfig`] in [`quinn`].
+    ///
+    /// [`TransportConfig`]: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_max_idle_timeout(self, value: Duration) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_max_idle_timeout(value))
+    }
+
+    /// Maximum number of bytes the peer may transmit without acknowledgement on any one stream
+    /// before becoming blocked.
+    ///
+    /// Please see docs in [`TransportConfig`] in [`quinn`].
+    ///
+    /// [`TransportConfig`]: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is over 2^62.
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_stream_receive_window(self, value: u64) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_stream_receive_window(value))
+    }
+
+    /// Maximum number of bytes the peer may transmit across all streams of a connection before
+    /// becoming blocked.
+    ///
+    /// Please see docs in [`TransportConfig`] in [`quinn`].
+    ///
+    /// [`TransportConfig`]: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is over 2^62.
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_conn_receive_window(self, value: u64) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_conn_receive_window(value))
+    }
+
+    /// Maximum number of bytes to transmit to a peer without acknowledgment
+    ///
+    /// Please see docs in [`TransportConfig`] in [`quinn`].
+    ///
+    /// [`TransportConfig`]: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_send_window(self, value: u64) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_send_window(value))
+    }
+
+    /// Override the default congestion control algorithm to use [BBR]
+    ///
+    /// The current default congestion control algorithm is [CUBIC]. This method overrides the
+    /// default.
+    ///
+    /// [BBR]: https://datatracker.ietf.org/doc/html/draft-ietf-ccwg-bbr
+    /// [CUBIC]: https://datatracker.ietf.org/doc/html/rfc8312
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_congestion_bbr(self) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_congestion_bbr())
+    }
+
+    /// Set the maximum HTTP/3 header size this client is willing to accept.
+    ///
+    /// See [header size constraints] section of the specification for details.
+    ///
+    /// [header size constraints]: https://www.rfc-editor.org/rfc/rfc9114.html#name-header-size-constraints
+    ///
+    /// Please see docs in [`Builder`] in [`h3`].
+    ///
+    /// [`Builder`]: https://docs.rs/h3/latest/h3/client/struct.Builder.html#method.max_field_section_size
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_max_field_section_size(self, value: u64) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_max_field_section_size(value))
+    }
+
+    /// Enable whether to send HTTP/3 protocol grease on the connections.
+    ///
+    /// HTTP/3 uses the concept of "grease"
+    ///
+    /// to prevent potential interoperability issues in the future.
+    /// In HTTP/3, the concept of grease is used to ensure that the protocol can evolve
+    /// and accommodate future changes without breaking existing implementations.
+    ///
+    /// Please see docs in [`Builder`] in [`h3`].
+    ///
+    /// [`Builder`]: https://docs.rs/h3/latest/h3/client/struct.Builder.html#method.send_grease
+    #[cfg(feature = "http3")]
+    #[cfg_attr(docsrs, doc(cfg(all(reqwest_unstable, feature = "http3",))))]
+    pub fn http3_send_grease(self, enabled: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.http3_send_grease(enabled))
     }
 
     // TCP options
@@ -545,7 +705,18 @@ impl ClientBuilder {
     ///     .interface(interface)
     ///     .build().unwrap();
     /// ```
-    #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "ios",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "solaris",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
     pub fn interface(self, interface: &str) -> ClientBuilder {
         self.with_inner(move |inner| inner.interface(interface))
     }
@@ -560,9 +731,61 @@ impl ClientBuilder {
         self.with_inner(move |inner| inner.tcp_keepalive(val))
     }
 
+    /// Set that all sockets have `SO_KEEPALIVE` set with the supplied interval.
+    ///
+    /// If `None`, the option will not be set.
+    pub fn tcp_keepalive_interval<D>(self, val: D) -> ClientBuilder
+    where
+        D: Into<Option<Duration>>,
+    {
+        self.with_inner(move |inner| inner.tcp_keepalive_interval(val))
+    }
+
+    /// Set that all sockets have `SO_KEEPALIVE` set with the supplied retry count.
+    ///
+    /// If `None`, the option will not be set.
+    pub fn tcp_keepalive_retries<C>(self, retries: C) -> ClientBuilder
+    where
+        C: Into<Option<u32>>,
+    {
+        self.with_inner(move |inner| inner.tcp_keepalive_retries(retries))
+    }
+
+    /// Set that all sockets have `TCP_USER_TIMEOUT` set with the supplied duration.
+    ///
+    /// This option controls how long transmitted data may remain unacknowledged before
+    /// the connection is force-closed.
+    ///
+    /// The current default is `None` (option disabled).
+    #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
+    pub fn tcp_user_timeout<D>(self, val: D) -> ClientBuilder
+    where
+        D: Into<Option<Duration>>,
+    {
+        self.with_inner(move |inner| inner.tcp_user_timeout(val))
+    }
+
+    // Alt Transports
+
+    /// Set that all connections will use this Unix socket.
+    ///
+    /// If a request URI uses the `https` scheme, TLS will still be used over
+    /// the Unix socket.
+    ///
+    /// # Note
+    ///
+    /// This option is not compatible with any of the TCP or Proxy options.
+    /// Setting this will ignore all those options previously set.
+    ///
+    /// Likewise, DNS resolution will not be done on the domain name.
+    #[cfg(unix)]
+    pub fn unix_socket(self, path: impl UnixSocketProvider) -> ClientBuilder {
+        self.with_inner(move |inner| inner.unix_socket(path))
+    }
+
     // TLS options
 
-    /// Add a custom root certificate.
+    /// Add custom root certificates.
     ///
     /// This allows connecting to a server that has a self-signed
     /// certificate for example. This **does not** replace the existing
@@ -582,7 +805,7 @@ impl ClientBuilder {
     ///
     /// // get a client builder
     /// let client = reqwest::blocking::Client::builder()
-    ///     .add_root_certificate(cert)
+    ///     .tls_certs_merge([cert])
     ///     .build()?;
     /// # drop(client);
     /// # Ok(())
@@ -591,68 +814,91 @@ impl ClientBuilder {
     ///
     /// # Optional
     ///
-    /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
+    /// This requires the optional `default-tls`, `native-tls`, or `rustls(-...)`
     /// feature to be enabled.
     #[cfg(feature = "__tls")]
     #[cfg_attr(
         docsrs,
-        doc(cfg(any(
-            feature = "default-tls",
-            feature = "native-tls",
-            feature = "rustls-tls"
-        )))
+        doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls")))
     )]
+    pub fn tls_certs_merge(self, certs: impl IntoIterator<Item = Certificate>) -> ClientBuilder {
+        self.with_inner(move |inner| inner.tls_certs_merge(certs))
+    }
+
+    /// Use only the provided certificate roots.
+    ///
+    /// This can be used to connect to a server that has a self-signed
+    /// certificate for example.
+    ///
+    /// This option disables any native or built-in roots, and **only** uses
+    /// the roots provided to this method.
+    ///
+    /// # Optional
+    ///
+    /// This requires the optional `default-tls`, `native-tls`, or `rustls(-...)`
+    /// feature to be enabled.
+    #[cfg(feature = "__tls")]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls")))
+    )]
+    pub fn tls_certs_only(self, certs: impl IntoIterator<Item = Certificate>) -> ClientBuilder {
+        self.with_inner(move |inner| inner.tls_certs_only(certs))
+    }
+
+    /// Deprecated: use [`ClientBuilder::tls_certs_merge()`] or [`ClientBuilder::tls_certs_only()`] instead.
+    #[cfg(feature = "__tls")]
     pub fn add_root_certificate(self, cert: Certificate) -> ClientBuilder {
         self.with_inner(move |inner| inner.add_root_certificate(cert))
     }
 
-    /// Controls the use of built-in system certificates during certificate validation.
+    /// Add multiple certificate revocation lists.
     ///
-    /// Defaults to `true` -- built-in system certs will be used.
+    /// # Errors
+    ///
+    /// This only works if also using only provided root certificates. This
+    /// cannot work with the native verifier.
+    ///
+    /// If CRLs are added but `tls_certs_only()` is not called, the builder
+    /// will return an error.
     ///
     /// # Optional
     ///
-    /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
-    /// feature to be enabled.
-    #[cfg(feature = "__tls")]
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(any(
-            feature = "default-tls",
-            feature = "native-tls",
-            feature = "rustls-tls"
-        )))
-    )]
-    pub fn tls_built_in_root_certs(self, tls_built_in_root_certs: bool) -> ClientBuilder {
-        self.with_inner(move |inner| inner.tls_built_in_root_certs(tls_built_in_root_certs))
+    /// This requires the `rustls(-...)` Cargo feature enabled.
+    #[cfg(feature = "__rustls")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rustls")))]
+    pub fn tls_crls_only(
+        self,
+        crls: impl IntoIterator<Item = CertificateRevocationList>,
+    ) -> ClientBuilder {
+        self.with_inner(move |inner| inner.tls_crls_only(crls))
     }
 
-    /// Sets whether to load webpki root certs with rustls.
-    ///
-    /// If the feature is enabled, this value is `true` by default.
-    #[cfg(feature = "rustls-tls-webpki-roots")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rustls-tls-webpki-roots")))]
-    pub fn tls_built_in_webpki_certs(self, enabled: bool) -> ClientBuilder {
-        self.with_inner(move |inner| inner.tls_built_in_webpki_certs(enabled))
+    /// Deprecated: use [`ClientBuilder::tls_crls_only()`] instead.
+    #[cfg(feature = "__rustls")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rustls")))]
+    pub fn add_crl(self, crl: CertificateRevocationList) -> ClientBuilder {
+        self.with_inner(move |inner| inner.add_crl(crl))
     }
 
-    /// Sets whether to load native root certs with rustls.
-    ///
-    /// If the feature is enabled, this value is `true` by default.
-    #[cfg(feature = "rustls-tls-native-roots")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rustls-tls-native-roots")))]
-    pub fn tls_built_in_native_certs(self, enabled: bool) -> ClientBuilder {
-        self.with_inner(move |inner| inner.tls_built_in_native_certs(enabled))
+    /// Deprecated: use [`ClientBuilder::tls_crls_only()`] instead.
+    #[cfg(feature = "__rustls")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rustls")))]
+    pub fn add_crls(
+        self,
+        crls: impl IntoIterator<Item = CertificateRevocationList>,
+    ) -> ClientBuilder {
+        self.with_inner(move |inner| inner.add_crls(crls))
     }
 
     /// Sets the identity to be used for client certificate authentication.
     ///
     /// # Optional
     ///
-    /// This requires the optional `native-tls` or `rustls-tls(-...)` feature to be
+    /// This requires the optional `native-tls` or `rustls(-...)` feature to be
     /// enabled.
-    #[cfg(any(feature = "native-tls", feature = "__rustls"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "native-tls", feature = "rustls-tls"))))]
+    #[cfg(any(feature = "__native-tls", feature = "__rustls"))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "native-tls", feature = "rustls"))))]
     pub fn identity(self, identity: Identity) -> ClientBuilder {
         self.with_inner(move |inner| inner.identity(identity))
     }
@@ -668,11 +914,29 @@ impl ClientBuilder {
     /// site will be trusted for use from any other. This introduces a
     /// significant vulnerability to man-in-the-middle attacks.
     ///
+    /// # Errors
+    ///
+    /// Depending on the TLS backend and verifier, this might not work with
+    /// native certificates, only those added with [`ClientBuilder::tls_certs_only()`].
+    ///
     /// # Optional
     ///
-    /// This requires the optional `native-tls` feature to be enabled.
-    #[cfg(feature = "native-tls")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "native-tls")))]
+    /// This requires the optional `default-tls`, `native-tls`, or `rustls(-...)`
+    /// feature to be enabled.
+    #[cfg(feature = "__tls")]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls")))
+    )]
+    pub fn tls_danger_accept_invalid_hostnames(
+        self,
+        accept_invalid_hostname: bool,
+    ) -> ClientBuilder {
+        self.with_inner(|inner| inner.tls_danger_accept_invalid_hostnames(accept_invalid_hostname))
+    }
+
+    /// Deprecated: use [`ClientBuilder::tls_danger_accept_invalid_hostnames()`] instead.
+    #[cfg(feature = "__tls")]
     pub fn danger_accept_invalid_hostnames(self, accept_invalid_hostname: bool) -> ClientBuilder {
         self.with_inner(|inner| inner.danger_accept_invalid_hostnames(accept_invalid_hostname))
     }
@@ -691,12 +955,14 @@ impl ClientBuilder {
     #[cfg(feature = "__tls")]
     #[cfg_attr(
         docsrs,
-        doc(cfg(any(
-            feature = "default-tls",
-            feature = "native-tls",
-            feature = "rustls-tls"
-        )))
+        doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls")))
     )]
+    pub fn tls_danger_accept_invalid_certs(self, accept_invalid_certs: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.tls_danger_accept_invalid_certs(accept_invalid_certs))
+    }
+
+    /// Deprecated: use [`ClientBuilder::tls_danger_accept_invalid_certs()`] instead.
+    #[cfg(feature = "__tls")]
     pub fn danger_accept_invalid_certs(self, accept_invalid_certs: bool) -> ClientBuilder {
         self.with_inner(|inner| inner.danger_accept_invalid_certs(accept_invalid_certs))
     }
@@ -707,68 +973,85 @@ impl ClientBuilder {
     #[cfg(feature = "__tls")]
     #[cfg_attr(
         docsrs,
-        doc(cfg(any(
-            feature = "default-tls",
-            feature = "native-tls",
-            feature = "rustls-tls"
-        )))
+        doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls")))
     )]
     pub fn tls_sni(self, tls_sni: bool) -> ClientBuilder {
         self.with_inner(|inner| inner.tls_sni(tls_sni))
     }
 
+    /// Controls if the SSLKEYLOGFILE environment variable is respected.
+    ///
+    /// When enabled, if the environment variable `SSLKEYLOGFILE` is present at runtime,
+    /// TLS keys will be logged to the file at the path described in the variable.
+    /// This can be used by end-users to allow debugging TLS connections.
+    ///
+    /// Defaults to `false`.
+    ///
+    /// # Optional
+    ///
+    /// This requires the `rustls(-...)` Cargo feature enabled.
+    #[cfg(feature = "__rustls")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rustls")))]
+    pub fn tls_sslkeylogfile(self, on: bool) -> ClientBuilder {
+        self.with_inner(|inner| inner.tls_sslkeylogfile(on))
+    }
+
     /// Set the minimum required TLS version for connections.
     ///
-    /// By default the TLS backend's own default is used.
+    /// By default, the TLS backend's own default is used.
     ///
     /// # Errors
     ///
     /// A value of `tls::Version::TLS_1_3` will cause an error with the
-    /// `native-tls`/`default-tls` backend. This does not mean the version
+    /// `native-tls` backend. This does not mean the version
     /// isn't supported, just that it can't be set as a minimum due to
     /// technical limitations.
     ///
     /// # Optional
     ///
-    /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
+    /// This requires the optional `default-tls`, `native-tls`, or `rustls(-...)`
     /// feature to be enabled.
     #[cfg(feature = "__tls")]
     #[cfg_attr(
         docsrs,
-        doc(cfg(any(
-            feature = "default-tls",
-            feature = "native-tls",
-            feature = "rustls-tls"
-        )))
+        doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls")))
     )]
+    pub fn tls_version_min(self, version: tls::Version) -> ClientBuilder {
+        self.with_inner(|inner| inner.tls_version_min(version))
+    }
+
+    /// Deprecated: use [`ClientBuilder::tls_version_min()`] instead.
+    #[cfg(feature = "__tls")]
     pub fn min_tls_version(self, version: tls::Version) -> ClientBuilder {
         self.with_inner(|inner| inner.min_tls_version(version))
     }
 
     /// Set the maximum allowed TLS version for connections.
     ///
-    /// By default there's no maximum.
+    /// By default, there's no maximum.
     ///
     /// # Errors
     ///
     /// A value of `tls::Version::TLS_1_3` will cause an error with the
-    /// `native-tls`/`default-tls` backend. This does not mean the version
+    /// `native-tls` backend. This does not mean the version
     /// isn't supported, just that it can't be set as a maximum due to
     /// technical limitations.
     ///
     /// # Optional
     ///
-    /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
+    /// This requires the optional `default-tls`, `native-tls`, or `rustls(-...)`
     /// feature to be enabled.
     #[cfg(feature = "__tls")]
     #[cfg_attr(
         docsrs,
-        doc(cfg(any(
-            feature = "default-tls",
-            feature = "native-tls",
-            feature = "rustls-tls"
-        )))
+        doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls")))
     )]
+    pub fn tls_version_max(self, version: tls::Version) -> ClientBuilder {
+        self.with_inner(|inner| inner.tls_version_max(version))
+    }
+
+    /// Deprecated: use [`ClientBuilder::tls_version_max()`] instead.
+    #[cfg(feature = "__tls")]
     pub fn max_tls_version(self, version: tls::Version) -> ClientBuilder {
         self.with_inner(|inner| inner.max_tls_version(version))
     }
@@ -781,8 +1064,14 @@ impl ClientBuilder {
     /// # Optional
     ///
     /// This requires the optional `native-tls` feature to be enabled.
-    #[cfg(feature = "native-tls")]
+    #[cfg(feature = "__native-tls")]
     #[cfg_attr(docsrs, doc(cfg(feature = "native-tls")))]
+    pub fn tls_backend_native(self) -> ClientBuilder {
+        self.with_inner(move |inner| inner.tls_backend_native())
+    }
+
+    /// Deprecated: use [`ClientBuilder::tls_backend_native()`] instead.
+    #[cfg(feature = "__native-tls")]
     pub fn use_native_tls(self) -> ClientBuilder {
         self.with_inner(move |inner| inner.use_native_tls())
     }
@@ -794,9 +1083,16 @@ impl ClientBuilder {
     ///
     /// # Optional
     ///
-    /// This requires the optional `rustls-tls(-...)` feature to be enabled.
+    /// This requires the optional `rustls(-...)` feature to be enabled.
     #[cfg(feature = "__rustls")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rustls-tls")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rustls")))]
+    pub fn tls_backend_rustls(self) -> ClientBuilder {
+        self.with_inner(move |inner| inner.tls_backend_rustls())
+    }
+
+    /// Deprecated: use [`ClientBuilder::tls_backend_rustls()`] instead.
+    #[cfg(feature = "__rustls")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rustls")))]
     pub fn use_rustls_tls(self) -> ClientBuilder {
         self.with_inner(move |inner| inner.use_rustls_tls())
     }
@@ -805,16 +1101,12 @@ impl ClientBuilder {
     ///
     /// # Optional
     ///
-    /// This requires the optional `default-tls`, `native-tls`, or `rustls-tls(-...)`
+    /// This requires the optional `default-tls`, `native-tls`, or `rustls(-...)`
     /// feature to be enabled.
     #[cfg(feature = "__tls")]
     #[cfg_attr(
         docsrs,
-        doc(cfg(any(
-            feature = "default-tls",
-            feature = "native-tls",
-            feature = "rustls-tls"
-        )))
+        doc(cfg(any(feature = "default-tls", feature = "native-tls", feature = "rustls")))
     )]
     pub fn tls_info(self, tls_info: bool) -> ClientBuilder {
         self.with_inner(|inner| inner.tls_info(tls_info))
@@ -837,25 +1129,17 @@ impl ClientBuilder {
     /// # Optional
     ///
     /// This requires one of the optional features `native-tls` or
-    /// `rustls-tls(-...)` to be enabled.
-    #[cfg(any(feature = "native-tls", feature = "__rustls",))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "native-tls", feature = "rustls-tls"))))]
-    pub fn use_preconfigured_tls(self, tls: impl Any) -> ClientBuilder {
-        self.with_inner(move |inner| inner.use_preconfigured_tls(tls))
+    /// `rustls(-...)` to be enabled.
+    #[cfg(any(feature = "__native-tls", feature = "__rustls",))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "native-tls", feature = "rustls"))))]
+    pub fn tls_backend_preconfigured(self, tls: impl Any) -> ClientBuilder {
+        self.with_inner(move |inner| inner.tls_backend_preconfigured(tls))
     }
 
-    /// Enables the [hickory-dns](hickory_resolver) async resolver instead of a default threadpool using `getaddrinfo`.
-    ///
-    /// If the `hickory-dns` feature is turned on, the default option is enabled.
-    ///
-    /// # Optional
-    ///
-    /// This requires the optional `hickory-dns` feature to be enabled
-    #[cfg(feature = "hickory-dns")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "hickory-dns")))]
-    #[deprecated(note = "use `hickory_dns` instead", since = "0.12.0")]
-    pub fn trust_dns(self, enable: bool) -> ClientBuilder {
-        self.with_inner(|inner| inner.hickory_dns(enable))
+    /// Deprecated: use [`ClientBuilder::tls_backend_preconfigured()`] instead.
+    #[cfg(any(feature = "__native-tls", feature = "__rustls",))]
+    pub fn use_preconfigured_tls(self, tls: impl Any) -> ClientBuilder {
+        self.with_inner(move |inner| inner.use_preconfigured_tls(tls))
     }
 
     /// Enables the [hickory-dns](hickory_resolver) async resolver instead of a default threadpool using `getaddrinfo`.
@@ -876,16 +1160,6 @@ impl ClientBuilder {
     /// This method exists even if the optional `hickory-dns` feature is not enabled.
     /// This can be used to ensure a `Client` doesn't use the hickory-dns async resolver
     /// even if another dependency were to enable the optional `hickory-dns` feature.
-    #[deprecated(note = "use `no_hickory_dns` instead", since = "0.12.0")]
-    pub fn no_trust_dns(self) -> ClientBuilder {
-        self.with_inner(|inner| inner.no_hickory_dns())
-    }
-
-    /// Disables the hickory-dns async resolver.
-    ///
-    /// This method exists even if the optional `hickory-dns` feature is not enabled.
-    /// This can be used to ensure a `Client` doesn't use the hickory-dns async resolver
-    /// even if another dependency were to enable the optional `hickory-dns` feature.
     pub fn no_hickory_dns(self) -> ClientBuilder {
         self.with_inner(|inner| inner.no_hickory_dns())
     }
@@ -899,24 +1173,16 @@ impl ClientBuilder {
 
     /// Override DNS resolution for specific domains to a particular IP address.
     ///
-    /// Warning
-    ///
-    /// Since the DNS protocol has no notion of ports, if you wish to send
-    /// traffic to a particular port you must include this port in the URL
-    /// itself, any port in the overridden addr will be ignored and traffic sent
-    /// to the conventional port for the given scheme (e.g. 80 for http).
+    /// Set the port to `0` to use the conventional port for the given scheme (e.g. 80 for http).
+    /// Ports in the URL itself will always be used instead of the port in the overridden addr.
     pub fn resolve(self, domain: &str, addr: SocketAddr) -> ClientBuilder {
         self.resolve_to_addrs(domain, &[addr])
     }
 
     /// Override DNS resolution for specific domains to particular IP addresses.
     ///
-    /// Warning
-    ///
-    /// Since the DNS protocol has no notion of ports, if you wish to send
-    /// traffic to a particular port you must include this port in the URL
-    /// itself, any port in the overridden addresses will be ignored and traffic sent
-    /// to the conventional port for the given scheme (e.g. 80 for http).
+    /// Set the port to `0` to use the conventional port for the given scheme (e.g. 80 for http).
+    /// Ports in the URL itself will always be used instead of the port in the overridden addr.
     pub fn resolve_to_addrs(self, domain: &str, addrs: &[SocketAddr]) -> ClientBuilder {
         self.with_inner(|inner| inner.resolve_to_addrs(domain, addrs))
     }
@@ -928,6 +1194,35 @@ impl ClientBuilder {
     /// still be applied on top of this resolver.
     pub fn dns_resolver<R: Resolve + 'static>(self, resolver: Arc<R>) -> ClientBuilder {
         self.with_inner(|inner| inner.dns_resolver(resolver))
+    }
+
+    /// Adds a new Tower [`Layer`](https://docs.rs/tower/latest/tower/trait.Layer.html) to the
+    /// base connector [`Service`](https://docs.rs/tower/latest/tower/trait.Service.html) which
+    /// is responsible for connection establishment.
+    ///
+    /// Each subsequent invocation of this function will wrap previous layers.
+    ///
+    /// Example usage:
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// let client = reqwest::blocking::Client::builder()
+    ///                      // resolved to outermost layer, meaning while we are waiting on concurrency limit
+    ///                      .connect_timeout(Duration::from_millis(200))
+    ///                      // underneath the concurrency check, so only after concurrency limit lets us through
+    ///                      .connector_layer(tower::timeout::TimeoutLayer::new(Duration::from_millis(50)))
+    ///                      .connector_layer(tower::limit::concurrency::ConcurrencyLimitLayer::new(2))
+    ///                      .build()
+    ///                      .unwrap();
+    /// ```
+    pub fn connector_layer<L>(self, layer: L) -> ClientBuilder
+    where
+        L: Layer<BoxedConnectorService> + Clone + Send + Sync + 'static,
+        L::Service:
+            Service<Unnameable, Response = Conn, Error = BoxError> + Clone + Send + Sync + 'static,
+        <L::Service as Service<Unnameable>>::Future: Send + 'static,
+    {
+        self.with_inner(|inner| inner.connector_layer(layer))
     }
 
     // private
@@ -1227,17 +1522,15 @@ async fn forward<F>(fut: F, mut tx: OneshotResponse)
 where
     F: Future<Output = crate::Result<async_impl::Response>>,
 {
-    use std::task::Poll;
-
     futures_util::pin_mut!(fut);
 
     // "select" on the sender being canceled, and the future completing
-    let res = futures_util::future::poll_fn(|cx| {
+    let res = std::future::poll_fn(|cx| {
         match fut.as_mut().poll(cx) {
             Poll::Ready(val) => Poll::Ready(Some(val)),
             Poll::Pending => {
                 // check if the callback is canceled
-                futures_core::ready!(tx.poll_closed(cx));
+                ready!(tx.poll_closed(cx));
                 Poll::Ready(None)
             }
         }

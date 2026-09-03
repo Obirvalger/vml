@@ -1,11 +1,24 @@
-use std::cmp;
-use std::io;
-use std::io::prelude::*;
+use crate::io;
+use crate::io::{Read, Write};
+use alloc::vec::Vec;
+use core::cmp;
 
 use super::{corrupt, GzBuilder, GzHeader, GzHeaderParser};
 use crate::crc::{Crc, CrcWriter};
 use crate::zio;
 use crate::{Compress, Compression, Decompress, Status};
+
+// Non-gzip writer paths flush through zio::Writer::dump, which converts
+// Ok(0) on a non-empty buffer into WriteZero. Gzip writes its header and footer
+// directly, so keep the same progress rule here.
+fn write_nonzero<W: Write>(writer: &mut W, buf: &[u8]) -> io::Result<usize> {
+    let n = writer.write(buf)?;
+    if n == 0 && !buf.is_empty() {
+        Err(io::ErrorKind::WriteZero.into())
+    } else {
+        Ok(n)
+    }
+}
 
 /// A gzip streaming encoder
 ///
@@ -65,8 +78,18 @@ impl<W: Write> GzEncoder<W> {
 
     /// Acquires a mutable reference to the underlying writer.
     ///
-    /// Note that mutation of the writer may result in surprising results if
-    /// this encoder is continued to be used.
+    /// The underlying writer may be mutated or replaced as long as this
+    /// preserves the bytes and ordering of the logical output stream.
+    /// Concatenate output from each writer to reconstruct the complete stream.
+    ///
+    /// Replacing the writer does not require [`flush`](Write::flush). Call it
+    /// first when all input accepted so far must be decodable without output
+    /// from later writes. This inserts a sync-flush point and changes the output
+    /// bitstream. This is useful before applying [`std::mem::take`] to
+    /// [`get_mut`](Self::get_mut) when forwarding the stream incrementally.
+    ///
+    /// To start a new stream, call [`finish`](Self::finish) and create a new
+    /// encoder; replacing the writer does not reset it.
     pub fn get_mut(&mut self) -> &mut W {
         self.inner.get_mut()
     }
@@ -93,17 +116,17 @@ impl<W: Write> GzEncoder<W> {
         while self.crc_bytes_written < 8 {
             let (sum, amt) = (self.crc.sum(), self.crc.amount());
             let buf = [
-                (sum >> 0) as u8,
+                sum as u8,
                 (sum >> 8) as u8,
                 (sum >> 16) as u8,
                 (sum >> 24) as u8,
-                (amt >> 0) as u8,
+                amt as u8,
                 (amt >> 8) as u8,
                 (amt >> 16) as u8,
                 (amt >> 24) as u8,
             ];
             let inner = self.inner.get_mut();
-            let n = inner.write(&buf[self.crc_bytes_written..])?;
+            let n = write_nonzero(inner, &buf[self.crc_bytes_written..])?;
             self.crc_bytes_written += n;
         }
         Ok(())
@@ -129,7 +152,7 @@ impl<W: Write> GzEncoder<W> {
 
     fn write_header(&mut self) -> io::Result<()> {
         while !self.header.is_empty() {
-            let n = self.inner.get_mut().write(&self.header)?;
+            let n = write_nonzero(self.inner.get_mut(), &self.header)?;
             self.header.drain(..n);
         }
         Ok(())
@@ -241,8 +264,17 @@ impl<W: Write> GzDecoder<W> {
 
     /// Acquires a mutable reference to the underlying writer.
     ///
-    /// Note that mutating the output/input state of the stream may corrupt this
-    /// object, so care must be taken when using this method.
+    /// The underlying writer may be mutated or replaced as long as this
+    /// preserves the bytes and ordering of the logical output stream.
+    /// Concatenate output from each writer to reconstruct the complete stream.
+    ///
+    /// Replacing the writer does not require [`flush`](Write::flush). Call it
+    /// first to write all decompressed output currently available to the
+    /// current writer. This is useful before applying [`std::mem::take`] to
+    /// [`get_mut`](Self::get_mut) when forwarding output incrementally.
+    ///
+    /// To start a new stream, call [`finish`](Self::finish) and create a new
+    /// decoder; replacing the writer does not reset it.
     pub fn get_mut(&mut self) -> &mut W {
         self.inner.get_mut().get_mut()
     }
@@ -294,11 +326,11 @@ impl<W: Write> GzDecoder<W> {
             return Err(corrupt());
         }
 
-        let crc = ((self.crc_bytes[0] as u32) << 0)
+        let crc = (self.crc_bytes[0] as u32)
             | ((self.crc_bytes[1] as u32) << 8)
             | ((self.crc_bytes[2] as u32) << 16)
             | ((self.crc_bytes[3] as u32) << 24);
-        let amt = ((self.crc_bytes[4] as u32) << 0)
+        let amt = (self.crc_bytes[4] as u32)
             | ((self.crc_bytes[5] as u32) << 8)
             | ((self.crc_bytes[6] as u32) << 16)
             | ((self.crc_bytes[7] as u32) << 24);
@@ -395,8 +427,17 @@ impl<W: Write> MultiGzDecoder<W> {
 
     /// Acquires a mutable reference to the underlying writer.
     ///
-    /// Note that mutating the output/input state of the stream may corrupt this
-    /// object, so care must be taken when using this method.
+    /// The underlying writer may be mutated or replaced as long as this
+    /// preserves the bytes and ordering of the logical output stream.
+    /// Concatenate output from each writer to reconstruct the complete stream.
+    ///
+    /// Replacing the writer does not require [`flush`](Write::flush). Call it
+    /// first to write all decompressed output currently available to the
+    /// current writer. This is useful before applying [`std::mem::take`] to
+    /// [`get_mut`](Self::get_mut) when forwarding output incrementally.
+    ///
+    /// To start a new stream, call [`finish`](Self::finish) and create a new
+    /// decoder; replacing the writer does not reset it.
     pub fn get_mut(&mut self) -> &mut W {
         self.inner.get_mut()
     }
@@ -467,6 +508,7 @@ impl<W: Write> Write for MultiGzDecoder<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::String;
 
     const STR: &str = "Hello World Hello World Hello World Hello World Hello World \
                                Hello World Hello World Hello World Hello World Hello World \
@@ -477,13 +519,13 @@ mod tests {
     #[test]
     fn decode_writer_one_chunk() {
         let mut e = GzEncoder::new(Vec::new(), Compression::default());
-        e.write(STR.as_ref()).unwrap();
+        e.write_all(STR.as_ref()).unwrap();
         let bytes = e.finish().unwrap();
 
         let mut writer = Vec::new();
         let mut decoder = GzDecoder::new(writer);
         let n = decoder.write(&bytes[..]).unwrap();
-        decoder.write(&bytes[n..]).unwrap();
+        decoder.write_all(&bytes[n..]).unwrap();
         decoder.try_finish().unwrap();
         writer = decoder.finish().unwrap();
         let return_string = String::from_utf8(writer).expect("String parsing error");
@@ -493,7 +535,7 @@ mod tests {
     #[test]
     fn decode_writer_partial_header() {
         let mut e = GzEncoder::new(Vec::new(), Compression::default());
-        e.write(STR.as_ref()).unwrap();
+        e.write_all(STR.as_ref()).unwrap();
         let bytes = e.finish().unwrap();
 
         let mut writer = Vec::new();
@@ -501,7 +543,7 @@ mod tests {
         assert_eq!(decoder.write(&bytes[..5]).unwrap(), 5);
         let n = decoder.write(&bytes[5..]).unwrap();
         if n < bytes.len() - 5 {
-            decoder.write(&bytes[n + 5..]).unwrap();
+            decoder.write_all(&bytes[n + 5..]).unwrap();
         }
         writer = decoder.finish().unwrap();
         let return_string = String::from_utf8(writer).expect("String parsing error");
@@ -522,7 +564,7 @@ mod tests {
         assert_eq!(decoder.write(&bytes[..12]).unwrap(), 12);
         let n = decoder.write(&bytes[12..]).unwrap();
         if n < bytes.len() - 12 {
-            decoder.write(&bytes[n + 12..]).unwrap();
+            decoder.write_all(&bytes[n + 12..]).unwrap();
         }
         assert_eq!(
             decoder.header().unwrap().filename().unwrap(),
@@ -547,7 +589,7 @@ mod tests {
         assert_eq!(decoder.write(&bytes[..12]).unwrap(), 12);
         let n = decoder.write(&bytes[12..]).unwrap();
         if n < bytes.len() - 12 {
-            decoder.write(&bytes[n + 12..]).unwrap();
+            decoder.write_all(&bytes[n + 12..]).unwrap();
         }
         assert_eq!(
             decoder.header().unwrap().comment().unwrap(),
@@ -561,13 +603,13 @@ mod tests {
     #[test]
     fn decode_writer_exact_header() {
         let mut e = GzEncoder::new(Vec::new(), Compression::default());
-        e.write(STR.as_ref()).unwrap();
+        e.write_all(STR.as_ref()).unwrap();
         let bytes = e.finish().unwrap();
 
         let mut writer = Vec::new();
         let mut decoder = GzDecoder::new(writer);
         assert_eq!(decoder.write(&bytes[..10]).unwrap(), 10);
-        decoder.write(&bytes[10..]).unwrap();
+        decoder.write_all(&bytes[10..]).unwrap();
         writer = decoder.finish().unwrap();
         let return_string = String::from_utf8(writer).expect("String parsing error");
         assert_eq!(return_string, STR);
@@ -576,14 +618,14 @@ mod tests {
     #[test]
     fn decode_writer_partial_crc() {
         let mut e = GzEncoder::new(Vec::new(), Compression::default());
-        e.write(STR.as_ref()).unwrap();
+        e.write_all(STR.as_ref()).unwrap();
         let bytes = e.finish().unwrap();
 
         let mut writer = Vec::new();
         let mut decoder = GzDecoder::new(writer);
         let l = bytes.len() - 5;
         let n = decoder.write(&bytes[..l]).unwrap();
-        decoder.write(&bytes[n..]).unwrap();
+        decoder.write_all(&bytes[n..]).unwrap();
         writer = decoder.finish().unwrap();
         let return_string = String::from_utf8(writer).expect("String parsing error");
         assert_eq!(return_string, STR);
@@ -594,7 +636,7 @@ mod tests {
     #[test]
     fn decode_multi_writer() {
         let mut e = GzEncoder::new(Vec::new(), Compression::default());
-        e.write(STR.as_ref()).unwrap();
+        e.write_all(STR.as_ref()).unwrap();
         let bytes = e.finish().unwrap().repeat(2);
 
         let mut writer = Vec::new();
@@ -617,7 +659,7 @@ mod tests {
     fn decode_extra_data() {
         let compressed = {
             let mut e = GzEncoder::new(Vec::new(), Compression::default());
-            e.write(STR.as_ref()).unwrap();
+            e.write_all(STR.as_ref()).unwrap();
             let mut b = e.finish().unwrap();
             b.push(b'x');
             b

@@ -10,15 +10,21 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
-rust-version = "1.60"
+edition = "2024"
+rust-version = "1.85"
 name = "security-framework"
-version = "2.11.1"
+version = "3.7.0"
 authors = [
     "Steven Fackler <sfackler@gmail.com>",
     "Kornel <kornel@geekhood.net>",
 ]
+build = false
 exclude = ["test/*"]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Security.framework bindings for macOS and iOS"
 homepage = "https://lib.rs/crates/security_framework"
 documentation = "https://docs.rs/security_framework"
@@ -37,28 +43,56 @@ categories = [
 ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/kornelski/rust-security-framework"
+resolver = "2"
 
 [package.metadata.docs.rs]
-features = ["OSX_10_15"]
 targets = [
     "x86_64-apple-darwin",
     "aarch64-apple-ios",
 ]
+features = ["OSX_10_15"]
+
+[badges.maintenance]
+status = "looking-for-maintainer"
+
+[features]
+OSX_10_12 = []
+OSX_10_13 = []
+OSX_10_14 = []
+OSX_10_15 = ["security-framework-sys/OSX_10_15"]
+alpn = []
+default = [
+    "OSX_10_14",
+    "alpn",
+    "session-tickets",
+]
+job-bless = []
+macos-12 = ["security-framework-sys/macos-12"]
+nightly = []
+session-tickets = []
+sync-keychain = ["OSX_10_13"]
+
+[lib]
+name = "security_framework"
+path = "src/lib.rs"
 
 [[example]]
 name = "client"
+path = "examples/client.rs"
 
 [[example]]
 name = "find_internet_password"
+path = "examples/find_internet_password.rs"
 
 [[example]]
 name = "set_internet_password"
+path = "examples/set_internet_password.rs"
 
 [dependencies.bitflags]
-version = "2.6"
+version = "2.11"
 
 [dependencies.core-foundation]
-version = "0.9.4"
+version = "0.10"
 
 [dependencies.core-foundation-sys]
 version = "0.8.6"
@@ -70,72 +104,31 @@ version = "0.2.139"
 version = "0.4.20"
 optional = true
 
-[dependencies.num-bigint]
-version = "0.4.6"
-optional = true
-
 [dependencies.security-framework-sys]
-version = "2.11.1"
+version = "2.17"
 default-features = false
 
 [dev-dependencies.env_logger]
-version = "0.10"
+version = "0.11"
 
 [dev-dependencies.hex]
 version = "0.4.3"
 
 [dev-dependencies.tempfile]
-version = "3.3.0"
+version = "3.12.0"
 
 [dev-dependencies.time]
-version = "0.3.17"
+version = "0.3.23"
 
 [dev-dependencies.x509-parser]
-version = "0.16"
-
-[features]
-OSX_10_10 = [
-    "OSX_10_9",
-    "security-framework-sys/OSX_10_10",
-]
-OSX_10_11 = [
-    "OSX_10_10",
-    "security-framework-sys/OSX_10_11",
-]
-OSX_10_12 = [
-    "OSX_10_11",
-    "security-framework-sys/OSX_10_12",
-]
-OSX_10_13 = [
-    "OSX_10_12",
-    "security-framework-sys/OSX_10_13",
-    "alpn",
-    "session-tickets",
-    "serial-number-bigint",
-]
-OSX_10_14 = [
-    "OSX_10_13",
-    "security-framework-sys/OSX_10_14",
-]
-OSX_10_15 = [
-    "OSX_10_14",
-    "security-framework-sys/OSX_10_15",
-]
-OSX_10_9 = ["security-framework-sys/OSX_10_9"]
-alpn = []
-default = ["OSX_10_12"]
-job-bless = []
-nightly = []
-serial-number-bigint = ["dep:num-bigint"]
-session-tickets = []
-
-[badges.maintenance]
-status = "looking-for-maintainer"
+version = "0.18"
 
 [lints.clippy]
 cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
 cast_sign_loss = "allow"
+default_trait_access = "allow"
+doc_markdown = "allow"
 if_not_else = "allow"
 inline_always = "allow"
 items_after_statements = "allow"
@@ -144,8 +137,11 @@ map_unwrap_or = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
+needless_continue = "allow"
+needless_pass_by_value = "allow"
 redundant_closure_for_method_calls = "allow"
 similar_names = "allow"
+struct_field_names = "allow"
 unnested_or_patterns = "allow"
 wildcard_imports = "allow"
 

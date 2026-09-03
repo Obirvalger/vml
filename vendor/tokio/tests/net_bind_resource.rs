@@ -1,5 +1,12 @@
 #![warn(rust_2018_idioms)]
-#![cfg(all(feature = "full", not(target_os = "wasi")))] // Wasi doesn't support panic recovery or bind
+// WASIp1 doesn't support bind
+#![cfg(all(
+    feature = "net",
+    feature = "macros",
+    feature = "rt",
+    feature = "io-util",
+    not(all(target_os = "wasi", target_env = "p1")),
+))]
 
 use tokio::net::TcpListener;
 

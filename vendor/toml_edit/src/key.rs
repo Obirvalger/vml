@@ -1,10 +1,14 @@
 use std::borrow::Cow;
 use std::str::FromStr;
 
+#[cfg(feature = "display")]
+use toml_write::ToTomlKey as _;
+
 use crate::repr::{Decor, Repr};
 use crate::InternalString;
 
-/// Key as part of a Key/Value Pair or a table header.
+/// For Key/[`Value`][crate::Value] pairs under a [`Table`][crate::Table] header or inside an
+/// [`InlineTable`][crate::InlineTable]
 ///
 /// # Examples
 ///
@@ -86,10 +90,6 @@ impl Key {
         &self.key
     }
 
-    pub(crate) fn get_internal(&self) -> &InternalString {
-        &self.key
-    }
-
     /// Returns key raw representation, if available.
     pub fn as_repr(&self) -> Option<&Repr> {
         self.repr.as_ref()
@@ -98,7 +98,10 @@ impl Key {
     /// Returns the default raw representation.
     #[cfg(feature = "display")]
     pub fn default_repr(&self) -> Repr {
-        to_key_repr(&self.key)
+        let output = toml_write::TomlKeyBuilder::new(&self.key)
+            .as_default()
+            .to_toml_key();
+        Repr::new_unchecked(output)
     }
 
     /// Returns a raw representation.
@@ -206,6 +209,13 @@ impl std::ops::Deref for Key {
     }
 }
 
+impl std::borrow::Borrow<str> for Key {
+    #[inline]
+    fn borrow(&self) -> &str {
+        self.get()
+    }
+}
+
 impl std::hash::Hash for Key {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.get().hash(state);
@@ -240,7 +250,7 @@ impl PartialEq<str> for Key {
     }
 }
 
-impl<'s> PartialEq<&'s str> for Key {
+impl PartialEq<&str> for Key {
     #[inline]
     fn eq(&self, other: &&str) -> bool {
         PartialEq::eq(self.get(), *other)
@@ -270,32 +280,6 @@ impl FromStr for Key {
     /// and then literal quoted key (surrounds with '')
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Key::try_parse_simple(s)
-    }
-}
-
-#[cfg(feature = "display")]
-fn to_key_repr(key: &str) -> Repr {
-    #[cfg(feature = "parse")]
-    {
-        if key
-            .as_bytes()
-            .iter()
-            .copied()
-            .all(crate::parser::key::is_unquoted_char)
-            && !key.is_empty()
-        {
-            Repr::new_unchecked(key)
-        } else {
-            crate::encode::to_string_repr(
-                key,
-                Some(crate::encode::StringStyle::OnelineSingle),
-                None,
-            )
-        }
-    }
-    #[cfg(not(feature = "parse"))]
-    {
-        crate::encode::to_string_repr(key, Some(crate::encode::StringStyle::OnelineSingle), None)
     }
 }
 
@@ -330,13 +314,13 @@ impl From<Key> for InternalString {
     }
 }
 
-/// A mutable reference to a `Key`'s formatting
+/// A mutable reference to a [`Key`]'s formatting
 #[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct KeyMut<'k> {
     key: &'k mut Key,
 }
 
-impl<'k> KeyMut<'k> {
+impl KeyMut<'_> {
     /// Returns the parsed key value.
     pub fn get(&self) -> &str {
         self.key.get()
@@ -402,7 +386,7 @@ impl<'k> KeyMut<'k> {
     }
 }
 
-impl<'k> std::ops::Deref for KeyMut<'k> {
+impl std::ops::Deref for KeyMut<'_> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
@@ -410,7 +394,7 @@ impl<'k> std::ops::Deref for KeyMut<'k> {
     }
 }
 
-impl<'s> PartialEq<str> for KeyMut<'s> {
+impl PartialEq<str> for KeyMut<'_> {
     #[inline]
     fn eq(&self, other: &str) -> bool {
         PartialEq::eq(self.get(), other)
@@ -424,7 +408,7 @@ impl<'s> PartialEq<&'s str> for KeyMut<'s> {
     }
 }
 
-impl<'s> PartialEq<String> for KeyMut<'s> {
+impl PartialEq<String> for KeyMut<'_> {
     #[inline]
     fn eq(&self, other: &String) -> bool {
         PartialEq::eq(self.get(), other.as_str())
@@ -432,7 +416,7 @@ impl<'s> PartialEq<String> for KeyMut<'s> {
 }
 
 #[cfg(feature = "display")]
-impl<'k> std::fmt::Display for KeyMut<'k> {
+impl std::fmt::Display for KeyMut<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.key, f)
     }

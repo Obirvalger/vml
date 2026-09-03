@@ -72,10 +72,10 @@ impl<'stream> ReadableStreamDefaultReader<'stream> {
         let promise = self.as_raw().read();
         let js_result = JsFuture::from(promise).await?;
         let result = sys::ReadableStreamReadResult::from(js_result);
-        if result.is_done() {
+        if result.get_done().unwrap_or_default() {
             Ok(None)
         } else {
-            Ok(Some(result.value()))
+            Ok(Some(result.get_value()))
         }
     }
 
@@ -125,7 +125,7 @@ impl<'stream> ReadableStreamDefaultReader<'stream> {
     /// usable. This allows reading only a few chunks from the `Stream`, while still allowing
     /// another reader to read the remaining chunks later on.
     ///
-    /// [`Stream`]: https://docs.rs/futures/0.3.28/futures/stream/trait.Stream.html
+    /// [`Stream`]: https://docs.rs/futures/0.3.30/futures/stream/trait.Stream.html
     #[inline]
     pub fn into_stream(self) -> IntoStream<'stream> {
         IntoStream::new(self, false)

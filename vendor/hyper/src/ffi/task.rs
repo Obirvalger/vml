@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use std::ffi::{c_int, c_void};
 use std::future::Future;
 use std::pin::Pin;
 use std::ptr;
@@ -9,7 +9,8 @@ use std::sync::{
 use std::task::{Context, Poll};
 
 use futures_util::stream::{FuturesUnordered, Stream};
-use libc::c_int;
+
+use crate::common::lock::LockResultExt;
 
 use super::error::hyper_code;
 use super::UserDataPointer;
@@ -91,7 +92,7 @@ struct ExecWaker(AtomicBool);
 /// - hyper_body_data:            Creates a task that will poll a response body for the next buffer of data.
 /// - hyper_body_foreach:         Creates a task to execute the callback with each body chunk received.
 ///
-/// Tasks then have a userdata associated with them using `hyper_task_set_userdata``. This
+/// Tasks then have a userdata associated with them using `hyper_task_set_userdata`. This
 /// is important, for instance, to associate a request id with a given request. When multiple
 /// tasks are running on the same executor, this allows distinguishing tasks for different
 /// requests.
@@ -197,7 +198,7 @@ impl hyper_executor {
     fn spawn(&self, task: Box<hyper_task>) {
         self.spawn_queue
             .lock()
-            .unwrap()
+            .panic_if_poisoned()
             .push(TaskFuture { task: Some(task) });
     }
 
@@ -212,7 +213,7 @@ impl hyper_executor {
             {
                 // Scope the lock on the driver to ensure it is dropped before
                 // calling drain_queue below.
-                let mut driver = self.driver.lock().unwrap();
+                let mut driver = self.driver.lock().panic_if_poisoned();
                 match Pin::new(&mut *driver).poll_next(&mut cx) {
                     Poll::Ready(val) => return val,
                     Poll::Pending => {}
@@ -239,12 +240,12 @@ impl hyper_executor {
     /// drain_queue locks both self.spawn_queue and self.driver, so it requires
     /// that neither of them be locked already.
     fn drain_queue(&self) -> bool {
-        let mut queue = self.spawn_queue.lock().unwrap();
+        let mut queue = self.spawn_queue.lock().panic_if_poisoned();
         if queue.is_empty() {
             return false;
         }
 
-        let driver = self.driver.lock().unwrap();
+        let driver = self.driver.lock().panic_if_poisoned();
 
         for task in queue.drain(..) {
             driver.push(task);
@@ -354,9 +355,9 @@ impl hyper_task {
     }
 
     fn output_type(&self) -> hyper_task_return_type {
-        match self.output {
+        match &self.output {
             None => hyper_task_return_type::HYPER_TASK_EMPTY,
-            Some(ref val) => val.as_task_type(),
+            Some(val) => val.as_task_type(),
         }
     }
 }
@@ -365,9 +366,20 @@ impl Future for TaskFuture {
     type Output = Box<hyper_task>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.task.as_mut().unwrap().future).poll(cx) {
+        match Pin::new(
+            &mut self
+                .task
+                .as_mut()
+                .expect("ffi task future polled after completion")
+                .future,
+        )
+        .poll(cx)
+        {
             Poll::Ready(val) => {
-                let mut task = self.task.take().unwrap();
+                let mut task = self
+                    .task
+                    .take()
+                    .expect("ffi task future missing task after completion");
                 task.output = Some(val);
                 Poll::Ready(task)
             }
@@ -403,7 +415,7 @@ ffi_fn! {
         let task = non_null!(&mut *task ?= ptr::null_mut());
 
         if let Some(val) = task.output.take() {
-            let p = Box::into_raw(val) as *mut c_void;
+            let p = Box::into_raw(val).cast();
             // protect from returning fake pointers to empty types
             if p == std::ptr::NonNull::<c_void>::dangling().as_ptr() {
                 ptr::null_mut()
@@ -509,7 +521,7 @@ ffi_fn! {
     /// Creates a waker associated with the task context.
     ///
     /// The waker can be used to inform the task's executor that the task is
-    /// ready to make progress (using `hyper_waker_wake``).
+    /// ready to make progress (using `hyper_waker_wake`).
     ///
     /// Typically this only needs to be called once, but it can be called
     /// multiple times, returning a new waker each time.

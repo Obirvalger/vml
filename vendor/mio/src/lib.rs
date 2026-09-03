@@ -27,7 +27,7 @@
 //!
 //! ## Examples
 //!
-//! Examples can found in the `examples` directory of the source code, or [on
+//! Examples can be found in the `examples` directory of the source code, or [on
 //! GitHub].
 //!
 //! [on GitHub]: https://github.com/tokio-rs/mio/tree/master/examples
@@ -40,6 +40,9 @@
 //!
 //! The available features are described in the [`features`] module.
 
+#[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
+compile_error!("This wasm target is unsupported by mio. If using Tokio, disable the net feature.");
+
 // macros used internally
 #[macro_use]
 mod macros;
@@ -48,7 +51,7 @@ mod interest;
 mod poll;
 mod sys;
 mod token;
-#[cfg(not(target_os = "wasi"))]
+#[cfg(not(any(target_os = "horizon", target_os = "wasi")))]
 mod waker;
 
 pub mod event;
@@ -66,7 +69,7 @@ pub use event::Events;
 pub use interest::Interest;
 pub use poll::{Poll, Registry};
 pub use token::Token;
-#[cfg(not(target_os = "wasi"))]
+#[cfg(not(any(target_os = "horizon", target_os = "wasi")))]
 pub use waker::Waker;
 
 #[cfg(all(unix, feature = "os-ext"))]
@@ -81,6 +84,22 @@ pub mod unix {
 
         pub use crate::sys::pipe::{new, Receiver, Sender};
     }
+
+    pub use crate::sys::SourceFd;
+}
+
+#[cfg(all(target_os = "hermit", feature = "os-ext"))]
+#[cfg_attr(docsrs, doc(cfg(all(target_os = "hermit", feature = "os-ext"))))]
+pub mod hermit {
+    //! Hermit only extensions.
+
+    pub use crate::sys::SourceFd;
+}
+
+#[cfg(all(target_os = "wasi", not(target_env = "p1"), feature = "os-ext"))]
+#[cfg_attr(docsrs, doc(cfg(all(target_os = "wasi", feature = "os-ext"))))]
+pub mod wasi {
+    //! WASI-only extensions.
 
     pub use crate::sys::SourceFd;
 }

@@ -3,12 +3,10 @@ name = "tracing-core"
 # When releasing to crates.io:
 # - Remove path dependencies
 # - Update html_root_url.
-# - Update doc url
-#   - Cargo.toml
-#   - README.md
+# - Update doc url in README.md.
 # - Update CHANGELOG.md.
-# - Create "v0.1.x" git tag.
-version = "0.1.32"
+# - Create "tracing-core-0.1.x" git tag.
+version = "0.1.36"
 authors = ["Tokio Contributors <team@tokio.rs>"]
 license = "MIT"
 readme = "README.md"
@@ -24,10 +22,10 @@ categories = [
 ]
 keywords = ["logging", "tracing", "profiling"]
 edition = "2018"
-rust-version = "1.56.0"
+rust-version = "1.65.0"
 
 [features]
-default = ["std", "valuable/std"]
+default = ["std", "valuable?/std"]
 std = ["once_cell"]
 
 [badges]
@@ -46,3 +44,6 @@ rustdoc-args = ["--cfg", "docsrs", "--cfg", "tracing_unstable"]
 # it's necessary to _also_ pass `--cfg tracing_unstable` to rustc, or else
 # dependencies will not be enabled, and the docs build will fail.
 rustc-args = ["--cfg", "tracing_unstable"]
+
+[lints]
+workspace = true

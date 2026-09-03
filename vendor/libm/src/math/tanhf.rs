@@ -1,6 +1,9 @@
 use super::expm1f;
 
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+/// The hyperbolic tangent of `x` (f32).
+///
+/// `x` is specified in radians.
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn tanhf(mut x: f32) -> f32 {
     /* x = |x| */
     let mut ix = x.to_bits();
@@ -31,9 +34,5 @@ pub fn tanhf(mut x: f32) -> f32 {
         force_eval!(x * x);
         x
     };
-    if sign {
-        -tt
-    } else {
-        tt
-    }
+    if sign { -tt } else { tt }
 }

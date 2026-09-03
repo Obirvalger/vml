@@ -1,6 +1,4 @@
-// To run:
-//
-//     cargo criterion --features criterion/real_blackbox
+// To run: `cargo criterion`
 //
 // This benchmarks each of the different libraries at several ratios of ASCII to
 // non-ASCII content. There is one additional benchmark labeled "baseline" which
@@ -12,7 +10,10 @@
 // readme is computed by subtracting this baseline from the other bench
 // functions' time, then dividing by one million (ms -> ns).
 
-#![allow(clippy::needless_pass_by_value)]
+#![allow(
+    clippy::incompatible_msrv, // https://github.com/rust-lang/rust-clippy/issues/12257
+    clippy::needless_pass_by_value,
+)]
 
 #[path = "../tests/fst/mod.rs"]
 mod fst;
@@ -21,17 +22,18 @@ mod roaring;
 #[path = "../tests/trie/mod.rs"]
 mod trie;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rand::distributions::{Bernoulli, Distribution, Uniform};
+use criterion::{criterion_group, criterion_main, Criterion};
+use rand::distr::{Bernoulli, Distribution, Uniform};
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
+use std::hint::black_box;
 use std::time::Duration;
 
 fn gen_string(p_nonascii: u32) -> String {
     let mut rng = SmallRng::from_seed([b'!'; 32]);
     let pick_nonascii = Bernoulli::from_ratio(p_nonascii, 100).unwrap();
-    let ascii = Uniform::new_inclusive('\0', '\x7f');
-    let nonascii = Uniform::new_inclusive(0x80 as char, char::MAX);
+    let ascii = Uniform::new_inclusive('\0', '\x7f').unwrap();
+    let nonascii = Uniform::new_inclusive(0x80 as char, char::MAX).unwrap();
 
     let mut string = String::new();
     for _ in 0..500_000 {

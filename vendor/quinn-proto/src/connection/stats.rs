@@ -1,9 +1,10 @@
 //! Connection statistics
 
-use crate::{frame::Frame, Dir};
-use std::time::Duration;
+use crate::{Dir, Duration, frame::Frame};
 
 /// Statistics about UDP datagrams transmitted or received on a connection
+///
+/// All QUIC packets are carried by UDP datagrams. Hence, these statistics cover all traffic on a connection.
 #[derive(Default, Debug, Copy, Clone)]
 #[non_exhaustive]
 pub struct UdpStats {
@@ -25,7 +26,7 @@ impl UdpStats {
     }
 }
 
-/// Number of frames transmitted of each frame type
+/// Number of frames transmitted or received of each frame type
 #[derive(Default, Copy, Clone)]
 #[non_exhaustive]
 #[allow(missing_docs)]
@@ -66,7 +67,7 @@ impl FrameStats {
             Frame::StopSending(_) => self.stop_sending += 1,
             Frame::Crypto(_) => self.crypto += 1,
             Frame::Datagram(_) => self.datagram += 1,
-            Frame::NewToken { .. } => self.new_token += 1,
+            Frame::NewToken(_) => self.new_token += 1,
             Frame::MaxData(_) => self.max_data += 1,
             Frame::MaxStreamData { .. } => self.max_stream_data += 1,
             Frame::MaxStreams { dir, .. } => {
@@ -93,7 +94,7 @@ impl FrameStats {
             Frame::Close(_) => self.connection_close += 1,
             Frame::AckFrequency(_) => self.ack_frequency += 1,
             Frame::ImmediateAck => self.immediate_ack += 1,
-            Frame::HandshakeDone => self.handshake_done += 1,
+            Frame::HandshakeDone => self.handshake_done = self.handshake_done.saturating_add(1),
         }
     }
 }
@@ -152,6 +153,8 @@ pub struct PathStats {
     pub lost_plpmtud_probes: u64,
     /// The number of times a black hole was detected in the path
     pub black_holes_detected: u64,
+    /// Largest UDP payload size the path currently supports
+    pub current_mtu: u16,
 }
 
 /// Connection statistics

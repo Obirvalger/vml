@@ -1,4 +1,3 @@
-use cfg_if::cfg_if;
 use foreign_types::ForeignType;
 use foreign_types::ForeignTypeRef;
 #[cfg(any(ossl111, not(osslconf = "OPENSSL_NO_PSK")))]
@@ -10,17 +9,13 @@ use libc::{c_int, c_uchar, c_uint, c_void};
 use std::ffi::CStr;
 use std::mem;
 use std::ptr;
-use std::slice;
-#[cfg(any(ossl111, boringssl))]
+#[cfg(any(ossl111, boringssl, awslc))]
 use std::str;
 use std::sync::Arc;
 
 use crate::dh::Dh;
-#[cfg(all(ossl101, not(ossl110)))]
-use crate::ec::EcKey;
 use crate::error::ErrorStack;
 use crate::pkey::Params;
-#[cfg(any(ossl102, libressl261))]
 use crate::ssl::AlpnError;
 use crate::ssl::{
     try_get_session_ctx_index, SniError, Ssl, SslAlert, SslContext, SslContextRef, SslRef,
@@ -28,7 +23,8 @@ use crate::ssl::{
 };
 #[cfg(ossl111)]
 use crate::ssl::{ClientHelloResponse, ExtensionContext};
-#[cfg(any(ossl111, boringssl))]
+use crate::util;
+#[cfg(any(ossl111, boringssl, awslc))]
 use crate::util::ForeignTypeRefExt;
 #[cfg(ossl111)]
 use crate::x509::X509Ref;
@@ -41,14 +37,23 @@ where
     unsafe {
         let ctx = X509StoreContextRef::from_ptr_mut(x509_ctx);
         let ssl_idx = X509StoreContext::ssl_idx().expect("BUG: store context ssl index missing");
+        let session_ctx_index =
+            try_get_session_ctx_index().expect("BUG: session context index initialization failed");
         let verify_idx = SslContext::cached_ex_index::<F>();
 
+        // The verify-callback function pointer is copied from the SSL_CTX into the SSL at SSL_new
+        // time and is *not* updated by SSL_set_SSL_CTX (e.g. an SNI swap). So this trampoline can
+        // fire even after the SSL's current SSL_CTX has been replaced. Look up the closure on the
+        // original SSL_CTX (stashed at SESSION_CTX_INDEX in Ssl::new) rather than on the current
+        // one, otherwise the lookup would miss and the .expect() would abort the process.
+        //
         // raw pointer shenanigans to break the borrow of ctx
         // the callback can't mess with its own ex_data slot so this is safe
         let verify = ctx
             .ex_data(ssl_idx)
             .expect("BUG: store context missing ssl")
-            .ssl_context()
+            .ex_data(*session_ctx_index)
+            .expect("BUG: session context missing")
             .ex_data(verify_idx)
             .expect("BUG: verify callback missing") as *const F;
 
@@ -73,10 +78,16 @@ where
 {
     unsafe {
         let ssl = SslRef::from_ptr_mut(ssl);
+        let session_ctx_index =
+            try_get_session_ctx_index().expect("BUG: session context index initialization failed");
         let callback_idx = SslContext::cached_ex_index::<F>();
 
+        // See raw_verify for the rationale: psk_client_callback is copied from the SSL_CTX into
+        // the SSL at SSL_new time and is not updated by SSL_set_SSL_CTX, so we must look up the
+        // closure on the original SSL_CTX rather than the current (potentially swapped) one.
         let callback = ssl
-            .ssl_context()
+            .ex_data(*session_ctx_index)
+            .expect("BUG: session context missing")
             .ex_data(callback_idx)
             .expect("BUG: psk callback missing") as *const F;
         let hint = if !hint.is_null() {
@@ -85,11 +96,13 @@ where
             None
         };
         // Give the callback mutable slices into which it can write the identity and psk.
-        let identity_sl = slice::from_raw_parts_mut(identity as *mut u8, max_identity_len as usize);
+        let identity_sl = util::from_raw_parts_mut(identity as *mut u8, max_identity_len as usize);
         #[allow(clippy::unnecessary_cast)]
-        let psk_sl = slice::from_raw_parts_mut(psk as *mut u8, max_psk_len as usize);
+        let psk_sl = util::from_raw_parts_mut(psk as *mut u8, max_psk_len as usize);
+        let psk_cap = psk_sl.len();
         match (*callback)(ssl, hint, identity_sl, psk_sl) {
-            Ok(psk_len) => psk_len as u32,
+            Ok(psk_len) if psk_len <= psk_cap => psk_len as u32,
+            Ok(_) => 0,
             Err(e) => {
                 e.put();
                 0
@@ -113,10 +126,16 @@ where
 {
     unsafe {
         let ssl = SslRef::from_ptr_mut(ssl);
+        let session_ctx_index =
+            try_get_session_ctx_index().expect("BUG: session context index initialization failed");
         let callback_idx = SslContext::cached_ex_index::<F>();
 
+        // See raw_verify for the rationale: psk_server_callback is copied from the SSL_CTX into
+        // the SSL at SSL_new time and is not updated by SSL_set_SSL_CTX, so we must look up the
+        // closure on the original SSL_CTX rather than the current (potentially swapped) one.
         let callback = ssl
-            .ssl_context()
+            .ex_data(*session_ctx_index)
+            .expect("BUG: session context missing")
             .ex_data(callback_idx)
             .expect("BUG: psk callback missing") as *const F;
         let identity = if identity.is_null() {
@@ -126,9 +145,11 @@ where
         };
         // Give the callback mutable slices into which it can write the psk.
         #[allow(clippy::unnecessary_cast)]
-        let psk_sl = slice::from_raw_parts_mut(psk as *mut u8, max_psk_len as usize);
+        let psk_sl = util::from_raw_parts_mut(psk as *mut u8, max_psk_len as usize);
+        let psk_cap = psk_sl.len();
         match (*callback)(ssl, identity, psk_sl) {
-            Ok(psk_len) => psk_len as u32,
+            Ok(psk_len) if psk_len <= psk_cap => psk_len as u32,
+            Ok(_) => 0,
             Err(e) => {
                 e.put();
                 0
@@ -178,7 +199,6 @@ where
     }
 }
 
-#[cfg(any(ossl102, libressl261))]
 pub extern "C" fn raw_alpn_select<F>(
     ssl: *mut ffi::SSL,
     out: *mut *const c_uchar,
@@ -197,7 +217,7 @@ where
             .ex_data(SslContext::cached_ex_index::<F>())
             .expect("BUG: alpn callback missing") as *const F;
         #[allow(clippy::unnecessary_cast)]
-        let protos = slice::from_raw_parts(inbuf as *const u8, inlen as usize);
+        let protos = util::from_raw_parts(inbuf as *const u8, inlen as usize);
 
         match (*callback)(ssl, protos) {
             Ok(proto) => {
@@ -237,34 +257,6 @@ where
     }
 }
 
-#[cfg(all(ossl101, not(ossl110)))]
-pub unsafe extern "C" fn raw_tmp_ecdh<F>(
-    ssl: *mut ffi::SSL,
-    is_export: c_int,
-    keylength: c_int,
-) -> *mut ffi::EC_KEY
-where
-    F: Fn(&mut SslRef, bool, u32) -> Result<EcKey<Params>, ErrorStack> + 'static + Sync + Send,
-{
-    let ssl = SslRef::from_ptr_mut(ssl);
-    let callback = ssl
-        .ssl_context()
-        .ex_data(SslContext::cached_ex_index::<F>())
-        .expect("BUG: tmp ecdh callback missing") as *const F;
-
-    match (*callback)(ssl, is_export != 0, keylength as u32) {
-        Ok(ec_key) => {
-            let ptr = ec_key.as_ptr();
-            mem::forget(ec_key);
-            ptr
-        }
-        Err(e) => {
-            e.put();
-            ptr::null_mut()
-        }
-    }
-}
-
 pub unsafe extern "C" fn raw_tmp_dh_ssl<F>(
     ssl: *mut ffi::SSL,
     is_export: c_int,
@@ -283,34 +275,6 @@ where
         Ok(dh) => {
             let ptr = dh.as_ptr();
             mem::forget(dh);
-            ptr
-        }
-        Err(e) => {
-            e.put();
-            ptr::null_mut()
-        }
-    }
-}
-
-#[cfg(all(ossl101, not(ossl110)))]
-pub unsafe extern "C" fn raw_tmp_ecdh_ssl<F>(
-    ssl: *mut ffi::SSL,
-    is_export: c_int,
-    keylength: c_int,
-) -> *mut ffi::EC_KEY
-where
-    F: Fn(&mut SslRef, bool, u32) -> Result<EcKey<Params>, ErrorStack> + 'static + Sync + Send,
-{
-    let ssl = SslRef::from_ptr_mut(ssl);
-    let callback = ssl
-        .ex_data(Ssl::cached_ex_index::<Arc<F>>())
-        .expect("BUG: ssl tmp ecdh callback missing")
-        .clone();
-
-    match callback(ssl, is_export != 0, keylength as u32) {
-        Ok(ec_key) => {
-            let ptr = ec_key.as_ptr();
-            mem::forget(ec_key);
             ptr
         }
         Err(e) => {
@@ -390,17 +354,9 @@ pub unsafe extern "C" fn raw_remove_session<F>(
     callback(ctx, session)
 }
 
-cfg_if! {
-    if #[cfg(any(ossl110, libressl280, boringssl))] {
-        type DataPtr = *const c_uchar;
-    } else {
-        type DataPtr = *mut c_uchar;
-    }
-}
-
 pub unsafe extern "C" fn raw_get_session<F>(
     ssl: *mut ffi::SSL,
-    data: DataPtr,
+    data: *const c_uchar,
     len: c_int,
     copy: *mut c_int,
 ) -> *mut ffi::SSL_SESSION
@@ -416,7 +372,7 @@ where
         .ex_data(SslContext::cached_ex_index::<F>())
         .expect("BUG: get session callback missing") as *const F;
     #[allow(clippy::unnecessary_cast)]
-    let data = slice::from_raw_parts(data as *const u8, len as usize);
+    let data = util::from_raw_parts(data as *const u8, len as usize);
 
     match (*callback)(ssl, data) {
         Some(session) => {
@@ -429,7 +385,7 @@ where
     }
 }
 
-#[cfg(any(ossl111, boringssl))]
+#[cfg(any(ossl111, boringssl, awslc))]
 pub unsafe extern "C" fn raw_keylog<F>(ssl: *const ffi::SSL, line: *const c_char)
 where
     F: Fn(&SslRef, &str) + 'static + Sync + Send,
@@ -460,12 +416,14 @@ where
         .ex_data(SslContext::cached_ex_index::<F>())
         .expect("BUG: stateless cookie generate callback missing") as *const F;
     #[allow(clippy::unnecessary_cast)]
-    let slice = slice::from_raw_parts_mut(cookie as *mut u8, ffi::SSL_COOKIE_LENGTH as usize);
+    let slice = util::from_raw_parts_mut(cookie as *mut u8, ffi::SSL_COOKIE_LENGTH as usize);
+    let cap = slice.len();
     match (*callback)(ssl, slice) {
-        Ok(len) => {
+        Ok(len) if len <= cap => {
             *cookie_len = len as size_t;
             1
         }
+        Ok(_) => 0,
         Err(e) => {
             e.put();
             0
@@ -488,11 +446,11 @@ where
         .ex_data(SslContext::cached_ex_index::<F>())
         .expect("BUG: stateless cookie verify callback missing") as *const F;
     #[allow(clippy::unnecessary_cast)]
-    let slice = slice::from_raw_parts(cookie as *const c_uchar as *const u8, cookie_len);
+    let slice = util::from_raw_parts(cookie as *const c_uchar as *const u8, cookie_len);
     (*callback)(ssl, slice) as c_int
 }
 
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 pub extern "C" fn raw_cookie_generate<F>(
     ssl: *mut ffi::SSL,
     cookie: *mut c_uchar,
@@ -511,12 +469,14 @@ where
         // compatibility. See comments in dtls1.h.
         #[allow(clippy::unnecessary_cast)]
         let slice =
-            slice::from_raw_parts_mut(cookie as *mut u8, ffi::DTLS1_COOKIE_LENGTH as usize - 1);
+            util::from_raw_parts_mut(cookie as *mut u8, ffi::DTLS1_COOKIE_LENGTH as usize - 1);
+        let cap = slice.len();
         match (*callback)(ssl, slice) {
-            Ok(len) => {
+            Ok(len) if len <= cap => {
                 *cookie_len = len as c_uint;
                 1
             }
+            Ok(_) => 0,
             Err(e) => {
                 e.put();
                 0
@@ -525,19 +485,10 @@ where
     }
 }
 
-#[cfg(not(boringssl))]
-cfg_if! {
-    if #[cfg(any(ossl110, libressl280))] {
-        type CookiePtr = *const c_uchar;
-    } else {
-        type CookiePtr = *mut c_uchar;
-    }
-}
-
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 pub extern "C" fn raw_cookie_verify<F>(
     ssl: *mut ffi::SSL,
-    cookie: CookiePtr,
+    cookie: *const c_uchar,
     cookie_len: c_uint,
 ) -> c_int
 where
@@ -551,7 +502,7 @@ where
             .expect("BUG: cookie verify callback missing") as *const F;
         #[allow(clippy::unnecessary_cast)]
         let slice =
-            slice::from_raw_parts(cookie as *const c_uchar as *const u8, cookie_len as usize);
+            util::from_raw_parts(cookie as *const c_uchar as *const u8, cookie_len as usize);
         (*callback)(ssl, slice) as c_int
     }
 }
@@ -593,9 +544,6 @@ where
         match (*callback)(ssl, ectx, cert) {
             Ok(None) => 0,
             Ok(Some(buf)) => {
-                *outlen = buf.as_ref().len();
-                *out = buf.as_ref().as_ptr();
-
                 let idx = Ssl::cached_ex_index::<CustomExtAddState<T>>();
                 let mut buf = Some(buf);
                 let new = match ssl.ex_data_mut(idx) {
@@ -608,6 +556,14 @@ where
                 if new {
                     ssl.set_ex_data(idx, CustomExtAddState(buf));
                 }
+
+                // Capture the out pointer AFTER buf has been moved into ex_data.
+                // The move invalidates any previous pointer into buf.
+                let stored = ssl.ex_data(idx).unwrap();
+                let data = stored.0.as_ref().unwrap().as_ref();
+                *outlen = data.len();
+                *out = data.as_ptr();
+
                 1
             }
             Err(alert) => {
@@ -663,7 +619,7 @@ where
             .expect("BUG: custom ext parse callback missing") as *const F;
         let ectx = ExtensionContext::from_bits_truncate(context);
         #[allow(clippy::unnecessary_cast)]
-        let slice = slice::from_raw_parts(input as *const u8, inlen);
+        let slice = util::from_raw_parts(input as *const u8, inlen);
         let cert = if ectx.contains(ExtensionContext::TLS1_3_CERTIFICATE) {
             Some((chainidx, X509Ref::from_ptr(x)))
         } else {

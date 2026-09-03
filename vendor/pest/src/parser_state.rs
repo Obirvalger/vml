@@ -10,15 +10,17 @@
 //! The core functionality of parsing grammar.
 //! State of parser during the process of rules handling.
 
-use alloc::borrow::ToOwned;
+use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::rc::Rc;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{Debug, Display, Formatter};
 use core::num::NonZeroUsize;
+use core::ops::Deref; // used in BorrowedOrRc.as_str
 use core::ops::Range;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -135,7 +137,7 @@ impl Default for CallLimitTracker {
 impl CallLimitTracker {
     fn limit_reached(&self) -> bool {
         self.current_call_limit
-            .map_or(false, |(current, limit)| current >= limit)
+            .is_some_and(|(current, limit)| current >= limit)
     }
 
     fn increment_depth(&mut self) {
@@ -210,6 +212,54 @@ impl Display for ParsingToken {
             ParsingToken::Insensitive { token } => write!(f, "{}", token.to_uppercase()),
             ParsingToken::Range { start, end } => write!(f, "{start}..{end}"),
             ParsingToken::BuiltInRule => write!(f, "BUILTIN_RULE"),
+        }
+    }
+}
+/// A helper that provides efficient string handling without unnecessary copying.
+/// We use `Arc<String>` instead of `Cow<'i, str>` to avoid copying strings when cloning the `Owned` variant, since
+/// `Arc::clone` only increments a reference count. [SpanOrLiteral] needs to be [Send] and [Sync]`, so we use [Arc]
+/// instead of [Rc].
+///
+/// (We need to clone this struct to detach it from the `&self` borrow in [SpanOrLiteral::as_borrowed_or_rc], so that
+/// we can then call `self.match_string` (a `mut self` method).
+#[derive(Debug, Clone)]
+enum BorrowedOrArc<'i> {
+    Borrowed(&'i str),
+    Owned(Arc<String>),
+}
+
+/// A holder for a literal string, for use in `push_literal`. This is typically a `&'static str`, but is an owned
+/// `Rc<String>` for the pest vm.
+impl<'i> BorrowedOrArc<'i> {
+    fn as_str<'a: 'i>(&'a self) -> &'a str {
+        match self {
+            BorrowedOrArc::Borrowed(s) => s,
+            BorrowedOrArc::Owned(s) => s.deref(),
+        }
+    }
+}
+
+impl From<Cow<'static, str>> for BorrowedOrArc<'_> {
+    fn from(value: Cow<'static, str>) -> Self {
+        match value {
+            Cow::Borrowed(s) => Self::Borrowed(s),
+            Cow::Owned(s) => Self::Owned(Arc::new(s)),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum SpanOrLiteral<'i> {
+    Span(Span<'i>),
+    Literal(BorrowedOrArc<'i>),
+}
+
+impl<'i> SpanOrLiteral<'i> {
+    #[inline]
+    fn as_borrowed_or_rc(&self) -> BorrowedOrArc<'i> {
+        match self {
+            Self::Span(s) => BorrowedOrArc::Borrowed(s.as_str()),
+            Self::Literal(s) => s.clone(),
         }
     }
 }
@@ -378,7 +428,7 @@ impl<R: RuleType> ParseAttempts<R> {
     }
 
     /// Reset state in case we've successfully parsed some token in
-    /// `match_string` or `match_insensetive`.
+    /// `match_string` or `match_insensitive`.
     fn nullify_expected_tokens(&mut self, new_max_position: usize) {
         self.call_stacks.clear();
         self.expected_tokens.clear();
@@ -407,7 +457,7 @@ pub struct ParserState<'i, R: RuleType> {
     position: Position<'i>,
     /// Queue representing rules partially (`QueueableToken::Start`) and
     /// totally (`QueueableToken::End`) parsed. When entering rule we put it in the queue in a state
-    /// of `Start` and after all it's sublogic (subrules or strings) are parsed, we change it to
+    /// of `Start` and after all its sublogic (subrules or strings) are parsed, we change it to
     /// `End` state.
     queue: Vec<QueueableToken<'i, R>>,
     /// Status set in case specific lookahead logic is used in grammar.
@@ -423,7 +473,7 @@ pub struct ParserState<'i, R: RuleType> {
     atomicity: Atomicity,
     /// Helper structure tracking `Stack` status (used in case grammar contains stack PUSH/POP
     /// invocations).
-    stack: Stack<Span<'i>>,
+    stack: Stack<SpanOrLiteral<'i>>,
     /// Used for setting max parser calls limit.
     call_tracker: CallLimitTracker,
     /// Together with tracking of `pos_attempts` and `attempt_pos`
@@ -438,6 +488,7 @@ pub struct ParserState<'i, R: RuleType> {
     /// * CreateUser  = { "create" ~ "user"  ~ Name }
     /// * CreateTable = { "create" ~ "table" ~ Name }
     /// * Name = { SOME_DEFINITION }
+    ///
     /// While parsing the query we'll update tracker position to the start of "Bobby", because we'd
     /// successfully parse "create" + "user" (and not "table").
     parse_attempts: ParseAttempts<R>,
@@ -650,7 +701,7 @@ impl<'i, R: RuleType> ParserState<'i, R> {
 
         let mut try_add_rule_to_stack = |new_state: &mut Box<ParserState<'_, R>>| {
             if new_state.parse_attempts.max_position > remember_max_position {
-                // It means that one of `match_string` or e.g. `match_insensetive` function calls
+                // It means that one of `match_string` or e.g. `match_insensitive` function calls
                 // have already erased `self.parse_attempts.call_stacks` and that previously
                 // remembered values are not valid anymore.
                 remember_call_stacks_number = 0;
@@ -765,6 +816,9 @@ impl<'i, R: RuleType> ParserState<'i, R> {
     /// ```
     #[inline]
     pub fn tag_node(mut self: Box<Self>, tag: &'i str) -> ParseResult<Box<Self>> {
+        if self.lookahead != Lookahead::None {
+            return Ok(self);
+        }
         if let Some(QueueableToken::End { tag: old, .. }) = self.queue.last_mut() {
             *old = Some(tag)
         }
@@ -863,15 +917,15 @@ impl<'i, R: RuleType> ParserState<'i, R> {
         let token_index = self.queue.len();
         let initial_pos = self.position;
 
-        let result = f(self);
+        let result = f(self.checkpoint());
 
         match result {
-            Ok(new_state) => Ok(new_state),
+            Ok(new_state) => Ok(new_state.checkpoint_ok()),
             Err(mut new_state) => {
                 // Restore the initial position and truncate the token queue.
                 new_state.position = initial_pos;
                 new_state.queue.truncate(token_index);
-                Err(new_state)
+                Err(new_state.restore())
             }
         }
     }
@@ -965,7 +1019,7 @@ impl<'i, R: RuleType> ParserState<'i, R> {
         token: ParsingToken,
         parse_succeeded: bool,
     ) {
-        // New position after tracked parsed element for case of `parse_succeded` is true.
+        // New position after tracked parsed element for case of `parse_succeeded` is true.
         // Position of parsing failure otherwise.
         let current_pos = self.position.pos();
 
@@ -1061,6 +1115,38 @@ impl<'i, R: RuleType> ParserState<'i, R> {
         } else {
             Err(self)
         }
+    }
+
+    /// Pushes the given literal to the stack, and always returns `Ok(Box<ParserState>)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pest;
+    /// # #[allow(non_camel_case_types)]
+    /// # #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    /// enum Rule {}
+    ///
+    /// let input = "ab";
+    /// let mut state: Box<pest::ParserState<'_, Rule>> = pest::ParserState::new(input);
+    ///
+    /// let mut result = state.stack_push_literal("a");
+    /// assert!(result.is_ok());
+    /// assert_eq!(result.as_ref().unwrap().position().pos(), 0);
+    ///
+    /// let mut result = result.unwrap().stack_pop();
+    /// assert!(result.is_ok());
+    /// assert_eq!(result.unwrap().position().pos(), 1);
+    /// ```
+    #[inline]
+    pub fn stack_push_literal(
+        mut self: Box<Self>,
+        string: impl Into<Cow<'static, str>>,
+    ) -> ParseResult<Box<Self>> {
+        // convert string into a Literal, and then into a BorrowedOrRc
+        self.stack
+            .push(SpanOrLiteral::Literal(string.into().into()));
+        Ok(self)
     }
 
     /// Attempts to case-insensitively match the given string. Returns `Ok` with the updated
@@ -1358,7 +1444,7 @@ impl<'i, R: RuleType> ParserState<'i, R> {
         F: FnOnce(Box<Self>) -> ParseResult<Box<Self>>,
     {
         self = self.inc_call_check_limit()?;
-        // In case child parsing call is another `atomic` it will have it's own atomicity status.
+        // In case child parsing call is another `atomic` it will have its own atomicity status.
         let initial_atomicity = self.atomicity;
         // In case child atomicity is the same as we've demanded, we shouldn't do nothing.
         // E.g. we have the following rules:
@@ -1420,7 +1506,7 @@ impl<'i, R: RuleType> ParserState<'i, R> {
         match result {
             Ok(mut state) => {
                 let end = state.position;
-                state.stack.push(start.span(&end));
+                state.stack.push(SpanOrLiteral::Span(start.span(&end)));
                 Ok(state)
             }
             Err(state) => Err(state),
@@ -1429,6 +1515,10 @@ impl<'i, R: RuleType> ParserState<'i, R> {
 
     /// Peeks the top of the stack and attempts to match the string. Returns `Ok(Box<ParserState>)`
     /// if the string is matched successfully, or `Err(Box<ParserState>)` otherwise.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stack is empty.
     ///
     /// # Examples
     ///
@@ -1452,12 +1542,16 @@ impl<'i, R: RuleType> ParserState<'i, R> {
             .stack
             .peek()
             .expect("peek was called on empty stack")
-            .as_str();
-        self.match_string(string)
+            .as_borrowed_or_rc();
+        self.match_string(string.as_str())
     }
 
     /// Pops the top of the stack and attempts to match the string. Returns `Ok(Box<ParserState>)`
     /// if the string is matched successfully, or `Err(Box<ParserState>)` otherwise.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stack is empty.
     ///
     /// # Examples
     ///
@@ -1481,8 +1575,8 @@ impl<'i, R: RuleType> ParserState<'i, R> {
             .stack
             .pop()
             .expect("pop was called on empty stack")
-            .as_str();
-        self.match_string(string)
+            .as_borrowed_or_rc();
+        self.match_string(string.as_str())
     }
 
     /// Matches part of the state of the stack.
@@ -1528,7 +1622,8 @@ impl<'i, R: RuleType> ParserState<'i, R> {
         let mut position = self.position;
         let result = {
             let mut iter_b2t = self.stack[range].iter();
-            let matcher = |span: &Span<'_>| position.match_string(span.as_str());
+            let matcher =
+                |span: &SpanOrLiteral<'_>| position.match_string(span.as_borrowed_or_rc().as_str());
             match match_dir {
                 MatchDir::BottomToTop => iter_b2t.all(matcher),
                 MatchDir::TopToBottom => iter_b2t.rev().all(matcher),
@@ -1589,7 +1684,7 @@ impl<'i, R: RuleType> ParserState<'i, R> {
         let mut position = self.position;
         let mut result = true;
         while let Some(span) = self.stack.pop() {
-            result = position.match_string(span.as_str());
+            result = position.match_string(span.as_borrowed_or_rc().as_str());
             if !result {
                 break;
             }

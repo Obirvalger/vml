@@ -1,15 +1,12 @@
-use core::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut, Range};
 
-use super::outbound::read_opaque_message_header;
-use super::MessageError;
 use crate::enums::{ContentType, ProtocolVersion};
 use crate::error::{Error, PeerMisbehaved};
-use crate::msgs::codec::ReaderMut;
 use crate::msgs::fragmenter::MAX_FRAGMENT_LEN;
 
 /// A TLS frame, named TLSPlaintext in the standard.
 ///
-/// This inbound type borrows its encrypted payload from a `[MessageDeframer]`.
+/// This inbound type borrows its encrypted payload from a buffer elsewhere.
 /// It is used for joining and is consumed by decryption.
 pub struct InboundOpaqueMessage<'a> {
     pub typ: ContentType,
@@ -41,6 +38,21 @@ impl<'a> InboundOpaqueMessage<'a> {
         }
     }
 
+    /// Force conversion into a plaintext message.
+    ///
+    /// `range` restricts the resulting message: this function panics if it is out of range for
+    /// the underlying message payload.
+    ///
+    /// This should only be used for messages that are known to be in plaintext. Otherwise, the
+    /// `InboundOpaqueMessage` should be decrypted into a `PlainMessage` using a `MessageDecrypter`.
+    pub fn into_plain_message_range(self, range: Range<usize>) -> InboundPlainMessage<'a> {
+        InboundPlainMessage {
+            typ: self.typ,
+            version: self.version,
+            payload: &self.payload.into_inner()[range],
+        }
+    }
+
     /// For TLS1.3 (only), checks the length msg.payload is valid and removes the padding.
     ///
     /// Returns an error if the message (pre-unpadding) is too long, or the padding is invalid,
@@ -64,21 +76,6 @@ impl<'a> InboundOpaqueMessage<'a> {
         self.version = ProtocolVersion::TLSv1_3;
         Ok(self.into_plain_message())
     }
-
-    pub(crate) fn read(r: &mut ReaderMut<'a>) -> Result<Self, MessageError> {
-        let (typ, version, len) = r.as_reader(read_opaque_message_header)?;
-
-        let mut sub = r
-            .sub(len as usize)
-            .map_err(|_| MessageError::TooShortForLength)?;
-        let payload = BorrowedPayload::read(&mut sub);
-
-        Ok(Self {
-            typ,
-            version,
-            payload,
-        })
-    }
 }
 
 pub struct BorrowedPayload<'a>(&'a mut [u8]);
@@ -91,7 +88,7 @@ impl Deref for BorrowedPayload<'_> {
     }
 }
 
-impl<'a> DerefMut for BorrowedPayload<'a> {
+impl DerefMut for BorrowedPayload<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0
     }
@@ -106,10 +103,6 @@ impl<'a> BorrowedPayload<'a> {
         self.0 = core::mem::take(&mut self.0)
             .split_at_mut(len)
             .0;
-    }
-
-    pub(crate) fn read(r: &mut ReaderMut<'a>) -> Self {
-        Self(r.rest())
     }
 
     pub(crate) fn into_inner(self) -> &'a mut [u8] {
@@ -130,10 +123,8 @@ impl<'a> BorrowedPayload<'a> {
 
 /// A TLS frame, named `TLSPlaintext` in the standard.
 ///
-/// This inbound type borrows its decrypted payload from a [`MessageDeframer`].
+/// This inbound type borrows its decrypted payload from the original buffer.
 /// It results from decryption.
-///
-/// [`MessageDeframer`]: crate::msgs::deframer::MessageDeframer
 #[derive(Debug)]
 pub struct InboundPlainMessage<'a> {
     pub typ: ContentType,
@@ -149,15 +140,6 @@ impl InboundPlainMessage<'_> {
     /// third paragraph of section 5 in RFC8446.
     pub(crate) fn is_valid_ccs(&self) -> bool {
         self.typ == ContentType::ChangeCipherSpec && self.payload == [0x01]
-    }
-
-    #[cfg(all(test, feature = "std"))]
-    pub(crate) fn into_owned(self) -> super::PlainMessage {
-        super::PlainMessage {
-            version: self.version,
-            typ: self.typ,
-            payload: crate::msgs::base::Payload::Owned(self.payload.to_vec()),
-        }
     }
 }
 

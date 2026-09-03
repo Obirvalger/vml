@@ -1,7 +1,8 @@
 /*! # Using rustls with FIPS-approved cryptography
 
-To use FIPS-approved cryptography with rustls, you should take
-these actions:
+To use FIPS-approved cryptography with rustls, you should
+utilize a FIPS-approved `CryptoProvider`.
+rustls ships with one using `aws-lc-rs`, take these actions to make use of it:
 
 ## 1. Enable the `fips` crate feature for rustls.
 
@@ -42,8 +43,12 @@ or health-check strategy better than panicking.
 
 # aws-lc-rs FIPS approval status
 
-At the time of writing, this is pending approval on Linux
-for two architectures (ARM aarch64 and Intel x86-64).
+This is covered by [FIPS 140-3 certificate #4816][cert-4816].
+See [the security policy][policy-4816] for precisely which
+environments and functions this certificate covers.
+
+Later releases of aws-lc-rs may be covered by later certificates,
+or be pending certification.
 
 For the most up-to-date details see the latest documentation
 for the [`aws-lc-fips-sys`] crate.
@@ -53,4 +58,6 @@ for the [`aws-lc-fips-sys`] crate.
 [`CryptoProvider`]: crate::crypto::CryptoProvider
 [`ClientConfig::fips()`]: crate::client::ClientConfig::fips
 [`ServerConfig::fips()`]: crate::server::ServerConfig::fips
+[cert-4816]: https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4816
+[policy-4816]: https://csrc.nist.gov/CSRC/media/projects/cryptographic-module-validation-program/documents/security-policies/140sp4816.pdf
 */

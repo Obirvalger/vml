@@ -2,7 +2,7 @@
 //!
 //! This crate allows you to parse and modify toml
 //! documents, while preserving comments, spaces *and
-//! relative order* or items.
+//! relative order* of items.
 //!
 //! If you also need the ease of a more traditional API, see the [`toml`] crate.
 //!
@@ -137,7 +137,13 @@ pub(crate) mod private {
     impl Sealed for f64 {}
     impl Sealed for bool {}
     impl Sealed for crate::Datetime {}
-    impl<'a, T: ?Sized> Sealed for &'a T where T: Sealed {}
+    impl<T: ?Sized> Sealed for &T where T: Sealed {}
     impl Sealed for crate::Table {}
     impl Sealed for crate::InlineTable {}
 }
+
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+#[cfg(feature = "display")]
+#[cfg(feature = "parse")]
+pub struct ReadmeDoctests;

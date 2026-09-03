@@ -1,24 +1,37 @@
-#![cfg(feature = "rustls")]
+#![cfg(any(feature = "rustls-aws-lc-rs", feature = "rustls-ring"))]
+
+#[cfg(all(feature = "rustls-aws-lc-rs", not(feature = "rustls-ring")))]
+use rustls::crypto::aws_lc_rs::default_provider;
+#[cfg(feature = "rustls-ring")]
+use rustls::crypto::ring::default_provider;
 
 use std::{
     convert::TryInto,
+    future::Future,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
+    pin::pin,
     str,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
 
 use crate::runtime::TokioRuntime;
+use crate::{Duration, Instant};
 use bytes::Bytes;
-use proto::{crypto::rustls::QuicClientConfig, RandomConnectionIdGenerator};
-use rand::{rngs::StdRng, RngCore, SeedableRng};
+use proto::{RandomConnectionIdGenerator, crypto::rustls::QuicClientConfig};
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     RootCertStore,
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
 };
+use tokio::time::{sleep, timeout};
 use tokio::{
+    join,
     runtime::{Builder, Runtime},
-    time::{Duration, Instant},
 };
 use tracing::{error_span, info};
 use tracing_futures::Instrument as _;
@@ -111,7 +124,7 @@ async fn close_endpoint() {
 
 #[test]
 fn local_addr() {
-    let socket = UdpSocket::bind("[::1]:0").unwrap();
+    let socket = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).unwrap();
     let addr = socket.local_addr().unwrap();
     let runtime = rt_basic();
     let ep = {
@@ -155,12 +168,9 @@ fn read_after_close() {
             .unwrap()
             .await
             .expect("connect");
-        tokio::time::sleep_until(Instant::now() + Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
         let mut stream = new_conn.accept_uni().await.expect("incoming streams");
-        let msg = stream
-            .read_to_end(usize::max_value())
-            .await
-            .expect("read_to_end");
+        let msg = stream.read_to_end(usize::MAX).await.expect("read_to_end");
         assert_eq!(msg, MSG);
     });
 }
@@ -265,7 +275,7 @@ fn endpoint_with_config(transport_config: TransportConfig) -> Endpoint {
 
 /// Constructs endpoints suitable for connecting to themselves and each other
 struct EndpointFactory {
-    cert: rcgen::CertifiedKey,
+    cert: rcgen::CertifiedKey<rcgen::KeyPair>,
     endpoint_config: EndpointConfig,
 }
 
@@ -282,7 +292,7 @@ impl EndpointFactory {
     }
 
     fn endpoint_with_config(&self, transport_config: TransportConfig) -> Endpoint {
-        let key = PrivateKeyDer::Pkcs8(self.cert.key_pair.serialize_der().into());
+        let key = PrivateKeyDer::Pkcs8(self.cert.signing_key.serialize_der().into());
         let transport_config = Arc::new(transport_config);
         let mut server_config =
             crate::ServerConfig::with_single_cert(vec![self.cert.cert.der().clone()], key).unwrap();
@@ -320,7 +330,7 @@ async fn zero_rtt() {
             let c = connection.clone();
             tokio::spawn(async move {
                 while let Ok(mut x) = c.accept_uni().await {
-                    let msg = x.read_to_end(usize::max_value()).await.unwrap();
+                    let msg = x.read_to_end(usize::MAX).await.unwrap();
                     assert_eq!(msg, MSG0);
                 }
             });
@@ -348,18 +358,12 @@ async fn zero_rtt() {
 
     {
         let mut stream = connection.accept_uni().await.expect("incoming streams");
-        let msg = stream
-            .read_to_end(usize::max_value())
-            .await
-            .expect("read_to_end");
+        let msg = stream.read_to_end(usize::MAX).await.expect("read_to_end");
         assert_eq!(msg, MSG0);
         // Read a 1-RTT message to ensure the handshake completes fully, allowing the server's
         // NewSessionTicket frame to be received.
         let mut stream = connection.accept_uni().await.expect("incoming streams");
-        let msg = stream
-            .read_to_end(usize::max_value())
-            .await
-            .expect("read_to_end");
+        let msg = stream.read_to_end(usize::MAX).await.expect("read_to_end");
         assert_eq!(msg, MSG1);
         drop(connection);
     }
@@ -381,10 +385,7 @@ async fn zero_rtt() {
     });
 
     let mut stream = connection.accept_uni().await.expect("incoming streams");
-    let msg = stream
-        .read_to_end(usize::max_value())
-        .await
-        .expect("read_to_end");
+    let msg = stream.read_to_end(usize::MAX).await.expect("read_to_end");
     assert_eq!(msg, MSG0);
     assert!(zero_rtt.await);
 
@@ -394,6 +395,10 @@ async fn zero_rtt() {
 }
 
 #[test]
+#[cfg_attr(
+    any(target_os = "solaris", target_os = "illumos"),
+    ignore = "Fails on Solaris and Illumos"
+)]
 fn echo_v6() {
     run_echo(EchoArgs {
         client_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
@@ -406,6 +411,7 @@ fn echo_v6() {
 }
 
 #[test]
+#[cfg_attr(target_os = "solaris", ignore = "Sometimes hangs in poll() on Solaris")]
 fn echo_v4() {
     run_echo(EchoArgs {
         client_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
@@ -418,7 +424,7 @@ fn echo_v4() {
 }
 
 #[test]
-#[cfg(any(target_os = "linux", target_os = "macos"))] // Dual-stack sockets aren't the default anywhere else.
+#[cfg_attr(target_os = "solaris", ignore = "Hangs in poll() on Solaris")]
 fn echo_dualstack() {
     run_echo(EchoArgs {
         client_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
@@ -431,7 +437,8 @@ fn echo_dualstack() {
 }
 
 #[test]
-#[cfg(not(tarpaulin))]
+#[ignore]
+#[cfg_attr(target_os = "solaris", ignore = "Hangs in poll() on Solaris")]
 fn stress_receive_window() {
     run_echo(EchoArgs {
         client_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
@@ -444,7 +451,8 @@ fn stress_receive_window() {
 }
 
 #[test]
-#[cfg(not(tarpaulin))]
+#[ignore]
+#[cfg_attr(target_os = "solaris", ignore = "Hangs in poll() on Solaris")]
 fn stress_stream_receive_window() {
     // Note that there is no point in running this with too many streams,
     // since the window is only active within a stream.
@@ -459,7 +467,8 @@ fn stress_stream_receive_window() {
 }
 
 #[test]
-#[cfg(not(tarpaulin))]
+#[ignore]
+#[cfg_attr(target_os = "solaris", ignore = "Hangs in poll() on Solaris")]
 fn stress_both_windows() {
     run_echo(EchoArgs {
         client_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
@@ -490,7 +499,7 @@ fn run_echo(args: EchoArgs) {
         // We don't use the `endpoint` helper here because we want two different endpoints with
         // different addresses.
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-        let key = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
+        let key = PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der());
         let cert = CertificateDer::from(cert.cert);
         let mut server_config =
             crate::ServerConfig::with_single_cert(vec![cert.clone()], key.into()).unwrap();
@@ -512,13 +521,12 @@ fn run_echo(args: EchoArgs) {
 
         let mut roots = rustls::RootCertStore::empty();
         roots.add(cert).unwrap();
-        let mut client_crypto = rustls::ClientConfig::builder_with_provider(
-            rustls::crypto::ring::default_provider().into(),
-        )
-        .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+        let mut client_crypto =
+            rustls::ClientConfig::builder_with_provider(default_provider().into())
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
         client_crypto.key_log = Arc::new(rustls::KeyLogFile::new());
 
         let mut client = {
@@ -539,6 +547,7 @@ fn run_echo(args: EchoArgs) {
             // requires modifying this test - please update the list of supported
             // platforms in the doc comment of `quinn_udp::RecvMeta::dst_ip`.
             if cfg!(target_os = "linux")
+                || cfg!(target_os = "android")
                 || cfg!(target_os = "freebsd")
                 || cfg!(target_os = "openbsd")
                 || cfg!(target_os = "netbsd")
@@ -581,8 +590,7 @@ fn run_echo(args: EchoArgs) {
                         send.write_all(&msg).await.expect("write");
                         send.finish().unwrap();
                     };
-                    let recv_task =
-                        async { recv.read_to_end(usize::max_value()).await.expect("read") };
+                    let recv_task = async { recv.read_to_end(usize::MAX).await.expect("read") };
 
                     let (_, data) = tokio::join!(send_task, recv_task);
 
@@ -678,7 +686,7 @@ async fn rebind_recv() {
     let _guard = subscribe();
 
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let key = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
+    let key = PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der());
     let cert = CertificateDer::from(cert.cert);
 
     let mut roots = rustls::RootCertStore::empty();
@@ -862,4 +870,242 @@ async fn multiple_conns_with_zero_length_cids() {
     }
     .instrument(error_span!("server"));
     tokio::join!(client1, client2, server);
+}
+
+#[tokio::test]
+async fn stream_stopped() {
+    let _guard = subscribe();
+    let factory = EndpointFactory::new();
+    let server = {
+        let _guard = error_span!("server").entered();
+        factory.endpoint()
+    };
+    let server_addr = server.local_addr().unwrap();
+
+    let client = {
+        let _guard = error_span!("client1").entered();
+        factory.endpoint()
+    };
+
+    let client = async move {
+        let conn = client
+            .connect(server_addr, "localhost")
+            .unwrap()
+            .await
+            .unwrap();
+        let mut stream = conn.open_uni().await.unwrap();
+        let stopped1 = stream.stopped();
+        let stopped2 = stream.stopped();
+        let stopped3 = stream.stopped();
+
+        stream.write_all(b"hi").await.unwrap();
+        // spawn one of the futures into a task
+        let stopped1 = tokio::task::spawn(stopped1);
+        // verify that both futures resolved
+        let (stopped1, stopped2) = tokio::join!(stopped1, stopped2);
+        assert!(matches!(stopped1, Ok(Ok(Some(val))) if val == 42u32.into()));
+        assert!(matches!(stopped2, Ok(Some(val)) if val == 42u32.into()));
+        // drop the stream
+        drop(stream);
+        // verify that a future also resolves after dropping the stream
+        let stopped3 = stopped3.await;
+        assert_eq!(stopped3, Ok(Some(42u32.into())));
+    };
+    let client = timeout(Duration::from_millis(100), client).instrument(error_span!("client"));
+    let server = async move {
+        let conn = server.accept().await.unwrap().await.unwrap();
+        let mut stream = conn.accept_uni().await.unwrap();
+        let mut buf = [0u8; 2];
+        stream.read_exact(&mut buf).await.unwrap();
+        stream.stop(42u32.into()).unwrap();
+        conn
+    }
+    .instrument(error_span!("server"));
+    let (client, conn) = tokio::join!(client, server);
+    client.expect("timeout");
+    drop(conn);
+}
+
+#[tokio::test]
+async fn stream_stopped_2() {
+    let _guard = subscribe();
+    let endpoint = endpoint();
+
+    let (conn, _server_conn) = tokio::try_join!(
+        endpoint
+            .connect(endpoint.local_addr().unwrap(), "localhost")
+            .unwrap(),
+        async { endpoint.accept().await.unwrap().await }
+    )
+    .unwrap();
+    let send_stream = conn.open_uni().await.unwrap();
+    let stopped = timeout(Duration::from_millis(100), send_stream.stopped())
+        .instrument(error_span!("stopped"));
+    tokio::pin!(stopped);
+    // poll the future once so that the waker is registered.
+    tokio::select! {
+        biased;
+        _x = &mut stopped => {},
+        _x = std::future::ready(()) => {}
+    }
+    // drop the send stream
+    drop(send_stream);
+    // make sure the stopped future still resolves
+    let res = stopped.await;
+    assert_eq!(res, Ok(Ok(None)));
+}
+
+#[tokio::test]
+async fn stream_drop_removes_blocked_reader() {
+    let _guard = subscribe();
+
+    for drop_stream in [false, true] {
+        let endpoint_factory = EndpointFactory::new();
+        let server = endpoint_factory.endpoint();
+        let server_address = server.local_addr().unwrap();
+        let client = endpoint_factory.endpoint();
+
+        let server_task = tokio::spawn(async move {
+            let conn = server.accept().await.unwrap().await.unwrap();
+            let mut stream = conn.accept_uni().await.unwrap();
+
+            // read "hello"
+            let mut buf = [0u8; 5];
+            stream.read_exact(&mut buf).await.unwrap();
+
+            let (waker, wake_counter) = new_count_waker();
+            let mut cx = Context::from_waker(&waker);
+            // do a blocking read which will add the stream in conn.blocked_readers
+            {
+                let mut buf = [0u8; 64];
+                let read_fut = stream.read(&mut buf);
+                tokio::pin!(read_fut);
+                assert!(matches!(read_fut.as_mut().poll(&mut cx), Poll::Pending));
+            }
+
+            if !drop_stream {
+                assert_eq!(wake_counter.wakes(), 0);
+                // We have a blocked reader, closing the connection should wake it. We use this as
+                // a proxy to assert that the stream is in conn.blocked_readers.
+                conn.close(0u32.into(), b"done");
+                assert_eq!(wake_counter.wakes(), 1);
+            } else {
+                // dropping the stream should remove it from conn.blocked_readers, so we don't
+                // expect any wakeups
+                drop(stream);
+                assert_eq!(wake_counter.wakes(), 0, "no wakeups should have occurred");
+                conn.close(0u32.into(), b"done");
+                assert_eq!(wake_counter.wakes(), 0, "no wakeups should have occurred");
+            }
+        });
+
+        let conn = client
+            .connect(server_address, "localhost")
+            .unwrap()
+            .await
+            .unwrap();
+        let mut stream = conn.open_uni().await.unwrap();
+        // need to send some data to actually start the stream
+        stream.write_all(b"hello").await.unwrap();
+
+        server_task.await.unwrap();
+    }
+}
+
+/// Test that dropping a `RecvStream` after cancelling a read and then
+/// explicitly `stop`ing it doesn't panic.
+#[tokio::test]
+async fn recv_stream_cancel_stop_drop() {
+    let _guard = subscribe();
+    let factory = EndpointFactory::new();
+    let server = {
+        let _guard = error_span!("server").entered();
+        factory.endpoint()
+    };
+    let server_addr = server.local_addr().unwrap();
+
+    let client = {
+        let _guard = error_span!("client").entered();
+        factory.endpoint()
+    };
+    let recv_dropped = tokio::sync::SetOnce::new();
+    join!(
+        async {
+            let conn = server.accept().await.unwrap().await.unwrap();
+            let mut recv = conn.accept_uni().await.unwrap();
+            // Create a future to read from the stream, poll it once, then immediately drop it
+            {
+                let fut = pin!(recv.read_to_end(usize::MAX));
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(fut.poll(&mut cx).is_pending());
+            }
+            recv_dropped.set(()).unwrap();
+            recv.stop(0u32.into()).unwrap();
+        },
+        async {
+            let conn = client
+                .connect(server_addr, "localhost")
+                .unwrap()
+                .await
+                .unwrap();
+            let mut send = conn.open_uni().await.unwrap();
+            _ = send.write_all(b"hello").await;
+            // Don't drop (finish) the send stream until the read has been
+            // cancelled by the server, ensuring that read_to_end can't complete
+            // immediately.
+            recv_dropped.wait().await;
+        },
+    );
+}
+
+#[derive(Default)]
+struct WakeCounter {
+    wakes: AtomicUsize,
+}
+
+impl WakeCounter {
+    fn wakes(&self) -> usize {
+        self.wakes.load(Ordering::SeqCst)
+    }
+}
+
+fn new_count_waker() -> (Waker, Arc<WakeCounter>) {
+    // instance of WakeCounter
+    let counter = Arc::new(WakeCounter::default());
+
+    // convert
+    let waker = unsafe { Waker::from_raw(raw_waker(counter.clone())) };
+    (waker, counter)
+}
+
+fn raw_waker(counter: Arc<WakeCounter>) -> RawWaker {
+    // Store an Arc<WakeCounter> behind the raw pointer.
+    let ptr = Arc::into_raw(counter) as *const ();
+    RawWaker::new(ptr, &VTABLE)
+}
+
+static VTABLE: RawWakerVTable =
+    RawWakerVTable::new(clone_waker, wake_waker, wake_by_ref_waker, drop_waker);
+
+unsafe fn clone_waker(data: *const ()) -> RawWaker {
+    let arc = Arc::<WakeCounter>::from_raw(data as *const WakeCounter);
+    let cloned = arc.clone();
+    std::mem::forget(arc);
+    raw_waker(cloned)
+}
+
+unsafe fn wake_waker(data: *const ()) {
+    let arc = Arc::<WakeCounter>::from_raw(data as *const WakeCounter);
+    arc.wakes.fetch_add(1, Ordering::SeqCst);
+    // arc drops here
+}
+
+unsafe fn wake_by_ref_waker(data: *const ()) {
+    let arc = Arc::<WakeCounter>::from_raw(data as *const WakeCounter);
+    arc.wakes.fetch_add(1, Ordering::SeqCst);
+    std::mem::forget(arc);
+}
+
+unsafe fn drop_waker(data: *const ()) {
+    drop(Arc::<WakeCounter>::from_raw(data as *const WakeCounter));
 }

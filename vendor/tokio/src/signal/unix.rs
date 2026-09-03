@@ -8,29 +8,42 @@
 
 use crate::runtime::scheduler;
 use crate::runtime::signal::Handle;
-use crate::signal::registry::{globals, EventId, EventInfo, Globals, Init, Storage};
+use crate::signal::registry::{globals, EventId, EventInfo, Globals, Storage};
 use crate::signal::RxFuture;
 use crate::sync::watch;
 
 use mio::net::UnixStream;
 use std::io::{self, Error, ErrorKind, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Once;
+use std::sync::OnceLock;
 use std::task::{Context, Poll};
 
-pub(crate) type OsStorage = Vec<SignalInfo>;
+#[cfg(not(any(target_os = "linux", target_os = "illumos")))]
+pub(crate) struct OsStorage([SignalInfo; 33]);
 
-impl Init for OsStorage {
-    fn init() -> Self {
+#[cfg(any(target_os = "linux", target_os = "illumos"))]
+pub(crate) struct OsStorage(Box<[SignalInfo]>);
+
+impl OsStorage {
+    fn get(&self, id: EventId) -> Option<&SignalInfo> {
+        self.0.get(id - 1)
+    }
+}
+
+impl Default for OsStorage {
+    fn default() -> Self {
         // There are reliable signals ranging from 1 to 33 available on every Unix platform.
-        #[cfg(not(target_os = "linux"))]
-        let possible = 0..=33;
+        #[cfg(not(any(target_os = "linux", target_os = "illumos")))]
+        let inner = std::array::from_fn(|_| SignalInfo::default());
 
-        // On Linux, there are additional real-time signals available.
-        #[cfg(target_os = "linux")]
-        let possible = 0..=libc::SIGRTMAX();
+        // On Linux and illumos, there are additional real-time signals
+        // available. (This is also likely true on Solaris, but this should be
+        // verified before being enabled.)
+        #[cfg(any(target_os = "linux", target_os = "illumos"))]
+        let inner = std::iter::repeat_with(SignalInfo::default)
+            .take(libc::SIGRTMAX() as usize)
+            .collect();
 
-        possible.map(|_| SignalInfo::default()).collect()
+        Self(inner)
     }
 }
 
@@ -43,7 +56,7 @@ impl Storage for OsStorage {
     where
         F: FnMut(&'a EventInfo),
     {
-        self.iter().map(|si| &si.event_info).for_each(f);
+        self.0.iter().map(|si| &si.event_info).for_each(f);
     }
 }
 
@@ -53,8 +66,8 @@ pub(crate) struct OsExtraData {
     pub(crate) receiver: UnixStream,
 }
 
-impl Init for OsExtraData {
-    fn init() -> Self {
+impl Default for OsExtraData {
+    fn default() -> Self {
         let (receiver, sender) = UnixStream::pair().expect("failed to create UnixStream");
 
         Self { sender, receiver }
@@ -130,7 +143,8 @@ impl SignalKind {
         target_os = "freebsd",
         target_os = "macos",
         target_os = "netbsd",
-        target_os = "openbsd"
+        target_os = "openbsd",
+        target_os = "illumos"
     ))]
     pub const fn info() -> Self {
         Self(libc::SIGINFO)
@@ -144,6 +158,15 @@ impl SignalKind {
         Self(libc::SIGINT)
     }
 
+    #[cfg(target_os = "haiku")]
+    /// Represents the `SIGPOLL` signal.
+    ///
+    /// On POSIX systems this signal is sent when I/O operations are possible
+    /// on some file descriptor. By default, this signal is ignored.
+    pub const fn io() -> Self {
+        Self(libc::SIGPOLL)
+    }
+    #[cfg(not(target_os = "haiku"))]
     /// Represents the `SIGIO` signal.
     ///
     /// On Unix systems this signal is sent when I/O operations are possible
@@ -215,20 +238,10 @@ impl From<SignalKind> for std::os::raw::c_int {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct SignalInfo {
     event_info: EventInfo,
-    init: Once,
-    initialized: AtomicBool,
-}
-
-impl Default for SignalInfo {
-    fn default() -> SignalInfo {
-        SignalInfo {
-            event_info: EventInfo::default(),
-            init: Once::new(),
-            initialized: AtomicBool::new(false),
-        }
-    }
+    init: OnceLock<Result<(), Option<i32>>>,
 }
 
 /// Our global signal handler for all signals registered by this module.
@@ -255,10 +268,10 @@ fn action(globals: &'static Globals, signal: libc::c_int) {
 /// returning any error along the way if that fails.
 fn signal_enable(signal: SignalKind, handle: &Handle) -> io::Result<()> {
     let signal = signal.0;
-    if signal < 0 || signal_hook_registry::FORBIDDEN.contains(&signal) {
+    if signal <= 0 || signal_hook_registry::FORBIDDEN.contains(&signal) {
         return Err(Error::new(
             ErrorKind::Other,
-            format!("Refusing to register signal {}", signal),
+            format!("Refusing to register signal {signal}"),
         ));
     }
 
@@ -270,26 +283,20 @@ fn signal_enable(signal: SignalKind, handle: &Handle) -> io::Result<()> {
         Some(slot) => slot,
         None => return Err(io::Error::new(io::ErrorKind::Other, "signal too large")),
     };
-    let mut registered = Ok(());
-    siginfo.init.call_once(|| {
-        registered = unsafe {
-            signal_hook_registry::register(signal, move || action(globals, signal)).map(|_| ())
-        };
-        if registered.is_ok() {
-            siginfo.initialized.store(true, Ordering::Relaxed);
-        }
-    });
-    registered?;
-    // If the call_once failed, it won't be retried on the next attempt to register the signal. In
-    // such case it is not run, registered is still `Ok(())`, initialized is still `false`.
-    if siginfo.initialized.load(Ordering::Relaxed) {
-        Ok(())
-    } else {
-        Err(Error::new(
-            ErrorKind::Other,
-            "Failed to register signal handler",
-        ))
-    }
+
+    siginfo
+        .init
+        .get_or_init(|| {
+            unsafe { signal_hook_registry::register(signal, move || action(globals, signal)) }
+                .map(|_| ())
+                .map_err(|e| e.raw_os_error())
+        })
+        .map_err(|e| {
+            e.map_or_else(
+                || Error::new(ErrorKind::Other, "registering signal handler failed"),
+                Error::from_raw_os_error,
+            )
+        })
 }
 
 /// An listener for receiving a particular type of OS signal.
@@ -414,12 +421,13 @@ pub(crate) fn signal_with_handle(
 impl Signal {
     /// Receives the next signal notification event.
     ///
-    /// `None` is returned if no more events can be received by this stream.
+    /// Although this returns `Option<()>`, it will never actually return `None`.
+    /// This was accidentally exposed and would be a breaking change to be removed.
     ///
     /// # Cancel safety
     ///
-    /// This method is cancel safe. If you use it as the event in a
-    /// [`tokio::select!`](crate::select) statement and some other branch
+    /// This method is cancel safe. If you use it as a branch in
+    /// [`tokio::select!`](crate::select) and another branch
     /// completes first, then it is guaranteed that no signal is lost.
     ///
     /// # Examples
@@ -442,19 +450,15 @@ impl Signal {
     /// }
     /// ```
     pub async fn recv(&mut self) -> Option<()> {
-        self.inner.recv().await
+        self.inner.recv().await;
+        Some(())
     }
 
     /// Polls to receive the next signal notification event, outside of an
     /// `async` context.
     ///
-    /// This method returns:
-    ///
-    ///  * `Poll::Pending` if no signals are available but the channel is not
-    ///    closed.
-    ///  * `Poll::Ready(Some(()))` if a signal is available.
-    ///  * `Poll::Ready(None)` if the channel has been closed and all signals
-    ///    sent before it was closed have been received.
+    /// Although this returns `Option<()>`, it will never actually return `None`.
+    /// This was accidentally exposed and would be a breaking change to be removed.
     ///
     /// # Examples
     ///
@@ -480,7 +484,7 @@ impl Signal {
     /// }
     /// ```
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<()>> {
-        self.inner.poll_recv(cx)
+        self.inner.poll_recv(cx).map(Some)
     }
 }
 
@@ -507,16 +511,30 @@ mod tests {
 
     #[test]
     fn signal_enable_error_on_invalid_input() {
-        signal_enable(SignalKind::from_raw(-1), &Handle::default()).unwrap_err();
+        let inputs = [-1, 0];
+
+        for input in inputs {
+            assert_eq!(
+                signal_enable(SignalKind::from_raw(input), &Handle::default())
+                    .unwrap_err()
+                    .kind(),
+                ErrorKind::Other,
+            );
+        }
     }
 
     #[test]
     fn signal_enable_error_on_forbidden_input() {
-        signal_enable(
-            SignalKind::from_raw(signal_hook_registry::FORBIDDEN[0]),
-            &Handle::default(),
-        )
-        .unwrap_err();
+        let inputs = signal_hook_registry::FORBIDDEN;
+
+        for &input in inputs {
+            assert_eq!(
+                signal_enable(SignalKind::from_raw(input), &Handle::default())
+                    .unwrap_err()
+                    .kind(),
+                ErrorKind::Other,
+            );
+        }
     }
 
     #[test]

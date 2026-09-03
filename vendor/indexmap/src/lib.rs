@@ -1,6 +1,3 @@
-// We *mostly* avoid unsafe code, but `map::core::raw` allows it to use `RawTable` buckets.
-#![deny(unsafe_code)]
-#![warn(rust_2018_idioms)]
 #![no_std]
 
 //! [`IndexMap`] is a hash table where the iteration order of the key-value
@@ -35,53 +32,51 @@
 //!   to [`IndexMap`] and [`IndexSet`]. Alternative implementations for
 //!   (de)serializing [`IndexMap`] as an ordered sequence are available in the
 //!   [`map::serde_seq`] module.
-//! * `borsh`: Adds implementations for [`BorshSerialize`] and [`BorshDeserialize`]
-//!   to [`IndexMap`] and [`IndexSet`].
 //! * `arbitrary`: Adds implementations for the [`arbitrary::Arbitrary`] trait
 //!   to [`IndexMap`] and [`IndexSet`].
 //! * `quickcheck`: Adds implementations for the [`quickcheck::Arbitrary`] trait
 //!   to [`IndexMap`] and [`IndexSet`].
+//! * `borsh` (**deprecated**): Adds implementations for [`BorshSerialize`] and
+//!   [`BorshDeserialize`] to [`IndexMap`] and [`IndexSet`]. Due to a cyclic
+//!   dependency that arose between [`borsh`] and `indexmap`, `borsh v1.5.6`
+//!   added an `indexmap` feature that should be used instead of enabling the
+//!   feature here.
 //!
 //! _Note: only the `std` feature is enabled by default._
 //!
 //! [feature flags]: https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section
 //! [`no_std`]: #no-standard-library-targets
-//! [`Serialize`]: `::serde::Serialize`
-//! [`Deserialize`]: `::serde::Deserialize`
+//! [`Serialize`]: `::serde_core::Serialize`
+//! [`Deserialize`]: `::serde_core::Deserialize`
 //! [`BorshSerialize`]: `::borsh::BorshSerialize`
 //! [`BorshDeserialize`]: `::borsh::BorshDeserialize`
+//! [`borsh`]: `::borsh`
 //! [`arbitrary::Arbitrary`]: `::arbitrary::Arbitrary`
 //! [`quickcheck::Arbitrary`]: `::quickcheck::Arbitrary`
 //!
 //! ### Alternate Hashers
 //!
 //! [`IndexMap`] and [`IndexSet`] have a default hasher type
-//! [`S = RandomState`][std::collections::hash_map::RandomState],
+//! [`S = RandomState`][std::hash::RandomState],
 //! just like the standard `HashMap` and `HashSet`, which is resistant to
 //! HashDoS attacks but not the most performant. Type aliases can make it easier
 //! to use alternate hashers:
 //!
 //! ```
 //! use fnv::FnvBuildHasher;
-//! use fxhash::FxBuildHasher;
 //! use indexmap::{IndexMap, IndexSet};
 //!
 //! type FnvIndexMap<K, V> = IndexMap<K, V, FnvBuildHasher>;
 //! type FnvIndexSet<T> = IndexSet<T, FnvBuildHasher>;
 //!
-//! type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
-//! type FxIndexSet<T> = IndexSet<T, FxBuildHasher>;
-//!
 //! let std: IndexSet<i32> = (0..100).collect();
 //! let fnv: FnvIndexSet<i32> = (0..100).collect();
-//! let fx: FxIndexSet<i32> = (0..100).collect();
 //! assert_eq!(std, fnv);
-//! assert_eq!(std, fx);
 //! ```
 //!
 //! ### Rust Version
 //!
-//! This version of indexmap requires Rust 1.63 or later.
+//! This version of indexmap requires Rust 1.85 or later.
 //!
 //! The indexmap 2.x release series will use a carefully considered version
 //! upgrade policy, where in a later 2.x version, we will raise the minimum
@@ -94,12 +89,13 @@
 //! `default-features = false` to your dependency specification.
 //!
 //! - Creating maps and sets using [`new`][IndexMap::new] and
-//! [`with_capacity`][IndexMap::with_capacity] is unavailable without `std`.
+//!   [`with_capacity`][IndexMap::with_capacity] is unavailable without `std`.
 //!   Use methods [`IndexMap::default`], [`with_hasher`][IndexMap::with_hasher],
 //!   [`with_capacity_and_hasher`][IndexMap::with_capacity_and_hasher] instead.
 //!   A no-std compatible hasher will be needed as well, for example
 //!   from the crate `twox-hash`.
-//! - Macros [`indexmap!`] and [`indexset!`] are unavailable without `std`.
+//! - Macros [`indexmap!`] and [`indexset!`] are unavailable without `std`. Use
+//!   the macros [`indexmap_with_default!`] and [`indexset_with_default!`] instead.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -109,15 +105,16 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-use alloc::vec::{self, Vec};
-
 mod arbitrary;
+mod inner;
 #[macro_use]
 mod macros;
 #[cfg(feature = "borsh")]
 mod borsh;
 #[cfg(feature = "serde")]
 mod serde;
+#[cfg(feature = "sval")]
+mod sval;
 mod util;
 
 pub mod map;
@@ -127,9 +124,6 @@ pub mod set;
 // are documented after the "normal" methods.
 #[cfg(feature = "rayon")]
 mod rayon;
-
-#[cfg(feature = "rustc-rayon")]
-mod rustc;
 
 pub use crate::map::IndexMap;
 pub use crate::set::IndexSet;
@@ -178,13 +172,13 @@ where
 
 impl<K, V> Bucket<K, V> {
     // field accessors -- used for `f` instead of closures in `.map(f)`
-    fn key_ref(&self) -> &K {
+    const fn key_ref(&self) -> &K {
         &self.key
     }
-    fn value_ref(&self) -> &V {
+    const fn value_ref(&self) -> &V {
         &self.value
     }
-    fn value_mut(&mut self) -> &mut V {
+    const fn value_mut(&mut self) -> &mut V {
         &mut self.value
     }
     fn key(self) -> K {
@@ -196,25 +190,15 @@ impl<K, V> Bucket<K, V> {
     fn key_value(self) -> (K, V) {
         (self.key, self.value)
     }
-    fn refs(&self) -> (&K, &V) {
+    const fn refs(&self) -> (&K, &V) {
         (&self.key, &self.value)
     }
-    fn ref_mut(&mut self) -> (&K, &mut V) {
+    const fn ref_mut(&mut self) -> (&K, &mut V) {
         (&self.key, &mut self.value)
     }
-    fn muts(&mut self) -> (&mut K, &mut V) {
+    const fn muts(&mut self) -> (&mut K, &mut V) {
         (&mut self.key, &mut self.value)
     }
-}
-
-trait Entries {
-    type Entry;
-    fn into_entries(self) -> Vec<Self::Entry>;
-    fn as_entries(&self) -> &[Self::Entry];
-    fn as_entries_mut(&mut self) -> &mut [Self::Entry];
-    fn with_entries<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut [Self::Entry]);
 }
 
 /// The error type for [`try_reserve`][IndexMap::try_reserve] methods.
@@ -269,6 +253,32 @@ impl core::fmt::Display for TryReserveError {
     }
 }
 
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-impl std::error::Error for TryReserveError {}
+impl core::error::Error for TryReserveError {}
+
+// NOTE: This is copied from the slice module in the std lib.
+/// The error type returned by [`get_disjoint_indices_mut`][`IndexMap::get_disjoint_indices_mut`].
+///
+/// It indicates one of two possible errors:
+/// - An index is out-of-bounds.
+/// - The same index appeared multiple times in the array.
+//    (or different but overlapping indices when ranges are provided)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GetDisjointMutError {
+    /// An index provided was out-of-bounds for the slice.
+    IndexOutOfBounds,
+    /// Two indices provided were overlapping.
+    OverlappingIndices,
+}
+
+impl core::fmt::Display for GetDisjointMutError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let msg = match self {
+            GetDisjointMutError::IndexOutOfBounds => "an index is out of bounds",
+            GetDisjointMutError::OverlappingIndices => "there were overlapping indices",
+        };
+
+        core::fmt::Display::fmt(msg, f)
+    }
+}
+
+impl core::error::Error for GetDisjointMutError {}

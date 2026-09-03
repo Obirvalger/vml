@@ -37,7 +37,7 @@ const REJECT: usize = 0;
 
 /// SAFETY: The decode below function relies on the correctness of these
 /// equivalence classes.
-#[cfg_attr(rustfmt, rustfmt::skip)]
+#[rustfmt::skip]
 const CLASSES: [u8; 256] = [
    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -51,8 +51,8 @@ const CLASSES: [u8; 256] = [
 
 /// SAFETY: The decode below function relies on the correctness of this state
 /// machine.
-#[cfg_attr(rustfmt, rustfmt::skip)]
-const STATES_FORWARD: &'static [u8] = &[
+#[rustfmt::skip]
+const STATES_FORWARD: &[u8] = &[
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   12, 0, 24, 36, 60, 96, 84, 0, 0, 0, 48, 72,
   0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0, 0,
@@ -119,6 +119,30 @@ impl<'a> Iterator for Chars<'a> {
         }
         self.bs = &self.bs[size..];
         Some(ch)
+    }
+
+    #[inline]
+    fn count(mut self) -> usize {
+        let mut count = 0;
+        loop {
+            // ASCII fast path taken if two consecutive ASCII chars found
+            match self.bs {
+                [fst, snd, ..] if *fst <= 0x7F && *snd <= 0x7F => {
+                    let size = ascii::first_non_ascii_byte(self.bs);
+                    count += size;
+                    self.bs = &self.bs[size..];
+                }
+                _ => (),
+            }
+
+            let (_ch, size) = decode(self.bs);
+            if size == 0 {
+                return count;
+            } else {
+                count += 1;
+                self.bs = &self.bs[size..];
+            }
+        }
     }
 }
 
@@ -564,9 +588,10 @@ pub fn validate(slice: &[u8]) -> Result<(), Utf8Error> {
 /// for a successful decode is always between 1 and 4, inclusive.
 ///
 /// When unsuccessful, `None` is returned along with the number of bytes that
-/// make up a maximal prefix of a valid UTF-8 code unit sequence. In this case,
-/// the number of bytes consumed is always between 0 and 3, inclusive, where
-/// 0 is only returned when `slice` is empty.
+/// make up a maximal prefix of a valid UTF-8 code unit sequence. When there is
+/// no prefix of a valid UTF-8 code unit sequence, then 1 byte is consumed.
+/// Thus, for a non-empty slice given, the number of bytes consumed is always
+/// at least `1`. `0` is only returned when `slice` is empty.
 ///
 /// # Examples
 ///
@@ -605,7 +630,7 @@ pub fn validate(slice: &[u8]) -> Result<(), Utf8Error> {
 #[inline]
 pub fn decode<B: AsRef<[u8]>>(slice: B) -> (Option<char>, usize) {
     let slice = slice.as_ref();
-    match slice.get(0) {
+    match slice.first() {
         None => return (None, 0),
         Some(&b) if b <= 0x7F => return (Some(b as char), 1),
         _ => {}
@@ -813,10 +838,11 @@ pub fn decode_last_lossy<B: AsRef<[u8]>>(slice: B) -> (char, usize) {
 #[inline]
 pub fn decode_step(state: &mut usize, cp: &mut u32, b: u8) {
     let class = CLASSES[b as usize];
+    let b = u32::from(b);
     if *state == ACCEPT {
-        *cp = (0xFF >> class) & (b as u32);
+        *cp = (0xFF >> class) & b;
     } else {
-        *cp = (b as u32 & 0b111111) | (*cp << 6);
+        *cp = (b & 0b0011_1111) | (*cp << 6);
     }
     *state = STATES_FORWARD[*state + class as usize] as usize;
 }
@@ -1243,6 +1269,14 @@ mod tests {
     #[test]
     fn chars() {
         for (i, &(expected, input)) in LOSSY_TESTS.iter().enumerate() {
+            assert_eq!(
+                B(input).chars().collect::<Vec<char>>().len(),
+                B(input).chars().count(),
+                "chars.count(ith: {:?}, given: {:?})",
+                i,
+                input
+            );
+
             let got: String = B(input).chars().collect();
             assert_eq!(
                 expected, got,

@@ -4,9 +4,11 @@ pub mod write;
 
 #[cfg(test)]
 mod tests {
-    use std::io::prelude::*;
+    use crate::io::{Read, Write};
+    use alloc::string::ToString;
+    use alloc::vec::Vec;
 
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
 
     use super::{read, write};
     use crate::Compression;
@@ -17,7 +19,7 @@ mod tests {
         let mut w = write::DeflateEncoder::new(Vec::new(), Compression::default());
         let v = crate::random_bytes().take(1024).collect::<Vec<_>>();
         for _ in 0..200 {
-            let to_write = &v[..thread_rng().gen_range(0..v.len())];
+            let to_write = &v[..rng().random_range(0..v.len())];
             real.extend(to_write.iter().copied());
             w.write_all(to_write).unwrap();
         }
@@ -46,7 +48,7 @@ mod tests {
         let mut w = write::DeflateEncoder::new(Vec::new(), Compression::default());
         let v = crate::random_bytes().take(1024).collect::<Vec<_>>();
         for _ in 0..200 {
-            let to_write = &v[..thread_rng().gen_range(0..v.len())];
+            let to_write = &v[..rng().random_range(0..v.len())];
             real.extend(to_write.iter().copied());
             w.write_all(to_write).unwrap();
         }
@@ -160,6 +162,16 @@ mod tests {
         let mut d = read::DeflateDecoder::new(&result[..]);
         let mut data = Vec::new();
         assert_eq!(d.read(&mut data).unwrap(), 0);
+    }
+
+    #[test]
+    fn rejects_incomplete_stream() {
+        for input in [b"1".as_slice(), b"12", b"123", b"1234"] {
+            let mut decoder = read::DeflateDecoder::new(input);
+            let error = crate::io::copy(&mut decoder, &mut crate::io::sink()).unwrap_err();
+            assert_eq!(error.kind(), crate::io::ErrorKind::UnexpectedEof);
+            assert_eq!(error.to_string(), "incomplete deflate stream");
+        }
     }
 
     #[test]

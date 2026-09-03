@@ -1,5 +1,5 @@
 use crate::enums::{AlertDescription, ContentType, HandshakeType, ProtocolVersion};
-use crate::error::{Error, InvalidMessage};
+use crate::error::InvalidMessage;
 use crate::msgs::alert::AlertMessagePayload;
 use crate::msgs::base::Payload;
 use crate::msgs::ccs::ChangeCipherSpecPayload;
@@ -13,15 +13,19 @@ pub use inbound::{BorrowedPayload, InboundOpaqueMessage, InboundPlainMessage};
 mod outbound;
 use alloc::vec::Vec;
 
+pub(crate) use outbound::read_opaque_message_header;
 pub use outbound::{OutboundChunks, OutboundOpaqueMessage, OutboundPlainMessage, PrefixedPayload};
 
 #[derive(Debug)]
 pub enum MessagePayload<'a> {
     Alert(AlertMessagePayload),
+    // one handshake message, parsed
     Handshake {
         parsed: HandshakeMessagePayload<'a>,
         encoded: Payload<'a>,
     },
+    // (potentially) multiple handshake messages, unparsed
+    HandshakeFlight(Payload<'a>),
     ChangeCipherSpec(ChangeCipherSpecPayload),
     ApplicationData(Payload<'a>),
 }
@@ -31,6 +35,7 @@ impl<'a> MessagePayload<'a> {
         match self {
             Self::Alert(x) => x.encode(bytes),
             Self::Handshake { encoded, .. } => bytes.extend(encoded.bytes()),
+            Self::HandshakeFlight(x) => bytes.extend(x.bytes()),
             Self::ChangeCipherSpec(x) => x.encode(bytes),
             Self::ApplicationData(x) => x.encode(bytes),
         }
@@ -68,7 +73,7 @@ impl<'a> MessagePayload<'a> {
     pub fn content_type(&self) -> ContentType {
         match self {
             Self::Alert(_) => ContentType::Alert,
-            Self::Handshake { .. } => ContentType::Handshake,
+            Self::Handshake { .. } | Self::HandshakeFlight(_) => ContentType::Handshake,
             Self::ChangeCipherSpec(_) => ContentType::ChangeCipherSpec,
             Self::ApplicationData(_) => ContentType::ApplicationData,
         }
@@ -82,6 +87,7 @@ impl<'a> MessagePayload<'a> {
                 parsed: parsed.into_owned(),
                 encoded: encoded.into_owned(),
             },
+            HandshakeFlight(x) => HandshakeFlight(x.into_owned()),
             ChangeCipherSpec(x) => ChangeCipherSpec(x),
             ApplicationData(x) => ApplicationData(x.into_owned()),
         }
@@ -156,7 +162,7 @@ impl Message<'_> {
     pub fn is_handshake_type(&self, hstyp: HandshakeType) -> bool {
         // Bit of a layering violation, but OK.
         if let MessagePayload::Handshake { parsed, .. } = &self.payload {
-            parsed.typ == hstyp
+            parsed.0.handshake_type() == hstyp
         } else {
             false
         }
@@ -175,20 +181,18 @@ impl Message<'_> {
     pub fn build_key_update_notify() -> Self {
         Self {
             version: ProtocolVersion::TLSv1_3,
-            payload: MessagePayload::handshake(HandshakeMessagePayload {
-                typ: HandshakeType::KeyUpdate,
-                payload: HandshakePayload::KeyUpdate(KeyUpdateRequest::UpdateNotRequested),
-            }),
+            payload: MessagePayload::handshake(HandshakeMessagePayload(
+                HandshakePayload::KeyUpdate(KeyUpdateRequest::UpdateNotRequested),
+            )),
         }
     }
 
     pub fn build_key_update_request() -> Self {
         Self {
             version: ProtocolVersion::TLSv1_3,
-            payload: MessagePayload::handshake(HandshakeMessagePayload {
-                typ: HandshakeType::KeyUpdate,
-                payload: HandshakePayload::KeyUpdate(KeyUpdateRequest::UpdateRequested),
-            }),
+            payload: MessagePayload::handshake(HandshakeMessagePayload(
+                HandshakePayload::KeyUpdate(KeyUpdateRequest::UpdateRequested),
+            )),
         }
     }
 
@@ -200,10 +204,17 @@ impl Message<'_> {
             payload: payload.into_owned(),
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn into_wire_bytes(self) -> Vec<u8> {
+        PlainMessage::from(self)
+            .into_unencrypted_opaque()
+            .encode()
+    }
 }
 
 impl TryFrom<PlainMessage> for Message<'static> {
-    type Error = Error;
+    type Error = InvalidMessage;
 
     fn try_from(plain: PlainMessage) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -219,7 +230,7 @@ impl TryFrom<PlainMessage> for Message<'static> {
 /// A [`PlainMessage`] must contain plaintext content. Encrypted content should be stored in an
 /// [`InboundOpaqueMessage`] and decrypted before being stored into a [`PlainMessage`].
 impl<'a> TryFrom<InboundPlainMessage<'a>> for Message<'a> {
-    type Error = Error;
+    type Error = InvalidMessage;
 
     fn try_from(plain: InboundPlainMessage<'a>) -> Result<Self, Self::Error> {
         Ok(Self {

@@ -53,8 +53,6 @@
  *       See HP-15C Advanced Functions Handbook, p.193.
  */
 
-use core::f64;
-
 const LN2_HI: f64 = 6.93147180369123816490e-01; /* 3fe62e42 fee00000 */
 const LN2_LO: f64 = 1.90821492927058770002e-10; /* 3dea39ef 35793c76 */
 const LG1: f64 = 6.666666666666735130e-01; /* 3FE55555 55555593 */
@@ -65,7 +63,8 @@ const LG5: f64 = 1.818357216161805012e-01; /* 3FC74664 96CB03DE */
 const LG6: f64 = 1.531383769920937332e-01; /* 3FC39A09 D078C69F */
 const LG7: f64 = 1.479819860511658591e-01; /* 3FC2F112 DF3E5244 */
 
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+/// The natural logarithm of 1+`x` (f64).
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn log1p(x: f64) -> f64 {
     let mut ui: u64 = x.to_bits();
     let hfsq: f64;
@@ -128,7 +127,7 @@ pub fn log1p(x: f64) -> f64 {
         }
         /* reduce u into [sqrt(2)/2, sqrt(2)] */
         hu = (hu & 0x000fffff) + 0x3fe6a09e;
-        ui = (hu as u64) << 32 | (ui & 0xffffffff);
+        ui = ((hu as u64) << 32) | (ui & 0xffffffff);
         f = f64::from_bits(ui) - 1.;
     }
     hfsq = 0.5 * f * f;

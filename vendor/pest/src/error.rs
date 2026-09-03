@@ -29,7 +29,6 @@ use crate::RuleType;
 
 /// Parse-related error type.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub struct Error<R> {
     /// Variant of the error
     pub variant: ErrorVariant<R>,
@@ -37,15 +36,22 @@ pub struct Error<R> {
     pub location: InputLocation,
     /// Line/column within the input string
     pub line_col: LineColLocation,
+    inner: Box<ErrorInner<R>>,
+}
+
+/// Private information for parse errors.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct ErrorInner<R> {
     path: Option<String>,
     line: String,
     continued_line: Option<String>,
     parse_attempts: Option<ParseAttempts<R>>,
 }
 
+impl<R: RuleType> core::error::Error for Error<R> {}
+
 /// Different kinds of parsing errors.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum ErrorVariant<R> {
     /// Generated parsing error with expected and unexpected `Rule`s
     ParsingError {
@@ -60,6 +66,8 @@ pub enum ErrorVariant<R> {
         message: String,
     },
 }
+
+impl<R: RuleType> core::error::Error for ErrorVariant<R> {}
 
 /// Where an `Error` has occurred.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -198,11 +206,13 @@ impl<R: RuleType> Error<R> {
         Error {
             variant,
             location: InputLocation::Pos(pos.pos()),
-            path: None,
-            line,
-            continued_line: None,
             line_col: LineColLocation::Pos(pos.line_col()),
-            parse_attempts: None,
+            inner: Box::new(ErrorInner {
+                path: None,
+                line,
+                continued_line: None,
+                parse_attempts: None,
+            }),
         }
     }
 
@@ -214,7 +224,7 @@ impl<R: RuleType> Error<R> {
         parse_attempts: ParseAttempts<R>,
     ) -> Error<R> {
         let mut error = Self::new_from_pos(variant, pos);
-        error.parse_attempts = Some(parse_attempts);
+        error.inner.parse_attempts = Some(parse_attempts);
         error
     }
 
@@ -277,11 +287,13 @@ impl<R: RuleType> Error<R> {
         Error {
             variant,
             location: InputLocation::Span((span.start(), end.pos())),
-            path: None,
-            line: start_line,
-            continued_line,
             line_col: LineColLocation::Span(span.start_pos().line_col(), end_line_col),
-            parse_attempts: None,
+            inner: Box::new(ErrorInner {
+                path: None,
+                line: start_line,
+                continued_line,
+                parse_attempts: None,
+            }),
         }
     }
 
@@ -310,7 +322,7 @@ impl<R: RuleType> Error<R> {
     /// ).with_path("file.rs");
     /// ```
     pub fn with_path(mut self, path: &str) -> Error<R> {
-        self.path = Some(path.to_owned());
+        self.inner.path = Some(path.to_owned());
 
         self
     }
@@ -341,12 +353,12 @@ impl<R: RuleType> Error<R> {
     /// assert_eq!(Some("file.rs"), error.path());
     /// ```
     pub fn path(&self) -> Option<&str> {
-        self.path.as_deref()
+        self.inner.path.as_deref()
     }
 
     /// Returns the line that the error is on.
     pub fn line(&self) -> &str {
-        self.line.as_str()
+        self.inner.line.as_str()
     }
 
     /// Renames all `Rule`s if this is a [`ParsingError`]. It does nothing when called on a
@@ -407,7 +419,7 @@ impl<R: RuleType> Error<R> {
     /// Get detailed information about errored rules sequence.
     /// Returns `Some(results)` only for `ParsingError`.
     pub fn parse_attempts(&self) -> Option<ParseAttempts<R>> {
-        self.parse_attempts.clone()
+        self.inner.parse_attempts.clone()
     }
 
     /// Get error message based on parsing attempts.
@@ -418,7 +430,7 @@ impl<R: RuleType> Error<R> {
         rule_to_message: &RuleToMessageFn<R>,
         is_whitespace: &IsWhitespaceFn,
     ) -> Option<Error<R>> {
-        let attempts = if let Some(ref parse_attempts) = self.parse_attempts {
+        let attempts = if let Some(ref parse_attempts) = self.inner.parse_attempts {
             parse_attempts.clone()
         } else {
             return None;
@@ -536,7 +548,7 @@ impl<R: RuleType> Error<R> {
             _ => None,
         };
         let offset = start - 1;
-        let line_chars = self.line.chars();
+        let line_chars = self.inner.line.chars();
 
         for c in line_chars.take(offset) {
             match c {
@@ -603,12 +615,13 @@ impl<R: RuleType> Error<R> {
     pub(crate) fn format(&self) -> String {
         let spacing = self.spacing();
         let path = self
+            .inner
             .path
             .as_ref()
             .map(|path| format!("{}:", path))
             .unwrap_or_default();
 
-        let pair = (self.line_col.clone(), &self.continued_line);
+        let pair = (self.line_col.clone(), &self.inner.continued_line);
         if let (LineColLocation::Span(_, end), Some(ref continued_line)) = pair {
             let has_line_gap = end.0 - self.start().0 > 1;
             if has_line_gap {
@@ -627,7 +640,7 @@ impl<R: RuleType> Error<R> {
                     ls = self.start().0,
                     le = end.0,
                     c = self.start().1,
-                    line = self.line,
+                    line = self.inner.line,
                     continued_line = continued_line,
                     underline = self.underline(),
                     message = self.message()
@@ -647,7 +660,7 @@ impl<R: RuleType> Error<R> {
                     ls = self.start().0,
                     le = end.0,
                     c = self.start().1,
-                    line = self.line,
+                    line = self.inner.line,
                     continued_line = continued_line,
                     underline = self.underline(),
                     message = self.message()
@@ -665,11 +678,17 @@ impl<R: RuleType> Error<R> {
                 p = path,
                 l = self.start().0,
                 c = self.start().1,
-                line = self.line,
+                line = self.inner.line,
                 underline = self.underline(),
                 message = self.message()
             )
         }
+    }
+
+    #[cfg(feature = "miette-error")]
+    /// Turns an error into a [miette](crates.io/miette) Diagnostic.
+    pub fn into_miette(self) -> impl ::miette::Diagnostic {
+        miette_adapter::MietteAdapter(self)
     }
 }
 
@@ -728,16 +747,69 @@ fn visualize_whitespace(input: &str) -> String {
     input.to_owned().replace('\r', "␍").replace('\n', "␊")
 }
 
+#[cfg(feature = "miette-error")]
+mod miette_adapter {
+    use alloc::string::ToString;
+    use core::fmt;
+    use std::boxed::Box;
+
+    use crate::error::LineColLocation;
+
+    use super::{Error, RuleType};
+
+    use miette::{Diagnostic, LabeledSpan, SourceCode};
+
+    #[derive(Debug)]
+    pub(crate) struct MietteAdapter<R: RuleType>(pub(crate) Error<R>);
+
+    impl<R: RuleType> Diagnostic for MietteAdapter<R> {
+        fn source_code(&self) -> Option<&dyn SourceCode> {
+            Some(&self.0.inner.line)
+        }
+
+        fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan>>> {
+            let message = self.0.variant.message().to_string();
+
+            let (offset, length) = match self.0.line_col {
+                LineColLocation::Pos((_, c)) => (c - 1, 1),
+                LineColLocation::Span((_, start_c), (_, end_c)) => {
+                    (start_c - 1, end_c - start_c + 1)
+                }
+            };
+
+            let span = LabeledSpan::new(Some(message), offset, length);
+
+            Some(Box::new(std::iter::once(span)))
+        }
+
+        fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
+            Some(Box::new(self.0.message()))
+        }
+    }
+
+    impl<R: RuleType> fmt::Display for MietteAdapter<R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Failure to parse at {:?}", self.0.line_col)
+        }
+    }
+
+    impl<R> core::error::Error for MietteAdapter<R>
+    where
+        R: RuleType,
+        Self: fmt::Debug + fmt::Display,
+    {
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::position;
     use super::*;
     use alloc::vec;
 
     #[test]
     fn display_parsing_error_mixed() {
         let input = "ab\ncd\nef";
-        let pos = position::Position::new(input, 4).unwrap();
+        let pos = Position::new(input, 4).unwrap();
         let error: Error<u32> = Error::new_from_pos(
             ErrorVariant::ParsingError {
                 positives: vec![1, 2, 3],
@@ -763,7 +835,7 @@ mod tests {
     #[test]
     fn display_parsing_error_positives() {
         let input = "ab\ncd\nef";
-        let pos = position::Position::new(input, 4).unwrap();
+        let pos = Position::new(input, 4).unwrap();
         let error: Error<u32> = Error::new_from_pos(
             ErrorVariant::ParsingError {
                 positives: vec![1, 2],
@@ -789,7 +861,7 @@ mod tests {
     #[test]
     fn display_parsing_error_negatives() {
         let input = "ab\ncd\nef";
-        let pos = position::Position::new(input, 4).unwrap();
+        let pos = Position::new(input, 4).unwrap();
         let error: Error<u32> = Error::new_from_pos(
             ErrorVariant::ParsingError {
                 positives: vec![],
@@ -815,7 +887,7 @@ mod tests {
     #[test]
     fn display_parsing_error_unknown() {
         let input = "ab\ncd\nef";
-        let pos = position::Position::new(input, 4).unwrap();
+        let pos = Position::new(input, 4).unwrap();
         let error: Error<u32> = Error::new_from_pos(
             ErrorVariant::ParsingError {
                 positives: vec![],
@@ -841,7 +913,7 @@ mod tests {
     #[test]
     fn display_custom_pos() {
         let input = "ab\ncd\nef";
-        let pos = position::Position::new(input, 4).unwrap();
+        let pos = Position::new(input, 4).unwrap();
         let error: Error<u32> = Error::new_from_pos(
             ErrorVariant::CustomError {
                 message: "error: big one".to_owned(),
@@ -866,8 +938,8 @@ mod tests {
     #[test]
     fn display_custom_span_two_lines() {
         let input = "ab\ncd\nefgh";
-        let start = position::Position::new(input, 4).unwrap();
-        let end = position::Position::new(input, 9).unwrap();
+        let start = Position::new(input, 4).unwrap();
+        let end = Position::new(input, 9).unwrap();
         let error: Error<u32> = Error::new_from_span(
             ErrorVariant::CustomError {
                 message: "error: big one".to_owned(),
@@ -893,8 +965,8 @@ mod tests {
     #[test]
     fn display_custom_span_three_lines() {
         let input = "ab\ncd\nefgh";
-        let start = position::Position::new(input, 1).unwrap();
-        let end = position::Position::new(input, 9).unwrap();
+        let start = Position::new(input, 1).unwrap();
+        let end = Position::new(input, 9).unwrap();
         let error: Error<u32> = Error::new_from_span(
             ErrorVariant::CustomError {
                 message: "error: big one".to_owned(),
@@ -921,8 +993,8 @@ mod tests {
     #[test]
     fn display_custom_span_two_lines_inverted_cols() {
         let input = "abcdef\ngh";
-        let start = position::Position::new(input, 5).unwrap();
-        let end = position::Position::new(input, 8).unwrap();
+        let start = Position::new(input, 5).unwrap();
+        let end = Position::new(input, 8).unwrap();
         let error: Error<u32> = Error::new_from_span(
             ErrorVariant::CustomError {
                 message: "error: big one".to_owned(),
@@ -948,8 +1020,8 @@ mod tests {
     #[test]
     fn display_custom_span_end_after_newline() {
         let input = "abcdef\n";
-        let start = position::Position::new(input, 0).unwrap();
-        let end = position::Position::new(input, 7).unwrap();
+        let start = Position::new(input, 0).unwrap();
+        let end = Position::new(input, 7).unwrap();
         assert!(start.at_start());
         assert!(end.at_end());
 
@@ -977,8 +1049,8 @@ mod tests {
     #[test]
     fn display_custom_span_empty() {
         let input = "";
-        let start = position::Position::new(input, 0).unwrap();
-        let end = position::Position::new(input, 0).unwrap();
+        let start = Position::new(input, 0).unwrap();
+        let end = Position::new(input, 0).unwrap();
         assert!(start.at_start());
         assert!(end.at_end());
 
@@ -1006,7 +1078,7 @@ mod tests {
     #[test]
     fn mapped_parsing_error() {
         let input = "ab\ncd\nef";
-        let pos = position::Position::new(input, 4).unwrap();
+        let pos = Position::new(input, 4).unwrap();
         let error: Error<u32> = Error::new_from_pos(
             ErrorVariant::ParsingError {
                 positives: vec![1, 2, 3],
@@ -1033,7 +1105,7 @@ mod tests {
     #[test]
     fn error_with_path() {
         let input = "ab\ncd\nef";
-        let pos = position::Position::new(input, 4).unwrap();
+        let pos = Position::new(input, 4).unwrap();
         let error: Error<u32> = Error::new_from_pos(
             ErrorVariant::ParsingError {
                 positives: vec![1, 2, 3],
@@ -1060,7 +1132,7 @@ mod tests {
     #[test]
     fn underline_with_tabs() {
         let input = "a\txbc";
-        let pos = position::Position::new(input, 2).unwrap();
+        let pos = Position::new(input, 2).unwrap();
         let error: Error<u32> = Error::new_from_pos(
             ErrorVariant::ParsingError {
                 positives: vec![1, 2, 3],
@@ -1104,5 +1176,46 @@ mod tests {
             LineColLocation::Span(start.line_col(), end.line_col()),
             span.into()
         );
+    }
+
+    #[cfg(feature = "miette-error")]
+    #[test]
+    fn miette_error() {
+        // Force color output so the test passes regardless of TTY availability
+        let prev_force_color = std::env::var_os("FORCE_COLOR");
+        std::env::set_var("FORCE_COLOR", "1");
+
+        let input = "abc\ndef";
+        let pos = Position::new(input, 4).unwrap();
+        let error: Error<u32> = Error::new_from_pos(
+            ErrorVariant::ParsingError {
+                positives: vec![1, 2, 3],
+                negatives: vec![4, 5, 6],
+            },
+            pos,
+        );
+
+        let miette_error = miette::Error::new(error.into_miette());
+
+        assert_eq!(
+            format!("{:?}", miette_error),
+            [
+                "  \u{1b}[31m×\u{1b}[0m Failure to parse at Pos((2, 1))",
+                "   ╭────",
+                " \u{1b}[2m1\u{1b}[0m │ def",
+                "   · \u{1b}[35;1m┬\u{1b}[0m",
+                "   · \u{1b}[35;1m╰── \u{1b}[35;1munexpected 4, 5, or 6; expected 1, 2, or 3\u{1b}[0m\u{1b}[0m",
+                "   ╰────",
+                "\u{1b}[36m  help: \u{1b}[0munexpected 4, 5, or 6; expected 1, 2, or 3\n"
+            ]
+            .join("\n")
+        );
+
+        // Restore previous FORCE_COLOR state to avoid cross-test leakage
+        if let Some(prev) = prev_force_color {
+            std::env::set_var("FORCE_COLOR", prev);
+        } else {
+            std::env::remove_var("FORCE_COLOR");
+        }
     }
 }

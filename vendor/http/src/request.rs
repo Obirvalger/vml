@@ -53,7 +53,7 @@
 //! ```
 
 use std::any::Any;
-use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::fmt;
 
 use crate::header::{HeaderMap, HeaderName, HeaderValue};
@@ -118,9 +118,6 @@ use crate::{Extensions, Result, Uri};
 /// Deserialize a request of bytes via json:
 ///
 /// ```
-/// # extern crate serde;
-/// # extern crate serde_json;
-/// # extern crate http;
 /// use http::Request;
 /// use serde::de;
 ///
@@ -138,9 +135,6 @@ use crate::{Extensions, Result, Uri};
 /// Or alternatively, serialize the body of a request to json
 ///
 /// ```
-/// # extern crate serde;
-/// # extern crate serde_json;
-/// # extern crate http;
 /// use http::Request;
 /// use serde::ser;
 ///
@@ -186,7 +180,7 @@ pub struct Parts {
 
 /// An HTTP request builder
 ///
-/// This type can be used to construct an instance or `Request`
+/// This type can be used to construct an instance of `Request`
 /// through a builder-like pattern.
 #[derive(Debug)]
 pub struct Builder {
@@ -231,8 +225,8 @@ impl Request<()> {
     /// ```
     pub fn get<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::GET).uri(uri)
     }
@@ -253,8 +247,8 @@ impl Request<()> {
     /// ```
     pub fn put<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::PUT).uri(uri)
     }
@@ -275,8 +269,8 @@ impl Request<()> {
     /// ```
     pub fn post<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::POST).uri(uri)
     }
@@ -297,8 +291,8 @@ impl Request<()> {
     /// ```
     pub fn delete<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::DELETE).uri(uri)
     }
@@ -320,8 +314,8 @@ impl Request<()> {
     /// ```
     pub fn options<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::OPTIONS).uri(uri)
     }
@@ -342,8 +336,8 @@ impl Request<()> {
     /// ```
     pub fn head<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::HEAD).uri(uri)
     }
@@ -364,8 +358,8 @@ impl Request<()> {
     /// ```
     pub fn connect<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::CONNECT).uri(uri)
     }
@@ -386,8 +380,8 @@ impl Request<()> {
     /// ```
     pub fn patch<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::PATCH).uri(uri)
     }
@@ -408,11 +402,15 @@ impl Request<()> {
     /// ```
     pub fn trace<T>(uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         Builder::new().method(Method::TRACE).uri(uri)
     }
+
+    // This is purposefully excluded because of potential conflict with the
+    // URI query.
+    // pub fn query() -> Builder
 }
 
 impl<T> Request<T> {
@@ -767,11 +765,11 @@ impl Builder {
     /// ```
     pub fn method<T>(self, method: T) -> Builder
     where
-        Method: TryFrom<T>,
-        <Method as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Method>,
+        <T as TryInto<Method>>::Error: Into<crate::Error>,
     {
         self.and_then(move |mut head| {
-            let method = TryFrom::try_from(method).map_err(Into::into)?;
+            let method = method.try_into().map_err(Into::into)?;
             head.method = method;
             Ok(head)
         })
@@ -812,11 +810,11 @@ impl Builder {
     /// ```
     pub fn uri<T>(self, uri: T) -> Builder
     where
-        Uri: TryFrom<T>,
-        <Uri as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: Into<crate::Error>,
     {
         self.and_then(move |mut head| {
-            head.uri = TryFrom::try_from(uri).map_err(Into::into)?;
+            head.uri = uri.try_into().map_err(Into::into)?;
             Ok(head)
         })
     }
@@ -900,14 +898,14 @@ impl Builder {
     /// ```
     pub fn header<K, V>(self, key: K, value: V) -> Builder
     where
-        HeaderName: TryFrom<K>,
-        <HeaderName as TryFrom<K>>::Error: Into<crate::Error>,
-        HeaderValue: TryFrom<V>,
-        <HeaderValue as TryFrom<V>>::Error: Into<crate::Error>,
+        K: TryInto<HeaderName>,
+        <K as TryInto<HeaderName>>::Error: Into<crate::Error>,
+        V: TryInto<HeaderValue>,
+        <V as TryInto<HeaderValue>>::Error: Into<crate::Error>,
     {
         self.and_then(move |mut head| {
-            let name = <HeaderName as TryFrom<K>>::try_from(key).map_err(Into::into)?;
-            let value = <HeaderValue as TryFrom<V>>::try_from(value).map_err(Into::into)?;
+            let name = key.try_into().map_err(Into::into)?;
+            let value = value.try_into().map_err(Into::into)?;
             head.headers.try_append(name, value)?;
             Ok(head)
         })

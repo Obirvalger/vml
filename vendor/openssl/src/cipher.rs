@@ -16,28 +16,7 @@ use std::ops::{Deref, DerefMut};
 #[cfg(ossl300)]
 use std::ptr;
 
-cfg_if! {
-    if #[cfg(any(boringssl, ossl110, libressl273))] {
-        use ffi::{EVP_CIPHER_block_size, EVP_CIPHER_iv_length, EVP_CIPHER_key_length};
-    } else {
-        use libc::c_int;
-
-        #[allow(bad_style)]
-        pub unsafe fn EVP_CIPHER_iv_length(ptr: *const ffi::EVP_CIPHER) -> c_int {
-            (*ptr).iv_len
-        }
-
-        #[allow(bad_style)]
-        pub unsafe fn EVP_CIPHER_block_size(ptr: *const ffi::EVP_CIPHER) -> c_int {
-            (*ptr).block_size
-        }
-
-        #[allow(bad_style)]
-        pub unsafe fn EVP_CIPHER_key_length(ptr: *const ffi::EVP_CIPHER) -> c_int {
-            (*ptr).key_len
-        }
-    }
-}
+use ffi::{EVP_CIPHER_block_size, EVP_CIPHER_iv_length, EVP_CIPHER_key_length};
 
 cfg_if! {
     if #[cfg(ossl300)] {
@@ -146,7 +125,7 @@ impl Cipher {
             let ptr = cvt_p(ffi::EVP_CIPHER_fetch(
                 ctx.map_or(ptr::null_mut(), ForeignTypeRef::as_ptr),
                 algorithm.as_ptr(),
-                properties.map_or(ptr::null_mut(), |s| s.as_ptr()),
+                properties.as_ref().map_or(ptr::null_mut(), |s| s.as_ptr()),
             ))?;
 
             Ok(Cipher::from_ptr(ptr))
@@ -161,7 +140,7 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_128_cbc() as *mut _) }
     }
 
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn aes_128_xts() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_128_xts() as *mut _) }
     }
@@ -209,8 +188,8 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_128_ocb() as *mut _) }
     }
 
-    /// Requires OpenSSL 1.0.2 or newer.
-    #[cfg(ossl102)]
+    /// Requires OpenSSL 1.1.0 or newer.
+    #[cfg(ossl110)]
     pub fn aes_128_wrap() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_128_wrap() as *mut _) }
     }
@@ -238,6 +217,7 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_192_cfb1() as *mut _) }
     }
 
+    #[cfg(not(boringssl))]
     pub fn aes_192_cfb128() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_192_cfb128() as *mut _) }
     }
@@ -266,8 +246,8 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_192_ocb() as *mut _) }
     }
 
-    /// Requires OpenSSL 1.0.2 or newer.
-    #[cfg(ossl102)]
+    /// Requires OpenSSL 1.1.0 or newer.
+    #[cfg(ossl110)]
     pub fn aes_192_wrap() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_192_wrap() as *mut _) }
     }
@@ -295,6 +275,7 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_256_cfb1() as *mut _) }
     }
 
+    #[cfg(not(boringssl))]
     pub fn aes_256_cfb128() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_256_cfb128() as *mut _) }
     }
@@ -323,8 +304,8 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_256_ocb() as *mut _) }
     }
 
-    /// Requires OpenSSL 1.0.2 or newer.
-    #[cfg(ossl102)]
+    /// Requires OpenSSL 1.1.0 or newer.
+    #[cfg(ossl110)]
     pub fn aes_256_wrap() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_aes_256_wrap() as *mut _) }
     }
@@ -375,17 +356,17 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_des_ede3_cbc() as *mut _) }
     }
 
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn des_ede3_cfb8() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_des_ede3_cfb8() as *mut _) }
     }
 
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn des_ede3_cfb64() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_des_ede3_cfb64() as *mut _) }
     }
 
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn des_ede3_ofb() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_des_ede3_ofb() as *mut _) }
     }
@@ -495,12 +476,12 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_idea_ofb() as *mut _) }
     }
 
-    #[cfg(all(any(ossl110, libressl310), not(osslconf = "OPENSSL_NO_CHACHA")))]
+    #[cfg(all(any(ossl110, libressl), not(osslconf = "OPENSSL_NO_CHACHA")))]
     pub fn chacha20() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_chacha20() as *mut _) }
     }
 
-    #[cfg(all(any(ossl110, libressl360), not(osslconf = "OPENSSL_NO_CHACHA")))]
+    #[cfg(all(any(ossl110, libressl360, awslc), not(osslconf = "OPENSSL_NO_CHACHA")))]
     pub fn chacha20_poly1305() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_chacha20_poly1305() as *mut _) }
     }
@@ -525,27 +506,27 @@ impl Cipher {
         unsafe { CipherRef::from_ptr(ffi::EVP_seed_ofb() as *mut _) }
     }
 
-    #[cfg(all(any(ossl111, libressl291), not(osslconf = "OPENSSL_NO_SM4")))]
+    #[cfg(all(any(ossl111, libressl), not(osslconf = "OPENSSL_NO_SM4")))]
     pub fn sm4_ecb() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_sm4_ecb() as *mut _) }
     }
 
-    #[cfg(all(any(ossl111, libressl291), not(osslconf = "OPENSSL_NO_SM4")))]
+    #[cfg(all(any(ossl111, libressl), not(osslconf = "OPENSSL_NO_SM4")))]
     pub fn sm4_cbc() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_sm4_cbc() as *mut _) }
     }
 
-    #[cfg(all(any(ossl111, libressl291), not(osslconf = "OPENSSL_NO_SM4")))]
+    #[cfg(all(any(ossl111, libressl), not(osslconf = "OPENSSL_NO_SM4")))]
     pub fn sm4_ctr() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_sm4_ctr() as *mut _) }
     }
 
-    #[cfg(all(any(ossl111, libressl291), not(osslconf = "OPENSSL_NO_SM4")))]
+    #[cfg(all(any(ossl111, libressl), not(osslconf = "OPENSSL_NO_SM4")))]
     pub fn sm4_cfb128() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_sm4_cfb128() as *mut _) }
     }
 
-    #[cfg(all(any(ossl111, libressl291), not(osslconf = "OPENSSL_NO_SM4")))]
+    #[cfg(all(any(ossl111, libressl), not(osslconf = "OPENSSL_NO_SM4")))]
     pub fn sm4_ofb() -> &'static CipherRef {
         unsafe { CipherRef::from_ptr(ffi::EVP_sm4_ofb() as *mut _) }
     }
@@ -593,5 +574,17 @@ impl CipherRef {
     #[corresponds(EVP_CIPHER_block_size)]
     pub fn block_size(&self) -> usize {
         unsafe { EVP_CIPHER_block_size(self.as_ptr()) as usize }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[cfg(ossl300)]
+    use super::Cipher;
+
+    #[test]
+    #[cfg(ossl300)]
+    fn test_cipher_fetch_properties() {
+        assert!(Cipher::fetch(None, "AES-128-GCM", Some("provider=gibberish")).is_err());
     }
 }

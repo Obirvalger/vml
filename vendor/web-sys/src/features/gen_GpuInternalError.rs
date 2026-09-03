@@ -5,7 +5,12 @@ use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = GpuError , extends = :: js_sys :: Object , js_name = GPUInternalError , typescript_type = "GPUInternalError")]
+    #[wasm_bindgen(
+        extends = "GpuError",
+        extends = "::js_sys::Object",
+        js_name = "GPUInternalError",
+        typescript_type = "GPUInternalError"
+    )]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `GpuInternalError` class."]
     #[doc = ""]
@@ -14,7 +19,7 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuInternalError`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type GpuInternalError;
     #[cfg(web_sys_unstable_apis)]
     #[wasm_bindgen(catch, constructor, js_class = "GPUInternalError")]
@@ -25,6 +30,6 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuInternalError`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn new(message: &str) -> Result<GpuInternalError, JsValue>;
 }

@@ -1,3 +1,4 @@
+use crate::runtime::metrics::ScheduleLatencyContext;
 use crate::runtime::{Config, MetricsBatch, WorkerMetrics};
 
 use std::time::{Duration, Instant};
@@ -74,6 +75,10 @@ impl Stats {
         self.batch.about_to_park();
     }
 
+    pub(crate) fn unparked(&mut self) {
+        self.batch.unparked();
+    }
+
     pub(crate) fn inc_local_schedule_count(&mut self) {
         self.batch.inc_local_schedule_count();
     }
@@ -109,8 +114,8 @@ impl Stats {
         }
     }
 
-    pub(crate) fn start_poll(&mut self) {
-        self.batch.start_poll();
+    pub(crate) fn start_poll(&mut self, task_scheduled_at: Option<ScheduleLatencyContext>) {
+        self.batch.start_poll(task_scheduled_at);
 
         self.tasks_polled_in_batch += 1;
     }

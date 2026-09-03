@@ -4,7 +4,7 @@ use pest::iterators::Pairs;
 use pest_meta::parser::Rule;
 use std::collections::HashMap;
 
-/// Abstraction for the grammer and rule doc.
+/// Abstraction for the grammar and rule doc.
 #[derive(Debug)]
 pub struct DocComment {
     /// The grammar documentation is defined at the beginning of a file with //!.
@@ -61,15 +61,13 @@ pub fn consume(pairs: Pairs<'_, Rule>) -> DocComment {
                                 line_doc.push('\n');
                             }
                         }
-                        Rule::identifier => {
-                            if !line_doc.is_empty() {
-                                let rule_name = inner.as_str().to_owned();
+                        Rule::identifier if !line_doc.is_empty() => {
+                            let rule_name = inner.as_str().to_owned();
 
-                                // Remove last \n
-                                line_doc.pop();
-                                line_docs.insert(rule_name, line_doc.clone());
-                                line_doc.clear();
-                            }
+                            // Remove last \n
+                            line_doc.pop();
+                            line_docs.insert(rule_name, line_doc.clone());
+                            line_doc.clear();
                         }
                         _ => (),
                     }

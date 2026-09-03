@@ -20,17 +20,10 @@ use pest::{Parser, Position, Span};
 use crate::ast::{Expr, Rule as AstRule, RuleType};
 use crate::validator;
 
-/// Note: `include!` adds here a code generated from build.rs file.
-/// In case feature `not-bootstrap-in-src` is:
-/// * OFF  -> include generated `grammar.rs` file from meta/src
-/// * ON   -> include generated `__pest_grammar.rs` file from target/build/...
+/// Generated from `grammar.pest` by `cargo bootstrap` (pest_bootstrap).
 #[allow(missing_docs, unused_qualifications)]
 mod grammar {
-    #[cfg(not(feature = "not-bootstrap-in-src"))]
     include!("grammar.rs");
-
-    #[cfg(feature = "not-bootstrap-in-src")]
-    include!(concat!(env!("OUT_DIR"), "/__pest_grammar.rs"));
 }
 
 /// Import included grammar (`PestParser` class globally for current module).
@@ -166,6 +159,9 @@ pub enum ParserExpr<'i> {
     RepMinMax(Box<ParserNode<'i>>, u32, u32),
     /// Matches an expression and pushes it to the stack, e.g. `push(e)`
     Push(Box<ParserNode<'i>>),
+    /// Pushes a literal string to the stack, e.g. `push_literal("a")`
+    #[cfg(feature = "grammar-extras")]
+    PushLiteral(String),
     /// Matches an expression and assigns a label to it, e.g. #label = exp
     #[cfg(feature = "grammar-extras")]
     NodeTag(Box<ParserNode<'i>>, String),
@@ -205,6 +201,8 @@ fn convert_node(node: ParserNode<'_>) -> Expr {
         }
         ParserExpr::Push(node) => Expr::Push(Box::new(convert_node(*node))),
         #[cfg(feature = "grammar-extras")]
+        ParserExpr::PushLiteral(string) => Expr::PushLiteral(string),
+        #[cfg(feature = "grammar-extras")]
         ParserExpr::NodeTag(node, tag) => Expr::NodeTag(Box::new(convert_node(*node)), tag),
     }
 }
@@ -227,6 +225,7 @@ pub fn rename_meta_rule(rule: &Rule) -> String {
     match *rule {
         Rule::grammar_rule => "rule".to_owned(),
         Rule::_push => "PUSH".to_owned(),
+        Rule::_push_literal => "PUSH_LITERAL".to_owned(),
         Rule::assignment_operator => "`=`".to_owned(),
         Rule::silent_modifier => "`_`".to_owned(),
         Rule::atomic_modifier => "`@`".to_owned(),
@@ -392,6 +391,27 @@ fn consume_expr<'i>(
                             expr: ParserExpr::Push(Box::new(node)),
                             span: start.span(&end),
                         }
+                    }
+                    #[cfg(feature = "grammar-extras")]
+                    Rule::_push_literal => {
+                        let mut pairs = pair.into_inner();
+                        pairs.next().unwrap(); // opening_paren
+                        let contents_pair = pairs.next().unwrap();
+                        let string =
+                            unescape(contents_pair.as_str()).expect("incorrect string literal");
+                        ParserNode {
+                            expr: ParserExpr::PushLiteral(string[1..string.len() - 1].to_owned()),
+                            span: contents_pair.clone().as_span(),
+                        }
+                    }
+                    #[cfg(not(feature = "grammar-extras"))]
+                    Rule::_push_literal => {
+                        return Err(vec![Error::new_from_span(
+                            ErrorVariant::CustomError {
+                                message: "PUSH_LITERAL requires feature grammar-extras".to_owned(),
+                            },
+                            pair.as_span(),
+                        )]);
                     }
                     Rule::peek_slice => {
                         let mut pairs = pair.clone().into_inner();
@@ -1109,6 +1129,41 @@ mod tests {
     }
 
     #[test]
+    fn character_unescaped_quote_is_rejected() {
+        // A single quote can only appear inside a character literal if it's
+        // escaped (as in '\''), just like a double quote must be escaped
+        // inside a string literal. Previously `inner_chr` matched `ANY`
+        // unconditionally, so `'''` was silently accepted as a character
+        // literal for `'`, even though every other tool (syntax highlighters,
+        // the playground, etc.) treats it as invalid.
+        fails_with! {
+            parser: PestParser,
+            input: "'''",
+            rule: Rule::character,
+            positives: vec![Rule::inner_chr],
+            negatives: vec![],
+            pos: 1
+        };
+    }
+
+    #[test]
+    fn character_escaped_quote_is_accepted() {
+        // The correct, unambiguous way to write a literal `'` still works.
+        parses_to! {
+            parser: PestParser,
+            input: "'\\''",
+            rule: Rule::character,
+            tokens: [
+                character(0, 4, [
+                    single_quote(0, 1),
+                    inner_chr(1, 3),
+                    single_quote(3, 4)
+                ])
+            ]
+        };
+    }
+
+    #[test]
     fn number() {
         parses_to! {
             parser: PestParser,
@@ -1316,6 +1371,7 @@ mod tests {
                 Rule::positive_predicate_operator,
                 Rule::negative_predicate_operator,
                 Rule::_push,
+                Rule::_push_literal,
                 Rule::peek_slice,
                 Rule::identifier,
                 Rule::insensitive_string,
@@ -1438,6 +1494,7 @@ mod tests {
                 Rule::positive_predicate_operator,
                 Rule::negative_predicate_operator,
                 Rule::_push,
+                Rule::_push_literal,
                 Rule::peek_slice,
                 Rule::identifier,
                 Rule::insensitive_string,
@@ -1509,6 +1566,44 @@ mod tests {
                 )
             },]
         );
+    }
+
+    #[cfg(feature = "grammar-extras")]
+    #[test]
+    fn ast_push_literal() {
+        let input = r#"rule = _{ PUSH_LITERAL("a") }"#;
+
+        let pairs = PestParser::parse(Rule::grammar_rules, input).unwrap();
+        let ast = consume_rules_with_spans(pairs).unwrap();
+        let ast: Vec<_> = ast.into_iter().map(convert_rule).collect();
+
+        assert_eq!(
+            ast,
+            vec![AstRule {
+                name: "rule".to_owned(),
+                ty: RuleType::Silent,
+                expr: Expr::PushLiteral("a".to_string()),
+            }],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "grammar error
+
+ --> 1:24
+  |
+1 | rule = _{ PUSH_LITERAL(a) }
+  |                        ^---
+  |
+  = expected quote")]
+    fn ast_push_literal_bad_input() {
+        let input = r#"rule = _{ PUSH_LITERAL(a) }"#;
+
+        let pairs_result = PestParser::parse(Rule::grammar_rules, input);
+        match pairs_result {
+            Ok(ok) => panic!("expected Err, but found {ok}"),
+            Err(e) => panic!("grammar error\n\n{e}"),
+        }
     }
 
     #[test]

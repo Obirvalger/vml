@@ -97,15 +97,13 @@ impl AsRawFd for CFFileDescriptor {
 
 #[cfg(test)]
 mod test {
-    extern crate libc;
-
     use super::*;
     use crate::runloop::CFRunLoop;
+    use core::ffi::c_void;
     use core_foundation_sys::base::CFOptionFlags;
     use core_foundation_sys::runloop::kCFRunLoopDefaultMode;
     use libc::O_RDWR;
     use std::ffi::CString;
-    use std::os::raw::c_void;
 
     #[test]
     fn test_unconsumed() {

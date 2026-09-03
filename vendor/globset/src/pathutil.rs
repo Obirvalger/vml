@@ -1,24 +1,24 @@
 use std::borrow::Cow;
 
-use bstr::{ByteSlice, ByteVec};
+use bstr::ByteSlice;
 
 /// The final component of the path, if it is a normal file.
 ///
-/// If the path terminates in `.`, `..`, or consists solely of a root of
-/// prefix, file_name will return None.
+/// If the path terminates in `..`, or consists solely of a root of prefix,
+/// file_name will return `None`.
 pub(crate) fn file_name<'a>(path: &Cow<'a, [u8]>) -> Option<Cow<'a, [u8]>> {
-    if path.last_byte().map_or(true, |b| b == b'.') {
+    if path.is_empty() {
         return None;
     }
     let last_slash = path.rfind_byte(b'/').map(|i| i + 1).unwrap_or(0);
-    Some(match *path {
+    let got = match *path {
         Cow::Borrowed(path) => Cow::Borrowed(&path[last_slash..]),
-        Cow::Owned(ref path) => {
-            let mut path = path.clone();
-            path.drain_bytes(..last_slash);
-            Cow::Owned(path)
-        }
-    })
+        Cow::Owned(ref path) => Cow::Owned(path[last_slash..].to_vec()),
+    };
+    if got == &b".."[..] {
+        return None;
+    }
+    Some(got)
 }
 
 /// Return a file extension given a path's file name.
@@ -49,11 +49,7 @@ pub(crate) fn file_name_ext<'a>(
     };
     Some(match *name {
         Cow::Borrowed(name) => Cow::Borrowed(&name[last_dot_at..]),
-        Cow::Owned(ref name) => {
-            let mut name = name.clone();
-            name.drain_bytes(..last_dot_at);
-            Cow::Owned(name)
-        }
+        Cow::Owned(ref name) => Cow::Owned(name[last_dot_at..].to_vec()),
     })
 }
 
@@ -84,9 +80,25 @@ pub(crate) fn normalize_path(mut path: Cow<[u8]>) -> Cow<[u8]> {
 mod tests {
     use std::borrow::Cow;
 
-    use bstr::{ByteVec, B};
+    use bstr::{B, ByteVec};
 
-    use super::{file_name_ext, normalize_path};
+    use super::{file_name, file_name_ext, normalize_path};
+
+    macro_rules! name {
+        ($name:ident, $path:expr, $expected:expr) => {
+            #[test]
+            fn $name() {
+                let bs = Vec::from($path);
+                let got = file_name(&Cow::Owned(bs));
+                assert_eq!($expected.map(|s| Cow::Borrowed(B(s))), got);
+            }
+        };
+    }
+
+    name!(name1, "foo/bar", Some("bar"));
+    name!(name2, "foo", Some("foo"));
+    name!(name3, "foo/..", None::<&str>);
+    name!(name4, "", None::<&str>);
 
     macro_rules! ext {
         ($name:ident, $file_name:expr, $ext:expr) => {

@@ -6,6 +6,7 @@
 //! the failure:
 //! ```rust
 //! # use winnow::prelude::*;
+//! # use winnow::Result;
 //! # use winnow::token::take_while;
 //! # use winnow::combinator::alt;
 //! # use winnow::token::take;
@@ -35,7 +36,7 @@
 //! #
 //! // ...
 //!
-//! # fn parse_digits<'s>(input: &mut &'s str) -> PResult<(&'s str, &'s str)> {
+//! # fn parse_digits<'s>(input: &mut &'s str) -> Result<(&'s str, &'s str)> {
 //! #     alt((
 //! #         ("0b", parse_bin_digits),
 //! #         ("0o", parse_oct_digits),
@@ -44,25 +45,25 @@
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='1'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='7'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #         ('A'..='F'),
@@ -79,14 +80,15 @@
 //! }
 //! ```
 //!
-//! Back in [`chapter_1`], we glossed over the `Err` variant of [`PResult`].  `PResult<O>` is
-//! actually short for `PResult<O, E=ContextError>` where [`ContextError`] is a relatively cheap
+//! Back in [`chapter_1`], we glossed over the `Err` variant of [`Result`].  `Result<O>` is
+//! actually short for `Result<O, E=ContextError>` where [`ContextError`] is a relatively cheap
 //! way of building up reasonable errors for humans.
 //!
 //! You can use [`Parser::context`] to annotate the error with custom types
 //! while unwinding to further clarify the error:
 //! ```rust
 //! # use winnow::prelude::*;
+//! # use winnow::Result;
 //! # use winnow::token::take_while;
 //! # use winnow::combinator::alt;
 //! # use winnow::token::take;
@@ -117,7 +119,7 @@
 //! #     }
 //! # }
 //! #
-//! fn parse_digits<'s>(input: &mut &'s str) -> PResult<(&'s str, &'s str)> {
+//! fn parse_digits<'s>(input: &mut &'s str) -> Result<(&'s str, &'s str)> {
 //!     alt((
 //!         ("0b", parse_bin_digits)
 //!           .context(StrContext::Label("digit"))
@@ -137,25 +139,25 @@
 //! // ...
 //!
 //! #
-//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='1'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='7'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #         ('A'..='F'),
@@ -178,6 +180,7 @@
 //! hexadecimal value:
 //! ```rust
 //! # use winnow::prelude::*;
+//! # use winnow::Result;
 //! # use winnow::token::take_while;
 //! # use winnow::combinator::alt;
 //! # use winnow::token::take;
@@ -208,7 +211,7 @@
 //! #     }
 //! # }
 //! #
-//! # fn parse_digits<'s>(input: &mut &'s str) -> PResult<(&'s str, &'s str)> {
+//! # fn parse_digits<'s>(input: &mut &'s str) -> Result<(&'s str, &'s str)> {
 //! #     alt((
 //! #         ("0b", parse_bin_digits)
 //! #           .context(StrContext::Label("digit"))
@@ -225,25 +228,25 @@
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='1'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='7'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #         ('A'..='F'),
@@ -263,6 +266,7 @@
 //! We can improve this with [`fail`]:
 //! ```rust
 //! # use winnow::prelude::*;
+//! # use winnow::Result;
 //! # use winnow::token::take_while;
 //! # use winnow::combinator::alt;
 //! # use winnow::token::take;
@@ -293,7 +297,7 @@
 //! #     }
 //! # }
 //! #
-//! fn parse_digits<'s>(input: &mut &'s str) -> PResult<(&'s str, &'s str)> {
+//! fn parse_digits<'s>(input: &mut &'s str) -> Result<(&'s str, &'s str)> {
 //!     alt((
 //!         ("0b", parse_bin_digits)
 //!           .context(StrContext::Label("digit"))
@@ -319,25 +323,25 @@
 //! // ...
 //!
 //! #
-//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='1'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='7'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #         ('A'..='F'),
@@ -361,6 +365,7 @@
 //! don't match it:
 //! ```rust
 //! # use winnow::prelude::*;
+//! # use winnow::Result;
 //! # use winnow::token::take_while;
 //! # use winnow::combinator::alt;
 //! # use winnow::token::take;
@@ -391,7 +396,7 @@
 //! #     }
 //! # }
 //! #
-//! # fn parse_digits<'s>(input: &mut &'s str) -> PResult<(&'s str, &'s str)> {
+//! # fn parse_digits<'s>(input: &mut &'s str) -> Result<(&'s str, &'s str)> {
 //! #     alt((
 //! #         ("0b", parse_bin_digits)
 //! #           .context(StrContext::Label("digit"))
@@ -414,25 +419,25 @@
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='1'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='7'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> Result<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #         ('A'..='F'),
@@ -450,21 +455,20 @@
 //! }
 //! ```
 //!
-//! Let's break down `PResult<O, E>` one step further:
-//! ```rust
-//! # use winnow::error::ErrorKind;
-//! # use winnow::error::ErrMode;
-//! pub type PResult<O, E = ErrorKind> = Result<O, ErrMode<E>>;
-//! ```
-//! [`PResult`] is just a fancy wrapper around `Result` that wraps our error in an [`ErrMode`]
-//! type.
-//!
+//! Winnow provides an error wrapper, [`ErrMode<ContextError>`], so different failure modes can affect parsing.
 //! [`ErrMode`] is an enum with [`Backtrack`] and [`Cut`] variants (ignore [`Incomplete`] as its only
 //! relevant for [streaming][_topic::stream]). By default, errors are [`Backtrack`], meaning that
 //! other parsing branches will be attempted on failure, like the next case of an [`alt`].  [`Cut`]
 //! shortcircuits all other branches, immediately reporting the error.
 //!
-//! So we can get the correct `context` by modifying the above example with [`cut_err`]:
+//! To make [`ErrMode`] more convenient, Winnow provides [`ModalResult`]:
+//! ```rust
+//! # use winnow::error::ContextError;
+//! # use winnow::error::ErrMode;
+//! pub type ModalResult<O, E = ContextError> = Result<O, ErrMode<E>>;
+//! ```
+//!
+//! So we can get the correct `context` by changing to [`ModalResult`] and adding [`cut_err`]:
 //! ```rust
 //! # use winnow::prelude::*;
 //! # use winnow::token::take_while;
@@ -498,7 +502,7 @@
 //! #     }
 //! # }
 //! #
-//! fn parse_digits<'s>(input: &mut &'s str) -> PResult<(&'s str, &'s str)> {
+//! fn parse_digits<'s>(input: &mut &'s str) -> ModalResult<(&'s str, &'s str)> {
 //!     alt((
 //!         ("0b", cut_err(parse_bin_digits))
 //!           .context(StrContext::Label("digit"))
@@ -524,25 +528,25 @@
 //! // ...
 //!
 //! #
-//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='1'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='7'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #         ('A'..='F'),
@@ -600,7 +604,7 @@
 //! #              })
 //! #             .map(Hex)
 //!             .parse(input)
-//!             .map_err(|e| HexError::from_parse(e, input))
+//!             .map_err(|e| HexError::from_parse(e))
 //!     }
 //! }
 //!
@@ -616,18 +620,17 @@
 //! }
 //!
 //! impl HexError {
-//!     fn from_parse(error: ParseError<&str, ContextError>, input: &str) -> Self {
+//!     // Avoiding `From` so `winnow` types don't become part of our public API
+//!     fn from_parse(error: ParseError<&str, ContextError>) -> Self {
 //!         // The default renderer for `ContextError` is still used but that can be
 //!         // customized as well to better fit your needs.
 //!         let message = error.inner().to_string();
-//!         let input = input.to_owned();
-//!         let start = error.offset();
+//!         let input = (*error.input()).to_owned();
 //!         // Assume the error span is only for the first `char`.
-//!         // Semantic errors are free to choose the entire span returned by `Parser::with_span`.
-//!         let end = (start + 1..).find(|e| input.is_char_boundary(*e)).unwrap_or(start);
+//!         let span = error.char_span();
 //!         Self {
 //!             message,
-//!             span: start..end,
+//!             span,
 //!             input,
 //!         }
 //!     }
@@ -648,7 +651,7 @@
 //!
 //! impl std::error::Error for HexError {}
 //!
-//! # fn parse_digits<'s>(input: &mut &'s str) -> PResult<(&'s str, &'s str)> {
+//! # fn parse_digits<'s>(input: &mut &'s str) -> ModalResult<(&'s str, &'s str)> {
 //! #     alt((
 //! #         ("0b", cut_err(parse_bin_digits))
 //! #           .context(StrContext::Label("digit"))
@@ -671,25 +674,25 @@
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_bin_digits<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='1'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_oct_digits<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='7'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_dec_digits<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #     )).parse_next(input)
 //! # }
 //! #
-//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> PResult<&'s str> {
+//! # fn parse_hex_digits<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
 //! #     take_while(1.., (
 //! #         ('0'..='9'),
 //! #         ('A'..='F'),
@@ -708,6 +711,11 @@
 //!     assert_eq!(input.parse::<Hex>().unwrap_err().to_string(), error);
 //! }
 //! ```
+//!
+//! To add spans to your parsed data for inclusion in semantic errors, see [`Parser::with_span`].
+//!
+//! For richer syntactic errors with spans,
+//! consider separating lexing and parsing and annotating your tokens with [`Parser::with_span`].
 
 #![allow(unused_imports)]
 use super::chapter_1;
@@ -718,9 +726,9 @@ use crate::combinator::fail;
 use crate::error::ContextError;
 use crate::error::ErrMode;
 use crate::error::ErrMode::*;
-use crate::error::ErrorKind;
-use crate::PResult;
+use crate::ModalResult;
 use crate::Parser;
+use crate::Result;
 use crate::_topic;
 
 pub use super::chapter_6 as previous;

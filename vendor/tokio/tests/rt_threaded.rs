@@ -1,4 +1,3 @@
-#![allow(unknown_lints, unexpected_cfgs)]
 #![warn(rust_2018_idioms)]
 #![cfg(all(feature = "full", not(target_os = "wasi")))]
 
@@ -6,10 +5,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime;
 use tokio::sync::oneshot;
-use tokio_test::{assert_err, assert_ok};
+use tokio_test::{assert_err, assert_ok, assert_pending};
 
-use futures::future::poll_fn;
-use std::future::Future;
+use std::future::{poll_fn, Future};
 use std::pin::Pin;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -36,6 +34,7 @@ fn single_thread() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)] // Too slow on miri.
 fn many_oneshot_futures() {
     // used for notifying the main thread
     const NUM: usize = 1_000;
@@ -99,6 +98,7 @@ fn spawn_two() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)] // Too slow on miri
 fn many_multishot_futures() {
     const CHAIN: usize = 200;
     const CYCLES: usize = 5;
@@ -232,6 +232,7 @@ async fn client_server(tx: mpsc::Sender<()>) {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)] // Too slow on miri
 fn drop_threadpool_drops_futures() {
     for _ in 0..1_000 {
         let num_inc = Arc::new(AtomicUsize::new(0));
@@ -322,6 +323,7 @@ fn start_stop_callbacks_called() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)] // Too slow on miri
 fn blocking() {
     // used for notifying the main thread
     const NUM: usize = 1_000;
@@ -645,6 +647,99 @@ fn test_nested_block_in_place_with_block_on_between() {
     }
 }
 
+#[test]
+fn yield_now_in_block_in_place() {
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .build()
+        .unwrap();
+
+    rt.block_on(async {
+        tokio::spawn(async {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(tokio::task::yield_now());
+            })
+        })
+        .await
+        .unwrap()
+    })
+}
+
+#[test]
+fn mutex_in_block_in_place() {
+    const BUDGET: usize = 128;
+
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .build()
+        .unwrap();
+
+    rt.block_on(async {
+        let lock = tokio::sync::Mutex::new(0);
+
+        tokio::spawn(async move {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async move {
+                    for i in 0..(BUDGET + 1) {
+                        let mut guard = lock.lock().await;
+                        *guard = i;
+                    }
+                });
+            })
+        })
+        .await
+        .unwrap();
+    })
+}
+
+#[test]
+/// Deferred tasks should be woken before starting the [`tokio::task::block_in_place`]
+// https://github.com/tokio-rs/tokio/issues/7877
+fn wake_deferred_tasks_before_block_in_place() {
+    let (tx1, rx1) = oneshot::channel::<()>();
+    let (tx2, rx2) = oneshot::channel::<()>();
+
+    let deferred_task = tokio_test::task::spawn(tokio::task::yield_now());
+    let deferred_task = Arc::new(Mutex::new(deferred_task));
+
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .build()
+        .unwrap();
+
+    let jh = {
+        let deferred_task = Arc::clone(&deferred_task);
+        rt.spawn(async move {
+            {
+                let mut lock = deferred_task.lock().unwrap();
+                assert_pending!(lock.poll());
+            }
+            tokio::task::block_in_place(|| {
+                // signal that the `block_in_place` has started
+                tx2.send(()).unwrap();
+                // wait for the shutdown signal
+                rx1.blocking_recv().unwrap();
+            });
+        })
+    };
+
+    // wait for the `block_in_place` to start
+    rx2.blocking_recv().unwrap();
+
+    // check that the deferred task was woken before the `block_in_place` ends
+    let is_woken = {
+        let lock = deferred_task.lock().unwrap();
+        lock.is_woken()
+    };
+
+    // signal the `block_in_place` to shutdown
+    tx1.send(()).unwrap();
+
+    rt.block_on(jh).unwrap();
+
+    assert!(is_woken);
+}
+
 // Testing the tuning logic is tricky as it is inherently timing based, and more
 // of a heuristic than an exact behavior. This test checks that the interval
 // changes over time based on load factors. There are no assertions, completion
@@ -652,6 +747,7 @@ fn test_nested_block_in_place_with_block_on_between() {
 // could add limits, but that would be likely to fail on CI.
 #[test]
 #[cfg(not(tokio_no_tuning_tests))]
+#[cfg_attr(miri, ignore)] // Too slow on miri
 fn test_tuning() {
     use std::sync::atomic::AtomicBool;
     use std::time::Duration;
@@ -763,6 +859,27 @@ fn test_tuning() {
     }
 
     flag.store(false, Relaxed);
+}
+
+#[test]
+fn default_runtime_name_should_be_none() {
+    let rt1 = runtime::Builder::new_multi_thread().build().unwrap();
+
+    assert!(rt1.handle().name().is_none());
+}
+
+#[test]
+fn different_runtime_names() {
+    let rt1 = runtime::Builder::new_multi_thread()
+        .name("test-runtime-1")
+        .build()
+        .unwrap();
+    let rt2 = runtime::Builder::new_multi_thread()
+        .name("test-runtime-2")
+        .build()
+        .unwrap();
+
+    assert_ne!(rt1.handle().name().unwrap(), rt2.handle().name().unwrap());
 }
 
 fn rt() -> runtime::Runtime {

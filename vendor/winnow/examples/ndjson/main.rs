@@ -2,8 +2,8 @@ mod parser;
 
 use std::io::Read;
 
+use winnow::error::ContextError;
 use winnow::error::ErrMode;
-use winnow::error::InputError;
 use winnow::error::Needed;
 use winnow::prelude::*;
 use winnow::stream::Offset;
@@ -23,7 +23,7 @@ fn main() -> Result<(), lexopt::Error> {
     let mut buffer = circular::Buffer::with_capacity(buffer_size);
     loop {
         let read = file.read(buffer.space()).map_err(to_lexopt)?;
-        eprintln!("read {}", read);
+        eprintln!("read {read}");
         if read == 0 {
             // Should be EOF since we always make sure there is `available_space`
             assert_ne!(buffer.available_space(), 0);
@@ -38,13 +38,15 @@ fn main() -> Result<(), lexopt::Error> {
         buffer.fill(read);
 
         loop {
-            let input = parser::Stream::new(std::str::from_utf8(buffer.data()).map_err(to_lexopt)?);
-            match parser::ndjson::<InputError<parser::Stream<'_>>>.parse_peek(input) {
-                Ok((remainder, value)) => {
-                    println!("{:?}", value);
+            let mut input =
+                parser::Stream::new(std::str::from_utf8(buffer.data()).map_err(to_lexopt)?);
+            let start = input.checkpoint();
+            match parser::ndjson::<ContextError>.parse_next(&mut input) {
+                Ok(value) => {
+                    println!("{value:?}");
                     println!();
                     // Tell the buffer how much we read
-                    let consumed = remainder.offset_from(&input);
+                    let consumed = input.offset_from(&start);
                     buffer.consume(consumed);
                 }
                 Err(ErrMode::Backtrack(e)) | Err(ErrMode::Cut(e)) => {
@@ -60,7 +62,7 @@ fn main() -> Result<(), lexopt::Error> {
                     // one byte at a time
                     let head_room = size.get().max(min_buffer_growth);
                     let new_capacity = buffer.available_data() + head_room;
-                    eprintln!("growing buffer to {}", new_capacity);
+                    eprintln!("growing buffer to {new_capacity}");
                     buffer.grow(new_capacity);
                     if buffer.available_space() < head_room {
                         eprintln!("buffer shift");
@@ -70,7 +72,7 @@ fn main() -> Result<(), lexopt::Error> {
                 }
                 Err(ErrMode::Incomplete(Needed::Unknown)) => {
                     let new_capacity = buffer_growth_factor * buffer.capacity();
-                    eprintln!("growing buffer to {}", new_capacity);
+                    eprintln!("growing buffer to {new_capacity}");
                     buffer.grow(new_capacity);
                     break;
                 }

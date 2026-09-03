@@ -14,55 +14,83 @@
 //! # Implementation
 //!
 //! In addition to supporting three formats, this crate supports several different
-//! backends, controlled through this crate's features:
+//! backends, controlled through this crate's *features flags*:
 //!
-//! * `default`, or `rust_backend` - this implementation uses the `miniz_oxide`
-//!   crate which is a port of `miniz.c` (below) to Rust. This feature does not
-//!   require a C compiler and only requires Rust code.
+//! * `default`, or `rust_backend` - this implementation currently uses the `miniz_oxide`
+//!   crate which is a port of `miniz.c` to Rust. This feature does not
+//!   require a C compiler, and only uses safe Rust code.
 //!
-//! * `zlib` - this feature will enable linking against the `libz` library, typically found on most
-//!   Linux systems by default. If the library isn't found to already be on the system it will be
-//!   compiled from source (this is a C library).
+//!   Note that the `rust_backend` feature may at some point be switched to use `zlib-rs`,
+//!   and that `miniz_oxide` should be used explicitly if this is not desired.
 //!
-//! There's various tradeoffs associated with each implementation, but in general you probably
-//! won't have to tweak the defaults. The default choice is selected to avoid the need for a C
-//! compiler at build time. `zlib-ng-compat` is useful if you're using zlib for compatibility but
-//! want performance via zlib-ng's zlib-compat mode. `zlib` is useful if something else in your
-//! dependencies links the original zlib so you cannot use zlib-ng-compat. The compression ratios
-//! and performance of each of these feature should be roughly comparable, but you'll likely want
-//! to run your own tests if you're curious about the performance.
+//! * `zlib-rs` - this implementation utilizes the `zlib-rs` crate, a Rust rewrite of zlib.
+//!   This backend is the fastest, at the cost of some `unsafe` Rust code.
+//!
+//! Several backends implemented in C are also available.
+//! These are useful in case you are already using a specific C implementation
+//! and need the result of compression to be bit-identical.
+//! See the crate's README for details on the available C backends.
+//!
+//! The `zlib-rs` backend typically outperforms all the C implementations.
+//!
+//! # Feature Flags
+#![cfg_attr(
+    not(feature = "document-features"),
+    doc = "Activate the `document-features` cargo feature to see feature docs here"
+)]
+#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+//!
+//! ## Ambiguous feature selection
+//!
+//! As Cargo features are additive, while backends are not, there is an order in which backends
+//! become active if multiple are selected.
+//!
+//! * zlib-ng
+//! * zlib-rs
+//! * miniz_oxide
 //!
 //! # Organization
 //!
-//! This crate consists mainly of three modules, [`read`], [`write`], and
-//! [`bufread`]. Each module contains a number of types used to encode and
-//! decode various streams of data.
+//! This crate consists of three main modules: `bufread`, `read`, and `write`. Each module
+//! implements DEFLATE, zlib, and gzip for [`std::io::BufRead`] input types, [`std::io::Read`] input
+//! types, and [`std::io::Write`] output types respectively.
 //!
-//! All types in the [`write`] module work on instances of [`Write`][write],
-//! whereas all types in the [`read`] module work on instances of
-//! [`Read`][read] and [`bufread`] works with [`BufRead`][bufread]. If you
-//! are decoding directly from a `&[u8]`, use the [`bufread`] types.
+//! Use the [`mod@bufread`] implementations if you can provide a `BufRead` type for the input.
+//! The `&[u8]` slice type implements the `BufRead` trait.
+//!
+//! The [`mod@read`] implementations conveniently wrap a `Read` type in a `BufRead` implementation.
+//! However, the `read` implementations may
+//! [read past the end of the input data](https://github.com/rust-lang/flate2-rs/issues/338),
+//! making the `Read` type useless for subsequent reads of the input. If you need to re-use the
+//! `Read` type, wrap it in a [`std::io::BufReader`], use the `bufread` implementations,
+//! and perform subsequent reads on the `BufReader`.
+//!
+//! The [`mod@write`] implementations are most useful when there is no way to create a `BufRead`
+//! type, notably when reading async iterators (streams).
 //!
 //! ```
-//! use flate2::write::GzEncoder;
-//! use flate2::Compression;
-//! use std::io;
-//! use std::io::prelude::*;
+//! use futures::{Stream, StreamExt};
+//! use std::io::{Result, Write as _};
 //!
-//! # fn main() { let _ = run(); }
-//! # fn run() -> io::Result<()> {
-//! let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-//! encoder.write_all(b"Example")?;
-//! # Ok(())
-//! # }
+//! async fn decompress_gzip_stream<S, I>(stream: S) -> Result<Vec<u8>>
+//! where
+//!     S: Stream<Item = I>,
+//!     I: AsRef<[u8]>
+//! {
+//!     let mut stream = std::pin::pin!(stream);
+//!     let mut w = Vec::<u8>::new();
+//!     let mut decoder = flate2::write::GzDecoder::new(w);
+//!     while let Some(input) = stream.next().await {
+//!         decoder.write_all(input.as_ref())?;
+//!     }
+//!     decoder.finish()
+//! }
 //! ```
 //!
 //!
-//! Other various types are provided at the top-level of the crate for
-//! management and dealing with encoders/decoders. Also note that types which
-//! operate over a specific trait often implement the mirroring trait as well.
-//! For example a `flate2::read::DeflateDecoder<T>` *also* implements the
-//! `Write` trait if `T: Write`. That is, the "dual trait" is forwarded directly
+//! Note that types which operate over a specific trait often implement the mirroring trait as well.
+//! For example a `bufread::DeflateDecoder<T>` *also* implements the
+//! [`Write`] trait if `T: Write`. That is, the "dual trait" is forwarded directly
 //! to the underlying object if available.
 //!
 //! # About multi-member Gzip files
@@ -77,27 +105,41 @@
 //!
 //! The [`MultiGzDecoder`] on the other hand will decode all members of a `gzip` file
 //! into one consecutive stream of bytes, which hides the underlying *members* entirely.
-//! If a file contains contains non-gzip data after the gzip data, MultiGzDecoder will
+//! If a file contains non-gzip data after the gzip data, MultiGzDecoder will
 //! emit an error after decoding the gzip data. This behavior matches the `gzip`,
 //! `gunzip`, and `zcat` command line tools.
 //!
-//! [`read`]: read/index.html
-//! [`bufread`]: bufread/index.html
-//! [`write`]: write/index.html
-//! [read]: https://doc.rust-lang.org/std/io/trait.Read.html
-//! [write]: https://doc.rust-lang.org/std/io/trait.Write.html
-//! [bufread]: https://doc.rust-lang.org/std/io/trait.BufRead.html
-//! [`GzDecoder`]: read/struct.GzDecoder.html
-//! [`MultiGzDecoder`]: read/struct.MultiGzDecoder.html
+//! [`Bufread`]: std::io::BufRead
+//! [`BufReader`]: std::io::BufReader
+//! [`Read`]: std::io::Read
+//! [`Write`]: std::io::Write
+//! [`GzDecoder`]: bufread::GzDecoder
+//! [`MultiGzDecoder`]: bufread::MultiGzDecoder
 #![doc(html_root_url = "https://docs.rs/flate2/0.2")]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![allow(trivial_numeric_casts)]
 #![cfg_attr(test, deny(warnings))]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![no_std]
+#![cfg_attr(flate2_unstable_nightly_alloc_io, feature(alloc_io))]
 
 #[cfg(not(feature = "any_impl",))]
 compile_error!("You need to choose a zlib backend");
+
+#[cfg(not(flate2_unstable_nightly_alloc_io))]
+extern crate std;
+
+#[macro_use]
+extern crate alloc;
+
+#[cfg(flate2_unstable_nightly_alloc_io)]
+use {alloc::io, core::error};
+
+#[cfg(not(flate2_unstable_nightly_alloc_io))]
+use std::{error, io};
+
+use alloc::vec::Vec;
 
 pub use crate::crc::{Crc, CrcReader, CrcWriter};
 pub use crate::gz::GzBuilder;
@@ -213,7 +255,7 @@ impl Compression {
     }
 
     /// Returns an integer representing the compression level, typically on a
-    /// scale of 0-9
+    /// scale of 0-9. See [`new`](Self::new) for details about compression levels.
     pub fn level(&self) -> u32 {
         self.0
     }
@@ -227,8 +269,12 @@ impl Default for Compression {
 
 #[cfg(test)]
 fn random_bytes() -> impl Iterator<Item = u8> {
+    use core::iter;
     use rand::Rng;
-    use std::iter;
 
-    iter::repeat(()).map(|_| rand::thread_rng().gen())
+    iter::repeat(()).map(|_| rand::rng().random())
 }
+
+#[allow(rustdoc::bare_urls)]
+#[doc = include_str!("../README.md")]
+mod readme {}

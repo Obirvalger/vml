@@ -10,15 +10,21 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
+rust-version = "1.80.0"
 name = "openssl-sys"
-version = "0.9.103"
+version = "0.9.117"
 authors = [
     "Alex Crichton <alex@alexcrichton.com>",
     "Steven Fackler <sfackler@gmail.com>",
 ]
 build = "build/main.rs"
 links = "openssl"
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "FFI bindings to OpenSSL"
 readme = "README.md"
 categories = [
@@ -26,10 +32,33 @@ categories = [
     "external-ffi-bindings",
 ]
 license = "MIT"
-repository = "https://github.com/sfackler/rust-openssl"
+repository = "https://github.com/rust-openssl/rust-openssl"
 
 [package.metadata.pkg-config]
 openssl = "1.0.1"
+
+[features]
+aws-lc = ["dep:aws-lc-sys"]
+aws-lc-fips = ["dep:aws-lc-fips-sys"]
+unstable_boringssl = ["bssl-sys"]
+vendored = ["openssl-src"]
+
+[lib]
+name = "openssl_sys"
+path = "src/lib.rs"
+
+[dependencies.aws-lc-fips-sys]
+version = "0.13"
+features = [
+    "ssl",
+    "bindgen",
+]
+optional = true
+
+[dependencies.aws-lc-sys]
+version = "0.41"
+features = ["ssl"]
+optional = true
 
 [dependencies.bssl-sys]
 version = "0.1.0"
@@ -39,7 +68,7 @@ optional = true
 version = "0.2"
 
 [build-dependencies.bindgen]
-version = "0.65.0"
+version = "0.72.0"
 features = ["experimental"]
 optional = true
 
@@ -56,7 +85,3 @@ version = "0.3.9"
 
 [build-dependencies.vcpkg]
 version = "0.2.8"
-
-[features]
-unstable_boringssl = ["bssl-sys"]
-vendored = ["openssl-src"]

@@ -34,7 +34,6 @@
 
 #[cfg(feature = "std")]
 use alloc::collections::VecDeque;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 #[cfg(feature = "std")]
@@ -44,6 +43,7 @@ use crate::enums::CertificateCompressionAlgorithm;
 use crate::msgs::base::{Payload, PayloadU24};
 use crate::msgs::codec::Codec;
 use crate::msgs::handshake::{CertificatePayloadTls13, CompressedCertificatePayload};
+use crate::sync::Arc;
 
 /// Returns the supported `CertDecompressor` implementations enabled
 /// by crate features.
@@ -125,8 +125,9 @@ pub struct CompressionFailed;
 
 #[cfg(feature = "zlib")]
 mod feat_zlib_rs {
-    use zlib_rs::c_api::Z_BEST_COMPRESSION;
-    use zlib_rs::{deflate, inflate, ReturnCode};
+    use zlib_rs::{
+        DeflateConfig, InflateConfig, ReturnCode, compress_bound, compress_slice, decompress_slice,
+    };
 
     use super::*;
 
@@ -139,7 +140,7 @@ mod feat_zlib_rs {
     impl CertDecompressor for ZlibRsDecompressor {
         fn decompress(&self, input: &[u8], output: &mut [u8]) -> Result<(), DecompressionFailed> {
             let output_len = output.len();
-            match inflate::uncompress_slice(output, input, inflate::InflateConfig::default()) {
+            match decompress_slice(output, input, InflateConfig::default()) {
                 (output_filled, ReturnCode::Ok) if output_filled.len() == output_len => Ok(()),
                 (_, _) => Err(DecompressionFailed),
             }
@@ -162,12 +163,12 @@ mod feat_zlib_rs {
             input: Vec<u8>,
             level: CompressionLevel,
         ) -> Result<Vec<u8>, CompressionFailed> {
-            let mut output = alloc::vec![0u8; deflate::compress_bound(input.len())];
+            let mut output = alloc::vec![0u8; compress_bound(input.len())];
             let config = match level {
-                CompressionLevel::Interactive => deflate::DeflateConfig::default(),
-                CompressionLevel::Amortized => deflate::DeflateConfig::new(Z_BEST_COMPRESSION),
+                CompressionLevel::Interactive => DeflateConfig::default(),
+                CompressionLevel::Amortized => DeflateConfig::best_compression(),
             };
-            let (output_filled, rc) = deflate::compress_slice(&mut output, &input, config);
+            let (output_filled, rc) = compress_slice(&mut output, &input, config);
             if rc != ReturnCode::Ok {
                 return Err(CompressionFailed);
             }
@@ -186,6 +187,7 @@ mod feat_zlib_rs {
 #[cfg(feature = "zlib")]
 pub use feat_zlib_rs::{ZLIB_COMPRESSOR, ZLIB_DECOMPRESSOR};
 
+#[allow(clippy::std_instead_of_core)] // awaits core::io::Cursor (1.97) in crate MSRV
 #[cfg(feature = "brotli")]
 mod feat_brotli {
     use std::io::{Cursor, Write};
@@ -358,7 +360,7 @@ impl CompressionCache {
             if item.algorithm == algorithm && item.original == encoding {
                 // this item is now MRU
                 let item = cache.remove(i).unwrap();
-                cache.push_back(Arc::clone(&item));
+                cache.push_back(item.clone());
                 return Ok(item);
             }
         }
@@ -384,7 +386,7 @@ impl CompressionCache {
         if cache.len() == max_size {
             cache.pop_front();
         }
-        cache.push_back(Arc::clone(&new_entry));
+        cache.push_back(new_entry.clone());
         Ok(new_entry)
     }
 
@@ -445,7 +447,7 @@ impl CompressionCacheEntry {
 }
 
 #[cfg(all(test, any(feature = "brotli", feature = "zlib")))]
-pub mod tests {
+mod tests {
     use std::{println, vec};
 
     use super::*;

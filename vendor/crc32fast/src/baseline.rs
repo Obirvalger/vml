@@ -1,4 +1,4 @@
-use table::CRC32_TABLE;
+use crate::table::CRC32_TABLE;
 
 #[derive(Clone)]
 pub struct State {
@@ -23,7 +23,7 @@ impl State {
     }
 
     pub fn combine(&mut self, other: u32, amount: u64) {
-        self.state = ::combine::combine(self.state, other, amount);
+        self.state = crate::combine::combine(self.state, other, amount);
     }
 }
 
@@ -35,6 +35,7 @@ pub(crate) fn update_fast_16(prev: u32, mut buf: &[u8]) -> u32 {
 
     while buf.len() >= BYTES_AT_ONCE {
         for _ in 0..UNROLL {
+            let w0 = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) ^ crc;
             crc = CRC32_TABLE[0x0][buf[0xf] as usize]
                 ^ CRC32_TABLE[0x1][buf[0xe] as usize]
                 ^ CRC32_TABLE[0x2][buf[0xd] as usize]
@@ -47,10 +48,10 @@ pub(crate) fn update_fast_16(prev: u32, mut buf: &[u8]) -> u32 {
                 ^ CRC32_TABLE[0x9][buf[0x6] as usize]
                 ^ CRC32_TABLE[0xa][buf[0x5] as usize]
                 ^ CRC32_TABLE[0xb][buf[0x4] as usize]
-                ^ CRC32_TABLE[0xc][buf[0x3] as usize ^ ((crc >> 0x18) & 0xFF) as usize]
-                ^ CRC32_TABLE[0xd][buf[0x2] as usize ^ ((crc >> 0x10) & 0xFF) as usize]
-                ^ CRC32_TABLE[0xe][buf[0x1] as usize ^ ((crc >> 0x08) & 0xFF) as usize]
-                ^ CRC32_TABLE[0xf][buf[0x0] as usize ^ ((crc >> 0x00) & 0xFF) as usize];
+                ^ CRC32_TABLE[0xc][(w0 >> 24) as usize]
+                ^ CRC32_TABLE[0xd][((w0 >> 16) & 0xFF) as usize]
+                ^ CRC32_TABLE[0xe][((w0 >> 8) & 0xFF) as usize]
+                ^ CRC32_TABLE[0xf][(w0 & 0xFF) as usize];
             buf = &buf[16..];
         }
     }
@@ -86,7 +87,7 @@ mod test {
         assert_eq!(super::update_slow(0, b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"), 0x91267E8A);
     }
 
-    quickcheck! {
+    quickcheck::quickcheck! {
         fn fast_16_is_the_same_as_slow(crc: u32, bytes: Vec<u8>) -> bool {
             super::update_fast_16(crc, &bytes) == super::update_slow(crc, &bytes)
         }

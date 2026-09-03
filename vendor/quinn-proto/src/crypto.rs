@@ -13,15 +13,15 @@ use std::{any::Any, str, sync::Arc};
 use bytes::BytesMut;
 
 use crate::{
-    shared::ConnectionId, transport_parameters::TransportParameters, ConnectError, Side,
-    TransportError,
+    ConnectError, Side, TransportError, shared::ConnectionId,
+    transport_parameters::TransportParameters,
 };
 
 /// Cryptography interface based on *ring*
-#[cfg(feature = "ring")]
-pub(crate) mod ring;
+#[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
+pub(crate) mod ring_like;
 /// TLS interface based on rustls
-#[cfg(feature = "rustls")]
+#[cfg(any(feature = "rustls-aws-lc-rs", feature = "rustls-ring"))]
 pub mod rustls;
 
 /// A cryptographic session (commonly TLS)

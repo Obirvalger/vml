@@ -4,12 +4,52 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = AutocompleteInfo)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "AutocompleteInfo")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `AutocompleteInfo` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
     pub type AutocompleteInfo;
+    #[doc = "Get the `addressType` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[wasm_bindgen(method, getter = "addressType")]
+    pub fn get_address_type(this: &AutocompleteInfo) -> Option<::alloc::string::String>;
+    #[doc = "Change the `addressType` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[wasm_bindgen(method, setter = "addressType")]
+    pub fn set_address_type(this: &AutocompleteInfo, val: &str);
+    #[doc = "Get the `contactType` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[wasm_bindgen(method, getter = "contactType")]
+    pub fn get_contact_type(this: &AutocompleteInfo) -> Option<::alloc::string::String>;
+    #[doc = "Change the `contactType` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[wasm_bindgen(method, setter = "contactType")]
+    pub fn set_contact_type(this: &AutocompleteInfo, val: &str);
+    #[doc = "Get the `fieldName` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[wasm_bindgen(method, getter = "fieldName")]
+    pub fn get_field_name(this: &AutocompleteInfo) -> Option<::alloc::string::String>;
+    #[doc = "Change the `fieldName` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[wasm_bindgen(method, setter = "fieldName")]
+    pub fn set_field_name(this: &AutocompleteInfo, val: &str);
+    #[doc = "Get the `section` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[wasm_bindgen(method, getter = "section")]
+    pub fn get_section(this: &AutocompleteInfo) -> Option<::alloc::string::String>;
+    #[doc = "Change the `section` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[wasm_bindgen(method, setter = "section")]
+    pub fn set_section(this: &AutocompleteInfo, val: &str);
 }
 impl AutocompleteInfo {
     #[doc = "Construct a new `AutocompleteInfo`."]
@@ -20,72 +60,24 @@ impl AutocompleteInfo {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `addressType` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[deprecated = "Use `set_address_type()` instead."]
     pub fn address_type(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("addressType"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_address_type(val);
         self
     }
-    #[doc = "Change the `contactType` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[deprecated = "Use `set_contact_type()` instead."]
     pub fn contact_type(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("contactType"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_contact_type(val);
         self
     }
-    #[doc = "Change the `fieldName` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[deprecated = "Use `set_field_name()` instead."]
     pub fn field_name(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("fieldName"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_field_name(val);
         self
     }
-    #[doc = "Change the `section` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `AutocompleteInfo`*"]
+    #[deprecated = "Use `set_section()` instead."]
     pub fn section(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("section"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_section(val);
         self
     }
 }

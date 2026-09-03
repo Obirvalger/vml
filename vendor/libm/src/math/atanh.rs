@@ -5,7 +5,7 @@ use super::log1p;
 ///
 /// Calculates the inverse hyperbolic tangent of `x`.
 /// Is defined as `log((1+x)/(1-x))/2 = log1p(2x/(1-x))/2`.
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn atanh(x: f64) -> f64 {
     let u = x.to_bits();
     let e = ((u >> 52) as usize) & 0x7ff;
@@ -29,9 +29,5 @@ pub fn atanh(x: f64) -> f64 {
         y = 0.5 * log1p(2.0 * (y / (1.0 - y)));
     }
 
-    if sign {
-        -y
-    } else {
-        y
-    }
+    if sign { -y } else { y }
 }

@@ -6,7 +6,8 @@ use std::thread::panicking;
 use std::time::Instant;
 
 use crate::draw_target::{
-    visual_line_count, DrawState, DrawStateWrapper, LineAdjust, ProgressDrawTarget, VisualLines,
+    visual_line_count, DrawState, DrawStateWrapper, LineAdjust, LineType, ProgressDrawTarget,
+    VisualLines,
 };
 use crate::progress_bar::ProgressBar;
 #[cfg(target_arch = "wasm32")]
@@ -217,7 +218,7 @@ pub(crate) struct MultiState {
     alignment: MultiProgressAlignment,
     /// Lines to be drawn above everything else in the MultiProgress. These specifically come from
     /// calling `ProgressBar::println` on a pb that is connected to a `MultiProgress`.
-    orphan_lines: Vec<String>,
+    orphan_lines: Vec<LineType>,
     /// The count of currently visible zombie lines.
     zombie_lines_count: VisualLines,
 }
@@ -267,7 +268,7 @@ impl MultiState {
     pub(crate) fn draw(
         &mut self,
         mut force_draw: bool,
-        extra_lines: Option<Vec<String>>,
+        extra_lines: Option<Vec<LineType>>,
         now: Instant,
     ) -> io::Result<()> {
         if panicking() {
@@ -326,12 +327,10 @@ impl MultiState {
         };
 
         let mut draw_state = drawable.state();
-        draw_state.orphan_lines_count = self.orphan_lines.len();
         draw_state.alignment = self.alignment;
 
         if let Some(extra_lines) = &extra_lines {
             draw_state.lines.extend_from_slice(extra_lines.as_slice());
-            draw_state.orphan_lines_count += extra_lines.len();
         }
 
         // Add lines from `ProgressBar::println` call.
@@ -365,9 +364,9 @@ impl MultiState {
         let msg = msg.as_ref();
 
         // If msg is "", make sure a line is still printed
-        let lines: Vec<String> = match msg.is_empty() {
-            false => msg.lines().map(Into::into).collect(),
-            true => vec![String::new()],
+        let lines: Vec<LineType> = match msg.is_empty() {
+            false => msg.lines().map(|l| LineType::Text(Into::into(l))).collect(),
+            true => vec![LineType::Empty],
         };
 
         self.draw(true, Some(lines), now)

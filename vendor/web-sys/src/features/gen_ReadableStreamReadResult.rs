@@ -4,12 +4,32 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = ReadableStreamReadResult)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "ReadableStreamReadResult")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `ReadableStreamReadResult` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ReadableStreamReadResult`*"]
     pub type ReadableStreamReadResult;
+    #[doc = "Get the `done` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamReadResult`*"]
+    #[wasm_bindgen(method, getter = "done")]
+    pub fn get_done(this: &ReadableStreamReadResult) -> Option<bool>;
+    #[doc = "Change the `done` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamReadResult`*"]
+    #[wasm_bindgen(method, setter = "done")]
+    pub fn set_done(this: &ReadableStreamReadResult, val: bool);
+    #[doc = "Get the `value` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamReadResult`*"]
+    #[wasm_bindgen(method, getter = "value")]
+    pub fn get_value(this: &ReadableStreamReadResult) -> ::wasm_bindgen::JsValue;
+    #[doc = "Change the `value` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamReadResult`*"]
+    #[wasm_bindgen(method, setter = "value")]
+    pub fn set_value(this: &ReadableStreamReadResult, val: &::wasm_bindgen::JsValue);
 }
 impl ReadableStreamReadResult {
     #[doc = "Construct a new `ReadableStreamReadResult`."]
@@ -20,30 +40,14 @@ impl ReadableStreamReadResult {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `done` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamReadResult`*"]
+    #[deprecated = "Use `set_done()` instead."]
     pub fn done(&mut self, val: bool) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("done"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_done(val);
         self
     }
-    #[doc = "Change the `value` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ReadableStreamReadResult`*"]
+    #[deprecated = "Use `set_value()` instead."]
     pub fn value(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("value"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_value(val);
         self
     }
 }

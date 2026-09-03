@@ -1,17 +1,17 @@
 [package]
 name = "textwrap"
-version = "0.16.1"
+version = "0.16.2"
 authors = ["Martin Geisler <martin@geisler.net>"]
-description = "Library for word wrapping, indenting, and dedenting strings. Has optional support for Unicode and emojis as well as machine hyphenation."
-documentation = "https://docs.rs/textwrap/"
-repository = "https://github.com/mgeisler/textwrap"
-readme = "README.md"
-keywords = ["text", "formatting", "wrap", "typesetting", "hyphenation"]
 categories = ["text-processing", "command-line-interface"]
-license = "MIT"
+documentation = "https://docs.rs/textwrap/"
 edition = "2021"
-rust-version = "1.56"
 exclude = [".github/", ".gitignore", "benchmarks/", "examples/", "fuzz/", "images/"]
+keywords = ["text", "formatting", "wrap", "typesetting", "hyphenation"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/mgeisler/textwrap"
+rust-version = "1.70"
+description = "Library for word wrapping, indenting, and dedenting strings. Has optional support for Unicode and emojis as well as machine hyphenation."
 
 [[example]]
 name = "hyphenation"
@@ -29,16 +29,19 @@ all-features = true
 [features]
 default = ["unicode-linebreak", "unicode-width", "smawk"]
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
+
 [dependencies]
 hyphenation = { version = "0.8.4", optional = true, features = ["embed_en-us"] }
-smawk = { version = "0.3.1", optional = true }
-terminal_size = { version = "0.2.1", optional = true }
-unicode-linebreak = { version = "0.1.4", optional = true }
-unicode-width = { version = "0.1.10", optional = true }
+smawk = { version = "0.3.2", optional = true }
+terminal_size = { version = "0.4.0", optional = true }
+unicode-linebreak = { version = "0.1.5", optional = true }
+unicode-width = { version = "0.2.0", optional = true }
 
 [dev-dependencies]
 unic-emoji-char = "0.9.0"
-version-sync = "0.9.4"
+version-sync = "0.9.5"
 
-[target.'cfg(unix)'.dev-dependencies]
-termion = "2.0.1"
+[target."cfg(unix)".dev-dependencies]
+termion = "4.0.2"

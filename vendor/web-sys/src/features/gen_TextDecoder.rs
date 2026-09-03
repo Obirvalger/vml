@@ -4,7 +4,11 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = TextDecoder , typescript_type = "TextDecoder")]
+    #[wasm_bindgen(
+        extends = "::js_sys::Object",
+        js_name = "TextDecoder",
+        typescript_type = "TextDecoder"
+    )]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `TextDecoder` class."]
     #[doc = ""]
@@ -12,14 +16,14 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `TextDecoder`*"]
     pub type TextDecoder;
-    # [wasm_bindgen (structural , method , getter , js_class = "TextDecoder" , js_name = encoding)]
+    #[wasm_bindgen(method, getter, js_class = "TextDecoder", js_name = "encoding")]
     #[doc = "Getter for the `encoding` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/encoding)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `TextDecoder`*"]
-    pub fn encoding(this: &TextDecoder) -> String;
-    # [wasm_bindgen (structural , method , getter , js_class = "TextDecoder" , js_name = fatal)]
+    pub fn encoding(this: &TextDecoder) -> ::alloc::string::String;
+    #[wasm_bindgen(method, getter, js_class = "TextDecoder", js_name = "fatal")]
     #[doc = "Getter for the `fatal` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/fatal)"]
@@ -51,14 +55,14 @@ extern "C" {
         label: &str,
         options: &TextDecoderOptions,
     ) -> Result<TextDecoder, JsValue>;
-    # [wasm_bindgen (catch , method , structural , js_class = "TextDecoder" , js_name = decode)]
+    #[wasm_bindgen(catch, method, js_class = "TextDecoder")]
     #[doc = "The `decode()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `TextDecoder`*"]
-    pub fn decode(this: &TextDecoder) -> Result<String, JsValue>;
-    # [wasm_bindgen (catch , method , structural , js_class = "TextDecoder" , js_name = decode)]
+    pub fn decode(this: &TextDecoder) -> Result<::alloc::string::String, JsValue>;
+    #[wasm_bindgen(catch, method, js_class = "TextDecoder", js_name = "decode")]
     #[doc = "The `decode()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)"]
@@ -67,16 +71,29 @@ extern "C" {
     pub fn decode_with_buffer_source(
         this: &TextDecoder,
         input: &::js_sys::Object,
-    ) -> Result<String, JsValue>;
-    # [wasm_bindgen (catch , method , structural , js_class = "TextDecoder" , js_name = decode)]
+    ) -> Result<::alloc::string::String, JsValue>;
+    #[wasm_bindgen(catch, method, js_class = "TextDecoder", js_name = "decode")]
     #[doc = "The `decode()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `TextDecoder`*"]
-    pub fn decode_with_u8_array(this: &TextDecoder, input: &mut [u8]) -> Result<String, JsValue>;
+    pub fn decode_with_u8_array(
+        this: &TextDecoder,
+        input: &[u8],
+    ) -> Result<::alloc::string::String, JsValue>;
+    #[wasm_bindgen(catch, method, js_class = "TextDecoder", js_name = "decode")]
+    #[doc = "The `decode()` method."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `TextDecoder`*"]
+    pub fn decode_with_js_u8_array(
+        this: &TextDecoder,
+        input: &::js_sys::Uint8Array,
+    ) -> Result<::alloc::string::String, JsValue>;
     #[cfg(feature = "TextDecodeOptions")]
-    # [wasm_bindgen (catch , method , structural , js_class = "TextDecoder" , js_name = decode)]
+    #[wasm_bindgen(catch, method, js_class = "TextDecoder", js_name = "decode")]
     #[doc = "The `decode()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)"]
@@ -86,9 +103,9 @@ extern "C" {
         this: &TextDecoder,
         input: &::js_sys::Object,
         options: &TextDecodeOptions,
-    ) -> Result<String, JsValue>;
+    ) -> Result<::alloc::string::String, JsValue>;
     #[cfg(feature = "TextDecodeOptions")]
-    # [wasm_bindgen (catch , method , structural , js_class = "TextDecoder" , js_name = decode)]
+    #[wasm_bindgen(catch, method, js_class = "TextDecoder", js_name = "decode")]
     #[doc = "The `decode()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)"]
@@ -96,7 +113,19 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `TextDecodeOptions`, `TextDecoder`*"]
     pub fn decode_with_u8_array_and_options(
         this: &TextDecoder,
-        input: &mut [u8],
+        input: &[u8],
         options: &TextDecodeOptions,
-    ) -> Result<String, JsValue>;
+    ) -> Result<::alloc::string::String, JsValue>;
+    #[cfg(feature = "TextDecodeOptions")]
+    #[wasm_bindgen(catch, method, js_class = "TextDecoder", js_name = "decode")]
+    #[doc = "The `decode()` method."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `TextDecodeOptions`, `TextDecoder`*"]
+    pub fn decode_with_js_u8_array_and_options(
+        this: &TextDecoder,
+        input: &::js_sys::Uint8Array,
+        options: &TextDecodeOptions,
+    ) -> Result<::alloc::string::String, JsValue>;
 }

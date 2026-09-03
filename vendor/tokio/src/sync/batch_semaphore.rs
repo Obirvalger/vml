@@ -28,7 +28,7 @@ use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering::*;
-use std::task::{Context, Poll, Waker};
+use std::task::{ready, Context, Poll, Waker};
 use std::{cmp, fmt};
 
 /// An asynchronous counting semaphore which permits waiting on multiple permits at once.
@@ -41,7 +41,7 @@ pub(crate) struct Semaphore {
 }
 
 struct Waitlist {
-    queue: LinkedList<Waiter, <Waiter as linked_list::Link>::Target>,
+    queue: LinkedList<Waiter>,
     closed: bool,
 }
 
@@ -147,6 +147,7 @@ impl Semaphore {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let resource_span = {
             let resource_span = tracing::trace_span!(
+                parent: None,
                 "runtime.resource",
                 concrete_type = "Semaphore",
                 kind = "Sync",
@@ -383,7 +384,7 @@ impl Semaphore {
             let new = curr.saturating_sub(n);
             match self.permits.compare_exchange_weak(
                 curr_bits,
-                new << Self::PERMIT_SHIFT,
+                (new << Self::PERMIT_SHIFT) | (curr_bits & Self::CLOSED),
                 AcqRel,
                 Acquire,
             ) {
@@ -501,7 +502,7 @@ impl Semaphore {
                 .as_ref()
                 .map_or(true, |waker| !waker.will_wake(cx.waker()))
             {
-                old_waker = std::mem::replace(waker, Some(cx.waker().clone()));
+                old_waker = waker.replace(cx.waker().clone());
             }
         });
 
@@ -575,7 +576,7 @@ impl Future for Acquire<'_> {
     type Output = Result<(), AcquireError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        ready!(crate::trace::trace_leaf(cx));
+        ready!(crate::trace::trace_leaf());
 
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let _resource_span = self.node.ctx.resource_span.clone().entered();
@@ -590,11 +591,11 @@ impl Future for Acquire<'_> {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let coop = ready!(trace_poll_op!(
             "poll_acquire",
-            crate::runtime::coop::poll_proceed(cx),
+            crate::task::coop::poll_proceed(cx),
         ));
 
         #[cfg(not(all(tokio_unstable, feature = "tracing")))]
-        let coop = ready!(crate::runtime::coop::poll_proceed(cx));
+        let coop = ready!(crate::task::coop::poll_proceed(cx));
 
         let result = match semaphore.poll_acquire(cx, needed, node, *queued) {
             Poll::Pending => {
@@ -774,6 +775,6 @@ unsafe impl linked_list::Link for Waiter {
     }
 
     unsafe fn pointers(target: NonNull<Waiter>) -> NonNull<linked_list::Pointers<Waiter>> {
-        Waiter::addr_of_pointers(target)
+        unsafe { Waiter::addr_of_pointers(target) }
     }
 }

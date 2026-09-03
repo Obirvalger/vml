@@ -11,10 +11,16 @@
 
 [package]
 edition = "2021"
-rust-version = "1.63"
+rust-version = "1.71"
 name = "tokio-macros"
-version = "2.3.0"
+version = "2.7.2"
 authors = ["Tokio Contributors <team@tokio.rs>"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = """
 Tokio's proc macros.
 """
@@ -27,7 +33,11 @@ repository = "https://github.com/tokio-rs/tokio"
 [package.metadata.docs.rs]
 all-features = true
 
+[features]
+
 [lib]
+name = "tokio_macros"
+path = "src/lib.rs"
 proc-macro = true
 
 [dependencies.proc-macro2]
@@ -37,11 +47,27 @@ version = "1.0.60"
 version = "1"
 
 [dependencies.syn]
-version = "2.0"
+version = "3.0"
 features = ["full"]
 
 [dev-dependencies.tokio]
 version = "1.0.0"
-features = ["full"]
+features = [
+    "full",
+    "test-util",
+]
 
-[features]
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = [
+    "cfg(fuzzing)",
+    "cfg(loom)",
+    "cfg(mio_unsupported_force_poll_poll)",
+    "cfg(tokio_allow_from_blocking_fd)",
+    "cfg(tokio_internal_mt_counters)",
+    "cfg(tokio_no_parking_lot)",
+    "cfg(tokio_no_tuning_tests)",
+    "cfg(tokio_unstable)",
+    'cfg(target_os, values("cygwin"))',
+]

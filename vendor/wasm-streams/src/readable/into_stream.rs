@@ -16,7 +16,7 @@ use super::ReadableStreamDefaultReader;
 /// When this `Stream` is dropped, it also drops its reader which in turn
 /// [releases its lock](https://streams.spec.whatwg.org/#release-a-lock).
 ///
-/// [`Stream`]: https://docs.rs/futures/0.3.28/futures/stream/trait.Stream.html
+/// [`Stream`]: https://docs.rs/futures/0.3.30/futures/stream/trait.Stream.html
 #[must_use = "streams do nothing unless polled"]
 #[derive(Debug)]
 pub struct IntoStream<'reader> {
@@ -88,12 +88,12 @@ impl<'reader> Stream for IntoStream<'reader> {
         Poll::Ready(match js_result {
             Ok(js_value) => {
                 let result = ReadableStreamReadResult::from(js_value);
-                if result.is_done() {
+                if result.get_done().unwrap_or_default() {
                     // End of stream, drop reader
                     self.reader = None;
                     None
                 } else {
-                    Some(Ok(result.value()))
+                    Some(Ok(result.get_value()))
                 }
             }
             Err(js_value) => {

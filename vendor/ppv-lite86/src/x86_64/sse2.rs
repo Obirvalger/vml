@@ -9,6 +9,7 @@ use core::marker::PhantomData;
 use core::ops::{
     Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not,
 };
+use zerocopy::transmute;
 
 macro_rules! impl_binop {
     ($vec:ident, $trait:ident, $fn:ident, $impl_fn:ident) => {
@@ -38,13 +39,16 @@ macro_rules! impl_binop_assign {
 
 macro_rules! def_vec {
     ($vec:ident, $word:ident) => {
-        #[allow(non_camel_case_types)]
-        #[derive(Copy, Clone)]
-        pub struct $vec<S3, S4, NI> {
-            x: __m128i,
-            s3: PhantomData<S3>,
-            s4: PhantomData<S4>,
-            ni: PhantomData<NI>,
+        zerocopy::cryptocorrosion_derive_traits! {
+            #[repr(transparent)]
+            #[allow(non_camel_case_types)]
+            #[derive(Copy, Clone)]
+            pub struct $vec<S3, S4, NI> {
+                x: __m128i,
+                s3: PhantomData<S3>,
+                s4: PhantomData<S4>,
+                ni: PhantomData<NI>,
+            }
         }
 
         impl<S3, S4, NI> Store<vec128_storage> for $vec<S3, S4, NI> {
@@ -883,7 +887,7 @@ pub type u128x4_sse2<S3, S4, NI> = x4<u128x1_sse2<S3, S4, NI>>;
 impl<S3, S4, NI> Vector<[u32; 16]> for u32x4x4_sse2<S3, S4, NI> {
     #[inline(always)]
     fn to_scalars(self) -> [u32; 16] {
-        unsafe { core::mem::transmute(self) }
+        transmute!(self)
     }
 }
 
@@ -1153,7 +1157,7 @@ mod test {
             x_s3.bswap()
         };
 
-        assert_eq!(x_s2, unsafe { core::mem::transmute(x_s3) });
+        assert_eq!(x_s2, transmute!(x_s3));
         assert_eq!(x_s2, s2.vec(ys));
     }
 
@@ -1177,7 +1181,7 @@ mod test {
         };
 
         assert_eq!(x_s2, s2.vec(ys));
-        assert_eq!(x_s3, unsafe { core::mem::transmute(x_s3) });
+        assert_eq!(x_s3, transmute!(x_s3));
     }
 
     #[test]
@@ -1199,7 +1203,7 @@ mod test {
             x_s3.shuffle2301()
         };
         assert_eq!(x_s2, s2.vec(ys));
-        assert_eq!(x_s3, unsafe { core::mem::transmute(x_s3) });
+        assert_eq!(x_s3, transmute!(x_s3));
 
         let x_s2 = {
             let x_s2: <SSE2 as Machine>::u32x4 = s2.vec(xs);
@@ -1210,12 +1214,12 @@ mod test {
             x_s3.shuffle3012()
         };
         assert_eq!(x_s2, s2.vec(zs));
-        assert_eq!(x_s3, unsafe { core::mem::transmute(x_s3) });
+        assert_eq!(x_s3, transmute!(x_s3));
 
         let x_s2 = x_s2.shuffle1230();
         let x_s3 = x_s3.shuffle1230();
         assert_eq!(x_s2, s2.vec(xs));
-        assert_eq!(x_s3, unsafe { core::mem::transmute(x_s3) });
+        assert_eq!(x_s3, transmute!(x_s3));
     }
 
     #[test]
@@ -1237,7 +1241,7 @@ mod test {
             x_s3.shuffle2301()
         };
         assert_eq!(x_s2, s2.vec(ys));
-        assert_eq!(x_s3, unsafe { core::mem::transmute(x_s3) });
+        assert_eq!(x_s3, transmute!(x_s3));
 
         let x_s2 = {
             let x_s2: <SSE2 as Machine>::u64x4 = s2.vec(xs);
@@ -1248,12 +1252,12 @@ mod test {
             x_s3.shuffle3012()
         };
         assert_eq!(x_s2, s2.vec(zs));
-        assert_eq!(x_s3, unsafe { core::mem::transmute(x_s3) });
+        assert_eq!(x_s3, transmute!(x_s3));
 
         let x_s2 = x_s2.shuffle1230();
         let x_s3 = x_s3.shuffle1230();
         assert_eq!(x_s2, s2.vec(xs));
-        assert_eq!(x_s3, unsafe { core::mem::transmute(x_s3) });
+        assert_eq!(x_s3, transmute!(x_s3));
     }
 
     #[cfg_attr(not(all(target_feature = "ssse3", target_feature = "sse4.1")), ignore)]
@@ -1382,11 +1386,15 @@ pub mod avx2 {
     use core::arch::x86_64::*;
     use core::marker::PhantomData;
     use core::ops::*;
+    use zerocopy::transmute;
 
-    #[derive(Copy, Clone)]
-    pub struct u32x4x2_avx2<NI> {
-        x: __m256i,
-        ni: PhantomData<NI>,
+    zerocopy::cryptocorrosion_derive_traits! {
+        #[repr(transparent)]
+        #[derive(Copy, Clone)]
+        pub struct u32x4x2_avx2<NI> {
+            x: __m256i,
+            ni: PhantomData<NI>,
+        }
     }
 
     impl<NI> u32x4x2_avx2<NI> {
@@ -1675,7 +1683,7 @@ pub mod avx2 {
     impl<NI: Copy> Vector<[u32; 16]> for u32x4x4_avx2<NI> {
         #[inline(always)]
         fn to_scalars(self) -> [u32; 16] {
-            unsafe { core::mem::transmute(self) }
+            transmute!(self)
         }
     }
     impl<NI: Copy> From<u32x4x4_avx2<NI>> for vec512_storage {

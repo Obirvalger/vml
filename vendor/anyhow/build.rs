@@ -1,20 +1,19 @@
+#![allow(clippy::uninlined_format_args)]
+
 use std::env;
 use std::ffi::OsString;
+use std::fs;
+use std::io::ErrorKind;
 use std::iter;
 use std::path::Path;
 use std::process::{self, Command, Stdio};
 use std::str;
 
-#[cfg(all(feature = "backtrace", not(feature = "std")))]
-compile_error! {
-    "`backtrace` feature without `std` feature is not supported"
-}
-
 fn main() {
-    let mut error_generic_member_access = false;
     if cfg!(feature = "std") {
-        println!("cargo:rerun-if-changed=build/probe.rs");
+        println!("cargo:rerun-if-changed=src/nightly.rs");
 
+        let error_generic_member_access;
         let consider_rustc_bootstrap;
         if compile_probe(false) {
             // This is a nightly or dev compiler, so it supports unstable
@@ -51,7 +50,6 @@ fn main() {
         }
 
         if error_generic_member_access {
-            println!("cargo:rustc-cfg=std_backtrace");
             println!("cargo:rustc-cfg=error_generic_member_access");
         }
 
@@ -60,41 +58,28 @@ fn main() {
         }
     }
 
-    let rustc = match rustc_minor_version() {
-        Some(rustc) => rustc,
-        None => return,
+    let Some(rustc) = rustc_minor_version() else {
+        return;
     };
 
     if rustc >= 80 {
+        println!("cargo:rustc-check-cfg=cfg(anyhow_build_probe)");
         println!("cargo:rustc-check-cfg=cfg(anyhow_nightly_testing)");
-        println!("cargo:rustc-check-cfg=cfg(anyhow_no_fmt_arguments_as_str)");
-        println!("cargo:rustc-check-cfg=cfg(anyhow_no_ptr_addr_of)");
-        println!("cargo:rustc-check-cfg=cfg(anyhow_no_unsafe_op_in_unsafe_fn_lint)");
-        println!("cargo:rustc-check-cfg=cfg(doc_cfg)");
+        println!("cargo:rustc-check-cfg=cfg(anyhow_no_clippy_format_args)");
+        println!("cargo:rustc-check-cfg=cfg(anyhow_no_core_error)");
         println!("cargo:rustc-check-cfg=cfg(error_generic_member_access)");
-        println!("cargo:rustc-check-cfg=cfg(std_backtrace)");
     }
 
-    if rustc < 51 {
-        // core::ptr::addr_of
-        // https://blog.rust-lang.org/2021/03/25/Rust-1.51.0.html#stabilized-apis
-        println!("cargo:rustc-cfg=anyhow_no_ptr_addr_of");
+    if rustc < 81 {
+        // core::error::Error
+        // https://blog.rust-lang.org/2024/09/05/Rust-1.81.0.html#coreerrorerror
+        println!("cargo:rustc-cfg=anyhow_no_core_error");
     }
 
-    if rustc < 52 {
-        // core::fmt::Arguments::as_str
-        // https://blog.rust-lang.org/2021/05/06/Rust-1.52.0.html#stabilized-apis
-        println!("cargo:rustc-cfg=anyhow_no_fmt_arguments_as_str");
-
-        // #![deny(unsafe_op_in_unsafe_fn)]
-        // https://github.com/rust-lang/rust/issues/71668
-        println!("cargo:rustc-cfg=anyhow_no_unsafe_op_in_unsafe_fn_lint");
-    }
-
-    if !error_generic_member_access && cfg!(feature = "std") && rustc >= 65 {
-        // std::backtrace::Backtrace
-        // https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html#stabilized-apis
-        println!("cargo:rustc-cfg=std_backtrace");
+    if rustc < 85 {
+        // #[clippy::format_args]
+        // https://doc.rust-lang.org/1.85.1/clippy/attribs.html#clippyformat_args
+        println!("cargo:rustc-cfg=anyhow_no_clippy_format_args");
     }
 }
 
@@ -112,7 +97,15 @@ fn compile_probe(rustc_bootstrap: bool) -> bool {
 
     let rustc = cargo_env_var("RUSTC");
     let out_dir = cargo_env_var("OUT_DIR");
-    let probefile = Path::new("build").join("probe.rs");
+    let out_subdir = Path::new(&out_dir).join("probe");
+    let probefile = Path::new("src").join("nightly.rs");
+
+    if let Err(err) = fs::create_dir(&out_subdir) {
+        if err.kind() != ErrorKind::AlreadyExists {
+            eprintln!("Failed to create {}: {}", out_subdir.display(), err);
+            process::exit(1);
+        }
+    }
 
     let rustc_wrapper = env::var_os("RUSTC_WRAPPER").filter(|wrapper| !wrapper.is_empty());
     let rustc_workspace_wrapper =
@@ -129,13 +122,14 @@ fn compile_probe(rustc_bootstrap: bool) -> bool {
     }
 
     cmd.stderr(Stdio::null())
+        .arg("--cfg=anyhow_build_probe")
         .arg("--edition=2018")
         .arg("--crate-name=anyhow")
         .arg("--crate-type=lib")
-        .arg("--emit=dep-info,metadata")
         .arg("--cap-lints=allow")
+        .arg("--emit=dep-info,metadata")
         .arg("--out-dir")
-        .arg(out_dir)
+        .arg(&out_subdir)
         .arg(probefile);
 
     if let Some(target) = env::var_os("TARGET") {
@@ -151,10 +145,31 @@ fn compile_probe(rustc_bootstrap: bool) -> bool {
         }
     }
 
-    match cmd.status() {
+    let success = match cmd.status() {
         Ok(status) => status.success(),
         Err(_) => false,
+    };
+
+    // Clean up to avoid leaving nondeterministic absolute paths in the dep-info
+    // file in OUT_DIR, which causes nonreproducible builds in build systems
+    // that treat the entire OUT_DIR as an artifact.
+    if let Err(err) = fs::remove_dir_all(&out_subdir) {
+        // libc::ENOTEMPTY
+        // Some filesystems (NFSv3) have timing issues under load where '.nfs*'
+        // dummy files can continue to get created for a short period after the
+        // probe command completes, breaking remove_dir_all.
+        // To be replaced with ErrorKind::DirectoryNotEmpty (Rust 1.83+).
+        const ENOTEMPTY: i32 = 39;
+
+        if !(err.kind() == ErrorKind::NotFound
+            || (cfg!(target_os = "linux") && err.raw_os_error() == Some(ENOTEMPTY)))
+        {
+            eprintln!("Failed to clean up {}: {}", out_subdir.display(), err);
+            process::exit(1);
+        }
     }
+
+    success
 }
 
 fn rustc_minor_version() -> Option<u32> {

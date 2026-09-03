@@ -9,6 +9,7 @@
 
 //! Core Foundation Bundle Type
 
+use core::ffi::c_void;
 use core_foundation_sys::base::kCFAllocatorDefault;
 pub use core_foundation_sys::bundle::*;
 use core_foundation_sys::url::kCFURLPOSIXPathStyle;
@@ -18,7 +19,6 @@ use crate::base::{CFType, TCFType};
 use crate::dictionary::CFDictionary;
 use crate::string::CFString;
 use crate::url::CFURL;
-use std::os::raw::c_void;
 
 declare_TCFType! {
     /// A Bundle type.
@@ -189,7 +189,7 @@ fn safari_private_frameworks_url() {
 }
 
 #[test]
-fn non_existant_bundle() {
+fn non_existent_bundle() {
     use crate::string::CFString;
     use crate::url::{kCFURLPOSIXPathStyle, CFURL};
 

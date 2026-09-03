@@ -1,17 +1,15 @@
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use pki_types::{CertificateDer, PrivateKeyDer};
 
+use super::{ResolvesServerCert, ServerConfig, handy};
 use crate::builder::{ConfigBuilder, WantsVerifier};
-use crate::crypto::CryptoProvider;
 use crate::error::Error;
-use crate::server::{handy, ResolvesServerCert, ServerConfig};
-use crate::sign::CertifiedKey;
-use crate::time_provider::TimeProvider;
+use crate::sign::{CertifiedKey, SingleCertAndKey};
+use crate::sync::Arc;
 use crate::verify::{ClientCertVerifier, NoClientAuth};
-use crate::{compress, versions, InconsistentKeys, NoKeyLog};
+use crate::{NoKeyLog, compress, versions};
 
 impl ConfigBuilder<ServerConfig, WantsVerifier> {
     /// Choose how to verify client certificates.
@@ -21,11 +19,11 @@ impl ConfigBuilder<ServerConfig, WantsVerifier> {
     ) -> ConfigBuilder<ServerConfig, WantsServerCert> {
         ConfigBuilder {
             state: WantsServerCert {
-                provider: self.state.provider,
                 versions: self.state.versions,
                 verifier: client_cert_verifier,
-                time_provider: self.state.time_provider,
             },
+            provider: self.provider,
+            time_provider: self.time_provider,
             side: PhantomData,
         }
     }
@@ -42,10 +40,8 @@ impl ConfigBuilder<ServerConfig, WantsVerifier> {
 /// For more information, see the [`ConfigBuilder`] documentation.
 #[derive(Clone, Debug)]
 pub struct WantsServerCert {
-    provider: Arc<CryptoProvider>,
     versions: versions::EnabledVersions,
     verifier: Arc<dyn ClientCertVerifier>,
-    time_provider: Arc<dyn TimeProvider>,
 }
 
 impl ConfigBuilder<ServerConfig, WantsServerCert> {
@@ -60,8 +56,8 @@ impl ConfigBuilder<ServerConfig, WantsServerCert> {
     ///
     /// `cert_chain` is a vector of DER-encoded certificates.
     /// `key_der` is a DER-encoded private key as PKCS#1, PKCS#8, or SEC1. The
-    /// `aws-lc-rs` and `ring` [`CryptoProvider`]s support all three encodings,
-    /// but other `CryptoProviders` may not.
+    /// `aws-lc-rs` and `ring` [`CryptoProvider`][crate::CryptoProvider]s support
+    /// all three encodings, but other `CryptoProviders` may not.
     ///
     /// This function fails if `key_der` is invalid, or if the
     /// `SubjectPublicKeyInfo` from the private key does not match the public
@@ -71,21 +67,8 @@ impl ConfigBuilder<ServerConfig, WantsServerCert> {
         cert_chain: Vec<CertificateDer<'static>>,
         key_der: PrivateKeyDer<'static>,
     ) -> Result<ServerConfig, Error> {
-        let private_key = self
-            .state
-            .provider
-            .key_provider
-            .load_private_key(key_der)?;
-
-        let certified_key = CertifiedKey::new(cert_chain, private_key);
-        match certified_key.keys_match() {
-            // Don't treat unknown consistency as an error
-            Ok(()) | Err(Error::InconsistentKeys(InconsistentKeys::Unknown)) => (),
-            Err(err) => return Err(err),
-        }
-
-        let resolver = handy::AlwaysResolvesChain::new(certified_key);
-        Ok(self.with_cert_resolver(Arc::new(resolver)))
+        let certified_key = CertifiedKey::from_der(cert_chain, key_der, self.crypto_provider())?;
+        Ok(self.with_cert_resolver(Arc::new(SingleCertAndKey::from(certified_key))))
     }
 
     /// Sets a single certificate chain, matching private key and optional OCSP
@@ -94,8 +77,8 @@ impl ConfigBuilder<ServerConfig, WantsServerCert> {
     ///
     /// `cert_chain` is a vector of DER-encoded certificates.
     /// `key_der` is a DER-encoded private key as PKCS#1, PKCS#8, or SEC1. The
-    /// `aws-lc-rs` and `ring` [`CryptoProvider`]s support all three encodings,
-    /// but other `CryptoProviders` may not.
+    /// `aws-lc-rs` and `ring` [`CryptoProvider`][crate::CryptoProvider]s support
+    /// all three encodings, but other `CryptoProviders` may not.
     /// `ocsp` is a DER-encoded OCSP response.  Ignored if zero length.
     ///
     /// This function fails if `key_der` is invalid, or if the
@@ -107,27 +90,21 @@ impl ConfigBuilder<ServerConfig, WantsServerCert> {
         key_der: PrivateKeyDer<'static>,
         ocsp: Vec<u8>,
     ) -> Result<ServerConfig, Error> {
-        let private_key = self
-            .state
-            .provider
-            .key_provider
-            .load_private_key(key_der)?;
-
-        let certified_key = CertifiedKey::new(cert_chain, private_key);
-        match certified_key.keys_match() {
-            // Don't treat unknown consistency as an error
-            Ok(()) | Err(Error::InconsistentKeys(InconsistentKeys::Unknown)) => (),
-            Err(err) => return Err(err),
+        let mut certified_key =
+            CertifiedKey::from_der(cert_chain, key_der, self.crypto_provider())?;
+        if !ocsp.is_empty() {
+            certified_key.ocsp = Some(ocsp);
         }
-
-        let resolver = handy::AlwaysResolvesChain::new_with_extras(certified_key, ocsp);
-        Ok(self.with_cert_resolver(Arc::new(resolver)))
+        Ok(self.with_cert_resolver(Arc::new(SingleCertAndKey::from(certified_key))))
     }
 
     /// Sets a custom [`ResolvesServerCert`].
     pub fn with_cert_resolver(self, cert_resolver: Arc<dyn ResolvesServerCert>) -> ServerConfig {
+        #[cfg(feature = "tls12")]
+        let require_ems = self.provider.fips();
+
         ServerConfig {
-            provider: self.state.provider,
+            provider: self.provider,
             verifier: self.state.verifier,
             cert_resolver,
             ignore_client_order: false,
@@ -143,10 +120,11 @@ impl ConfigBuilder<ServerConfig, WantsServerCert> {
             enable_secret_extraction: false,
             max_early_data_size: 0,
             send_half_rtt_data: false,
-            send_tls13_tickets: 4,
+            send_tls13_tickets: 2,
+            max_tls13_tickets: 0,
             #[cfg(feature = "tls12")]
-            require_ems: cfg!(feature = "fips"),
-            time_provider: self.state.time_provider,
+            require_ems,
+            time_provider: self.time_provider,
             cert_compressors: compress::default_cert_compressors().to_vec(),
             cert_compression_cache: Arc::new(compress::CompressionCache::default()),
             cert_decompressors: compress::default_cert_decompressors().to_vec(),

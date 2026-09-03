@@ -18,10 +18,12 @@
 //! ```
 use std::fmt::Write;
 
-use crate::asn1::Asn1Object;
+use crate::asn1::{Asn1Integer, Asn1Object};
+use crate::bn::BigNum;
+use crate::cvt_p;
 use crate::error::ErrorStack;
 use crate::nid::Nid;
-use crate::x509::{GeneralName, Stack, X509Extension, X509v3Context};
+use crate::x509::{GeneralName, Stack, X509Extension, X509Name, X509v3Context};
 use foreign_types::ForeignType;
 
 /// An extension which indicates whether a certificate is a CA certificate.
@@ -435,6 +437,7 @@ enum RustGeneralName {
     Ip(String),
     Rid(String),
     OtherName(Asn1Object, Vec<u8>),
+    DirName(X509Name),
 }
 
 /// An extension that allows additional identities to be bound to the subject
@@ -497,12 +500,16 @@ impl SubjectAlternativeName {
 
     /// Sets the `dirName` flag.
     ///
-    /// Not currently actually supported, always panics.
-    #[deprecated = "dir_name is deprecated and always panics. Please file a bug if you have a use case for this."]
+    /// Not currently actually supported, always panics. Please use dir_name2
+    #[deprecated = "dir_name is deprecated and always panics. Please use dir_name2."]
     pub fn dir_name(&mut self, _dir_name: &str) -> &mut SubjectAlternativeName {
-        unimplemented!(
-            "This has not yet been adapted for the new internals. File a bug if you need this."
-        );
+        unimplemented!("This has not yet been adapted for the new internals. Use dir_name2.");
+    }
+
+    /// Sets the `dirName` flag.
+    pub fn dir_name2(&mut self, dir_name: X509Name) -> &mut SubjectAlternativeName {
+        self.items.push(RustGeneralName::DirName(dir_name));
+        self
     }
 
     /// Sets the `otherName` flag.
@@ -539,12 +546,45 @@ impl SubjectAlternativeName {
                 RustGeneralName::OtherName(oid, content) => {
                     GeneralName::new_other_name(oid.clone(), content)?
                 }
+                RustGeneralName::DirName(name) => GeneralName::new_dir_name(name.as_ref())?,
             };
             stack.push(gn)?;
         }
 
         unsafe {
             X509Extension::new_internal(Nid::SUBJECT_ALT_NAME, self.critical, stack.as_ptr().cast())
+        }
+    }
+}
+
+/// An extension that provides a means of versionning the CRL.
+pub struct CrlNumber(Asn1Integer);
+
+impl CrlNumber {
+    /// Construct a new `CrlNumber` extension.
+    pub fn new(number: BigNum) -> Result<Self, ErrorStack> {
+        let mut max = BigNum::new()?;
+        max.lshift(BigNum::from_u32(1)?.as_ref(), 159)?;
+
+        assert!(
+            !number.is_negative() && number < max,
+            "CrlNumber must be an ASN.1 integer greater than or equal to 0 and less than 2^159"
+        );
+
+        Ok(Self(Asn1Integer::from_bn(&number)?))
+    }
+
+    /// Return a `CrlNumber` extension as an `X509Extension`.
+    pub fn build(self) -> Result<X509Extension, ErrorStack> {
+        unsafe {
+            ffi::init();
+
+            cvt_p(ffi::X509V3_EXT_i2d(
+                Nid::CRL_NUMBER.as_raw(),
+                0,
+                self.0.as_ptr().cast(),
+            ))
+            .map(X509Extension)
         }
     }
 }

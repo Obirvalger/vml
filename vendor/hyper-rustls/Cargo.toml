@@ -11,9 +11,23 @@
 
 [package]
 edition = "2021"
-rust-version = "1.64"
+rust-version = "1.85"
 name = "hyper-rustls"
-version = "0.27.2"
+version = "0.27.9"
+build = false
+include = [
+    "Cargo.toml",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "LICENSE-ISC",
+    "README.md",
+    "src/**/*.rs",
+]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Rustls+hyper integration for pure rust HTTPS"
 homepage = "https://github.com/rustls/hyper-rustls"
 documentation = "https://docs.rs/hyper-rustls/"
@@ -22,110 +36,20 @@ license = "Apache-2.0 OR ISC OR MIT"
 repository = "https://github.com/rustls/hyper-rustls"
 
 [package.metadata.docs.rs]
+no-default-features = true
 features = [
     "http1",
     "http2",
-    "webpki-tokio",
+    "logging",
     "native-tokio",
     "ring",
+    "rustls-platform-verifier",
     "tls12",
-    "logging",
+    "webpki-tokio",
 ]
-no-default-features = true
 rustdoc-args = [
     "--cfg",
     "docsrs",
-]
-
-[[example]]
-name = "client"
-path = "examples/client.rs"
-required-features = [
-    "native-tokio",
-    "http1",
-]
-
-[[example]]
-name = "server"
-path = "examples/server.rs"
-required-features = ["aws-lc-rs"]
-
-[dependencies.futures-util]
-version = "0.3"
-default-features = false
-
-[dependencies.http]
-version = "1"
-
-[dependencies.hyper]
-version = "1"
-default-features = false
-
-[dependencies.hyper-util]
-version = "0.1"
-features = [
-    "client-legacy",
-    "tokio",
-]
-default-features = false
-
-[dependencies.log]
-version = "0.4.4"
-optional = true
-
-[dependencies.pki-types]
-version = "1"
-package = "rustls-pki-types"
-
-[dependencies.rustls]
-version = "0.23"
-default-features = false
-
-[dependencies.rustls-native-certs]
-version = "0.7"
-optional = true
-
-[dependencies.rustls-platform-verifier]
-version = "0.3"
-optional = true
-
-[dependencies.tokio]
-version = "1.0"
-
-[dependencies.tokio-rustls]
-version = "0.26"
-default-features = false
-
-[dependencies.tower-service]
-version = "0.3"
-
-[dependencies.webpki-roots]
-version = "0.26"
-optional = true
-
-[dev-dependencies.http-body-util]
-version = "0.1"
-
-[dev-dependencies.hyper-util]
-version = "0.1"
-features = ["server-auto"]
-default-features = false
-
-[dev-dependencies.rustls]
-version = "0.23"
-features = ["tls12"]
-default-features = false
-
-[dev-dependencies.rustls-pemfile]
-version = "2"
-
-[dev-dependencies.tokio]
-version = "1.0"
-features = [
-    "io-std",
-    "macros",
-    "net",
-    "rt-multi-thread",
 ]
 
 [features]
@@ -155,3 +79,77 @@ tls12 = [
     "rustls/tls12",
 ]
 webpki-tokio = ["webpki-roots"]
+
+[lib]
+name = "hyper_rustls"
+path = "src/lib.rs"
+
+[dependencies.http]
+version = "1"
+
+[dependencies.hyper]
+version = "1"
+default-features = false
+
+[dependencies.hyper-util]
+version = "0.1"
+features = [
+    "client-legacy",
+    "tokio",
+]
+default-features = false
+
+[dependencies.log]
+version = "0.4.4"
+optional = true
+
+[dependencies.rustls]
+version = "0.23"
+default-features = false
+
+[dependencies.rustls-native-certs]
+version = "0.8"
+optional = true
+
+[dependencies.rustls-platform-verifier]
+version = "0.7"
+optional = true
+
+[dependencies.tokio]
+version = "1.0"
+
+[dependencies.tokio-rustls]
+version = "0.26"
+default-features = false
+
+[dependencies.tower-service]
+version = "0.3"
+
+[dependencies.webpki-roots]
+version = "1"
+optional = true
+
+[dev-dependencies.cfg-if]
+version = "1"
+
+[dev-dependencies.http-body-util]
+version = "0.1"
+
+[dev-dependencies.hyper-util]
+version = "0.1"
+features = ["server-auto"]
+default-features = false
+
+[dev-dependencies.rustls]
+version = "0.23"
+features = ["tls12"]
+default-features = false
+
+[dev-dependencies.tokio]
+version = "1.0"
+features = [
+    "io-std",
+    "macros",
+    "net",
+    "rt-multi-thread",
+]

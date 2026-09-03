@@ -62,7 +62,7 @@
 //! ```
 
 use std::any::Any;
-use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::fmt;
 
 use crate::header::{HeaderMap, HeaderName, HeaderValue};
@@ -140,9 +140,6 @@ use crate::{Extensions, Result};
 /// Deserialize a response of bytes via json:
 ///
 /// ```
-/// # extern crate serde;
-/// # extern crate serde_json;
-/// # extern crate http;
 /// use http::Response;
 /// use serde::de;
 ///
@@ -160,9 +157,6 @@ use crate::{Extensions, Result};
 /// Or alternatively, serialize the body of a response to json
 ///
 /// ```
-/// # extern crate serde;
-/// # extern crate serde_json;
-/// # extern crate http;
 /// use http::Response;
 /// use serde::ser;
 ///
@@ -559,11 +553,11 @@ impl Builder {
     /// ```
     pub fn status<T>(self, status: T) -> Builder
     where
-        StatusCode: TryFrom<T>,
-        <StatusCode as TryFrom<T>>::Error: Into<crate::Error>,
+        T: TryInto<StatusCode>,
+        <T as TryInto<StatusCode>>::Error: Into<crate::Error>,
     {
         self.and_then(move |mut head| {
-            head.status = TryFrom::try_from(status).map_err(Into::into)?;
+            head.status = status.try_into().map_err(Into::into)?;
             Ok(head)
         })
     }
@@ -610,14 +604,14 @@ impl Builder {
     /// ```
     pub fn header<K, V>(self, key: K, value: V) -> Builder
     where
-        HeaderName: TryFrom<K>,
-        <HeaderName as TryFrom<K>>::Error: Into<crate::Error>,
-        HeaderValue: TryFrom<V>,
-        <HeaderValue as TryFrom<V>>::Error: Into<crate::Error>,
+        K: TryInto<HeaderName>,
+        <K as TryInto<HeaderName>>::Error: Into<crate::Error>,
+        V: TryInto<HeaderValue>,
+        <V as TryInto<HeaderValue>>::Error: Into<crate::Error>,
     {
         self.and_then(move |mut head| {
-            let name = <HeaderName as TryFrom<K>>::try_from(key).map_err(Into::into)?;
-            let value = <HeaderValue as TryFrom<V>>::try_from(value).map_err(Into::into)?;
+            let name = key.try_into().map_err(Into::into)?;
+            let value = value.try_into().map_err(Into::into)?;
             head.headers.try_append(name, value)?;
             Ok(head)
         })

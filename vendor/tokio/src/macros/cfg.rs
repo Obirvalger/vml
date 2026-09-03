@@ -1,5 +1,26 @@
 #![allow(unused_macros)]
 
+/// Allows specifying arbitrary combinations of features and config flags,
+/// which are also propagated to `docsrs` config.
+///
+/// Each contained item will have the annotations applied
+///
+/// ## Example usage:
+/// ```no-compile
+/// feature! {
+/// #![any(
+///     feature = "process",
+///     feature = "sync",
+///     feature = "rt",
+///     tokio_unstable
+/// )]
+///     /// docs
+///     pub struct MyStruct {};
+///     /// docs
+///     pub struct AnotherStruct {};
+/// }
+/// ```
+///
 macro_rules! feature {
     (
         #![$meta:meta]
@@ -32,6 +53,18 @@ macro_rules! cfg_unix {
         $(
             #[cfg(any(all(doc, docsrs), unix))]
             #[cfg_attr(docsrs, doc(cfg(unix)))]
+            $item
+        )*
+    }
+}
+
+/// Enables Unix-specific code, including WASI.
+/// Use this macro instead of `cfg(any(unix, target_os = "wasi"))` to generate docs properly.
+macro_rules! cfg_unix_or_wasi {
+    ($($item:item)*) => {
+        $(
+            #[cfg(any(all(doc, docsrs), unix, target_os = "wasi"))]
+            #[cfg_attr(docsrs, doc(cfg(any(unix, target_os = "wasi"))))]
             $item
         )*
     }
@@ -97,7 +130,6 @@ macro_rules! cfg_fs {
     ($($item:item)*) => {
         $(
             #[cfg(feature = "fs")]
-            #[cfg(not(target_os = "wasi"))]
             #[cfg_attr(docsrs, doc(cfg(feature = "fs")))]
             $item
         )*
@@ -121,11 +153,25 @@ macro_rules! cfg_io_driver {
                 feature = "net",
                 all(unix, feature = "process"),
                 all(unix, feature = "signal"),
+                all(
+                    tokio_unstable,
+                    feature = "io-uring",
+                    feature = "rt",
+                    feature = "fs",
+                    target_os = "linux"
+                )
             ))]
             #[cfg_attr(docsrs, doc(cfg(any(
                 feature = "net",
                 all(unix, feature = "process"),
                 all(unix, feature = "signal"),
+                all(
+                    tokio_unstable,
+                    feature = "io-uring",
+                    feature = "rt",
+                    feature = "fs",
+                    target_os = "linux"
+                )
             ))))]
             $item
         )*
@@ -139,6 +185,13 @@ macro_rules! cfg_io_driver_impl {
                 feature = "net",
                 all(unix, feature = "process"),
                 all(unix, feature = "signal"),
+                all(
+                    tokio_unstable,
+                    feature = "io-uring",
+                    feature = "rt",
+                    feature = "fs",
+                    target_os = "linux"
+                )
             ))]
             $item
         )*
@@ -152,6 +205,13 @@ macro_rules! cfg_not_io_driver {
                 feature = "net",
                 all(unix, feature = "process"),
                 all(unix, feature = "signal"),
+                all(
+                    tokio_unstable,
+                    feature = "io-uring",
+                    feature = "rt",
+                    feature = "fs",
+                    target_os = "linux"
+                )
             )))]
             $item
         )*
@@ -275,6 +335,37 @@ macro_rules! cfg_net {
         $(
             #[cfg(feature = "net")]
             #[cfg_attr(docsrs, doc(cfg(feature = "net")))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_net_or_uring {
+    ($($item:item)*) => {
+        $(
+            #[cfg(any(
+                feature = "net",
+                all(
+                    tokio_unstable,
+                    feature = "io-uring",
+                    feature = "rt",
+                    feature = "fs",
+                    target_os = "linux",
+                )
+            ))]
+            #[cfg_attr(
+                docsrs,
+                doc(cfg(any(
+                    feature = "net",
+                    all(
+                        tokio_unstable,
+                        feature = "io-uring",
+                        feature = "rt",
+                        feature = "fs",
+                        target_os = "linux",
+                    )
+                )))
+            )]
             $item
         )*
     }
@@ -420,15 +511,31 @@ macro_rules! cfg_taskdump {
         $(
             #[cfg(all(
                 tokio_unstable,
-                tokio_taskdump,
+                feature = "taskdump",
                 feature = "rt",
                 target_os = "linux",
                 any(
                     target_arch = "aarch64",
                     target_arch = "x86",
-                    target_arch = "x86_64"
+                    target_arch = "x86_64",
+                    target_arch = "s390x"
                 )
             ))]
+            #[cfg_attr(
+                docsrs,
+                doc(cfg(all(
+                    tokio_unstable,
+                    feature = "taskdump",
+                    feature = "rt",
+                    target_os = "linux",
+                    any(
+                        target_arch = "aarch64",
+                        target_arch = "x86",
+                        target_arch = "x86_64",
+                        target_arch = "s390x"
+                    )
+                )))
+            )]
             $item
         )*
     };
@@ -439,13 +546,14 @@ macro_rules! cfg_not_taskdump {
         $(
             #[cfg(not(all(
                 tokio_unstable,
-                tokio_taskdump,
+                feature = "taskdump",
                 feature = "rt",
                 target_os = "linux",
                 any(
                     target_arch = "aarch64",
                     target_arch = "x86",
-                    target_arch = "x86_64"
+                    target_arch = "x86_64",
+                    target_arch = "s390x"
                 )
             )))]
             $item
@@ -595,10 +703,67 @@ macro_rules! cfg_not_wasi {
     }
 }
 
+macro_rules! cfg_not_wasip1 {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(all(target_os = "wasi", target_env = "p1")))]
+            $item
+        )*
+    }
+}
+
 macro_rules! cfg_is_wasm_not_wasi {
     ($($item:item)*) => {
         $(
             #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
+            $item
+        )*
+    }
+}
+
+/// Use this macro to provide two different implementations of the same API — one for stable
+/// builds and one for unstable builds.
+macro_rules! cfg_metrics_variant {
+    (stable: {$($stable_code:tt)*}, unstable: {$($unstable_code:tt)*}) => {
+        cfg_not_unstable_metrics! {
+            $($stable_code)*
+        }
+
+        cfg_unstable_metrics! {
+            $($unstable_code)*
+        }
+    }
+}
+
+macro_rules! cfg_io_uring {
+    ($($item:item)*) => {
+        $(
+            #[cfg(all(
+                tokio_unstable,
+                feature = "io-uring",
+                feature = "rt",
+                feature = "fs",
+                target_os = "linux",
+            ))]
+            $item
+        )*
+    };
+}
+
+macro_rules! cfg_schedule_latency {
+    ($($item:item)*) => {
+        $(
+            #[cfg(feature = "schedule-latency")]
+            #[cfg_attr(docsrs, doc(cfg(feature = "schedule-latency")))]
+            $item
+        )*
+    };
+}
+
+macro_rules! cfg_not_schedule_latency {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(feature = "schedule-latency"))]
             $item
         )*
     }

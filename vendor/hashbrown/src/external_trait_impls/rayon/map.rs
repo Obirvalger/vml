@@ -1,8 +1,8 @@
 //! Rayon extensions for `HashMap`.
 
 use super::raw::{RawIntoParIter, RawParDrain, RawParIter};
-use crate::hash_map::HashMap;
-use crate::raw::{Allocator, Global};
+use crate::HashMap;
+use crate::alloc::{Allocator, Global};
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use core::marker::PhantomData;
@@ -15,9 +15,8 @@ use rayon::iter::{FromParallelIterator, IntoParallelIterator, ParallelExtend, Pa
 /// (provided by the [`IntoParallelRefIterator`] trait).
 /// See its documentation for more.
 ///
-/// [`par_iter`]: /hashbrown/struct.HashMap.html#method.par_iter
-/// [`HashMap`]: /hashbrown/struct.HashMap.html
-/// [`IntoParallelRefIterator`]: https://docs.rs/rayon/1.0/rayon/iter/trait.IntoParallelRefIterator.html
+/// [`par_iter`]: rayon::iter::IntoParallelRefIterator::par_iter
+/// [`IntoParallelRefIterator`]: rayon::iter::IntoParallelRefIterator
 pub struct ParIter<'a, K, V> {
     inner: RawParIter<(K, V)>,
     marker: PhantomData<(&'a K, &'a V)>,
@@ -65,8 +64,7 @@ impl<K: fmt::Debug + Eq + Hash, V: fmt::Debug> fmt::Debug for ParIter<'_, K, V> 
 /// This iterator is created by the [`par_keys`] method on [`HashMap`].
 /// See its documentation for more.
 ///
-/// [`par_keys`]: /hashbrown/struct.HashMap.html#method.par_keys
-/// [`HashMap`]: /hashbrown/struct.HashMap.html
+/// [`par_keys`]: HashMap::par_keys
 pub struct ParKeys<'a, K, V> {
     inner: RawParIter<(K, V)>,
     marker: PhantomData<(&'a K, &'a V)>,
@@ -108,8 +106,7 @@ impl<K: fmt::Debug + Eq + Hash, V> fmt::Debug for ParKeys<'_, K, V> {
 /// This iterator is created by the [`par_values`] method on [`HashMap`].
 /// See its documentation for more.
 ///
-/// [`par_values`]: /hashbrown/struct.HashMap.html#method.par_values
-/// [`HashMap`]: /hashbrown/struct.HashMap.html
+/// [`par_values`]: HashMap::par_values
 pub struct ParValues<'a, K, V> {
     inner: RawParIter<(K, V)>,
     marker: PhantomData<(&'a K, &'a V)>,
@@ -152,9 +149,8 @@ impl<K: Eq + Hash, V: fmt::Debug> fmt::Debug for ParValues<'_, K, V> {
 /// (provided by the [`IntoParallelRefMutIterator`] trait).
 /// See its documentation for more.
 ///
-/// [`par_iter_mut`]: /hashbrown/struct.HashMap.html#method.par_iter_mut
-/// [`HashMap`]: /hashbrown/struct.HashMap.html
-/// [`IntoParallelRefMutIterator`]: https://docs.rs/rayon/1.0/rayon/iter/trait.IntoParallelRefMutIterator.html
+/// [`par_iter_mut`]: rayon::iter::IntoParallelRefMutIterator::par_iter_mut
+/// [`IntoParallelRefMutIterator`]: rayon::iter::IntoParallelRefMutIterator
 pub struct ParIterMut<'a, K, V> {
     inner: RawParIter<(K, V)>,
     marker: PhantomData<(&'a K, &'a mut V)>,
@@ -192,8 +188,7 @@ impl<K: fmt::Debug + Eq + Hash, V: fmt::Debug> fmt::Debug for ParIterMut<'_, K, 
 /// This iterator is created by the [`par_values_mut`] method on [`HashMap`].
 /// See its documentation for more.
 ///
-/// [`par_values_mut`]: /hashbrown/struct.HashMap.html#method.par_values_mut
-/// [`HashMap`]: /hashbrown/struct.HashMap.html
+/// [`par_values_mut`]: HashMap::par_values_mut
 pub struct ParValuesMut<'a, K, V> {
     inner: RawParIter<(K, V)>,
     marker: PhantomData<(&'a K, &'a mut V)>,
@@ -229,9 +224,7 @@ impl<K: Eq + Hash, V: fmt::Debug> fmt::Debug for ParValuesMut<'_, K, V> {
 /// (provided by the [`IntoParallelIterator`] trait).
 /// See its documentation for more.
 ///
-/// [`into_par_iter`]: /hashbrown/struct.HashMap.html#method.into_par_iter
-/// [`HashMap`]: /hashbrown/struct.HashMap.html
-/// [`IntoParallelIterator`]: https://docs.rs/rayon/1.0/rayon/iter/trait.IntoParallelIterator.html
+/// [`into_par_iter`]: HashMap::into_par_iter
 pub struct IntoParIter<K, V, A: Allocator = Global> {
     inner: RawIntoParIter<(K, V), A>,
 }
@@ -263,8 +256,7 @@ impl<K: fmt::Debug + Eq + Hash, V: fmt::Debug, A: Allocator> fmt::Debug for Into
 /// This iterator is created by the [`par_drain`] method on [`HashMap`].
 /// See its documentation for more.
 ///
-/// [`par_drain`]: /hashbrown/struct.HashMap.html#method.par_drain
-/// [`HashMap`]: /hashbrown/struct.HashMap.html
+/// [`par_drain`]: HashMap::par_drain
 pub struct ParDrain<'a, K, V, A: Allocator = Global> {
     inner: RawParDrain<'a, (K, V), A>,
 }
@@ -346,7 +338,7 @@ where
         self.len() == other.len()
             && self
                 .into_par_iter()
-                .all(|(key, value)| other.get(key).map_or(false, |v| *value == *v))
+                .all(|(key, value)| other.get(key).is_some_and(|v| *value == *v))
     }
 }
 
@@ -455,7 +447,7 @@ where
     // Reserve the entire length if the map is empty.
     // Otherwise reserve half the length (rounded up), so the map
     // will only resize twice in the worst case.
-    let reserve = if map.is_empty() { len } else { (len + 1) / 2 };
+    let reserve = if map.is_empty() { len } else { len.div_ceil(2) };
     map.reserve(reserve);
     for vec in list {
         map.extend(vec);
@@ -464,40 +456,40 @@ where
 
 #[cfg(test)]
 mod test_par_map {
-    use alloc::vec::Vec;
     use core::hash::{Hash, Hasher};
     use core::sync::atomic::{AtomicUsize, Ordering};
+    use stdalloc::vec::Vec;
 
     use rayon::prelude::*;
 
-    use crate::hash_map::HashMap;
+    use crate::HashMap;
 
-    struct Dropable<'a> {
+    struct Droppable<'a> {
         k: usize,
         counter: &'a AtomicUsize,
     }
 
-    impl Dropable<'_> {
-        fn new(k: usize, counter: &AtomicUsize) -> Dropable<'_> {
+    impl Droppable<'_> {
+        fn new(k: usize, counter: &AtomicUsize) -> Droppable<'_> {
             counter.fetch_add(1, Ordering::Relaxed);
 
-            Dropable { k, counter }
+            Droppable { k, counter }
         }
     }
 
-    impl Drop for Dropable<'_> {
+    impl Drop for Droppable<'_> {
         fn drop(&mut self) {
             self.counter.fetch_sub(1, Ordering::Relaxed);
         }
     }
 
-    impl Clone for Dropable<'_> {
+    impl Clone for Droppable<'_> {
         fn clone(&self) -> Self {
-            Dropable::new(self.k, self.counter)
+            Droppable::new(self.k, self.counter)
         }
     }
 
-    impl Hash for Dropable<'_> {
+    impl Hash for Droppable<'_> {
         fn hash<H>(&self, state: &mut H)
         where
             H: Hasher,
@@ -506,13 +498,13 @@ mod test_par_map {
         }
     }
 
-    impl PartialEq for Dropable<'_> {
+    impl PartialEq for Droppable<'_> {
         fn eq(&self, other: &Self) -> bool {
             self.k == other.k
         }
     }
 
-    impl Eq for Dropable<'_> {}
+    impl Eq for Droppable<'_> {}
 
     #[test]
     fn test_into_iter_drops() {
@@ -526,8 +518,8 @@ mod test_par_map {
             assert_eq!(value.load(Ordering::Relaxed), 0);
 
             for i in 0..100 {
-                let d1 = Dropable::new(i, &key);
-                let d2 = Dropable::new(i + 100, &value);
+                let d1 = Droppable::new(i, &key);
+                let d2 = Droppable::new(i + 100, &value);
                 hm.insert(d1, d2);
             }
 
@@ -573,8 +565,8 @@ mod test_par_map {
             assert_eq!(value.load(Ordering::Relaxed), 0);
 
             for i in 0..100 {
-                let d1 = Dropable::new(i, &key);
-                let d2 = Dropable::new(i + 100, &value);
+                let d1 = Droppable::new(i, &key);
+                let d2 = Droppable::new(i + 100, &value);
                 hm.insert(d1, d2);
             }
 

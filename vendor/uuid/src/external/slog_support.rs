@@ -9,7 +9,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::Uuid;
+use crate::{non_nil::NonNilUuid, Uuid};
 
 impl slog::Value for Uuid {
     fn serialize(
@@ -22,16 +22,27 @@ impl slog::Value for Uuid {
     }
 }
 
+impl slog::Value for NonNilUuid {
+    fn serialize(
+        &self,
+        record: &slog::Record<'_>,
+        key: slog::Key,
+        serializer: &mut dyn slog::Serializer,
+    ) -> Result<(), slog::Error> {
+        Uuid::from(*self).serialize(record, key, serializer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::tests::new;
+    use crate::tests::some_uuid_v4;
 
     use slog::{crit, Drain};
 
     #[test]
     fn test_slog_kv() {
         let root = slog::Logger::root(slog::Discard.fuse(), slog::o!());
-        let u1 = new();
+        let u1 = some_uuid_v4();
         crit!(root, "test"; "u1" => u1);
     }
 }

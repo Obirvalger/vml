@@ -10,6 +10,7 @@ use unicode_segmentation::UnicodeSegmentation;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
+use crate::draw_target::LineType;
 use crate::format::{
     BinaryBytes, DecimalBytes, FormattedDuration, HumanBytes, HumanCount, HumanDuration,
     HumanFloatCount,
@@ -226,7 +227,7 @@ impl ProgressStyle {
     pub(crate) fn format_state(
         &self,
         state: &ProgressState,
-        lines: &mut Vec<String>,
+        lines: &mut Vec<LineType>,
         target_width: u16,
     ) {
         let mut cur = String::new();
@@ -374,9 +375,10 @@ impl ProgressStyle {
         }
     }
 
+    /// This is used exclusively to add the bars built above to the lines to print
     fn push_line(
         &self,
-        lines: &mut Vec<String>,
+        lines: &mut Vec<LineType>,
         cur: &mut String,
         state: &ProgressState,
         buf: &mut String,
@@ -394,11 +396,11 @@ impl ProgressStyle {
         for (i, line) in expanded.split('\n').enumerate() {
             // No newlines found in this case
             if i == 0 && line.len() == expanded.len() {
-                lines.push(expanded);
+                lines.push(LineType::Bar(expanded));
                 break;
             }
 
-            lines.push(line.to_string());
+            lines.push(LineType::Bar(line.to_string()));
         }
     }
 }
@@ -418,7 +420,7 @@ enum WideElement<'a> {
     Message { align: &'a Alignment },
 }
 
-impl<'a> WideElement<'a> {
+impl WideElement<'_> {
     fn expand(
         self,
         cur: String,
@@ -661,7 +663,7 @@ struct BarDisplay<'a> {
     rest: console::StyledObject<RepeatedStringDisplay<'a>>,
 }
 
-impl<'a> fmt::Display for BarDisplay<'a> {
+impl fmt::Display for BarDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for _ in 0..self.filled {
             f.write_str(&self.chars[0])?;
@@ -678,7 +680,7 @@ struct RepeatedStringDisplay<'a> {
     num: usize,
 }
 
-impl<'a> fmt::Display for RepeatedStringDisplay<'a> {
+impl fmt::Display for RepeatedStringDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for _ in 0..self.num {
             f.write_str(self.str)?;
@@ -694,7 +696,7 @@ struct PaddedStringDisplay<'a> {
     truncate: bool,
 }
 
-impl<'a> fmt::Display for PaddedStringDisplay<'a> {
+impl fmt::Display for PaddedStringDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let cols = measure_text_width(self.str);
         let excess = cols.saturating_sub(self.width);

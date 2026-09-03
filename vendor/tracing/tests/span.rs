@@ -6,7 +6,9 @@
 use std::thread;
 
 use tracing::{
-    field::{debug, display},
+    error_span,
+    field::{debug, display, Empty},
+    record_all,
     subscriber::with_default,
     Level, Span,
 };
@@ -342,7 +344,7 @@ fn entered_api() {
 fn moved_field() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("foo").with_field(
+            expect::span().named("foo").with_fields(
                 expect::field("bar")
                     .with_value(&display("hello from my span"))
                     .only(),
@@ -373,7 +375,7 @@ fn dotted_field_name() {
         .new_span(
             expect::span()
                 .named("foo")
-                .with_field(expect::field("fields.bar").with_value(&true).only()),
+                .with_fields(expect::field("fields.bar").with_value(&true).only()),
         )
         .only()
         .run_with_handle();
@@ -389,7 +391,7 @@ fn dotted_field_name() {
 fn borrowed_field() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("foo").with_field(
+            expect::span().named("foo").with_fields(
                 expect::field("bar")
                     .with_value(&display("hello from my span"))
                     .only(),
@@ -432,7 +434,7 @@ fn move_field_out_of_struct() {
     };
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("foo").with_field(
+            expect::span().named("foo").with_fields(
                 expect::field("x")
                     .with_value(&debug(3.234))
                     .and(expect::field("y").with_value(&debug(-1.223)))
@@ -442,7 +444,7 @@ fn move_field_out_of_struct() {
         .new_span(
             expect::span()
                 .named("bar")
-                .with_field(expect::field("position").with_value(&debug(&pos)).only()),
+                .with_fields(expect::field("position").with_value(&debug(&pos)).only()),
         )
         .run_with_handle();
 
@@ -465,7 +467,7 @@ fn move_field_out_of_struct() {
 fn float_values() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("foo").with_field(
+            expect::span().named("foo").with_fields(
                 expect::field("x")
                     .with_value(&3.234)
                     .and(expect::field("y").with_value(&-1.223))
@@ -492,7 +494,7 @@ fn add_field_after_new_span() {
         .new_span(
             expect::span()
                 .named("foo")
-                .with_field(expect::field("bar").with_value(&5)
+                .with_fields(expect::field("bar").with_value(&5)
                 .and(expect::field("baz").with_value).only()),
         )
         .record(
@@ -549,7 +551,7 @@ fn add_fields_only_after_new_span() {
 fn record_new_value_for_field() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("foo").with_field(
+            expect::span().named("foo").with_fields(
                 expect::field("bar")
                     .with_value(&5)
                     .and(expect::field("baz").with_value(&false))
@@ -580,7 +582,7 @@ fn record_new_value_for_field() {
 fn record_new_values_for_fields() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("foo").with_field(
+            expect::span().named("foo").with_fields(
                 expect::field("bar")
                     .with_value(&4)
                     .and(expect::field("baz").with_value(&false))
@@ -611,6 +613,164 @@ fn record_new_values_for_fields() {
     handle.assert_finished();
 }
 
+/// Tests record_all! macro, which is a wrapper for Span.record_all().
+/// Placed here instead of tests/macros.rs, because it uses tracing_mock, which
+/// requires std lib. Other macro tests exclude std lib to verify the macros do
+/// not dependend on it.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+#[test]
+fn record_all_macro_records_new_values_for_fields() {
+    let (subscriber, handle) = subscriber::mock()
+        .new_span(
+            expect::span()
+                .named("foo")
+                .with_fields(expect::field("bar")),
+        )
+        .record(
+            expect::span().named("foo"),
+            expect::field("bar")
+                .with_value(&5)
+                .and(expect::field("qux").with_value(&display("qux")))
+                .and(expect::field("quux").with_value(&debug("QuuX")))
+                .only(),
+        )
+        .enter(expect::span().named("foo"))
+        .exit(expect::span().named("foo"))
+        .drop_span(expect::span().named("foo"))
+        .only()
+        .run_with_handle();
+
+    with_default(subscriber, || {
+        let span = tracing::span!(
+            Level::TRACE,
+            "foo",
+            bar = 1,
+            baz = 2,
+            qux = Empty,
+            quux = Empty
+        );
+        record_all!(span, bar = 5, qux = %"qux", quux = ?"QuuX", unknown = "unknown");
+        span.in_scope(|| {})
+    });
+
+    handle.assert_finished();
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+#[test]
+fn record_all_macro_records_all_fields() {
+    let (subscriber, handle) = subscriber::mock()
+        .new_span(
+            expect::span()
+                .named("foo")
+                .with_fields(expect::field("bar")),
+        )
+        .record(
+            expect::span().named("foo"),
+            expect::field("bar")
+                .with_value(&5)
+                .and(expect::field("baz").with_value(&6))
+                .and(expect::field("qux").with_value(&display("qux")))
+                .and(expect::field("quux").with_value(&debug("QuuX")))
+                .only(),
+        )
+        .enter(expect::span().named("foo"))
+        .exit(expect::span().named("foo"))
+        .drop_span(expect::span().named("foo"))
+        .only()
+        .run_with_handle();
+
+    with_default(subscriber, || {
+        let span = tracing::span!(
+            Level::TRACE,
+            "foo",
+            bar = 1,
+            baz = 2,
+            qux = Empty,
+            quux = Empty
+        );
+        record_all!(span, bar = 5, baz = 6, qux = %"qux", quux = ?"QuuX");
+        span.in_scope(|| {})
+    });
+
+    handle.assert_finished();
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+#[test]
+fn record_all_macro_records_all_fields_different_order() {
+    let (subscriber, handle) = subscriber::mock()
+        .new_span(
+            expect::span()
+                .named("foo")
+                .with_fields(expect::field("bar")),
+        )
+        .record(
+            expect::span().named("foo"),
+            expect::field("bar")
+                .with_value(&5)
+                .and(expect::field("baz").with_value(&6))
+                .and(expect::field("qux").with_value(&display("qux")))
+                .and(expect::field("quux").with_value(&debug("QuuX")))
+                .only(),
+        )
+        .enter(expect::span().named("foo"))
+        .exit(expect::span().named("foo"))
+        .drop_span(expect::span().named("foo"))
+        .only()
+        .run_with_handle();
+
+    with_default(subscriber, || {
+        let span = tracing::span!(
+            Level::TRACE,
+            "foo",
+            bar = 1,
+            baz = 2,
+            qux = Empty,
+            quux = Empty
+        );
+        record_all!(span, qux = %"qux", baz = 6, bar = 5, quux = ?"QuuX");
+        span.in_scope(|| {})
+    });
+
+    handle.assert_finished();
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+#[test]
+fn record_all_macro_unknown_field() {
+    let (subscriber, handle) = subscriber::mock()
+        .new_span(
+            expect::span()
+                .named("foo")
+                .with_fields(expect::field("bar")),
+        )
+        .record(
+            expect::span().named("foo"),
+            tracing_mock::field::ExpectedFields::default().only(),
+        )
+        .enter(expect::span().named("foo"))
+        .exit(expect::span().named("foo"))
+        .drop_span(expect::span().named("foo"))
+        .only()
+        .run_with_handle();
+
+    with_default(subscriber, || {
+        let span = tracing::span!(
+            Level::TRACE,
+            "foo",
+            bar = 1,
+            baz = 2,
+            qux = Empty,
+            quux = Empty
+        );
+        record_all!(span, unknown = "unknown");
+        span.in_scope(|| {})
+    });
+
+    handle.assert_finished();
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
 #[test]
 fn new_span_with_target_and_log_level() {
@@ -635,7 +795,11 @@ fn new_span_with_target_and_log_level() {
 #[test]
 fn explicit_root_span_is_root() {
     let (subscriber, handle) = subscriber::mock()
-        .new_span(expect::span().named("foo").with_explicit_parent(None))
+        .new_span(
+            expect::span()
+                .named("foo")
+                .with_ancestry(expect::is_explicit_root()),
+        )
         .only()
         .run_with_handle();
 
@@ -652,7 +816,11 @@ fn explicit_root_span_is_root_regardless_of_ctx() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(expect::span().named("foo"))
         .enter(expect::span().named("foo"))
-        .new_span(expect::span().named("bar").with_explicit_parent(None))
+        .new_span(
+            expect::span()
+                .named("bar")
+                .with_ancestry(expect::is_explicit_root()),
+        )
         .exit(expect::span().named("foo"))
         .only()
         .run_with_handle();
@@ -674,7 +842,7 @@ fn explicit_child() {
         .new_span(
             expect::span()
                 .named("bar")
-                .with_explicit_parent(Some("foo")),
+                .with_ancestry(expect::has_explicit_parent("foo")),
         )
         .only()
         .run_with_handle();
@@ -692,11 +860,31 @@ fn explicit_child() {
 fn explicit_child_at_levels() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(expect::span().named("foo"))
-        .new_span(expect::span().named("a").with_explicit_parent(Some("foo")))
-        .new_span(expect::span().named("b").with_explicit_parent(Some("foo")))
-        .new_span(expect::span().named("c").with_explicit_parent(Some("foo")))
-        .new_span(expect::span().named("d").with_explicit_parent(Some("foo")))
-        .new_span(expect::span().named("e").with_explicit_parent(Some("foo")))
+        .new_span(
+            expect::span()
+                .named("a")
+                .with_ancestry(expect::has_explicit_parent("foo")),
+        )
+        .new_span(
+            expect::span()
+                .named("b")
+                .with_ancestry(expect::has_explicit_parent("foo")),
+        )
+        .new_span(
+            expect::span()
+                .named("c")
+                .with_ancestry(expect::has_explicit_parent("foo")),
+        )
+        .new_span(
+            expect::span()
+                .named("d")
+                .with_ancestry(expect::has_explicit_parent("foo")),
+        )
+        .new_span(
+            expect::span()
+                .named("e")
+                .with_ancestry(expect::has_explicit_parent("foo")),
+        )
         .only()
         .run_with_handle();
 
@@ -722,7 +910,7 @@ fn explicit_child_regardless_of_ctx() {
         .new_span(
             expect::span()
                 .named("baz")
-                .with_explicit_parent(Some("foo")),
+                .with_ancestry(expect::has_explicit_parent("foo")),
         )
         .exit(expect::span().named("bar"))
         .only()
@@ -741,7 +929,11 @@ fn explicit_child_regardless_of_ctx() {
 #[test]
 fn contextual_root() {
     let (subscriber, handle) = subscriber::mock()
-        .new_span(expect::span().named("foo").with_contextual_parent(None))
+        .new_span(
+            expect::span()
+                .named("foo")
+                .with_ancestry(expect::is_contextual_root()),
+        )
         .only()
         .run_with_handle();
 
@@ -761,7 +953,7 @@ fn contextual_child() {
         .new_span(
             expect::span()
                 .named("bar")
-                .with_contextual_parent(Some("foo")),
+                .with_ancestry(expect::has_contextual_parent("foo")),
         )
         .exit(expect::span().named("foo"))
         .only()
@@ -781,7 +973,7 @@ fn contextual_child() {
 fn display_shorthand() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("my_span").with_field(
+            expect::span().named("my_span").with_fields(
                 expect::field("my_field")
                     .with_value(&display("hello world"))
                     .only(),
@@ -801,7 +993,7 @@ fn display_shorthand() {
 fn debug_shorthand() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("my_span").with_field(
+            expect::span().named("my_span").with_fields(
                 expect::field("my_field")
                     .with_value(&debug("hello world"))
                     .only(),
@@ -821,7 +1013,7 @@ fn debug_shorthand() {
 fn both_shorthands() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("my_span").with_field(
+            expect::span().named("my_span").with_fields(
                 expect::field("display_field")
                     .with_value(&display("hello world"))
                     .and(expect::field("debug_field").with_value(&debug("hello world")))
@@ -842,7 +1034,7 @@ fn both_shorthands() {
 fn constant_field_name() {
     let (subscriber, handle) = subscriber::mock()
         .new_span(
-            expect::span().named("my_span").with_field(
+            expect::span().named("my_span").with_fields(
                 expect::field("foo")
                     .with_value(&"bar")
                     .and(expect::field("constant string").with_value(&"also works"))
@@ -864,5 +1056,22 @@ fn constant_field_name() {
         );
     });
 
+    handle.assert_finished();
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+#[test]
+fn keyword_ident_in_field_name_span_macro() {
+    #[derive(Debug)]
+    struct Foo;
+
+    let (subscriber, handle) = subscriber::mock()
+        .new_span(expect::span().with_fields(expect::field("self").with_value(&debug(Foo)).only()))
+        .only()
+        .run_with_handle();
+
+    with_default(subscriber, || {
+        error_span!("span", self = ?Foo);
+    });
     handle.assert_finished();
 }

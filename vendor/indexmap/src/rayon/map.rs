@@ -7,17 +7,16 @@ use super::collect;
 use rayon::iter::plumbing::{Consumer, ProducerCallback, UnindexedConsumer};
 use rayon::prelude::*;
 
-use crate::vec::Vec;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use core::ops::RangeBounds;
 
-use crate::map::Slice;
 use crate::Bucket;
-use crate::Entries;
 use crate::IndexMap;
+use crate::map::Slice;
 
 impl<K, V, S> IntoParallelIterator for IndexMap<K, V, S>
 where
@@ -395,7 +394,7 @@ where
     K: Send,
     V: Send,
 {
-    /// Return a parallel iterator over mutable references to the the values of the map slice.
+    /// Return a parallel iterator over mutable references to the values of the map slice.
     ///
     /// While parallel iterators can process items in any order, their relative order
     /// in the slice is still preserved for operations like `reduce` and `collect`.
@@ -411,7 +410,7 @@ where
     K: Send,
     V: Send,
 {
-    /// Sort the map’s key-value pairs in parallel, by the default ordering of the keys.
+    /// Sort the map's key-value pairs in parallel, by the default ordering of the keys.
     pub fn par_sort_keys(&mut self)
     where
         K: Ord,
@@ -421,7 +420,7 @@ where
         });
     }
 
-    /// Sort the map’s key-value pairs in place and in parallel, using the comparison
+    /// Sort the map's key-value pairs in place and in parallel, using the comparison
     /// function `cmp`.
     ///
     /// The comparison function receives two key and value pairs to compare (you
@@ -444,6 +443,18 @@ where
         let mut entries = self.into_entries();
         entries.par_sort_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
         IntoParIter { entries }
+    }
+
+    /// Sort the map's key-value pairs in place and in parallel, using a sort-key extraction
+    /// function.
+    pub fn par_sort_by_key<T, F>(&mut self, sort_key: F)
+    where
+        T: Ord,
+        F: Fn(&K, &V) -> T + Sync,
+    {
+        self.with_entries(move |entries| {
+            entries.par_sort_by_key(move |a| sort_key(&a.key, &a.value));
+        });
     }
 
     /// Sort the map's key-value pairs in parallel, by the default ordering of the keys.
@@ -481,7 +492,19 @@ where
         IntoParIter { entries }
     }
 
-    /// Sort the map’s key-value pairs in place and in parallel, using a sort-key extraction
+    /// Sort the map's key-value pairs in place and in parallel, using a sort-key extraction
+    /// function.
+    pub fn par_sort_unstable_by_key<T, F>(&mut self, sort_key: F)
+    where
+        T: Ord,
+        F: Fn(&K, &V) -> T + Sync,
+    {
+        self.with_entries(move |entries| {
+            entries.par_sort_unstable_by_key(move |a| sort_key(&a.key, &a.value));
+        });
+    }
+
+    /// Sort the map's key-value pairs in place and in parallel, using a sort-key extraction
     /// function.
     pub fn par_sort_by_cached_key<T, F>(&mut self, sort_key: F)
     where

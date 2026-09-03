@@ -1,3 +1,48 @@
+# 1.5.0 (July 29, 2026)
+
+- Add `Method::QUERY` constant for the new QUERY method defined in RFC 10008.
+- Fix `uri::Builder::path_and_query()` to allow empty strings to mean no path.
+- Fix `uri::PathAndQuery` parsing to enforce URI max length.
+
+# 1.4.2 (June 8, 2026)
+
+- Fix `uri::Builder` to allow `"*"` as the path when scheme and authority are also set, used in HTTP/2 requests.
+- Fix `Uri` to properly reject `DEL` characters.
+
+# 1.4.1 (May 25, 2026)
+
+- Fix `PathAndQuery::from_static()` and `from_shared()` to reject inputs that do not start with `/`.
+- Fix `Extend` for `HeaderMap` to clamp max size hint and not overflow.
+- Fix `header::IntoIter` that could use-after-free if the generic value type could panic on drop.
+- Fix `header::{IterMut, ValuesIterMut}` to not violate stacked borrows.
+
+# 1.4.0 (November 24, 2025)
+
+- Add `StatusCode::EARLY_HINTS` constant for 103 Early Hints.
+- Make `StatusCode::from_u16` now a `const fn`.
+- Make `Authority::from_static` now a `const fn`.
+- Make `PathAndQuery::from_static` now a `const fn`.
+- MSRV increased to 1.57 (allows legible const fn panic messages).
+
+# 1.3.1 (March 11, 2025)
+
+* Fix validation that all characters are UTF-8 in URI path and query.
+
+# 1.3.0 (March 11, 2025)
+
+* Allow most UTF-8 characters in URI path and query.
+* Fix `HeaderMap::reserve()` to allocate sufficient capacity.
+
+# 1.2.0 (December 3, 2024)
+
+* Add `StatusCode::TOO_EARLY` constant for 425 status.
+* Loosen `TryFrom<HashMap>` for `HeaderMap` to work with any state generic.
+* Change `Builder` methods to use `TryInto` instead of `TryFrom` arguments.
+* Make `StatusCode::as_u16` a `const` function.
+* Fix `Method` parsing to allow `#$%&'` characters.
+* Fix `HeaderName` parsing to reject `"` characters.
+* Fix off by 1 error in `Method::from_bytes` that could cause extra allocations.
+
 # 1.1.0 (March 4, 2024)
 
 * Add methods to allow trying to allocate in the `HeaderMap`, returning an error if oversize instead of panicking.

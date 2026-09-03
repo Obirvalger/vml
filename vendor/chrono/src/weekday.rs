@@ -38,6 +38,7 @@ use crate::OutOfRange;
 )]
 #[cfg_attr(feature = "rkyv-validation", archive(check_bytes))]
 #[cfg_attr(all(feature = "arbitrary", feature = "std"), derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Weekday {
     /// Monday.
     Mon = 0,
@@ -161,17 +162,13 @@ impl Weekday {
     pub const fn days_since(&self, other: Weekday) -> u32 {
         let lhs = *self as u32;
         let rhs = other as u32;
-        if lhs < rhs {
-            7 + lhs - rhs
-        } else {
-            lhs - rhs
-        }
+        if lhs < rhs { 7 + lhs - rhs } else { lhs - rhs }
     }
 }
 
 impl fmt::Display for Weekday {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match *self {
+        f.pad(match *self {
             Weekday::Mon => "Mon",
             Weekday::Tue => "Tue",
             Weekday::Wed => "Wed",
@@ -242,18 +239,28 @@ pub struct ParseWeekdayError {
     pub(crate) _dummy: (),
 }
 
+#[cfg(all(not(feature = "std"), feature = "core-error"))]
+impl core::error::Error for ParseWeekdayError {}
+
 #[cfg(feature = "std")]
 impl std::error::Error for ParseWeekdayError {}
 
 impl fmt::Display for ParseWeekdayError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!("{:?}", self))
+        f.write_fmt(format_args!("{self:?}"))
     }
 }
 
 impl fmt::Debug for ParseWeekdayError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ParseWeekdayError {{ .. }}")
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for ParseWeekdayError {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "ParseWeekdayError {{ .. }}")
     }
 }
 
@@ -276,7 +283,7 @@ mod weekday_serde {
 
     struct WeekdayVisitor;
 
-    impl<'de> de::Visitor<'de> for WeekdayVisitor {
+    impl de::Visitor<'_> for WeekdayVisitor {
         type Value = Weekday;
 
         fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -332,10 +339,20 @@ mod tests {
     }
 
     #[test]
+    fn test_formatting_alignment() {
+        // No exhaustive testing here as we just delegate the
+        // implementation to Formatter::pad. Just some basic smoke
+        // testing to ensure that it's in fact being done.
+        assert_eq!(format!("{:x>7}", Weekday::Mon), "xxxxMon");
+        assert_eq!(format!("{:^7}", Weekday::Mon), "  Mon  ");
+        assert_eq!(format!("{:Z<7}", Weekday::Mon), "MonZZZZ");
+    }
+
+    #[test]
     #[cfg(feature = "serde")]
     fn test_serde_serialize() {
-        use serde_json::to_string;
         use Weekday::*;
+        use serde_json::to_string;
 
         let cases: Vec<(Weekday, &str)> = vec![
             (Mon, "\"Mon\""),
@@ -356,8 +373,8 @@ mod tests {
     #[test]
     #[cfg(feature = "serde")]
     fn test_serde_deserialize() {
-        use serde_json::from_str;
         use Weekday::*;
+        use serde_json::from_str;
 
         let cases: Vec<(&str, Weekday)> = vec![
             ("\"mon\"", Mon),

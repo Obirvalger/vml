@@ -1,12 +1,19 @@
 use crate::io::{Interest, PollEvented};
 use crate::net::unix::{SocketAddr, UnixStream};
+use crate::util::check_socket_for_blocking;
 
 use std::fmt;
 use std::io;
+#[cfg(target_os = "android")]
+use std::os::android::net::SocketAddrExt;
+#[cfg(target_os = "linux")]
+use std::os::linux::net::SocketAddrExt;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd};
-use std::os::unix::net;
+use std::os::unix::net::{self, SocketAddr as StdSocketAddr};
 use std::path::Path;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 cfg_net_unix! {
     /// A Unix socket which can accept connections from other Unix sockets.
@@ -70,7 +77,36 @@ impl UnixListener {
     where
         P: AsRef<Path>,
     {
-        let listener = mio::net::UnixListener::bind(path)?;
+        // For now, we handle abstract socket paths on linux here.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        let addr = {
+            let os_str_bytes = path.as_ref().as_os_str().as_bytes();
+            if os_str_bytes.starts_with(b"\0") {
+                StdSocketAddr::from_abstract_name(&os_str_bytes[1..])?
+            } else {
+                StdSocketAddr::from_pathname(path)?
+            }
+        };
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        let addr = StdSocketAddr::from_pathname(path)?;
+
+        let addr = SocketAddr::from(addr);
+        UnixListener::bind_addr(&addr)
+    }
+
+    /// Creates a new `UnixListener` bound to the specified address.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if it is not called from within a runtime with
+    /// IO enabled.
+    ///
+    /// The runtime is usually set implicitly when this function is called
+    /// from a future driven by a tokio runtime, otherwise runtime can be set
+    /// explicitly with [`Runtime::enter`](crate::runtime::Runtime::enter) function.
+    #[track_caller]
+    pub fn bind_addr(socket_addr: &SocketAddr) -> io::Result<UnixListener> {
+        let listener = mio::net::UnixListener::bind_addr(&socket_addr.0)?;
         let io = PollEvented::new(listener)?;
         Ok(UnixListener { io })
     }
@@ -86,6 +122,10 @@ impl UnixListener {
     /// non-blocking mode. Otherwise all I/O operations on the listener
     /// will block the thread, which will cause unexpected behavior.
     /// Non-blocking mode can be set using [`set_nonblocking`].
+    ///
+    /// Passing a listener in blocking mode is always erroneous,
+    /// and the behavior in that case may change in the future.
+    /// For example, it could panic.
     ///
     /// [`set_nonblocking`]: std::os::unix::net::UnixListener::set_nonblocking
     ///
@@ -114,6 +154,8 @@ impl UnixListener {
     /// explicitly with [`Runtime::enter`](crate::runtime::Runtime::enter) function.
     #[track_caller]
     pub fn from_std(listener: net::UnixListener) -> io::Result<UnixListener> {
+        check_socket_for_blocking(&listener)?;
+
         let listener = mio::net::UnixListener::from_std(listener);
         let io = PollEvented::new(listener)?;
         Ok(UnixListener { io })
@@ -160,8 +202,8 @@ impl UnixListener {
     ///
     /// # Cancel safety
     ///
-    /// This method is cancel safe. If the method is used as the event in a
-    /// [`tokio::select!`](crate::select) statement and some other branch
+    /// This method is cancel safe. If the method is used as a branch in
+    /// [`tokio::select!`](crate::select) and another branch
     /// completes first, then it is guaranteed that no new connections were
     /// accepted by this method.
     pub async fn accept(&self) -> io::Result<(UnixStream, SocketAddr)> {
@@ -204,7 +246,7 @@ impl TryFrom<std::os::unix::net::UnixListener> for UnixListener {
 
 impl fmt::Debug for UnixListener {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.io.fmt(f)
+        (*self.io).fmt(f)
     }
 }
 

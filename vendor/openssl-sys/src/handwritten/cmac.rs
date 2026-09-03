@@ -1,7 +1,9 @@
-use libc::*;
+use libc::size_t;
+use std::ffi::{c_int, c_uchar, c_void};
 
 use super::super::*;
 
+#[cfg(not(osslconf = "OPENSSL_NO_DEPRECATED_3_0"))]
 extern "C" {
     pub fn CMAC_CTX_new() -> *mut CMAC_CTX;
     pub fn CMAC_CTX_free(ctx: *mut CMAC_CTX);

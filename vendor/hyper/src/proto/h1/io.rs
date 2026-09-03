@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 
 use crate::rt::{Read, ReadBuf, Write};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use futures_util::ready;
+use futures_core::ready;
 
 use super::{Http1Transaction, ParseContext, ParsedMessage};
 use crate::common::buf::BufList;
@@ -32,6 +32,7 @@ const MAX_BUF_LIST_BUFFERS: usize = 16;
 pub(crate) struct Buffered<T, B> {
     flush_pipeline: bool,
     io: T,
+    partial_len: Option<usize>,
     read_blocked: bool,
     read_buf: BytesMut,
     read_buf_strategy: ReadStrategy,
@@ -65,6 +66,7 @@ where
         Buffered {
             flush_pipeline: false,
             io,
+            partial_len: None,
             read_blocked: false,
             read_buf: BytesMut::with_capacity(0),
             read_buf_strategy: ReadStrategy::default(),
@@ -84,8 +86,7 @@ where
     pub(crate) fn set_max_buf_size(&mut self, max: usize) {
         assert!(
             max >= MINIMUM_MAX_BUFFER_SIZE,
-            "The max_buf_size cannot be smaller than {}.",
-            MINIMUM_MAX_BUFFER_SIZE,
+            "The max_buf_size cannot be smaller than {MINIMUM_MAX_BUFFER_SIZE}.",
         );
         self.read_buf_strategy = ReadStrategy::with_max(max);
         self.write_buf.max_buf_size = max;
@@ -99,14 +100,14 @@ where
     pub(crate) fn set_write_strategy_flatten(&mut self) {
         // this should always be called only at construction time,
         // so this assert is here to catch myself
-        debug_assert!(self.write_buf.queue.bufs_cnt() == 0);
+        debug_assert_eq!(self.write_buf.queue.bufs_cnt(), 0);
         self.write_buf.set_strategy(WriteStrategy::Flatten);
     }
 
     pub(crate) fn set_write_strategy_queue(&mut self) {
         // this should always be called only at construction time,
         // so this assert is here to catch myself
-        debug_assert!(self.write_buf.queue.bufs_cnt() == 0);
+        debug_assert_eq!(self.write_buf.queue.bufs_cnt(), 0);
         self.write_buf.set_strategy(WriteStrategy::Queue);
     }
 
@@ -145,7 +146,12 @@ where
     }
 
     pub(crate) fn buffer<BB: Buf + Into<B>>(&mut self, buf: BB) {
-        self.write_buf.buffer(buf)
+        self.write_buf.buffer(buf);
+    }
+
+    /// Whether there are bytes waiting in the write buffer to be flushed.
+    pub(crate) fn has_buffered_write(&self) -> bool {
+        self.write_buf.remaining() > 0
     }
 
     pub(crate) fn can_buffer(&self) -> bool {
@@ -174,8 +180,9 @@ where
         S: Http1Transaction,
     {
         loop {
-            match super::role::parse_headers::<S>(
+            if let Some(msg) = super::role::parse_headers::<S>(
                 &mut self.read_buf,
+                self.partial_len,
                 ParseContext {
                     cached_headers: parse_ctx.cached_headers,
                     req_method: parse_ctx.req_method,
@@ -185,20 +192,26 @@ where
                     #[cfg(feature = "ffi")]
                     preserve_header_order: parse_ctx.preserve_header_order,
                     h09_responses: parse_ctx.h09_responses,
-                    #[cfg(feature = "ffi")]
+                    #[cfg(feature = "client")]
                     on_informational: parse_ctx.on_informational,
                 },
             )? {
-                Some(msg) => {
-                    debug!("parsed {} headers", msg.head.headers.len());
-                    return Poll::Ready(Ok(msg));
+                debug!("parsed {} headers", msg.head.headers.len());
+                self.partial_len = None;
+                return Poll::Ready(Ok(msg));
+            } else {
+                let max = self.read_buf_strategy.max();
+                let curr_len = self.read_buf.len();
+                if curr_len >= max {
+                    debug!("max_buf_size ({}) reached, closing", max);
+                    return Poll::Ready(Err(crate::Error::new_too_large()));
                 }
-                None => {
-                    let max = self.read_buf_strategy.max();
-                    if self.read_buf.len() >= max {
-                        debug!("max_buf_size ({}) reached, closing", max);
-                        return Poll::Ready(Err(crate::Error::new_too_large()));
-                    }
+                if curr_len > 0 {
+                    trace!("partial headers; {} bytes so far", curr_len);
+                    self.partial_len = Some(curr_len);
+                } else {
+                    // 1xx gobled some bytes
+                    self.partial_len = None;
                 }
             }
             if ready!(self.poll_read_from_io(cx)).map_err(crate::Error::new_io)? == 0 {
@@ -210,7 +223,14 @@ where
 
     pub(crate) fn poll_read_from_io(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
         self.read_blocked = false;
-        let next = self.read_buf_strategy.next();
+        // Get the next amount to allocate, but make sure we don't go over
+        // the max read buf size configured.
+        let next = cmp::min(
+            self.read_buf_strategy.next(),
+            self.read_buf_strategy
+                .max()
+                .saturating_sub(self.read_buf.len()),
+        );
         if self.read_buf_remaining_mut() < next {
             self.read_buf.reserve(next);
         }
@@ -223,10 +243,10 @@ where
             Poll::Ready(Ok(_)) => {
                 let n = buf.filled().len();
                 trace!("received {} bytes", n);
+                // Safety: we just read that many bytes into the
+                // uninitialized part of the buffer, so this is okay.
+                // @tokio pls give me back `poll_read_buf` thanks
                 unsafe {
-                    // Safety: we just read that many bytes into the
-                    // uninitialized part of the buffer, so this is okay.
-                    // @tokio pls give me back `poll_read_buf` thanks
                     self.read_buf.advance_mut(n);
                 }
                 self.read_buf_strategy.record(n);
@@ -242,10 +262,6 @@ where
 
     pub(crate) fn into_inner(self) -> (T, Bytes) {
         (self.io, self.read_buf.freeze())
-    }
-
-    pub(crate) fn io_mut(&mut self) -> &mut T {
-        &mut self.io
     }
 
     pub(crate) fn is_read_blocked(&self) -> bool {
@@ -311,8 +327,13 @@ where
         Pin::new(&mut self.io).poll_flush(cx)
     }
 
+    pub(crate) fn poll_shutdown(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        ready!(self.poll_flush(cx))?;
+        Pin::new(&mut self.io).poll_shutdown(cx)
+    }
+
     #[cfg(test)]
-    fn flush<'a>(&'a mut self) -> impl std::future::Future<Output = io::Result<()>> + 'a {
+    fn flush(&mut self) -> impl std::future::Future<Output = io::Result<()>> + '_ {
         futures_util::future::poll_fn(move |cx| self.poll_flush(cx))
     }
 }
@@ -378,15 +399,15 @@ impl ReadStrategy {
     }
 
     fn record(&mut self, bytes_read: usize) {
-        match *self {
+        match self {
             ReadStrategy::Adaptive {
-                ref mut decrease_now,
-                ref mut next,
+                decrease_now,
+                next,
                 max,
                 ..
             } => {
                 if bytes_read >= *next {
-                    *next = cmp::min(incr_power_of_two(*next), max);
+                    *next = cmp::min(incr_power_of_two(*next), *max);
                     *decrease_now = false;
                 } else {
                     let decr_to = prev_power_of_two(*next);
@@ -496,10 +517,10 @@ impl<T: AsRef<[u8]>> Buf for Cursor<T> {
 
 // an internal buffer to collect writes before flushes
 pub(super) struct WriteBuf<B> {
-    /// Re-usable buffer that holds message headers
+    /// Re-usable buffer that holds message headers.
     headers: Cursor<Vec<u8>>,
     max_buf_size: usize,
-    /// Deque of user buffers if strategy is Queue
+    /// Deque of user buffers if strategy is `Queue`.
     queue: BufList<B>,
     strategy: WriteStrategy,
 }
@@ -636,19 +657,6 @@ mod tests {
 
     use tokio_test::io::Builder as Mock;
 
-    // #[cfg(feature = "nightly")]
-    // use test::Bencher;
-
-    /*
-    impl<T: Read> MemRead for AsyncIo<T> {
-        fn read_mem(&mut self, len: usize) -> Poll<Bytes, io::Error> {
-            let mut v = vec![0; len];
-            let n = try_nb!(self.read(v.as_mut_slice()));
-            Ok(Async::Ready(BytesMut::from(&v[..n]).freeze()))
-        }
-    }
-    */
-
     #[tokio::test]
     #[ignore]
     async fn iobuf_write_empty_slice() {
@@ -698,7 +706,7 @@ mod tests {
                 #[cfg(feature = "ffi")]
                 preserve_header_order: false,
                 h09_responses: false,
-                #[cfg(feature = "ffi")]
+                #[cfg(feature = "client")]
                 on_informational: &mut None,
             };
             assert!(buffered
@@ -814,7 +822,7 @@ mod tests {
         }
 
         let mut max = 8192;
-        while max < std::usize::MAX {
+        while max < usize::MAX {
             fuzz(max);
             max = (max / 2).saturating_mul(3);
         }

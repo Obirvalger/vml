@@ -3,7 +3,7 @@
 
 To determine the width of a UTF-8 character by providing its first byte.
 
-References: https://tools.ietf.org/html/rfc3629
+References: <https://tools.ietf.org/html/rfc3629>
 
 ## Examples
 
@@ -66,11 +66,9 @@ pub const fn get_width(byte: u8) -> usize {
         1
     } else if is_width_2(byte) {
         2
-    } else if byte <= MAX_3 {
-        // no need to check `MIN_3 <= byte`
+    } else if is_width_3(byte) {
         3
-    } else if byte <= MAX_4 {
-        // no need to check `MIN_4 <= byte`
+    } else if is_width_4(byte) {
         4
     } else {
         0

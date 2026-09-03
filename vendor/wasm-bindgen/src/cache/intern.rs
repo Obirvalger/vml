@@ -1,6 +1,5 @@
 use cfg_if::cfg_if;
 
-
 cfg_if! {
     if #[cfg(feature = "enable-interning")] {
         use std::thread_local;
@@ -32,11 +31,14 @@ cfg_if! {
 
         fn intern_str(key: &str) {
             CACHE.with(|cache| {
-                let mut cache = cache.entries.borrow_mut();
+                let entries = &cache.entries;
 
                 // Can't use `entry` because `entry` requires a `String`
-                if !cache.contains_key(key) {
-                    cache.insert(key.to_owned(), JsValue::from(key));
+                if !entries.borrow().contains_key(key) {
+                    // Note: we must not hold the borrow while we create the `JsValue`,
+                    // because it will try to look up the value in the cache first.
+                    let value = JsValue::from(key);
+                    entries.borrow_mut().insert(key.to_owned(), value);
                 }
             })
         }
@@ -50,7 +52,6 @@ cfg_if! {
         }
     }
 }
-
 
 /// Interns Rust strings so that it's much faster to send them to JS.
 ///
@@ -88,7 +89,6 @@ pub fn intern(s: &str) -> &str {
 
     s
 }
-
 
 /// Removes a Rust string from the intern cache.
 ///

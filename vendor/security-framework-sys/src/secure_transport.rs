@@ -1,8 +1,7 @@
 use core_foundation_sys::array::CFArrayRef;
-use core_foundation_sys::base::CFAllocatorRef;
 #[cfg(target_os = "macos")]
 use core_foundation_sys::base::CFTypeRef;
-use core_foundation_sys::base::{Boolean, OSStatus};
+use core_foundation_sys::base::{Boolean, CFAllocatorRef, OSStatus};
 use std::os::raw::{c_char, c_int, c_void};
 
 use crate::cipher_suite::SSLCipherSuite;
@@ -27,16 +26,21 @@ pub const kTLSProtocol1Only: SSLProtocol = 5;
 pub const kSSLProtocolAll: SSLProtocol = 6;
 
 pub type SSLSessionOption = c_int;
+#[deprecated(note = "deprecated by Apple")]
 pub const kSSLSessionOptionBreakOnServerAuth: SSLSessionOption = 0;
+#[deprecated(note = "deprecated by Apple")]
 pub const kSSLSessionOptionBreakOnCertRequested: SSLSessionOption = 1;
+#[deprecated(note = "deprecated by Apple")]
 pub const kSSLSessionOptionBreakOnClientAuth: SSLSessionOption = 2;
+#[deprecated(note = "deprecated by Apple")]
 pub const kSSLSessionOptionFalseStart: SSLSessionOption = 3;
 pub const kSSLSessionOptionSendOneByteRecord: SSLSessionOption = 4;
-#[cfg(all(feature = "OSX_10_11", not(any(target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))))]
+#[deprecated(note = "deprecated by Apple")]
 pub const kSSLSessionOptionAllowServerIdentityChange: SSLSessionOption = 5;
-#[cfg(all(feature = "OSX_10_10", not(any(target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))))]
+#[cfg(target_os = "macos")]
+#[deprecated(note = "deprecated by Apple")]
 pub const kSSLSessionOptionFallback: SSLSessionOption = 6;
-#[cfg(all(feature = "OSX_10_11", not(any(target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))))]
+#[deprecated(note = "deprecated by Apple")]
 pub const kSSLSessionOptionBreakOnClientHello: SSLSessionOption = 7;
 
 pub type SSLSessionState = c_int;
@@ -264,10 +268,7 @@ extern "C" {
         protocol: SSLProtocol,
         enable: Boolean,
     ) -> OSStatus;
-    #[cfg(feature = "OSX_10_13")]
     pub fn SSLSetALPNProtocols(context: SSLContextRef, protocols: CFArrayRef) -> OSStatus;
-    #[cfg(feature = "OSX_10_13")]
     pub fn SSLCopyALPNProtocols(context: SSLContextRef, protocols: *mut CFArrayRef) -> OSStatus;
-    #[cfg(feature = "OSX_10_13")]
     pub fn SSLSetSessionTicketsEnabled(context: SSLContextRef, enabled: Boolean) -> OSStatus;
 }

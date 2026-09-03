@@ -38,7 +38,7 @@ use crate::core::Word;
 /// let words = AsciiSpace.find_words("Hello World!").collect::<Vec<_>>();
 /// assert_eq!(words, vec![Word::from("Hello "), Word::from("World!")]);
 /// ```
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum WordSeparator {
     /// Find words by splitting on runs of `' '` characters.
     ///
@@ -152,17 +152,6 @@ impl PartialEq for WordSeparator {
             #[cfg(feature = "unicode-linebreak")]
             (WordSeparator::UnicodeBreakProperties, WordSeparator::UnicodeBreakProperties) => true,
             (_, _) => false,
-        }
-    }
-}
-
-impl std::fmt::Debug for WordSeparator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WordSeparator::AsciiSpace => f.write_str("AsciiSpace"),
-            #[cfg(feature = "unicode-linebreak")]
-            WordSeparator::UnicodeBreakProperties => f.write_str("UnicodeBreakProperties"),
-            WordSeparator::Custom(_) => f.write_str("Custom(...)"),
         }
     }
 }

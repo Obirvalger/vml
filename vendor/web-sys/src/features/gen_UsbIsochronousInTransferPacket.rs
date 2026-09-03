@@ -5,7 +5,11 @@ use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = USBIsochronousInTransferPacket , typescript_type = "USBIsochronousInTransferPacket")]
+    #[wasm_bindgen(
+        extends = "::js_sys::Object",
+        js_name = "USBIsochronousInTransferPacket",
+        typescript_type = "USBIsochronousInTransferPacket"
+    )]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `UsbIsochronousInTransferPacket` class."]
     #[doc = ""]
@@ -14,10 +18,15 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `UsbIsochronousInTransferPacket`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type UsbIsochronousInTransferPacket;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "USBIsochronousInTransferPacket" , js_name = data)]
+    #[wasm_bindgen(
+        method,
+        getter,
+        js_class = "USBIsochronousInTransferPacket",
+        js_name = "data"
+    )]
     #[doc = "Getter for the `data` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/USBIsochronousInTransferPacket/data)"]
@@ -25,11 +34,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `UsbIsochronousInTransferPacket`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn data(this: &UsbIsochronousInTransferPacket) -> Option<::js_sys::DataView>;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "UsbTransferStatus")]
-    # [wasm_bindgen (structural , method , getter , js_class = "USBIsochronousInTransferPacket" , js_name = status)]
+    #[wasm_bindgen(
+        method,
+        getter,
+        js_class = "USBIsochronousInTransferPacket",
+        js_name = "status"
+    )]
     #[doc = "Getter for the `status` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/USBIsochronousInTransferPacket/status)"]
@@ -37,7 +51,7 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `UsbIsochronousInTransferPacket`, `UsbTransferStatus`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn status(this: &UsbIsochronousInTransferPacket) -> UsbTransferStatus;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "UsbTransferStatus")]
@@ -49,7 +63,7 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `UsbIsochronousInTransferPacket`, `UsbTransferStatus`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn new(status: UsbTransferStatus) -> Result<UsbIsochronousInTransferPacket, JsValue>;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "UsbTransferStatus")]
@@ -61,7 +75,7 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `UsbIsochronousInTransferPacket`, `UsbTransferStatus`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn new_with_data(
         status: UsbTransferStatus,
         data: Option<&::js_sys::DataView>,

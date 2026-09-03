@@ -295,7 +295,7 @@ pub(crate) enum Drawable<'a> {
     },
 }
 
-impl<'a> Drawable<'a> {
+impl Drawable<'_> {
     /// Adjust `last_line_count` such that the next draw operation keeps/clears additional lines
     pub(crate) fn adjust_last_line_count(&mut self, adjust: LineAdjust) {
         let last_line_count: &mut VisualLines = match self {
@@ -351,6 +351,14 @@ impl<'a> Drawable<'a> {
             } => draw_state.draw_to_term(term_like, last_line_count),
         }
     }
+
+    pub(crate) fn width(&self) -> Option<u16> {
+        match self {
+            Self::Term { term, .. } => Some(term.size().1),
+            Self::Multi { state, .. } => state.width(),
+            Self::TermLike { term_like, .. } => Some(term_like.width()),
+        }
+    }
 }
 
 pub(crate) enum LineAdjust {
@@ -362,7 +370,7 @@ pub(crate) enum LineAdjust {
 
 pub(crate) struct DrawStateWrapper<'a> {
     state: &'a mut DrawState,
-    orphan_lines: Option<&'a mut Vec<String>>,
+    orphan_lines: Option<&'a mut Vec<LineType>>,
 }
 
 impl<'a> DrawStateWrapper<'a> {
@@ -373,7 +381,7 @@ impl<'a> DrawStateWrapper<'a> {
         }
     }
 
-    pub(crate) fn for_multi(state: &'a mut DrawState, orphan_lines: &'a mut Vec<String>) -> Self {
+    pub(crate) fn for_multi(state: &'a mut DrawState, orphan_lines: &'a mut Vec<LineType>) -> Self {
         Self {
             state,
             orphan_lines: Some(orphan_lines),
@@ -397,9 +405,19 @@ impl std::ops::DerefMut for DrawStateWrapper<'_> {
 
 impl Drop for DrawStateWrapper<'_> {
     fn drop(&mut self) {
-        if let Some(orphaned) = &mut self.orphan_lines {
-            orphaned.extend(self.state.lines.drain(..self.state.orphan_lines_count));
-            self.state.orphan_lines_count = 0;
+        if let Some(text_lines) = &mut self.orphan_lines {
+            // Filter out the lines that do not contain progress information
+            // Store the filtered out lines in orphaned
+            let mut lines = Vec::new();
+
+            for line in self.state.lines.drain(..) {
+                match &line {
+                    LineType::Text(_) | LineType::Empty => text_lines.push(line),
+                    _ => lines.push(line),
+                }
+            }
+
+            self.state.lines = lines;
         }
     }
 }
@@ -460,11 +478,7 @@ const MAX_BURST: u8 = 20;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DrawState {
     /// The lines to print (can contain ANSI codes)
-    pub(crate) lines: Vec<String>,
-    /// The number [`Self::lines`] entries that shouldn't be reaped by the next tick.
-    ///
-    /// Note that this number may be different than the number of visual lines required to draw [`Self::lines`].
-    pub(crate) orphan_lines_count: usize,
+    pub(crate) lines: Vec<LineType>,
     /// True if we should move the cursor up when possible instead of clearing lines.
     pub(crate) move_cursor: bool,
     /// Controls how the multi progress is aligned if some of its progress bars get removed, default is `Top`
@@ -472,10 +486,14 @@ pub(crate) struct DrawState {
 }
 
 impl DrawState {
+    /// Draw the current state to the terminal
+    /// We expect a few things:
+    /// - self.lines contains n lines of text/empty then m lines of bars
+    /// - None of those lines contain newlines
     fn draw_to_term(
         &mut self,
         term: &(impl TermLike + ?Sized),
-        last_line_count: &mut VisualLines,
+        bar_count: &mut VisualLines, // The number of dynamic lines printed at the previous tick
     ) -> io::Result<()> {
         if panicking() {
             return Ok(());
@@ -483,11 +501,11 @@ impl DrawState {
 
         if !self.lines.is_empty() && self.move_cursor {
             // Move up to first line (assuming the last line doesn't contain a '\n') and then move to then front of the line
-            term.move_cursor_up(last_line_count.as_usize().saturating_sub(1))?;
+            term.move_cursor_up(bar_count.as_usize().saturating_sub(1))?;
             term.write_str("\r")?;
         } else {
             // Fork of console::clear_last_lines that assumes that the last line doesn't contain a '\n'
-            let n = last_line_count.as_usize();
+            let n = bar_count.as_usize();
             term.move_cursor_up(n.saturating_sub(1))?;
             for i in 0..n {
                 term.clear_line()?;
@@ -498,11 +516,16 @@ impl DrawState {
             term.move_cursor_up(n.saturating_sub(1))?;
         }
 
-        let width = term.width() as usize;
-        let visual_lines = self.visual_line_count(.., width);
+        let term_width = term.width() as usize;
+
+        // Here we calculate the terminal vertical real estate that the state requires
+        let full_height = self.visual_line_count(.., term_width);
+
         let shift = match self.alignment {
-            MultiProgressAlignment::Bottom if visual_lines < *last_line_count => {
-                let shift = *last_line_count - visual_lines;
+            // If we align to the bottom and the new height is less than before, clear the lines
+            // that are not used by the new content.
+            MultiProgressAlignment::Bottom if full_height < *bar_count => {
+                let shift = *bar_count - full_height;
                 for _ in 0..shift.as_usize() {
                     term.write_line("")?;
                 }
@@ -511,66 +534,53 @@ impl DrawState {
             _ => VisualLines::default(),
         };
 
-        let term_height = term.height() as usize;
-        let term_width = term.width() as usize;
-        let len = self.lines.len();
-        debug_assert!(self.orphan_lines_count <= self.lines.len());
-        let orphan_visual_line_count =
-            self.visual_line_count(..self.orphan_lines_count, term_width);
-        let mut real_len = VisualLines::default();
-        let mut last_line_filler = 0;
-        for (idx, line) in self.lines.iter().enumerate() {
-            let line_width = console::measure_text_width(line);
-            let diff = if line.is_empty() {
-                // Empty line are new line
-                1
-            } else {
-                // Calculate real length based on terminal width
-                // This take in account linewrap from terminal
-                let terminal_len = (line_width as f64 / term_width as f64).ceil() as usize;
+        // Accumulate the displayed height in here. This differs from `full_height` in that it will
+        // accurately reflect the number of lines that have been displayed on the terminal, if the
+        // full height exceeds the terminal height.
+        let mut real_height = VisualLines::default();
 
-                // If the line is effectively empty (for example when it consists
-                // solely of ANSI color code sequences, count it the same as a
-                // new line. If the line is measured to be len = 0, we will
-                // subtract with overflow later.
-                usize::max(terminal_len, 1)
-            }
-            .into();
-            // Have all orphan lines been drawn?
-            if self.orphan_lines_count <= idx {
-                // If so, then `real_len` should be at least `orphan_visual_line_count`.
-                debug_assert!(orphan_visual_line_count <= real_len);
-                // Don't consider orphan lines when comparing to terminal height.
-                if real_len - orphan_visual_line_count + diff > term_height.into() {
+        for (idx, line) in self.lines.iter().enumerate() {
+            let line_height = line.wrapped_height(term_width);
+
+            // Check here for bar lines that exceed the terminal height
+            if matches!(line, LineType::Bar(_)) {
+                // Stop here if printing this bar would exceed the terminal height
+                if real_height + line_height > term.height().into() {
                     break;
                 }
+
+                real_height += line_height;
             }
-            real_len += diff;
+
+            // Print a new line if this is not the first line printed this tick
+            // the first line will automatically wrap due to the filler below
             if idx != 0 {
                 term.write_line("")?;
             }
-            term.write_str(line)?;
-            if idx + 1 == len {
-                // Keep the cursor on the right terminal side
-                // So that next user writes/prints will happen on the next line
-                last_line_filler = term_width.saturating_sub(line_width);
+
+            term.write_str(line.as_ref())?;
+
+            if idx + 1 == self.lines.len() {
+                // For the last line of the output, keep the cursor on the right terminal
+                // side so that next user writes/prints will happen on the next line
+                let last_line_filler = line_height.as_usize() * term_width - line.console_width();
+                term.write_str(&" ".repeat(last_line_filler))?;
             }
         }
-        term.write_str(&" ".repeat(last_line_filler))?;
 
         term.flush()?;
-        *last_line_count = real_len - orphan_visual_line_count + shift;
+        *bar_count = real_height + shift;
+
         Ok(())
     }
 
     fn reset(&mut self) {
         self.lines.clear();
-        self.orphan_lines_count = 0;
     }
 
     pub(crate) fn visual_line_count(
         &self,
-        range: impl SliceIndex<[String], Output = [String]>,
+        range: impl SliceIndex<[LineType], Output = [LineType]>,
         width: usize,
     ) -> VisualLines {
         visual_line_count(&self.lines[range], width)
@@ -624,21 +634,55 @@ impl Sub for VisualLines {
 
 /// Calculate the number of visual lines in the given lines, after
 /// accounting for line wrapping and non-printable characters.
-pub(crate) fn visual_line_count(lines: &[impl AsRef<str>], width: usize) -> VisualLines {
-    let mut real_lines = 0;
-    for line in lines {
-        let effective_line_length = console::measure_text_width(line.as_ref());
-        real_lines += usize::max(
-            (effective_line_length as f64 / width as f64).ceil() as usize,
-            1,
-        );
+pub(crate) fn visual_line_count(lines: &[LineType], width: usize) -> VisualLines {
+    lines.iter().fold(VisualLines::default(), |acc, line| {
+        acc.saturating_add(line.wrapped_height(width))
+    })
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum LineType {
+    Text(String),
+    Bar(String),
+    Empty,
+}
+
+impl LineType {
+    fn wrapped_height(&self, width: usize) -> VisualLines {
+        // Calculate real length based on terminal width
+        // This take in account linewrap from terminal
+        let terminal_len = (self.console_width() as f64 / width as f64).ceil() as usize;
+
+        // If the line is effectively empty (for example when it consists
+        // solely of ANSI color code sequences, count it the same as a
+        // new line. If the line is measured to be len = 0, we will
+        // subtract with overflow later.
+        usize::max(terminal_len, 1).into()
     }
 
-    real_lines.into()
+    fn console_width(&self) -> usize {
+        console::measure_text_width(self.as_ref())
+    }
+}
+
+impl AsRef<str> for LineType {
+    fn as_ref(&self) -> &str {
+        match self {
+            LineType::Text(s) | LineType::Bar(s) => s,
+            LineType::Empty => "",
+        }
+    }
+}
+
+impl PartialEq<str> for LineType {
+    fn eq(&self, other: &str) -> bool {
+        self.as_ref() == other
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::draw_target::LineType;
     use crate::{MultiProgress, ProgressBar, ProgressDrawTarget};
 
     #[test]
@@ -732,7 +776,14 @@ mod tests {
         ];
 
         for case in lines_and_expectations.iter() {
-            let result = super::visual_line_count(case.lines, case.width);
+            let result = super::visual_line_count(
+                &case
+                    .lines
+                    .iter()
+                    .map(|s| LineType::Text(s.to_string()))
+                    .collect::<Vec<_>>(),
+                case.width,
+            );
             assert_eq!(result, case.expectation.into(), "case: {:?}", case);
         }
     }

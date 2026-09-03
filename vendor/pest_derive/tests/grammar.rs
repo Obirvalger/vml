@@ -12,6 +12,7 @@ use alloc::{format, vec::Vec};
 
 #[macro_use]
 extern crate pest;
+use pest::Parser;
 #[macro_use]
 extern crate pest_derive;
 
@@ -274,6 +275,32 @@ fn node_tag() {
             ])
         ]
     };
+}
+
+#[test]
+fn neg_pred_with_tag() {
+    parses_to! {
+        parser: GrammarParser,
+        input: "abcabc",
+        rule: Rule::neg_pred_with_tag,
+        tokens: [
+            neg_pred_with_tag(0, 6, [
+                string(0, 3),
+                string(3, 6)
+            ])
+        ]
+    };
+
+    // Assert that no pairs carry the tag from the negative predicate ("tag_bar").
+    let pairs = GrammarParser::parse(Rule::neg_pred_with_tag, "abcabc").unwrap();
+    let inner: Vec<_> = pairs.flatten().collect();
+    for pair in &inner {
+        assert_ne!(
+            pair.as_node_tag(),
+            Some("tag_bar"),
+            "tag from negative predicate should not appear in parse tree"
+        );
+    }
 }
 
 #[test]
@@ -835,6 +862,18 @@ fn checkpoint_restore() {
         rule: Rule::checkpoint_restore,
         tokens: [
             checkpoint_restore(0, 1, [EOI(1, 1)])
+        ]
+    };
+}
+
+#[test]
+fn clear_nested_snapshot() {
+    parses_to! {
+        parser: GrammarParser,
+        input: "aa",
+        rule: Rule::clear_nested_snapshot,
+        tokens: [
+            clear_nested_snapshot(0, 2, [EOI(2, 2)])
         ]
     };
 }

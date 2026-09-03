@@ -1,15 +1,155 @@
-# Change Log
+# Changelog
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/)
-and this project adheres to [Semantic Versioning](https://semver.org/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.1](https://github.com/rust-lang/hashbrown/compare/v0.17.0...v0.17.1) - 2026-04-20
+
+### Added
+
+- Added `HashMap::rustc_try_insert` (#722)
+
+## [0.17.0](https://github.com/rust-lang/hashbrown/compare/v0.16.1...v0.17.0) - 2026-04-06
+
+### Added
+
+- Added `hash_table::OccupiedEntry::replace_entry_with` (#669)
+- Added `hash_map::{OccupiedEntry::into_entry, VacantEntryRef::insert_entry_with_key}` (#670)
+- Added `hash_table::UnsafeIter` (#667)
+- Added `iter` methods to various `HashTable` iterators (#667)
+- Added `HashMap::{replace_key,replace_key_unchecked,insert_with_key_unchecked}` (#681)
+- Added `into_map` methods to all `HashMap` entry types (#686)
+- Added `into_table` methods to all `HashTable` entry types (#686)
+- Added `#[must_use]` to constructors (#697)
+- `TryReserveError` now implements `Error` (#698)
+
 ### Changed
 
-- Changed `hash_set::{Entry, VacantEntry}::insert` to return `OccupiedEntry`. (#495)
+- Changed `EntryRef` to use `ToOwned` (#670)
+- Bumped MSRV to 1.85 (2024 edition) (#676)
+
+### Fixed
+
+- `HashTable:clone_from` now forwards to `RawTable::clone_from` instead of using the default implementation (#668)
+- Fixed potential UB in `RawTableInner::fallible_with_capacity` (#692)
+- Fixed incorrect length if a hasher panics during rehash (#710)
+
+## [0.16.1](https://github.com/rust-lang/hashbrown/compare/v0.16.0...v0.16.1) - 2025-11-20
+
+### Added
+
+- Added `HashTable` methods related to the raw bucket index (#657)
+- Added `VacantEntryRef::insert_with_key` (#579)
+
+### Changed
+
+- Removed specialization for `Copy` types (#662)
+- The `get_many_mut` family of methods have been renamed to `get_disjoint_mut`
+  to match the standard library. The old names are still present for now, but
+  deprecated. (#648)
+- Recognize and use over-sized allocations when using custom allocators. (#523)
+- Depend on `serde_core` instead of `serde`. (#649)
+- Optimized `collect` on rayon parallel iterators. (#652) 
+
+## [0.16.0](https://github.com/rust-lang/hashbrown/compare/v0.15.5...v0.16.0) - 2025-08-28
+
+### Changed
+
+- Bump foldhash, the default hasher, to 0.2.0.
+- Replaced `DefaultHashBuilder` with a newtype wrapper around `foldhash` instead
+  of re-exporting it directly.
+
+## [0.15.5](https://github.com/rust-lang/hashbrown/compare/v0.15.4...v0.15.5) - 2025-08-07
+
+### Added
+
+- Added `Entry::or_default_entry` and `Entry::or_insert_entry`.
+
+### Changed
+
+- Re-implemented likely/unlikely with `#[cold]`
+
+## [0.15.4](https://github.com/rust-lang/hashbrown/compare/v0.15.3...v0.15.4) - 2025-06-05
+
+### Changed
+
+- Removed optional dependency on compiler-builtins. This only affects building as part of `std`.
+
+## [0.15.3](https://github.com/rust-lang/hashbrown/compare/v0.15.2...v0.15.3) - 2025-04-29
+
+### Added
+
+- SIMD implementation for LoongArch (#592, requires nightly)
+
+### Changed
+
+- Optimized insertion path by avoiding an unnecessary `match_empty` (#607)
+- Increased minimum table size for small types (#615)
+- Dropped FnMut trait bounds from `ExtractIf` data structures (#616)
+- Relaxed constraint in `hash_map::EntryRef` insertion methods `K: From<&Q>` to &Q: `Into<K>` (#611)
+- Added allocator template argument for `rustc_iter` (#605)
+- The `allocator-api2/nightly` feature is no longer enabled by `hashbrown/nightly` (#606)
+
+## [v0.15.2] - 2024-11-14
+
+### Added
+
+- Marked `const fn` constructors as `rustc_const_stable_indirect` when built as
+  part of the standard library. (#586)
+
+## [v0.15.1] - 2024-11-03
+
+This release removes the `borsh` feature introduced in 0.15.0 because it was
+found to be incorrectly implemented. Users should use the `hashbrown` feature of
+the `borsh` crate instead which provides the same trait implementations.
+
+## ~~[v0.15.0] - 2024-10-01~~
+
+This release was _yanked_ due to a broken implementation of the `borsh` feature.
+
+This update contains breaking changes that remove the `raw` API with the hope of
+centralising on the `HashTable` API in the future. You can follow the discussion
+and progress in #545 to discuss features you think should be added to this API
+that were previously only possible on the `raw` API.
+
+### Added
+
+- Added `borsh` feature with `BorshSerialize` and `BorshDeserialize` impls. (#525)
+- Added `Assign` impls for `HashSet` operators. (#529)
+- Added `Default` impls for iterator types. (#542)
+- Added `HashTable::iter_hash{,_mut}` methods. (#549)
+- Added `Hash{Table,Map,Set}::allocation_size` methods. (#553)
+- Implemented `Debug` and `FusedIterator` for all `HashTable` iterators. (#561)
+- Specialized `Iterator::fold` for all `HashTable` iterators. (#561)
+
+### Changed
+
+- Changed `hash_set::VacantEntry::insert` to return `OccupiedEntry`. (#495)
+- Improved`hash_set::Difference::size_hint` lower-bound. (#530)
+- Improved `HashSet::is_disjoint` performance. (#531)
+- `equivalent` feature is now enabled by default. (#532)
+- `HashSet` operators now return a set with the same allocator. (#529)
+- Changed the default hasher to foldhash. (#563)
+- `ahash` feature has been renamed to `default-hasher`. (#533)
+- Entry API has been reworked and several methods have been renamed. (#535)
+- `Hash{Map,Set}::insert_unique_unchecked` is now unsafe. (#556)
+- The signature of `get_many_mut` and related methods was changed. (#562)
+
+### Fixed
+
+* Fixed typos, stray backticks in docs. (#558, #560)
+
+### Removed
+
+- Raw entry API is now under `raw-entry` feature, to be eventually removed. (#534, #555)
+- Raw table API has been made private and the `raw` feature is removed;
+  in the future, all code should be using the `HashTable` API instead. (#531, #546)
+- `rykv` feature was removed; this is now provided by the `rykv` crate instead. (#554)
+- `HashSet::get_or_insert_owned` was removed in favor of `get_or_insert_with`. (#555)
 
 ## [v0.14.5] - 2024-04-28
 
@@ -68,7 +208,7 @@ This release was _yanked_ due to a breaking change.
 - Optimized implementation for ARM using NEON instructions. (#430)
 - Support for rkyv serialization. (#432)
 - `Equivalent` trait to look up values without `Borrow`. (#345)
-- `Hash{Map,Set}::raw_table_mut` is added whic returns a mutable reference. (#404)
+- `Hash{Map,Set}::raw_table_mut` is added which returns a mutable reference. (#404)
 - Fast path for `clear` on empty tables. (#428)
 
 ### Changed
@@ -485,7 +625,10 @@ This release was _yanked_ due to a breaking change for users of `no-default-feat
 
 - Initial release
 
-[Unreleased]: https://github.com/rust-lang/hashbrown/compare/v0.14.5...HEAD
+[Unreleased]: https://github.com/rust-lang/hashbrown/compare/v0.15.2...HEAD
+[v0.15.2]: https://github.com/rust-lang/hashbrown/compare/v0.15.1...v0.15.2
+[v0.15.1]: https://github.com/rust-lang/hashbrown/compare/v0.15.0...v0.15.1
+[v0.15.0]: https://github.com/rust-lang/hashbrown/compare/v0.14.5...v0.15.0
 [v0.14.5]: https://github.com/rust-lang/hashbrown/compare/v0.14.4...v0.14.5
 [v0.14.4]: https://github.com/rust-lang/hashbrown/compare/v0.14.3...v0.14.4
 [v0.14.3]: https://github.com/rust-lang/hashbrown/compare/v0.14.2...v0.14.3

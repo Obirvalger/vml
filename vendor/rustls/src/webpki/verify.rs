@@ -15,7 +15,7 @@ use crate::verify::{DigitallySignedStruct, HandshakeSignatureValid};
 /// and chains to at least one of the trust anchors in the `roots` [RootCertStore].
 ///
 /// This function is primarily useful when building a custom certificate verifier. It
-/// performs **no revocation checking**. Implementors must handle this themselves,
+/// performs **no revocation checking**. Implementers must handle this themselves,
 /// along with checking that the server certificate is valid for the subject name
 /// being used (see [`verify_server_name`]).
 ///
@@ -40,8 +40,9 @@ pub fn verify_server_cert_signed_by_trust_anchor(
     )
 }
 
-/// Verify that the `end_entity` has an alternative name matching the `server_name`
-/// note: this only verifies the name and should be used in conjunction with more verification
+/// Verify that the `end_entity` has an alternative name matching the `server_name`.
+///
+/// Note: this only verifies the name and should be used in conjunction with more verification
 /// like [verify_server_cert_signed_by_trust_anchor]
 pub fn verify_server_name(
     cert: &ParsedCertificate<'_>,
@@ -127,7 +128,7 @@ impl fmt::Debug for WebPkiSupportedAlgorithms {
 /// This is used in order to avoid parsing twice when specifying custom verification
 pub struct ParsedCertificate<'a>(pub(crate) webpki::EndEntityCert<'a>);
 
-impl<'a> ParsedCertificate<'a> {
+impl ParsedCertificate<'_> {
     /// Get the parsed certificate's SubjectPublicKeyInfo (SPKI)
     pub fn subject_public_key_info(&self) -> SubjectPublicKeyInfoDer<'static> {
         self.0.subject_public_key_info()
@@ -160,17 +161,22 @@ pub fn verify_tls12_signature(
     let possible_algs = supported_schemes.convert_scheme(dss.scheme)?;
     let cert = webpki::EndEntityCert::try_from(cert).map_err(pki_error)?;
 
+    let mut error = None;
     for alg in possible_algs {
         match cert.verify_signature(*alg, message, dss.signature()) {
-            Err(webpki::Error::UnsupportedSignatureAlgorithmForPublicKey) => continue,
+            Err(err @ webpki::Error::UnsupportedSignatureAlgorithmForPublicKeyContext(_)) => {
+                error = Some(err);
+                continue;
+            }
             Err(e) => return Err(pki_error(e)),
             Ok(()) => return Ok(HandshakeSignatureValid::assertion()),
         }
     }
 
-    Err(pki_error(
+    #[allow(deprecated)] // The `unwrap_or()` should be statically unreachable
+    Err(pki_error(error.unwrap_or(
         webpki::Error::UnsupportedSignatureAlgorithmForPublicKey,
-    ))
+    )))
 }
 
 /// Verify a message signature using the `cert` public key and the first TLS 1.3 compatible
@@ -194,6 +200,27 @@ pub fn verify_tls13_signature(
     let cert = webpki::EndEntityCert::try_from(cert).map_err(pki_error)?;
 
     cert.verify_signature(alg, msg, dss.signature())
+        .map_err(pki_error)
+        .map(|_| HandshakeSignatureValid::assertion())
+}
+
+/// Verify a message signature using a raw public key and the first TLS 1.3 compatible
+/// supported scheme.
+pub fn verify_tls13_signature_with_raw_key(
+    msg: &[u8],
+    spki: &SubjectPublicKeyInfoDer<'_>,
+    dss: &DigitallySignedStruct,
+    supported_schemes: &WebPkiSupportedAlgorithms,
+) -> Result<HandshakeSignatureValid, Error> {
+    if !dss.scheme.supported_in_tls13() {
+        return Err(PeerMisbehaved::SignedHandshakeWithUnadvertisedSigScheme.into());
+    }
+
+    let raw_key = webpki::RawPublicKeyEntity::try_from(spki).map_err(pki_error)?;
+    let alg = supported_schemes.convert_scheme(dss.scheme)?[0];
+
+    raw_key
+        .verify_signature(alg, msg, dss.signature())
         .map_err(pki_error)
         .map(|_| HandshakeSignatureValid::assertion())
 }
@@ -253,7 +280,10 @@ mod tests {
     fn webpki_supported_algorithms_is_debug() {
         assert_eq!(
             "WebPkiSupportedAlgorithms { all: [ .. ], mapping: [ECDSA_NISTP384_SHA384, ECDSA_NISTP256_SHA256, ED25519, RSA_PSS_SHA512, RSA_PSS_SHA384, RSA_PSS_SHA256, RSA_PKCS1_SHA512, RSA_PKCS1_SHA384, RSA_PKCS1_SHA256] }",
-            format!("{:?}", crate::crypto::ring::default_provider().signature_verification_algorithms)
+            format!(
+                "{:?}",
+                crate::crypto::ring::default_provider().signature_verification_algorithms
+            )
         );
     }
 }

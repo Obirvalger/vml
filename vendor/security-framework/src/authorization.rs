@@ -2,11 +2,9 @@
 
 /// # Potential improvements
 ///
-/// * When generic specialization stabilizes prevent copying from `CString`
-///   arguments.
+/// * When generic specialization stabilizes prevent copying from `CString` arguments.
 /// * `AuthorizationCopyRightsAsync`
 /// * Provide constants for well known item names
-
 use crate::base::{Error, Result};
 #[cfg(all(target_os = "macos", feature = "job-bless"))]
 use core_foundation::base::Boolean;
@@ -22,10 +20,10 @@ use security_framework_sys::authorization as sys;
 use security_framework_sys::base::errSecConversionError;
 use std::ffi::{CStr, CString};
 use std::fs::File;
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::raw::c_void;
 use std::ptr::addr_of;
-use std::marker::PhantomData;
 use sys::AuthorizationExternalForm;
 
 macro_rules! optional_str_to_cfref {
@@ -72,8 +70,8 @@ bitflags::bitflags! {
 
 impl Default for Flags {
     #[inline(always)]
-    fn default() -> Flags {
-        Flags::DEFAULTS
+    fn default() -> Self {
+        Self::DEFAULTS
     }
 }
 
@@ -86,7 +84,8 @@ impl AuthorizationItem {
     ///
     /// If `name` isn't convertable to a `CString` it will return
     /// Err(errSecConversionError).
-    #[must_use] pub fn name(&self) -> &str {
+    #[must_use]
+    pub fn name(&self) -> &str {
         unsafe {
             CStr::from_ptr(self.0.name)
                 .to_str()
@@ -97,13 +96,13 @@ impl AuthorizationItem {
     /// The information pertaining to the name field. Do not rely on NULL
     /// termination of string data.
     #[inline]
-    #[must_use] pub fn value(&self) -> Option<&[u8]> {
+    #[must_use]
+    pub fn value(&self) -> Option<&[u8]> {
         if self.0.value.is_null() {
             return None;
         }
 
-        let value =
-            unsafe { std::slice::from_raw_parts(self.0.value as *const u8, self.0.valueLength) };
+        let value = unsafe { std::slice::from_raw_parts(self.0.value as *const u8, self.0.valueLength) };
 
         Some(value)
     }
@@ -117,11 +116,11 @@ pub struct AuthorizationItemSet<'a> {
     phantom: PhantomData<&'a sys::AuthorizationItemSet>,
 }
 
-impl<'a> Drop for AuthorizationItemSet<'a> {
+impl Drop for AuthorizationItemSet<'_> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            sys::AuthorizationFreeItemSet(self.inner as *mut sys::AuthorizationItemSet);
+            sys::AuthorizationFreeItemSet(self.inner.cast_mut());
         }
     }
 }
@@ -147,7 +146,7 @@ pub struct AuthorizationItemSetStorage {
 impl Default for AuthorizationItemSetStorage {
     #[inline]
     fn default() -> Self {
-        AuthorizationItemSetStorage {
+        Self {
             names: Vec::new(),
             values: Vec::new(),
             items: Vec::new(),
@@ -172,7 +171,7 @@ impl AuthorizationItemSetBuilder {
     /// owned vectors of `AuthorizationItem`s.
     #[inline(always)]
     #[must_use]
-    pub fn new() -> AuthorizationItemSetBuilder {
+    pub fn new() -> Self {
         Default::default()
     }
 
@@ -238,7 +237,7 @@ impl AuthorizationItemSetBuilder {
 
         self.storage.set = sys::AuthorizationItemSet {
             count: self.storage.items.len() as u32,
-            items: self.storage.items.as_ptr() as *mut sys::AuthorizationItem,
+            items: self.storage.items.as_ptr().cast_mut(),
         };
 
         self.storage
@@ -279,7 +278,7 @@ impl TryFrom<AuthorizationExternalForm> for Authorization {
             return Err(Error::from_code(status));
         }
 
-        let auth = Authorization {
+        let auth = Self {
             handle: unsafe { handle.assume_init() },
             free_flags: Flags::default(),
         };
@@ -308,6 +307,7 @@ impl Authorization {
     /// macOS 10.4 and later, you can also pass a user name and password in
     /// order to authorize a user without user interaction.
     #[allow(clippy::unnecessary_cast)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(
         // FIXME: this should have been by reference
         rights: Option<AuthorizationItemSetStorage>,
@@ -315,11 +315,11 @@ impl Authorization {
         flags: Flags,
     ) -> Result<Self> {
         let rights_ptr = rights.as_ref().map_or(std::ptr::null(), |r| {
-            addr_of!(r.set) as *const sys::AuthorizationItemSet
+            addr_of!(r.set).cast::<sys::AuthorizationItemSet>()
         });
 
         let env_ptr = environment.as_ref().map_or(std::ptr::null(), |e| {
-            addr_of!(e.set) as *const sys::AuthorizationItemSet
+            addr_of!(e.set).cast::<sys::AuthorizationItemSet>()
         });
 
         let mut handle = MaybeUninit::<sys::AuthorizationRef>::uninit();
@@ -332,7 +332,7 @@ impl Authorization {
             return Err(Error::from_code(status));
         }
 
-        Ok(Authorization {
+        Ok(Self {
             handle: unsafe { handle.assume_init() },
             free_flags: Default::default(),
         })
@@ -359,6 +359,7 @@ impl Authorization {
     ///
     /// If `name` isn't convertable to a `CString` it will return
     /// Err(errSecConversionError).
+    // TODO: deprecate and remove. CFDictionary should not be exposed in public Rust APIs.
     pub fn get_right<T: Into<Vec<u8>>>(name: T) -> Result<CFDictionary<CFString, CFTypeRef>> {
         let name = cstring_or_err!(name)?;
         let mut dict = MaybeUninit::<CFDictionaryRef>::uninit();
@@ -440,7 +441,7 @@ impl Authorization {
             RightDefinition::FromExistingRight(def) => {
                 definition_cfstring = CFString::new(def);
                 definition_cfstring.as_CFTypeRef()
-            }
+            },
         };
 
         let status = unsafe {
@@ -477,14 +478,13 @@ impl Authorization {
             Some(tag) => {
                 tag_with_nul = cstring_or_err!(tag)?;
                 tag_with_nul.as_ptr()
-            }
+            },
             None => std::ptr::null(),
         };
 
         let mut inner = MaybeUninit::<*mut sys::AuthorizationItemSet>::uninit();
 
-        let status =
-            unsafe { sys::AuthorizationCopyInfo(self.handle, tag_ptr, inner.as_mut_ptr()) };
+        let status = unsafe { sys::AuthorizationCopyInfo(self.handle, tag_ptr, inner.as_mut_ptr()) };
 
         if status != sys::errAuthorizationSuccess {
             return Err(Error::from(status));
@@ -503,8 +503,7 @@ impl Authorization {
     pub fn make_external_form(&self) -> Result<sys::AuthorizationExternalForm> {
         let mut external_form = MaybeUninit::<sys::AuthorizationExternalForm>::uninit();
 
-        let status =
-            unsafe { sys::AuthorizationMakeExternalForm(self.handle, external_form.as_mut_ptr()) };
+        let status = unsafe { sys::AuthorizationMakeExternalForm(self.handle, external_form.as_mut_ptr()) };
 
         if status != sys::errAuthorizationSuccess {
             return Err(Error::from(status));
@@ -564,7 +563,7 @@ impl Authorization {
     #[cfg(all(target_os = "macos", feature = "job-bless"))]
     pub fn job_bless(&self, label: &str) -> Result<(), CFError> {
         #[link(name = "ServiceManagement", kind = "framework")]
-        extern "C" {
+        unsafe extern "C" {
             static kSMDomainSystemLaunchd: CFStringRef;
 
             fn SMJobBless(
@@ -604,7 +603,7 @@ impl Authorization {
 
         let c_cmd = cstring_or_err!(command)?;
 
-        let mut c_args = arguments.iter().map(|a| a.as_ptr() as _).collect::<Vec<_>>();
+        let mut c_args = arguments.iter().map(|a| a.as_ptr().cast_mut()).collect::<Vec<_>>();
         c_args.push(std::ptr::null_mut());
 
         let mut pipe: *mut libc::FILE = std::ptr::null_mut();

@@ -30,7 +30,6 @@
  */
 
 use super::fabs;
-use core::f64;
 
 const ATANHI: [f64; 4] = [
     4.63647609000806093515e-01, /* atan(0.5)hi 0x3FDDAC67, 0x0561BB4F */
@@ -64,7 +63,7 @@ const AT: [f64; 11] = [
 ///
 /// Computes the inverse tangent (arc tangent) of the input value.
 /// Returns a value in radians, in the range of -pi/2 to pi/2.
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn atan(x: f64) -> f64 {
     let mut x = x;
     let mut ix = (x.to_bits() >> 32) as u32;
@@ -128,27 +127,24 @@ pub fn atan(x: f64) -> f64 {
 
     let z = i!(ATANHI, id as usize) - (x * (s1 + s2) - i!(ATANLO, id as usize) - x);
 
-    if sign != 0 {
-        -z
-    } else {
-        z
-    }
+    if sign != 0 { -z } else { z }
 }
 
 #[cfg(test)]
 mod tests {
+    use core::f64::consts;
+
     use super::atan;
-    use core::f64;
 
     #[test]
     fn sanity_check() {
         for (input, answer) in [
-            (3.0_f64.sqrt() / 3.0, f64::consts::FRAC_PI_6),
-            (1.0, f64::consts::FRAC_PI_4),
-            (3.0_f64.sqrt(), f64::consts::FRAC_PI_3),
-            (-3.0_f64.sqrt() / 3.0, -f64::consts::FRAC_PI_6),
-            (-1.0, -f64::consts::FRAC_PI_4),
-            (-3.0_f64.sqrt(), -f64::consts::FRAC_PI_3),
+            (3.0_f64.sqrt() / 3.0, consts::FRAC_PI_6),
+            (1.0, consts::FRAC_PI_4),
+            (3.0_f64.sqrt(), consts::FRAC_PI_3),
+            (-3.0_f64.sqrt() / 3.0, -consts::FRAC_PI_6),
+            (-1.0, -consts::FRAC_PI_4),
+            (-3.0_f64.sqrt(), -consts::FRAC_PI_3),
         ]
         .iter()
         {
@@ -169,12 +165,12 @@ mod tests {
 
     #[test]
     fn infinity() {
-        assert_eq!(atan(f64::INFINITY), f64::consts::FRAC_PI_2);
+        assert_eq!(atan(f64::INFINITY), consts::FRAC_PI_2);
     }
 
     #[test]
     fn minus_infinity() {
-        assert_eq!(atan(f64::NEG_INFINITY), -f64::consts::FRAC_PI_2);
+        assert_eq!(atan(f64::NEG_INFINITY), -consts::FRAC_PI_2);
     }
 
     #[test]

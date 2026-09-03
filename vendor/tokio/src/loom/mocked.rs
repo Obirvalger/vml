@@ -2,7 +2,7 @@ pub(crate) use loom::*;
 
 pub(crate) mod sync {
 
-    pub(crate) use loom::sync::MutexGuard;
+    pub(crate) use loom::sync::{MutexGuard, RwLockReadGuard, RwLockWriteGuard};
 
     #[derive(Debug)]
     pub(crate) struct Mutex<T>(loom::sync::Mutex<T>);
@@ -25,14 +25,39 @@ pub(crate) mod sync {
             self.0.try_lock().ok()
         }
     }
-    pub(crate) use loom::sync::*;
 
-    pub(crate) mod atomic {
-        pub(crate) use loom::sync::atomic::*;
+    #[derive(Debug)]
+    pub(crate) struct RwLock<T>(loom::sync::RwLock<T>);
 
-        // TODO: implement a loom version
-        pub(crate) type StaticAtomicU64 = std::sync::atomic::AtomicU64;
+    #[allow(dead_code)]
+    impl<T> RwLock<T> {
+        #[inline]
+        pub(crate) fn new(t: T) -> Self {
+            Self(loom::sync::RwLock::new(t))
+        }
+
+        #[inline]
+        pub(crate) fn read(&self) -> RwLockReadGuard<'_, T> {
+            self.0.read().unwrap()
+        }
+
+        #[inline]
+        pub(crate) fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
+            self.0.try_read().ok()
+        }
+
+        #[inline]
+        pub(crate) fn write(&self) -> RwLockWriteGuard<'_, T> {
+            self.0.write().unwrap()
+        }
+
+        #[inline]
+        pub(crate) fn try_write(&self) -> Option<RwLockWriteGuard<'_, T>> {
+            self.0.try_write().ok()
+        }
     }
+
+    pub(crate) use loom::sync::*;
 }
 
 pub(crate) mod rand {

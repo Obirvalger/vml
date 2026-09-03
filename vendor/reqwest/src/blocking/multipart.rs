@@ -104,7 +104,7 @@ impl Form {
     ///
     /// ```no_run
     /// # fn run() -> std::io::Result<()> {
-    /// let files = reqwest::blocking::multipart::Form::new()
+    /// let form = reqwest::blocking::multipart::Form::new()
     ///     .file("key", "/path/to/file")?;
     /// # Ok(())
     /// # }
@@ -148,8 +148,13 @@ impl Form {
         Reader::new(self)
     }
 
+    /// Produce a reader over the multipart form data.
+    pub fn into_reader(self) -> impl Read {
+        self.reader()
+    }
+
     // If predictable, computes the length the request will have
-    // The length should be preditable if only String and file fields have been added,
+    // The length should be predictable if only String and file fields have been added,
     // but not if a generic reader has been added;
     pub(crate) fn compute_length(&mut self) -> Option<u64> {
         self.inner.compute_length()
@@ -393,7 +398,10 @@ mod tests {
         let mut form = Form::new()
             .part("reader1", Part::reader(std::io::empty()))
             .part("key1", Part::text("value1"))
-            .part("key2", Part::text("value2").mime(mime::IMAGE_BMP))
+            .part(
+                "key2",
+                Part::text("value2").mime(mime_guess::mime::IMAGE_BMP),
+            )
             .part("reader2", Part::reader(std::io::empty()))
             .part("key3", Part::text("value3").file_name("filename"));
         form.inner.boundary = "boundary".to_string();
@@ -430,7 +438,10 @@ mod tests {
         let mut output = Vec::new();
         let mut form = Form::new()
             .text("key1", "value1")
-            .part("key2", Part::text("value2").mime(mime::IMAGE_BMP))
+            .part(
+                "key2",
+                Part::text("value2").mime(mime_guess::mime::IMAGE_BMP),
+            )
             .part("key3", Part::text("value3").file_name("filename"));
         form.inner.boundary = "boundary".to_string();
         let length = form.compute_length();
@@ -458,7 +469,7 @@ mod tests {
     #[test]
     fn read_to_end_with_header() {
         let mut output = Vec::new();
-        let mut part = Part::text("value2").mime(mime::IMAGE_BMP);
+        let mut part = Part::text("value2").mime(mime_guess::mime::IMAGE_BMP);
         let mut headers = HeaderMap::new();
         headers.insert("Hdr3", "/a/b/c".parse().unwrap());
         part = part.headers(headers);

@@ -1,4 +1,4 @@
-use libc::*;
+use std::ffi::{c_char, c_int, c_long, c_uchar, c_void};
 use std::mem;
 use std::ptr;
 
@@ -7,11 +7,10 @@ use super::*;
 pub const TLS1_VERSION: c_int = 0x301;
 pub const TLS1_1_VERSION: c_int = 0x302;
 pub const TLS1_2_VERSION: c_int = 0x303;
-#[cfg(any(ossl111, libressl340))]
+#[cfg(any(ossl111, libressl))]
 pub const TLS1_3_VERSION: c_int = 0x304;
 
 pub const DTLS1_VERSION: c_int = 0xFEFF;
-#[cfg(any(ossl102, libressl332))]
 pub const DTLS1_2_VERSION: c_int = 0xFEFD;
 
 pub const TLS1_AD_DECODE_ERROR: c_int = 50;
@@ -78,9 +77,7 @@ pub unsafe fn SSL_CTX_set_tlsext_servername_callback__fixed_rust(
         ctx,
         SSL_CTRL_SET_TLSEXT_SERVERNAME_CB,
         mem::transmute::<
-            std::option::Option<
-                unsafe extern "C" fn(*mut SSL, *mut c_int, *mut libc::c_void) -> i32,
-            >,
+            std::option::Option<unsafe extern "C" fn(*mut SSL, *mut c_int, *mut c_void) -> i32>,
             std::option::Option<unsafe extern "C" fn()>,
         >(cb),
     )
@@ -109,6 +106,7 @@ pub unsafe fn SSL_CTX_set_tlsext_status_cb(
     )
 }
 
+#[cfg(not(osslconf = "OPENSSL_NO_SRTP"))]
 pub unsafe fn SSL_CTX_set_tlsext_status_arg(ctx: *mut SSL_CTX, arg: *mut c_void) -> c_long {
     SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB_ARG, 0, arg)
 }

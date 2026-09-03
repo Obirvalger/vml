@@ -78,6 +78,18 @@ fn exhaust_reading() {
     let _g1 = assert_ready!(t1.poll());
 }
 
+#[test]
+#[should_panic(expected = "a RwLock may not be created with 0 readers")]
+fn zero_max_readers() {
+    RwLock::with_max_readers(100, 0);
+}
+
+#[test]
+#[should_panic(expected = "a RwLock may not be created with 0 readers")]
+fn zero_max_readers_const() {
+    RwLock::const_with_max_readers(100, 0);
+}
+
 // When there is an active exclusive owner, subsequent exclusive access should not be possible
 #[test]
 fn write_exclusive_pending() {
@@ -173,6 +185,7 @@ async fn write_order() {
 
 // A single RwLock is contested by tasks in multiple threads
 #[cfg(all(feature = "full", not(target_os = "wasi")))] // Wasi doesn't support threads
+#[cfg_attr(miri, ignore)] // Too slow on miri.
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn multithreaded() {
     use futures::stream::{self, StreamExt};

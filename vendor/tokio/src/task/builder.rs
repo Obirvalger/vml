@@ -1,9 +1,10 @@
 #![allow(unreachable_pub)]
 use crate::{
-    runtime::Handle,
+    runtime::{Handle, BOX_FUTURE_THRESHOLD},
     task::{JoinHandle, LocalSet},
+    util::trace::SpawnMeta,
 };
-use std::{future::Future, io};
+use std::{future::Future, io, mem};
 
 /// Factory which is used to configure the properties of a new task.
 ///
@@ -19,7 +20,7 @@ use std::{future::Future, io};
 ///   the task
 ///
 /// There are three types of task that can be spawned from a Builder:
-/// - [`spawn_local`] for executing futures on the current thread
+/// - [`spawn_local`] for executing not [`Send`] futures
 /// - [`spawn`] for executing [`Send`] futures on the runtime
 /// - [`spawn_blocking`] for executing blocking code in the
 ///   blocking thread pool.
@@ -88,7 +89,12 @@ impl<'a> Builder<'a> {
         Fut: Future + Send + 'static,
         Fut::Output: Send + 'static,
     {
-        Ok(super::spawn::spawn_inner(future, self.name))
+        let fut_size = mem::size_of::<Fut>();
+        Ok(if fut_size > BOX_FUTURE_THRESHOLD {
+            super::spawn::spawn_inner(Box::pin(future), SpawnMeta::new(self.name, fut_size))
+        } else {
+            super::spawn::spawn_inner(future, SpawnMeta::new(self.name, fut_size))
+        })
     }
 
     /// Spawn a task with this builder's settings on the provided [runtime
@@ -104,30 +110,43 @@ impl<'a> Builder<'a> {
         Fut: Future + Send + 'static,
         Fut::Output: Send + 'static,
     {
-        Ok(handle.spawn_named(future, self.name))
+        let fut_size = mem::size_of::<Fut>();
+        Ok(if fut_size > BOX_FUTURE_THRESHOLD {
+            handle.spawn_named(Box::pin(future), SpawnMeta::new(self.name, fut_size))
+        } else {
+            handle.spawn_named(future, SpawnMeta::new(self.name, fut_size))
+        })
     }
 
-    /// Spawns `!Send` a task on the current [`LocalSet`] with this builder's
-    /// settings.
+    /// Spawns a `!Send` task on the current [`LocalSet`] or [`LocalRuntime`] with
+    /// this builder's settings.
     ///
     /// The spawned future will be run on the same thread that called `spawn_local`.
-    /// This may only be called from the context of a [local task set][`LocalSet`].
+    /// This may only be called from the context of a [local task set][`LocalSet`]
+    /// or a [`LocalRuntime`].
     ///
     /// # Panics
     ///
-    /// This function panics if called outside of a [local task set][`LocalSet`].
+    /// This function panics if called outside of a [local task set][`LocalSet`]
+    /// or a [`LocalRuntime`].
     ///
     /// See [`task::spawn_local`] for more details.
     ///
     /// [`task::spawn_local`]: crate::task::spawn_local
     /// [`LocalSet`]: crate::task::LocalSet
+    /// [`LocalRuntime`]: crate::runtime::LocalRuntime
     #[track_caller]
     pub fn spawn_local<Fut>(self, future: Fut) -> io::Result<JoinHandle<Fut::Output>>
     where
         Fut: Future + 'static,
         Fut::Output: 'static,
     {
-        Ok(super::local::spawn_local_inner(future, self.name))
+        let fut_size = mem::size_of::<Fut>();
+        Ok(if fut_size > BOX_FUTURE_THRESHOLD {
+            super::local::spawn_local_inner(Box::pin(future), SpawnMeta::new(self.name, fut_size))
+        } else {
+            super::local::spawn_local_inner(future, SpawnMeta::new(self.name, fut_size))
+        })
     }
 
     /// Spawns `!Send` a task on the provided [`LocalSet`] with this builder's
@@ -147,7 +166,12 @@ impl<'a> Builder<'a> {
         Fut: Future + 'static,
         Fut::Output: 'static,
     {
-        Ok(local_set.spawn_named(future, self.name))
+        let fut_size = mem::size_of::<Fut>();
+        Ok(if fut_size > BOX_FUTURE_THRESHOLD {
+            local_set.spawn_named(Box::pin(future), SpawnMeta::new(self.name, fut_size))
+        } else {
+            local_set.spawn_named(future, SpawnMeta::new(self.name, fut_size))
+        })
     }
 
     /// Spawns blocking code on the blocking threadpool.
@@ -188,12 +212,22 @@ impl<'a> Builder<'a> {
         Output: Send + 'static,
     {
         use crate::runtime::Mandatory;
-        let (join_handle, spawn_result) = handle.inner.blocking_spawner().spawn_blocking_inner(
-            function,
-            Mandatory::NonMandatory,
-            self.name,
-            handle,
-        );
+        let fn_size = mem::size_of::<Function>();
+        let (join_handle, spawn_result) = if fn_size > BOX_FUTURE_THRESHOLD {
+            handle.inner.blocking_spawner().spawn_blocking_inner(
+                Box::new(function),
+                Mandatory::NonMandatory,
+                SpawnMeta::new(self.name, fn_size),
+                handle,
+            )
+        } else {
+            handle.inner.blocking_spawner().spawn_blocking_inner(
+                function,
+                Mandatory::NonMandatory,
+                SpawnMeta::new(self.name, fn_size),
+                handle,
+            )
+        };
 
         spawn_result?;
         Ok(join_handle)

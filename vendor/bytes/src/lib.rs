@@ -114,7 +114,6 @@ fn abort() -> ! {
 #[inline(always)]
 #[cfg(feature = "std")]
 fn saturating_sub_usize_u64(a: usize, b: u64) -> usize {
-    use core::convert::TryFrom;
     match usize::try_from(b) {
         Ok(b) => a.saturating_sub(b),
         Err(_) => 0,
@@ -124,19 +123,90 @@ fn saturating_sub_usize_u64(a: usize, b: u64) -> usize {
 #[inline(always)]
 #[cfg(feature = "std")]
 fn min_u64_usize(a: u64, b: usize) -> usize {
-    use core::convert::TryFrom;
     match usize::try_from(a) {
         Ok(a) => usize::min(a, b),
         Err(_) => b,
     }
 }
 
+/// Performs bounds checking of a range.
+///
+/// This is a spiritual copy of [core::slice::index::range] because that
+/// function is currently unstable.
+#[inline(always)]
+#[track_caller]
+fn range(range: impl core::ops::RangeBounds<usize>, len: usize) -> (usize, usize) {
+    use core::ops::Bound;
+
+    let begin = match range.start_bound() {
+        Bound::Included(&n) => n,
+        Bound::Excluded(&n) => n.checked_add(1).expect("out of range"),
+        Bound::Unbounded => 0,
+    };
+
+    let end = match range.end_bound() {
+        Bound::Included(&n) => n.checked_add(1).expect("out of range"),
+        Bound::Excluded(&n) => n,
+        Bound::Unbounded => len,
+    };
+
+    assert!(
+        begin <= end,
+        "range start must not be greater than end: {:?} <= {:?}",
+        begin,
+        end,
+    );
+    assert!(
+        end <= len,
+        "range end out of bounds: {:?} <= {:?}",
+        end,
+        len,
+    );
+
+    (begin, end)
+}
+
+/// Error type for the `try_get_` methods of [`Buf`].
+/// Indicates that there were not enough remaining
+/// bytes in the buffer while attempting
+/// to get a value from a [`Buf`] with one
+/// of the `try_get_` methods.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TryGetError {
+    /// The number of bytes necessary to get the value
+    pub requested: usize,
+
+    /// The number of bytes available in the buffer
+    pub available: usize,
+}
+
+impl core::fmt::Display for TryGetError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        write!(
+            f,
+            "Not enough bytes remaining in buffer to read value (requested {} but only {} available)",
+            self.requested,
+            self.available
+        )
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for TryGetError {}
+
+#[cfg(feature = "std")]
+impl From<TryGetError> for std::io::Error {
+    fn from(error: TryGetError) -> Self {
+        std::io::Error::new(std::io::ErrorKind::Other, error)
+    }
+}
+
 /// Panic with a nice error message.
 #[cold]
-fn panic_advance(idx: usize, len: usize) -> ! {
+fn panic_advance(error_info: &TryGetError) -> ! {
     panic!(
         "advance out of bounds: the len is {} but advancing by {}",
-        len, idx
+        error_info.available, error_info.requested
     );
 }
 

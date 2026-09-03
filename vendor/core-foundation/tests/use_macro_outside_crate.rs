@@ -1,8 +1,6 @@
-#[macro_use]
-extern crate core_foundation;
-
+use core::ffi::c_void;
 use core_foundation::base::{CFComparisonResult, TCFType};
-use std::os::raw::c_void;
+use core_foundation::{declare_TCFType, impl_CFComparison, impl_CFTypeDescription, impl_TCFType};
 
 // sys equivalent stuff that must be declared
 
@@ -26,3 +24,8 @@ declare_TCFType!(CFFooBar, CFFooBarRef);
 impl_TCFType!(CFFooBar, CFFooBarRef, CFFooBarGetTypeID);
 impl_CFTypeDescription!(CFFooBar);
 impl_CFComparison!(CFFooBar, fake_compare);
+
+declare_TCFType!(CFGenericFooBar<T: Clone>, CFFooBarRef);
+impl_TCFType!(CFGenericFooBar<T: Clone>, CFFooBarRef, CFFooBarGetTypeID);
+impl_CFTypeDescription!(CFGenericFooBar<T: Clone>);
+impl_CFComparison!(CFGenericFooBar<T: Clone>, fake_compare);

@@ -1,40 +1,83 @@
 use std::io;
-use std::sync::Once;
+use std::io::Error;
+use std::ops::Index;
+use std::sync::OnceLock;
 
-use crate::signal::registry::{globals, EventId, EventInfo, Init, Storage};
 use crate::signal::RxFuture;
+use crate::sync::watch;
 
-use windows_sys::Win32::Foundation::BOOL;
+use windows_sys::core::BOOL;
 use windows_sys::Win32::System::Console as console;
 
+type EventInfo = watch::Sender<()>;
+
+#[derive(Clone, Copy)]
+#[repr(u32)]
+enum SignalKind {
+    CtrlC = console::CTRL_C_EVENT,
+    CtrlBreak = console::CTRL_BREAK_EVENT,
+    CtrlClose = console::CTRL_CLOSE_EVENT,
+    CtrlLogoff = console::CTRL_LOGOFF_EVENT,
+    CtrlShutdown = console::CTRL_SHUTDOWN_EVENT,
+}
+
+impl SignalKind {
+    const fn terminates(&self) -> bool {
+        // Returning from the handler function of those events immediately terminates the process.
+        // So for async systems, the easiest solution is to simply never return from
+        // the handler function.
+        //
+        // For more information, see:
+        // https://learn.microsoft.com/en-us/windows/console/handlerroutine#remarks
+        matches!(
+            self,
+            Self::CtrlClose | Self::CtrlLogoff | Self::CtrlShutdown
+        )
+    }
+}
+
 pub(super) fn ctrl_break() -> io::Result<RxFuture> {
-    new(console::CTRL_BREAK_EVENT)
+    new(SignalKind::CtrlBreak)
 }
 
 pub(super) fn ctrl_close() -> io::Result<RxFuture> {
-    new(console::CTRL_CLOSE_EVENT)
+    new(SignalKind::CtrlClose)
 }
 
 pub(super) fn ctrl_c() -> io::Result<RxFuture> {
-    new(console::CTRL_C_EVENT)
+    new(SignalKind::CtrlC)
 }
 
 pub(super) fn ctrl_logoff() -> io::Result<RxFuture> {
-    new(console::CTRL_LOGOFF_EVENT)
+    new(SignalKind::CtrlLogoff)
 }
 
 pub(super) fn ctrl_shutdown() -> io::Result<RxFuture> {
-    new(console::CTRL_SHUTDOWN_EVENT)
+    new(SignalKind::CtrlShutdown)
 }
 
-fn new(signum: u32) -> io::Result<RxFuture> {
-    global_init()?;
-    let rx = globals().register_listener(signum as EventId);
+fn new(signal: SignalKind) -> io::Result<RxFuture> {
+    // Initialize the registry BEFORE registering the OS handler: the
+    // handler thread can then always observe an initialized `REGISTRY`
+    // (`SetConsoleCtrlHandler` happens-after the initialization below),
+    // so it needs no blocking wait.
+    let registry = REGISTRY.get_or_init(Registry::default);
+
+    HANDLER_RESULT
+        .get_or_init(
+            || match unsafe { console::SetConsoleCtrlHandler(Some(handler), 1) } {
+                0 => Err(Error::last_os_error().raw_os_error().expect("unreachable")),
+                _ => Ok(()),
+            },
+        )
+        .map_err(Error::from_raw_os_error)?;
+
+    let rx = registry[signal].subscribe();
     Ok(RxFuture::new(rx))
 }
 
-#[derive(Debug)]
-pub(crate) struct OsStorage {
+#[derive(Debug, Default)]
+struct Registry {
     ctrl_break: EventInfo,
     ctrl_close: EventInfo,
     ctrl_c: EventInfo,
@@ -42,84 +85,59 @@ pub(crate) struct OsStorage {
     ctrl_shutdown: EventInfo,
 }
 
-impl Init for OsStorage {
-    fn init() -> Self {
-        Self {
-            ctrl_break: Default::default(),
-            ctrl_close: Default::default(),
-            ctrl_c: Default::default(),
-            ctrl_logoff: Default::default(),
-            ctrl_shutdown: Default::default(),
+impl Index<SignalKind> for Registry {
+    type Output = EventInfo;
+
+    fn index(&self, signal: SignalKind) -> &Self::Output {
+        match signal {
+            SignalKind::CtrlC => &self.ctrl_c,
+            SignalKind::CtrlBreak => &self.ctrl_break,
+            SignalKind::CtrlClose => &self.ctrl_close,
+            SignalKind::CtrlLogoff => &self.ctrl_logoff,
+            SignalKind::CtrlShutdown => &self.ctrl_shutdown,
         }
     }
 }
 
-impl Storage for OsStorage {
-    fn event_info(&self, id: EventId) -> Option<&EventInfo> {
-        match u32::try_from(id) {
-            Ok(console::CTRL_BREAK_EVENT) => Some(&self.ctrl_break),
-            Ok(console::CTRL_CLOSE_EVENT) => Some(&self.ctrl_close),
-            Ok(console::CTRL_C_EVENT) => Some(&self.ctrl_c),
-            Ok(console::CTRL_LOGOFF_EVENT) => Some(&self.ctrl_logoff),
-            Ok(console::CTRL_SHUTDOWN_EVENT) => Some(&self.ctrl_shutdown),
-            _ => None,
-        }
-    }
+static REGISTRY: OnceLock<Registry> = OnceLock::new();
 
-    fn for_each<'a, F>(&'a self, mut f: F)
-    where
-        F: FnMut(&'a EventInfo),
-    {
-        f(&self.ctrl_break);
-        f(&self.ctrl_close);
-        f(&self.ctrl_c);
-        f(&self.ctrl_logoff);
-        f(&self.ctrl_shutdown);
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct OsExtraData {}
-
-impl Init for OsExtraData {
-    fn init() -> Self {
-        Self {}
-    }
-}
-
-fn global_init() -> io::Result<()> {
-    static INIT: Once = Once::new();
-
-    let mut init = None;
-
-    INIT.call_once(|| unsafe {
-        let rc = console::SetConsoleCtrlHandler(Some(handler), 1);
-        let ret = if rc == 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        };
-
-        init = Some(ret);
-    });
-
-    init.unwrap_or_else(|| Ok(()))
-}
+/// Whether `SetConsoleCtrlHandler` succeeded, initialized (once) only
+/// after `REGISTRY` — see `new` for the ordering argument.
+static HANDLER_RESULT: OnceLock<Result<(), i32>> = OnceLock::new();
 
 unsafe extern "system" fn handler(ty: u32) -> BOOL {
-    let globals = globals();
-    globals.record_event(ty as EventId);
+    let signal = match ty {
+        console::CTRL_C_EVENT => SignalKind::CtrlC,
+        console::CTRL_BREAK_EVENT => SignalKind::CtrlBreak,
+        console::CTRL_CLOSE_EVENT => SignalKind::CtrlClose,
+        console::CTRL_LOGOFF_EVENT => SignalKind::CtrlLogoff,
+        console::CTRL_SHUTDOWN_EVENT => SignalKind::CtrlShutdown,
+        // Ignore unknown signals.
+        _ => return 0,
+    };
 
-    // According to https://docs.microsoft.com/en-us/windows/console/handlerroutine
+    // `new` initializes `REGISTRY` before it registers this handler with
+    // the OS, so an invoked handler always finds it initialized —
+    // `get()` suffices and no blocking wait is needed (using `get`
+    // also keeps the crate's MSRV: `OnceLock::wait` needs Rust 1.86).
+    let Some(registry) = REGISTRY.get() else {
+        // Unreachable by the ordering above; kept as a defensive
+        // fallback that lets the OS run the next handler.
+        return 0;
+    };
+
+    // According to https://learn.microsoft.com/en-us/windows/console/handlerroutine
     // the handler routine is always invoked in a new thread, thus we don't
     // have the same restrictions as in Unix signal handlers, meaning we can
     // go ahead and perform the broadcast here.
-    if globals.broadcast() {
-        1
-    } else {
+    match registry[signal].send(()) {
+        Ok(_) if signal.terminates() => loop {
+            std::thread::park();
+        },
+        Ok(_) => 1,
         // No one is listening for this notification any more
         // let the OS fire the next (possibly the default) handler.
-        0
+        Err(_) => 0,
     }
 }
 
@@ -129,6 +147,16 @@ mod tests {
     use crate::runtime::Runtime;
 
     use tokio_test::{assert_ok, assert_pending, assert_ready_ok, task};
+
+    unsafe fn raise_event(signal: SignalKind) {
+        if signal.terminates() {
+            // Those events will enter an infinite loop in `handler`, so
+            // we need to run them on a separate thread
+            std::thread::spawn(move || unsafe { super::handler(signal as u32) });
+        } else {
+            unsafe { super::handler(signal as u32) };
+        }
+    }
 
     #[test]
     fn ctrl_c() {
@@ -143,7 +171,7 @@ mod tests {
         // like sending signals on Unix, so we'll stub out the actual OS
         // integration and test that our handling works.
         unsafe {
-            super::handler(console::CTRL_C_EVENT);
+            raise_event(SignalKind::CtrlC);
         }
 
         assert_ready_ok!(ctrl_c.poll());
@@ -160,7 +188,7 @@ mod tests {
             // like sending signals on Unix, so we'll stub out the actual OS
             // integration and test that our handling works.
             unsafe {
-                super::handler(console::CTRL_BREAK_EVENT);
+                raise_event(SignalKind::CtrlBreak);
             }
 
             ctrl_break.recv().await.unwrap();
@@ -178,7 +206,7 @@ mod tests {
             // like sending signals on Unix, so we'll stub out the actual OS
             // integration and test that our handling works.
             unsafe {
-                super::handler(console::CTRL_CLOSE_EVENT);
+                raise_event(SignalKind::CtrlClose);
             }
 
             ctrl_close.recv().await.unwrap();
@@ -196,7 +224,7 @@ mod tests {
             // like sending signals on Unix, so we'll stub out the actual OS
             // integration and test that our handling works.
             unsafe {
-                super::handler(console::CTRL_SHUTDOWN_EVENT);
+                raise_event(SignalKind::CtrlShutdown);
             }
 
             ctrl_shutdown.recv().await.unwrap();
@@ -214,7 +242,7 @@ mod tests {
             // like sending signals on Unix, so we'll stub out the actual OS
             // integration and test that our handling works.
             unsafe {
-                super::handler(console::CTRL_LOGOFF_EVENT);
+                raise_event(SignalKind::CtrlLogoff);
             }
 
             ctrl_logoff.recv().await.unwrap();

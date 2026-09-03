@@ -3,16 +3,18 @@ use alloc::vec::Vec;
 
 use pki_types::CertificateDer;
 
+use crate::conn::kernel::KernelState;
 use crate::crypto::SupportedKxGroup;
 use crate::enums::{AlertDescription, ContentType, HandshakeType, ProtocolVersion};
 use crate::error::{Error, InvalidMessage, PeerMisbehaved};
-#[cfg(feature = "logging")]
+use crate::hash_hs::HandshakeHash;
 use crate::log::{debug, error, warn};
 use crate::msgs::alert::AlertMessagePayload;
 use crate::msgs::base::Payload;
+use crate::msgs::codec::Codec;
 use crate::msgs::enums::{AlertLevel, KeyUpdateRequest};
 use crate::msgs::fragmenter::MessageFragmenter;
-use crate::msgs::handshake::CertificateChain;
+use crate::msgs::handshake::{CertificateChain, HandshakeMessagePayload, ProtocolName};
 use crate::msgs::message::{
     Message, MessagePayload, OutboundChunks, OutboundOpaqueMessage, OutboundPlainMessage,
     PlainMessage,
@@ -33,12 +35,14 @@ pub struct CommonState {
     pub(crate) record_layer: record_layer::RecordLayer,
     pub(crate) suite: Option<SupportedCipherSuite>,
     pub(crate) kx_state: KxState,
-    pub(crate) alpn_protocol: Option<Vec<u8>>,
+    pub(crate) alpn_protocol: Option<ProtocolName>,
     pub(crate) aligned_handshake: bool,
     pub(crate) may_send_application_data: bool,
     pub(crate) may_receive_application_data: bool,
     pub(crate) early_traffic: bool,
     sent_fatal_alert: bool,
+    /// If we signaled end of stream.
+    pub(crate) has_sent_close_notify: bool,
     /// If the peer has signaled end of stream.
     pub(crate) has_received_close_notify: bool,
     #[cfg(feature = "std")]
@@ -55,6 +59,8 @@ pub struct CommonState {
     pub(crate) enable_secret_extraction: bool,
     temper_counters: TemperCounters,
     pub(crate) refresh_traffic_keys_pending: bool,
+    pub(crate) fips: bool,
+    pub(crate) tls13_tickets_received: u32,
 }
 
 impl CommonState {
@@ -72,6 +78,7 @@ impl CommonState {
             may_receive_application_data: false,
             early_traffic: false,
             sent_fatal_alert: false,
+            has_sent_close_notify: false,
             has_received_close_notify: false,
             #[cfg(feature = "std")]
             has_seen_eof: false,
@@ -85,6 +92,8 @@ impl CommonState {
             enable_secret_extraction: false,
             temper_counters: TemperCounters::default(),
             refresh_traffic_keys_pending: false,
+            fips: false,
+            tls13_tickets_received: 0,
         }
     }
 
@@ -106,21 +115,27 @@ impl CommonState {
         !(self.may_send_application_data && self.may_receive_application_data)
     }
 
-    /// Retrieves the certificate chain used by the peer to authenticate.
+    /// Retrieves the certificate chain or the raw public key used by the peer to authenticate.
     ///
     /// The order of the certificate chain is as it appears in the TLS
     /// protocol: the first certificate relates to the peer, the
     /// second certifies the first, the third certifies the second, and
     /// so on.
     ///
+    /// When using raw public keys, the first and only element is the raw public key.
+    ///
     /// This is made available for both full and resumed handshakes.
     ///
-    /// For clients, this is the certificate chain of the server.
+    /// For clients, this is the certificate chain or the raw public key of the server.
     ///
-    /// For servers, this is the certificate chain of the client,
+    /// For servers, this is the certificate chain or the raw public key of the client,
     /// if client authentication was completed.
     ///
     /// The return value is None until this value is available.
+    ///
+    /// Note: the return type of the 'certificate', when using raw public keys is `CertificateDer<'static>`
+    /// even though this should technically be a `SubjectPublicKeyInfoDer<'static>`.
+    /// This choice simplifies the API and ensures backwards compatibility.
     pub fn peer_certificates(&self) -> Option<&[CertificateDer<'static>]> {
         self.peer_certificates.as_deref()
     }
@@ -247,7 +262,9 @@ impl CommonState {
                         self.refresh_traffic_keys_pending = true;
                     }
                     _ => {
-                        error!("traffic keys exhausted, closing connection to prevent security failure");
+                        error!(
+                            "traffic keys exhausted, closing connection to prevent security failure"
+                        );
                         self.send_close_notify();
                         return Err(EncryptError::EncryptExhausted);
                     }
@@ -350,7 +367,9 @@ impl CommonState {
                         self.refresh_traffic_keys_pending = true;
                     }
                     _ => {
-                        error!("traffic keys exhausted, closing connection to prevent security failure");
+                        error!(
+                            "traffic keys exhausted, closing connection to prevent security failure"
+                        );
                         self.send_close_notify();
                         return;
                     }
@@ -382,7 +401,7 @@ impl CommonState {
 
     /// Mark the connection as ready to send application data.
     ///
-    /// Also flush `sendable_plaintext` if it is `Some`.  
+    /// Also flush `sendable_plaintext` if it is `Some`.
     pub(crate) fn start_outgoing_traffic(
         &mut self,
         sendable_plaintext: &mut Option<&mut ChunkVecBuffer>,
@@ -395,7 +414,7 @@ impl CommonState {
 
     /// Mark the connection as ready to send and receive application data.
     ///
-    /// Also flush `sendable_plaintext` if it is `Some`.  
+    /// Also flush `sendable_plaintext` if it is `Some`.
     pub(crate) fn start_traffic(&mut self, sendable_plaintext: &mut Option<&mut ChunkVecBuffer>) {
         self.may_receive_application_data = true;
         self.start_outgoing_traffic(sendable_plaintext);
@@ -433,7 +452,10 @@ impl CommonState {
                     self.quic.alert = Some(alert.description);
                 } else {
                     debug_assert!(
-                        matches!(m.payload, MessagePayload::Handshake { .. }),
+                        matches!(
+                            m.payload,
+                            MessagePayload::Handshake { .. } | MessagePayload::HandshakeFlight(_)
+                        ),
                         "QUIC uses TLS for the cryptographic handshake only"
                     );
                     let mut bytes = Vec::new();
@@ -459,6 +481,7 @@ impl CommonState {
     }
 
     pub(crate) fn take_received_plaintext(&mut self, bytes: Payload<'_>) {
+        self.temper_counters.received_app_data();
         self.received_plaintext
             .append(bytes.into_vec());
     }
@@ -483,7 +506,7 @@ impl CommonState {
     }
 
     fn send_warning_alert(&mut self, desc: AlertDescription) {
-        warn!("Sending warning alert {:?}", desc);
+        warn!("Sending warning alert {desc:?}");
         self.send_warning_alert_no_log(desc);
     }
 
@@ -511,10 +534,15 @@ impl CommonState {
                 .received_warning_alert()?;
             if self.is_tls13() && alert.description != AlertDescription::UserCanceled {
                 return Err(self.send_fatal_alert(AlertDescription::DecodeError, err));
-            } else {
-                warn!("TLS alert warning received: {:?}", alert);
-                return Ok(());
             }
+
+            // Some implementations send pointless `user_canceled` alerts, don't log them
+            // in release mode (https://bugs.openjdk.org/browse/JDK-8323517).
+            if alert.description != AlertDescription::UserCanceled || cfg!(debug_assertions) {
+                warn!("TLS alert warning received: {alert:?}");
+            }
+
+            return Ok(());
         }
 
         Err(err)
@@ -556,6 +584,7 @@ impl CommonState {
         }
         debug!("Sending warning alert {:?}", AlertDescription::CloseNotify);
         self.sent_fatal_alert = true;
+        self.has_sent_close_notify = true;
         self.send_warning_alert_no_log(AlertDescription::CloseNotify);
     }
 
@@ -842,6 +871,10 @@ pub(crate) trait State<Data>: Send + Sync {
 
     fn handle_decrypt_error(&self) {}
 
+    fn into_external_state(self: Box<Self>) -> Result<Box<dyn KernelState + 'static>, Error> {
+        Err(Error::HandshakeNotComplete)
+    }
+
     fn into_owned(self: Box<Self>) -> Box<dyn State<Data> + 'static>;
 }
 
@@ -875,6 +908,15 @@ impl Side {
 pub(crate) enum Protocol {
     Tcp,
     Quic,
+}
+
+impl Protocol {
+    pub(crate) fn supports_version(&self, version: ProtocolVersion) -> bool {
+        match self {
+            Self::Quic => version == ProtocolVersion::TLSv1_3,
+            Self::Tcp => true,
+        }
+    }
 }
 
 enum Limit {
@@ -932,6 +974,14 @@ impl TemperCounters {
             }
         }
     }
+
+    fn received_app_data(&mut self) {
+        self.allowed_key_update_requests = Self::INITIAL_KEY_UPDATE_REQUESTS;
+    }
+
+    // cf. BoringSSL `kMaxKeyUpdates`
+    // <https://github.com/google/boringssl/blob/dec5989b793c56ad4dd32173bd2d8595ca78b398/ssl/tls13_both.cc#L35-L38>
+    const INITIAL_KEY_UPDATE_REQUESTS: u8 = 32;
 }
 
 impl Default for TemperCounters {
@@ -945,9 +995,7 @@ impl Default for TemperCounters {
             // a second request after this is fatal.
             allowed_renegotiation_requests: 1,
 
-            // cf. BoringSSL `kMaxKeyUpdates`
-            // <https://github.com/google/boringssl/blob/dec5989b793c56ad4dd32173bd2d8595ca78b398/ssl/tls13_both.cc#L35-L38>
-            allowed_key_update_requests: 32,
+            allowed_key_update_requests: Self::INITIAL_KEY_UPDATE_REQUESTS,
 
             // At most two CCS are allowed: one after each ClientHello (recall a second
             // ClientHello happens after a HelloRetryRequest).
@@ -974,6 +1022,44 @@ impl KxState {
         }
     }
 }
+
+pub(crate) struct HandshakeFlight<'a, const TLS13: bool> {
+    pub(crate) transcript: &'a mut HandshakeHash,
+    body: Vec<u8>,
+}
+
+impl<'a, const TLS13: bool> HandshakeFlight<'a, TLS13> {
+    pub(crate) fn new(transcript: &'a mut HandshakeHash) -> Self {
+        Self {
+            transcript,
+            body: Vec::new(),
+        }
+    }
+
+    pub(crate) fn add(&mut self, hs: HandshakeMessagePayload<'_>) {
+        let start_len = self.body.len();
+        hs.encode(&mut self.body);
+        self.transcript
+            .add(&self.body[start_len..]);
+    }
+
+    pub(crate) fn finish(self, common: &mut CommonState) {
+        common.send_msg(
+            Message {
+                version: match TLS13 {
+                    true => ProtocolVersion::TLSv1_3,
+                    false => ProtocolVersion::TLSv1_2,
+                },
+                payload: MessagePayload::HandshakeFlight(Payload::new(self.body)),
+            },
+            TLS13,
+        );
+    }
+}
+
+#[cfg(feature = "tls12")]
+pub(crate) type HandshakeFlightTls12<'a> = HandshakeFlight<'a, false>;
+pub(crate) type HandshakeFlightTls13<'a> = HandshakeFlight<'a, true>;
 
 const DEFAULT_RECEIVED_PLAINTEXT_LIMIT: usize = 16 * 1024;
 pub(crate) const DEFAULT_BUFFER_LIMIT: usize = 64 * 1024;

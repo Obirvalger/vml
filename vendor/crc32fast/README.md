@@ -39,7 +39,11 @@ This crate contains multiple CRC32 implementations:
 
 - A fast baseline implementation which processes up to 16 bytes per iteration
 - An optimized implementation for modern `x86` using `sse` and `pclmulqdq` instructions
-- An optimized implementation for `aarch64` using `crc32` instructions
+- Wider `x86` implementations using `vpclmulqdq` on 256-bit (`avx2`) and 512-bit (`avx512f`)
+  registers, folding many independent streams per instruction (compiled with Rust 1.89+; the
+  crate's minimum supported Rust version is otherwise unchanged)
+- An optimized implementation for `aarch64` using `crc32` instructions, with a 3-way interleaved
+  variant that hides instruction latency on larger inputs
 
 Calling the `Hasher::new` constructor at runtime will perform a feature detection to select the most
 optimal implementation for the current CPU feature set.
@@ -54,7 +58,7 @@ optimal implementation for the current CPU feature set.
 
 Due to the use of SIMD intrinsics for the optimized implementations, this crate contains some amount of `unsafe` code.
 
-In order to ensure memory safety, the relevant code has been fuzz tested using [afl.rs](https://github.com/rust-fuzz/afl.rs) with millions of iterations in both `debug` and `release` build settings. You can inspect the test setup in the `fuzz` sub-directory, which also has instructions on how to run the tests yourself.
+In order to ensure memory safety, the relevant code has been fuzz tested using `libFuzzer` (via [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz)) with millions of iterations in both `debug` and `release` build settings. You can inspect the test setup in the `fuzz` sub-directory, which also has instructions on how to run the tests yourself.
 
 On top of that, every commit is tested using an address sanitizer in CI to catch any out of bounds memory accesses.
 
@@ -72,8 +76,6 @@ Note: Because runtime CPU feature detection requires OS support, the specialized
 
 This feature flag enables unstable features that are only available on the `nightly` channel. Keep in mind that when enabling this feature flag, you
 might experience breaking changes when updating compiler versions.
-
-Currently, enabling this feature flag will make the optimized `aarch64` implementation available.
 
 ## License
 

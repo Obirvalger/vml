@@ -1,5 +1,6 @@
 #![warn(rust_2018_idioms)]
 #![cfg(feature = "full")]
+#![cfg(not(miri))] // Too slow on Miri.
 
 use std::future::Future;
 use std::task::Context;
@@ -9,15 +10,19 @@ use futures::task::noop_waker_ref;
 use tokio::time::{self, Duration, Instant};
 use tokio_test::{assert_elapsed, assert_pending, assert_ready, task};
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn immediate_sleep() {
-    time::pause();
-
     let now = Instant::now();
 
-    // Ready!
-    time::sleep_until(now).await;
-    assert_elapsed!(now, ms(1));
+    let sleep = time::sleep_until(now);
+
+    tokio::pin!(sleep);
+
+    assert!(!sleep.is_elapsed());
+
+    sleep.as_mut().await;
+    assert_elapsed!(now, ms(0));
+    assert!(sleep.is_elapsed());
 }
 
 #[tokio::test]
@@ -258,13 +263,10 @@ async fn reset_after_firing() {
         .poll(&mut Context::from_waker(noop_waker_ref())));
 }
 
-const NUM_LEVELS: usize = 6;
-const MAX_DURATION: u64 = (1 << (6 * NUM_LEVELS)) - 1;
-
 #[tokio::test]
 async fn exactly_max() {
     time::pause();
-    time::sleep(ms(MAX_DURATION)).await;
+    time::sleep(Duration::MAX).await;
 }
 
 #[tokio::test]
@@ -284,7 +286,7 @@ async fn issue_5183() {
 #[tokio::test]
 async fn no_out_of_bounds_close_to_max() {
     time::pause();
-    time::sleep(ms(MAX_DURATION - 1)).await;
+    time::sleep(Duration::MAX - Duration::from_millis(1)).await;
 }
 
 fn ms(n: u64) -> Duration {

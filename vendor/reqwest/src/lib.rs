@@ -1,6 +1,7 @@
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(test, deny(warnings))]
 
 //! # reqwest
@@ -18,14 +19,14 @@
 //! - Uses [TLS](#tls) by default
 //! - Cookies
 //!
-//! The [`reqwest::Client`][client] is asynchronous. For applications wishing
-//! to only make a few HTTP requests, the [`reqwest::blocking`](blocking) API
-//! may be more convenient.
+//! The [`reqwest::Client`][client] is asynchronous (requiring Tokio). For
+//! applications wishing  to only make a few HTTP requests, the
+//! [`reqwest::blocking`](blocking) API may be more convenient.
 //!
 //! Additional learning resources include:
 //!
 //! - [The Rust Cookbook](https://rust-lang-nursery.github.io/rust-cookbook/web/clients.html)
-//! - [Reqwest Repository Examples](https://github.com/seanmonstar/reqwest/tree/master/examples)
+//! - [reqwest Repository Examples](https://github.com/seanmonstar/reqwest/tree/master/examples)
 //!
 //! ## Commercial Support
 //!
@@ -81,9 +82,12 @@
 //! This can be an array of tuples, or a `HashMap`, or a custom type that
 //! implements [`Serialize`][serde].
 //!
+//! The feature `form` is required.
+//!
 //! ```rust
 //! # use reqwest::Error;
 //! #
+//! # #[cfg(feature = "form")]
 //! # async fn run() -> Result<(), Error> {
 //! // This will POST a body of `foo=bar&baz=quux`
 //! let params = [("foo", "bar"), ("baz", "quux")];
@@ -100,7 +104,9 @@
 //!
 //! There is also a `json` method helper on the [`RequestBuilder`][builder] that works in
 //! a similar fashion the `form` method. It can take any value that can be
-//! serialized into JSON. The feature `json` is required.
+//! serialized into JSON.
+//!
+//! The feature `json` is required.
 //!
 //! ```rust
 //! # use reqwest::Error;
@@ -139,8 +145,11 @@
 //!
 //! System proxies look in environment variables to set HTTP or HTTPS proxies.
 //!
-//! `HTTP_PROXY` or `http_proxy` provide http proxies for http connections while
+//! `HTTP_PROXY` or `http_proxy` provide HTTP proxies for HTTP connections while
 //! `HTTPS_PROXY` or `https_proxy` provide HTTPS proxies for HTTPS connections.
+//! `ALL_PROXY` or `all_proxy` provide proxies for both HTTP and HTTPS connections.
+//! If both the all proxy and HTTP or HTTPS proxy variables are set the more specific
+//! HTTP or HTTPS proxies take precedence.
 //!
 //! These can be overwritten by adding a [`Proxy`] to `ClientBuilder`
 //! i.e. `let proxy = reqwest::Proxy::http("https://secure.example")?;`
@@ -170,8 +179,10 @@
 //!
 //! The Client implementation automatically switches to the WASM one when the target_arch is wasm32,
 //! the usage is basically the same as the async api. Some of the features are disabled in wasm
-//! : [`tls`], [`cookie`], [`blocking`].
+//! : [`tls`], [`cookie`], [`blocking`], as well as various `ClientBuilder` methods such as `timeout()` and `connector_layer()`.
 //!
+//! TLS and cookies are provided through the browser environment, so reqwest can issue TLS requests with cookies,
+//! but has limited configuration.
 //!
 //! ## Optional Features
 //!
@@ -181,17 +192,12 @@
 //! - **http2** *(enabled by default)*: Enables HTTP/2 support.
 //! - **default-tls** *(enabled by default)*: Provides TLS support to connect
 //!   over HTTPS.
+//! - **rustls**: Enables TLS functionality provided by `rustls`.
+//! - **rustls-no-provider**: Enables TLS provided by `rustls` without specifying a crypto provider.
 //! - **native-tls**: Enables TLS functionality provided by `native-tls`.
 //! - **native-tls-vendored**: Enables the `vendored` feature of `native-tls`.
-//! - **native-tls-alpn**: Enables the `alpn` feature of `native-tls`.
-//! - **rustls-tls**: Enables TLS functionality provided by `rustls`.
-//!   Equivalent to `rustls-tls-webpki-roots`.
-//! - **rustls-tls-manual-roots**: Enables TLS functionality provided by `rustls`,
-//!   without setting any root certificates. Roots have to be specified manually.
-//! - **rustls-tls-webpki-roots**: Enables TLS functionality provided by `rustls`,
-//!   while using root certificates from the `webpki-roots` crate.
-//! - **rustls-tls-native-roots**: Enables TLS functionality provided by `rustls`,
-//!   while using root certificates from the `rustls-native-certs` crate.
+//! - **native-tls-no-alpn**: Enables `native-tls` without its `alpn` feature.
+//! - **native-tls-vendored-no-alpn**: Enables `native-tls-vendored` without its `alpn` feature.
 //! - **blocking**: Provides the [blocking][] client API.
 //! - **charset** *(enabled by default)*: Improved support for decoding text.
 //! - **cookies**: Provides cookie session support.
@@ -199,12 +205,16 @@
 //! - **brotli**: Provides response body brotli decompression.
 //! - **zstd**: Provides response body zstd decompression.
 //! - **deflate**: Provides response body deflate decompression.
+//! - **query**: Provides query parameter serialization.
+//! - **form**: Provides form data serialization.
 //! - **json**: Provides serialization and deserialization for JSON bodies.
 //! - **multipart**: Provides functionality for multipart forms.
 //! - **stream**: Adds support for `futures::Stream`.
 //! - **socks**: Provides SOCKS5 proxy support.
 //! - **hickory-dns**: Enables a hickory-dns async resolver instead of default
 //!   threadpool using `getaddrinfo`.
+//! - **system-proxy** *(enabled by default)*: Use Windows and macOS system
+//!   proxy settings automatically.
 //!
 //! ## Unstable Features
 //!
@@ -247,16 +257,21 @@ compile_error!(
 "
 );
 
+// Ignore `unused_crate_dependencies` warnings.
+// Used in many features that they're not worth making it optional.
+use futures_core as _;
+use sync_wrapper as _;
+
 macro_rules! if_wasm {
     ($($item:item)*) => {$(
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))]
         $item
     )*}
 }
 
 macro_rules! if_hyper {
     ($($item:item)*) => {$(
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))]
         $item
     )*}
 }
@@ -269,6 +284,10 @@ pub use url::Url;
 // universal mods
 #[macro_use]
 mod error;
+// TODO: remove `if_hyper` if wasm has been migrated to new config system.
+if_hyper! {
+    mod config;
+}
 mod into_url;
 mod response;
 
@@ -359,9 +378,13 @@ if_hyper! {
     pub mod dns;
     mod proxy;
     pub mod redirect;
+    pub mod retry;
     #[cfg(feature = "__tls")]
     pub mod tls;
     mod util;
+
+    #[cfg(docsrs)]
+    pub use connect::uds::UnixSocketProvider;
 }
 
 if_wasm! {

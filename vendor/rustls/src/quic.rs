@@ -10,15 +10,13 @@ use crate::crypto::cipher::{AeadKey, Iv};
 use crate::crypto::tls13::{Hkdf, HkdfExpander, OkmBlock};
 use crate::enums::AlertDescription;
 use crate::error::Error;
+use crate::tls13::Tls13CipherSuite;
 use crate::tls13::key_schedule::{
     hkdf_expand_label, hkdf_expand_label_aead_key, hkdf_expand_label_block,
 };
-use crate::tls13::Tls13CipherSuite;
 
 #[cfg(feature = "std")]
 mod connection {
-    use alloc::sync::Arc;
-    use alloc::vec;
     use alloc::vec::Vec;
     use core::fmt::{self, Debug};
     use core::ops::{Deref, DerefMut};
@@ -27,13 +25,18 @@ mod connection {
 
     use super::{DirectionalKeys, KeyChange, Version};
     use crate::client::{ClientConfig, ClientConnectionData};
-    use crate::common_state::{CommonState, Protocol, DEFAULT_BUFFER_LIMIT};
+    use crate::common_state::{CommonState, DEFAULT_BUFFER_LIMIT, Protocol};
     use crate::conn::{ConnectionCore, SideData};
-    use crate::enums::{AlertDescription, ProtocolVersion};
+    use crate::enums::{AlertDescription, ContentType, ProtocolVersion};
     use crate::error::Error;
-    use crate::msgs::deframer::DeframerVecBuffer;
-    use crate::msgs::handshake::{ClientExtension, ServerExtension};
+    use crate::msgs::base::Payload;
+    use crate::msgs::deframer::buffers::{DeframerVecBuffer, Locator};
+    use crate::msgs::handshake::{
+        ClientExtensionsInput, ServerExtensionsInput, TransportParameters,
+    };
+    use crate::msgs::message::InboundPlainMessage;
     use crate::server::{ServerConfig, ServerConnectionData};
+    use crate::sync::Arc;
     use crate::vecbuf::ChunkVecBuffer;
 
     /// A QUIC client or server connection.
@@ -163,7 +166,24 @@ mod connection {
             name: ServerName<'static>,
             params: Vec<u8>,
         ) -> Result<Self, Error> {
-            if !config.supports_version(ProtocolVersion::TLSv1_3) {
+            Self::new_with_alpn(
+                config.clone(),
+                quic_version,
+                name,
+                params,
+                config.alpn_protocols.clone(),
+            )
+        }
+
+        /// Make a new QUIC ClientConnection with custom ALPN protocols.
+        pub fn new_with_alpn(
+            config: Arc<ClientConfig>,
+            quic_version: Version,
+            name: ServerName<'static>,
+            params: Vec<u8>,
+            alpn_protocols: Vec<Vec<u8>>,
+        ) -> Result<Self, Error> {
+            if !config.supports_version(ProtocolVersion::TLSv1_3, Protocol::Quic) {
                 return Err(Error::General(
                     "TLS 1.3 support is required for QUIC".into(),
                 ));
@@ -175,12 +195,16 @@ mod connection {
                 ));
             }
 
-            let ext = match quic_version {
-                Version::V1Draft => ClientExtension::TransportParametersDraft(params),
-                Version::V1 | Version::V2 => ClientExtension::TransportParameters(params),
+            let exts = ClientExtensionsInput {
+                transport_parameters: Some(match quic_version {
+                    Version::V1Draft => TransportParameters::QuicDraft(Payload::new(params)),
+                    Version::V1 | Version::V2 => TransportParameters::Quic(Payload::new(params)),
+                }),
+
+                ..ClientExtensionsInput::from_alpn(alpn_protocols)
             };
 
-            let mut inner = ConnectionCore::for_client(config, name, vec![ext], Protocol::Quic)?;
+            let mut inner = ConnectionCore::for_client(config, name, exts, Protocol::Quic)?;
             inner.common_state.quic.version = quic_version;
             Ok(Self {
                 inner: inner.into(),
@@ -194,6 +218,11 @@ mod connection {
         /// is not an error, but you may wish to resend the data.
         pub fn is_early_data_accepted(&self) -> bool {
             self.inner.core.is_early_data_accepted()
+        }
+
+        /// Returns the number of TLS1.3 tickets that have been received.
+        pub fn tls13_tickets_received(&self) -> u32 {
+            self.inner.tls13_tickets_received
         }
     }
 
@@ -239,7 +268,7 @@ mod connection {
             quic_version: Version,
             params: Vec<u8>,
         ) -> Result<Self, Error> {
-            if !config.supports_version(ProtocolVersion::TLSv1_3) {
+            if !config.supports_version(ProtocolVersion::TLSv1_3, Protocol::Quic) {
                 return Err(Error::General(
                     "TLS 1.3 support is required for QUIC".into(),
                 ));
@@ -257,12 +286,14 @@ mod connection {
                 ));
             }
 
-            let ext = match quic_version {
-                Version::V1Draft => ServerExtension::TransportParametersDraft(params),
-                Version::V1 | Version::V2 => ServerExtension::TransportParameters(params),
+            let exts = ServerExtensionsInput {
+                transport_parameters: Some(match quic_version {
+                    Version::V1Draft => TransportParameters::QuicDraft(Payload::new(params)),
+                    Version::V1 | Version::V2 => TransportParameters::Quic(Payload::new(params)),
+                }),
             };
 
-            let mut core = ConnectionCore::for_server(config, vec![ext])?;
+            let mut core = ConnectionCore::for_server(config, exts)?;
             core.common_state.protocol = Protocol::Quic;
             core.common_state.quic.version = quic_version;
             Ok(Self { inner: core.into() })
@@ -371,13 +402,25 @@ mod connection {
         ///
         /// Handshake data obtained from separate encryption levels should be supplied in separate calls.
         pub fn read_hs(&mut self, plaintext: &[u8]) -> Result<(), Error> {
-            self.core.message_deframer.push(
-                ProtocolVersion::TLSv1_3,
-                plaintext,
-                &mut self.deframer_buffer,
-            )?;
+            let range = self.deframer_buffer.extend(plaintext);
+
+            self.core.hs_deframer.input_message(
+                InboundPlainMessage {
+                    typ: ContentType::Handshake,
+                    version: ProtocolVersion::TLSv1_3,
+                    payload: &self.deframer_buffer.filled()[range.clone()],
+                },
+                &Locator::new(self.deframer_buffer.filled()),
+                range.end,
+            );
+
+            self.core
+                .hs_deframer
+                .coalesce(self.deframer_buffer.filled_mut())?;
+
             self.core
                 .process_new_packets(&mut self.deframer_buffer, &mut self.sendable_plaintext)?;
+
             Ok(())
         }
 
@@ -688,6 +731,25 @@ pub trait PacketKey: Send + Sync {
         payload: &mut [u8],
     ) -> Result<Tag, Error>;
 
+    /// Encrypts a multipath QUIC packet
+    ///
+    /// Takes a `path_id` and `packet_number`, used to derive the nonce; the packet `header`, which is used as
+    /// the additional authenticated data; and the `payload`. The authentication tag is returned if
+    /// encryption succeeds.
+    ///
+    /// Fails if and only if the payload is longer than allowed by the cipher suite's AEAD algorithm.
+    ///
+    /// See <https://www.ietf.org/archive/id/draft-ietf-quic-multipath-11.html#name-nonce-calculation>.
+    fn encrypt_in_place_for_path(
+        &self,
+        _path_id: u32,
+        _packet_number: u64,
+        _header: &[u8],
+        _payload: &mut [u8],
+    ) -> Result<Tag, Error> {
+        Err(Error::EncryptError)
+    }
+
     /// Decrypt a QUIC packet
     ///
     /// Takes the packet `header`, which is used as the additional authenticated data, and the
@@ -701,6 +763,26 @@ pub trait PacketKey: Send + Sync {
         header: &[u8],
         payload: &'a mut [u8],
     ) -> Result<&'a [u8], Error>;
+
+    /// Decrypt a multipath QUIC packet
+    ///
+    /// Takes a `path_id` and `packet_number`, used to derive the nonce; the packet `header`, which is used as
+    /// the additional authenticated data; and the `payload`. The authentication tag is returned if
+    /// encryption succeeds.
+    ///
+    /// If the return value is `Ok`, the decrypted payload can be found in `payload`, up to the
+    /// length found in the return value.
+    ///
+    /// See <https://www.ietf.org/archive/id/draft-ietf-quic-multipath-11.html#name-nonce-calculation>.
+    fn decrypt_in_place_for_path<'a>(
+        &self,
+        _path_id: u32,
+        _packet_number: u64,
+        _header: &[u8],
+        _payload: &'a mut [u8],
+    ) -> Result<&'a [u8], Error> {
+        Err(Error::DecryptError)
+    }
 
     /// Tag length for the underlying AEAD algorithm
     fn tag_len(&self) -> usize;
@@ -894,11 +976,12 @@ pub enum KeyChange {
 ///
 /// Governs version-specific behavior in the TLS layer
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum Version {
     /// Draft versions 29, 30, 31 and 32
     V1Draft,
     /// First stable RFC
+    #[default]
     V1,
     /// Anti-ossification variant of V1
     V2,
@@ -954,12 +1037,6 @@ impl Version {
             Self::V1Draft | Self::V1 => b"quic ku",
             Self::V2 => b"quicv2 ku",
         }
-    }
-}
-
-impl Default for Version {
-    fn default() -> Self {
-        Self::V1
     }
 }
 

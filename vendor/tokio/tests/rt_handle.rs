@@ -1,8 +1,9 @@
-#![allow(unknown_lints, unexpected_cfgs)]
 #![warn(rust_2018_idioms)]
 #![cfg(feature = "full")]
 
+use std::sync::Arc;
 use tokio::runtime::Runtime;
+use tokio::sync::{mpsc, Barrier};
 
 #[test]
 #[cfg_attr(panic = "abort", ignore)]
@@ -65,27 +66,56 @@ fn interleave_then_enter() {
     let _enter = rt3.enter();
 }
 
-#[cfg(tokio_unstable)]
-mod unstable {
-    use super::*;
+// If the cycle causes a leak, then miri will catch it.
+#[test]
+fn drop_tasks_with_reference_cycle() {
+    rt().block_on(async {
+        let (tx, mut rx) = mpsc::channel(1);
 
-    #[test]
-    fn runtime_id_is_same() {
-        let rt = rt();
+        let barrier = Arc::new(Barrier::new(3));
+        let barrier_a = barrier.clone();
+        let barrier_b = barrier.clone();
 
-        let handle1 = rt.handle();
-        let handle2 = rt.handle();
+        let a = tokio::spawn(async move {
+            let b = rx.recv().await.unwrap();
 
-        assert_eq!(handle1.id(), handle2.id());
-    }
+            // Poll the JoinHandle once. This registers the waker.
+            // The other task cannot have finished at this point due to the barrier below.
+            futures::future::select(b, std::future::ready(())).await;
 
-    #[test]
-    fn runtime_ids_different() {
-        let rt1 = rt();
-        let rt2 = rt();
+            barrier_a.wait().await;
+        });
 
-        assert_ne!(rt1.handle().id(), rt2.handle().id());
-    }
+        let b = tokio::spawn(async move {
+            // Poll the JoinHandle once. This registers the waker.
+            // The other task cannot have finished at this point due to the barrier below.
+            futures::future::select(a, std::future::ready(())).await;
+
+            barrier_b.wait().await;
+        });
+
+        tx.send(b).await.unwrap();
+
+        barrier.wait().await;
+    });
+}
+
+#[test]
+fn runtime_id_is_same() {
+    let rt = rt();
+
+    let handle1 = rt.handle();
+    let handle2 = rt.handle();
+
+    assert_eq!(handle1.id(), handle2.id());
+}
+
+#[test]
+fn runtime_ids_different() {
+    let rt1 = rt();
+    let rt2 = rt();
+
+    assert_ne!(rt1.handle().id(), rt2.handle().id());
 }
 
 fn rt() -> Runtime {

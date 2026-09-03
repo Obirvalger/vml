@@ -52,7 +52,7 @@
 //!
 
 #![cfg_attr(
-    not(boringssl),
+    not(any(boringssl, awslc)),
     doc = r#"\
 Compute and verify an HMAC-SHA256
 
@@ -85,7 +85,7 @@ use crate::error::ErrorStack;
 use crate::md::MdRef;
 use crate::pkey::{HasPrivate, HasPublic, PKeyRef};
 use crate::pkey_ctx::PkeyCtxRef;
-use crate::{cvt, cvt_n, cvt_p};
+use crate::{cvt, cvt_p};
 use cfg_if::cfg_if;
 use foreign_types::{ForeignType, ForeignTypeRef};
 use openssl_macros::corresponds;
@@ -93,7 +93,7 @@ use std::convert::TryFrom;
 use std::ptr;
 
 cfg_if! {
-    if #[cfg(any(ossl110, boringssl, libressl382))] {
+    if #[cfg(any(ossl110, boringssl, libressl382, awslc))] {
         use ffi::{EVP_MD_CTX_free, EVP_MD_CTX_new};
     } else {
         use ffi::{EVP_MD_CTX_create as EVP_MD_CTX_new, EVP_MD_CTX_destroy as EVP_MD_CTX_free};
@@ -242,6 +242,10 @@ impl MdCtxRef {
     pub fn digest_final(&mut self, out: &mut [u8]) -> Result<usize, ErrorStack> {
         let mut len = u32::try_from(out.len()).unwrap_or(u32::MAX);
 
+        if self.size() > len as usize {
+            return Err(ErrorStack::get());
+        }
+
         unsafe {
             cvt(ffi::EVP_DigestFinal(
                 self.as_ptr(),
@@ -258,7 +262,7 @@ impl MdCtxRef {
     /// Requires OpenSSL 1.1.1 or newer.
     #[corresponds(EVP_DigestFinalXOF)]
     #[inline]
-    #[cfg(ossl111)]
+    #[cfg(any(ossl111, awslc))]
     pub fn digest_final_xof(&mut self, out: &mut [u8]) -> Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::EVP_DigestFinalXOF(
@@ -309,12 +313,21 @@ impl MdCtxRef {
     #[inline]
     pub fn digest_verify_final(&mut self, signature: &[u8]) -> Result<bool, ErrorStack> {
         unsafe {
-            let r = cvt_n(ffi::EVP_DigestVerifyFinal(
+            let r = ffi::EVP_DigestVerifyFinal(
                 self.as_ptr(),
                 signature.as_ptr() as *mut _,
                 signature.len(),
-            ))?;
-            Ok(r == 1)
+            );
+            if r == 1 {
+                Ok(true)
+            } else {
+                let errors = ErrorStack::get();
+                if errors.errors().is_empty() {
+                    Ok(false)
+                } else {
+                    Err(errors)
+                }
+            }
         }
     }
 
@@ -325,7 +338,7 @@ impl MdCtxRef {
     ///
     /// Requires OpenSSL 1.1.1 or newer.
     #[corresponds(EVP_DigestSign)]
-    #[cfg(ossl111)]
+    #[cfg(any(ossl111, boringssl, awslc, libressl))]
     #[inline]
     pub fn digest_sign(&mut self, from: &[u8], to: Option<&mut [u8]>) -> Result<usize, ErrorStack> {
         let mut len = to.as_ref().map_or(0, |b| b.len());
@@ -344,7 +357,7 @@ impl MdCtxRef {
     }
 
     /// Like [`Self::digest_sign`] but appends the signature to a [`Vec`].
-    #[cfg(ossl111)]
+    #[cfg(any(ossl111, boringssl, awslc, libressl))]
     pub fn digest_sign_to_vec(
         &mut self,
         from: &[u8],
@@ -365,7 +378,7 @@ impl MdCtxRef {
     ///
     /// Requires OpenSSL 1.1.1 or newer.
     #[corresponds(EVP_DigestVerify)]
-    #[cfg(ossl111)]
+    #[cfg(any(ossl111, boringssl, awslc, libressl))]
     #[inline]
     pub fn digest_verify(&mut self, data: &[u8], signature: &[u8]) -> Result<bool, ErrorStack> {
         unsafe {
@@ -389,7 +402,7 @@ impl MdCtxRef {
 
     /// Resets the underlying EVP_MD_CTX instance
     #[corresponds(EVP_MD_CTX_reset)]
-    #[cfg(ossl111)]
+    #[cfg(any(ossl111, boringssl, awslc, libressl))]
     #[inline]
     pub fn reset(&mut self) -> Result<(), ErrorStack> {
         unsafe {
@@ -424,8 +437,11 @@ mod test {
 
         ctx.digest_verify_init(Some(md), &key1).unwrap();
         ctx.digest_verify_update(bad_data).unwrap();
-        let valid = ctx.digest_verify_final(&signature).unwrap();
-        assert!(!valid);
+        assert!(matches!(
+            ctx.digest_verify_final(&signature),
+            Ok(false) | Err(_)
+        ));
+        assert!(ErrorStack::get().errors().is_empty());
     }
 
     #[test]
@@ -503,7 +519,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl111)]
+    #[cfg(any(ossl111, boringssl, awslc, libressl))]
     fn verify_md_ctx_reset() {
         let hello_expected =
             hex::decode("185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969")
@@ -536,5 +552,14 @@ mod test {
         assert_eq!(result_len, reset_result.len());
         // Validate result of digest of "World"
         assert_eq!(reset_result, world_expected);
+    }
+
+    #[test]
+    fn digest_final_checks_length() {
+        let mut ctx = MdCtx::new().unwrap();
+        ctx.digest_init(Md::sha256()).unwrap();
+        ctx.digest_update(b"Some Crypto Text").unwrap();
+        let mut digest = [0; 16];
+        assert!(ctx.digest_final(&mut digest).is_err());
     }
 }

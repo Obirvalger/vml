@@ -1,8 +1,12 @@
-#![cfg_attr(target_arch = "wasm32", allow(unused))]
+#![cfg_attr(
+    all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")),
+    allow(unused)
+)]
 use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 
+use crate::util::Escape;
 use crate::{StatusCode, Url};
 
 /// A `Result` alias where the `Err` case is `reqwest::Error`.
@@ -75,6 +79,13 @@ impl Error {
         self
     }
 
+    pub(crate) fn if_no_url(mut self, f: impl FnOnce() -> Url) -> Self {
+        if self.inner.url.is_none() {
+            self.inner.url = Some(f());
+        }
+        self
+    }
+
     /// Strip the related url from this error (if, for example, it contains
     /// sensitive information)
     pub fn without_url(mut self) -> Self {
@@ -94,7 +105,14 @@ impl Error {
 
     /// Returns true if the error is from `Response::error_for_status`.
     pub fn is_status(&self) -> bool {
-        matches!(self.inner.kind, Kind::Status(_))
+        #[cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))]
+        {
+            matches!(self.inner.kind, Kind::Status(_, _))
+        }
+        #[cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))]
+        {
+            matches!(self.inner.kind, Kind::Status(_))
+        }
     }
 
     /// Returns true if the error is related to a timeout.
@@ -104,6 +122,15 @@ impl Error {
         while let Some(err) = source {
             if err.is::<TimedOut>() {
                 return true;
+            }
+            #[cfg(not(all(
+                target_arch = "wasm32",
+                any(target_os = "unknown", target_os = "none")
+            )))]
+            if let Some(hyper_err) = err.downcast_ref::<hyper::Error>() {
+                if hyper_err.is_timeout() {
+                    return true;
+                }
             }
             if let Some(io) = err.downcast_ref::<io::Error>() {
                 if io.kind() == io::ErrorKind::TimedOut {
@@ -121,7 +148,7 @@ impl Error {
         matches!(self.inner.kind, Kind::Request)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))]
     /// Returns true if the error is related to connect
     pub fn is_connect(&self) -> bool {
         let mut source = self.source();
@@ -152,9 +179,20 @@ impl Error {
     /// Returns the status code, if the error was generated from a response.
     pub fn status(&self) -> Option<StatusCode> {
         match self.inner.kind {
+            #[cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))]
             Kind::Status(code) => Some(code),
+            #[cfg(not(all(
+                target_arch = "wasm32",
+                any(target_os = "unknown", target_os = "none")
+            )))]
+            Kind::Status(code, _) => Some(code),
             _ => None,
         }
+    }
+
+    /// Returns true if the error is related to a protocol upgrade request
+    pub fn is_upgrade(&self) -> bool {
+        matches!(self.inner.kind, Kind::Upgrade)
     }
 
     // private
@@ -165,6 +203,19 @@ impl Error {
     }
 }
 
+/// Converts from external types to reqwest's
+/// internal equivalents.
+///
+/// Currently only is used for `tower::timeout::error::Elapsed`.
+#[cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))]
+pub(crate) fn cast_to_internal_error(error: BoxError) -> BoxError {
+    if error.is::<tower::timeout::error::Elapsed>() {
+        Box::new(crate::error::TimedOut) as BoxError
+    } else {
+        error
+    }
+}
+
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut builder = f.debug_struct("reqwest::Error");
@@ -172,7 +223,7 @@ impl fmt::Debug for Error {
         builder.field("kind", &self.inner.kind);
 
         if let Some(ref url) = self.inner.url {
-            builder.field("url", url);
+            builder.field("url", &url.as_str());
         }
         if let Some(ref source) = self.inner.source {
             builder.field("source", source);
@@ -191,6 +242,7 @@ impl fmt::Display for Error {
             Kind::Decode => f.write_str("error decoding response body")?,
             Kind::Redirect => f.write_str("error following redirect")?,
             Kind::Upgrade => f.write_str("error upgrading connection")?,
+            #[cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))]
             Kind::Status(ref code) => {
                 let prefix = if code.is_client_error() {
                     "HTTP status client error"
@@ -199,6 +251,28 @@ impl fmt::Display for Error {
                     "HTTP status server error"
                 };
                 write!(f, "{prefix} ({code})")?;
+            }
+            #[cfg(not(all(
+                target_arch = "wasm32",
+                any(target_os = "unknown", target_os = "none")
+            )))]
+            Kind::Status(ref code, ref reason) => {
+                let prefix = if code.is_client_error() {
+                    "HTTP status client error"
+                } else {
+                    debug_assert!(code.is_server_error());
+                    "HTTP status server error"
+                };
+                if let Some(reason) = reason {
+                    write!(
+                        f,
+                        "{prefix} ({} {})",
+                        code.as_str(),
+                        Escape::new(reason.as_bytes())
+                    )?;
+                } else {
+                    write!(f, "{prefix} ({code})")?;
+                }
             }
         };
 
@@ -216,14 +290,14 @@ impl StdError for Error {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))]
 impl From<crate::error::Error> for wasm_bindgen::JsValue {
     fn from(err: Error) -> wasm_bindgen::JsValue {
         js_sys::Error::from(err).into()
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))]
 impl From<crate::error::Error> for js_sys::Error {
     fn from(err: Error) -> js_sys::Error {
         js_sys::Error::new(&format!("{err}"))
@@ -235,6 +309,9 @@ pub(crate) enum Kind {
     Builder,
     Request,
     Redirect,
+    #[cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))]
+    Status(StatusCode, Option<hyper::ext::ReasonPhrase>),
+    #[cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))]
     Status(StatusCode),
     Body,
     Decode,
@@ -263,8 +340,23 @@ pub(crate) fn redirect<E: Into<BoxError>>(e: E, url: Url) -> Error {
     Error::new(Kind::Redirect, Some(e)).with_url(url)
 }
 
-pub(crate) fn status_code(url: Url, status: StatusCode) -> Error {
-    Error::new(Kind::Status(status), None::<Error>).with_url(url)
+pub(crate) fn status_code(
+    url: Url,
+    status: StatusCode,
+    #[cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))] reason: Option<hyper::ext::ReasonPhrase>,
+) -> Error {
+    Error::new(
+        Kind::Status(
+            status,
+            #[cfg(not(all(
+                target_arch = "wasm32",
+                any(target_os = "unknown", target_os = "none")
+            )))]
+            reason,
+        ),
+        None::<Error>,
+    )
+    .with_url(url)
 }
 
 pub(crate) fn url_bad_scheme(url: Url) -> Error {
@@ -286,10 +378,6 @@ pub(crate) fn upgrade<E: Into<BoxError>>(e: E) -> Error {
 }
 
 // io::Error helpers
-
-pub(crate) fn into_io(e: BoxError) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, e)
-}
 
 #[allow(unused)]
 pub(crate) fn decode_io(e: io::Error) -> Error {
@@ -380,7 +468,9 @@ mod tests {
         let err = super::request(super::TimedOut);
         assert!(err.is_timeout());
 
-        let io = io::Error::new(io::ErrorKind::Other, err);
+        // todo: test `hyper::Error::is_timeout` when we can easily construct one
+
+        let io = io::Error::from(io::ErrorKind::TimedOut);
         let nested = super::request(io);
         assert!(nested.is_timeout());
     }

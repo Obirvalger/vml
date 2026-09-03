@@ -33,7 +33,7 @@ pub fn generate(
     doc_comment: &DocComment,
     include_grammar: bool,
 ) -> TokenStream {
-    let uses_eoi = defaults.iter().any(|name| *name == "EOI");
+    let uses_eoi = defaults.contains(&"EOI");
     let name = parsed_derive.name;
     let builtins = generate_builtin_rules();
     let include_fix = if include_grammar {
@@ -570,6 +570,12 @@ fn generate_expr(expr: OptimizedExpr) -> TokenStream {
                 state.stack_push(|state| #expr)
             }
         }
+        #[cfg(feature = "grammar-extras")]
+        OptimizedExpr::PushLiteral(string) => {
+            quote! {
+                state.stack_push_literal(#string)
+            }
+        }
         OptimizedExpr::RestoreOnErr(expr) => {
             let expr = generate_expr(*expr);
 
@@ -753,6 +759,12 @@ fn generate_expr_atomic(expr: OptimizedExpr) -> TokenStream {
 
             quote! {
                 state.stack_push(|state| #expr)
+            }
+        }
+        #[cfg(feature = "grammar-extras")]
+        OptimizedExpr::PushLiteral(string) => {
+            quote! {
+                state.stack_push_literal(#string)
             }
         }
         OptimizedExpr::RestoreOnErr(expr) => {
@@ -1042,6 +1054,19 @@ mod tests {
             }
             .to_string()
         );
+    }
+
+    #[test]
+    #[cfg(feature = "grammar-extras")]
+    fn push_literal() {
+        let expr = OptimizedExpr::PushLiteral("a".to_owned());
+        assert_eq!(
+            generate_expr_atomic(expr).to_string(),
+            quote! {
+                state.stack_push_literal("a")
+            }
+            .to_string()
+        )
     }
 
     #[test]

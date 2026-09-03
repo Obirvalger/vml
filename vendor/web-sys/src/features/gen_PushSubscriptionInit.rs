@@ -4,12 +4,83 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = PushSubscriptionInit)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "PushSubscriptionInit")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `PushSubscriptionInit` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
     pub type PushSubscriptionInit;
+    #[doc = "Get the `appServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, getter = "appServerKey")]
+    pub fn get_app_server_key(this: &PushSubscriptionInit) -> Option<::js_sys::Object>;
+    #[doc = "Change the `appServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "appServerKey")]
+    pub fn set_app_server_key(this: &PushSubscriptionInit, val: Option<&::js_sys::Object>);
+    #[doc = "Change the `appServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "appServerKey")]
+    pub fn set_app_server_key_opt_buffer_source(
+        this: &PushSubscriptionInit,
+        val: Option<&::js_sys::Object>,
+    );
+    #[doc = "Change the `appServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "appServerKey")]
+    pub fn set_app_server_key_opt_u8_slice(this: &PushSubscriptionInit, val: Option<&mut [u8]>);
+    #[doc = "Change the `appServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "appServerKey")]
+    pub fn set_app_server_key_opt_u8_array(
+        this: &PushSubscriptionInit,
+        val: Option<&::js_sys::Uint8Array>,
+    );
+    #[doc = "Get the `authSecret` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, getter = "authSecret")]
+    pub fn get_auth_secret(this: &PushSubscriptionInit) -> Option<::js_sys::ArrayBuffer>;
+    #[doc = "Change the `authSecret` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "authSecret")]
+    pub fn set_auth_secret(this: &PushSubscriptionInit, val: Option<&::js_sys::ArrayBuffer>);
+    #[doc = "Get the `endpoint` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, getter = "endpoint")]
+    pub fn get_endpoint(this: &PushSubscriptionInit) -> ::alloc::string::String;
+    #[doc = "Change the `endpoint` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "endpoint")]
+    pub fn set_endpoint(this: &PushSubscriptionInit, val: &str);
+    #[doc = "Get the `p256dhKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, getter = "p256dhKey")]
+    pub fn get_p256dh_key(this: &PushSubscriptionInit) -> Option<::js_sys::ArrayBuffer>;
+    #[doc = "Change the `p256dhKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "p256dhKey")]
+    pub fn set_p256dh_key(this: &PushSubscriptionInit, val: Option<&::js_sys::ArrayBuffer>);
+    #[doc = "Get the `scope` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, getter = "scope")]
+    pub fn get_scope(this: &PushSubscriptionInit) -> ::alloc::string::String;
+    #[doc = "Change the `scope` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "scope")]
+    pub fn set_scope(this: &PushSubscriptionInit, val: &str);
 }
 impl PushSubscriptionInit {
     #[doc = "Construct a new `PushSubscriptionInit`."]
@@ -18,89 +89,33 @@ impl PushSubscriptionInit {
     pub fn new(endpoint: &str, scope: &str) -> Self {
         #[allow(unused_mut)]
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
-        ret.endpoint(endpoint);
-        ret.scope(scope);
+        ret.set_endpoint(endpoint);
+        ret.set_scope(scope);
         ret
     }
-    #[doc = "Change the `appServerKey` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[deprecated = "Use `set_app_server_key()` instead."]
     pub fn app_server_key(&mut self, val: Option<&::js_sys::Object>) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("appServerKey"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_app_server_key(val);
         self
     }
-    #[doc = "Change the `authSecret` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[deprecated = "Use `set_auth_secret()` instead."]
     pub fn auth_secret(&mut self, val: Option<&::js_sys::ArrayBuffer>) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("authSecret"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_auth_secret(val);
         self
     }
-    #[doc = "Change the `endpoint` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[deprecated = "Use `set_endpoint()` instead."]
     pub fn endpoint(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("endpoint"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_endpoint(val);
         self
     }
-    #[doc = "Change the `p256dhKey` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[deprecated = "Use `set_p256dh_key()` instead."]
     pub fn p256dh_key(&mut self, val: Option<&::js_sys::ArrayBuffer>) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("p256dhKey"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_p256dh_key(val);
         self
     }
-    #[doc = "Change the `scope` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[deprecated = "Use `set_scope()` instead."]
     pub fn scope(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("scope"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_scope(val);
         self
     }
 }

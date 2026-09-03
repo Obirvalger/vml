@@ -5,7 +5,11 @@ use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = Scheduling , typescript_type = "Scheduling")]
+    #[wasm_bindgen(
+        extends = "::js_sys::Object",
+        js_name = "Scheduling",
+        typescript_type = "Scheduling"
+    )]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `Scheduling` class."]
     #[doc = ""]
@@ -14,10 +18,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `Scheduling`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type Scheduling;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (method , structural , js_class = "Scheduling" , js_name = isInputPending)]
+    #[wasm_bindgen(method, js_class = "Scheduling", js_name = "isInputPending")]
     #[doc = "The `isInputPending()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Scheduling/isInputPending)"]
@@ -25,11 +29,11 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `Scheduling`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn is_input_pending(this: &Scheduling) -> bool;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "IsInputPendingOptions")]
-    # [wasm_bindgen (method , structural , js_class = "Scheduling" , js_name = isInputPending)]
+    #[wasm_bindgen(method, js_class = "Scheduling", js_name = "isInputPending")]
     #[doc = "The `isInputPending()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Scheduling/isInputPending)"]
@@ -37,7 +41,7 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `IsInputPendingOptions`, `Scheduling`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn is_input_pending_with_is_input_pending_options(
         this: &Scheduling,
         is_input_pending_options: &IsInputPendingOptions,

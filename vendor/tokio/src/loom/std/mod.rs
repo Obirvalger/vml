@@ -8,6 +8,7 @@ mod barrier;
 mod mutex;
 #[cfg(all(feature = "parking_lot", not(miri)))]
 mod parking_lot;
+mod rwlock;
 mod unsafe_cell;
 
 pub(crate) mod cell {
@@ -38,14 +39,8 @@ pub(crate) mod rand {
 
     pub(crate) fn seed() -> u64 {
         let rand_state = RandomState::new();
-
-        let mut hasher = rand_state.build_hasher();
-
         // Hash some unique-ish data to generate some new state
-        COUNTER.fetch_add(1, Relaxed).hash(&mut hasher);
-
-        // Get the seed
-        hasher.finish()
+        rand_state.hash_one(COUNTER.fetch_add(1, Relaxed))
     }
 }
 
@@ -56,6 +51,7 @@ pub(crate) mod sync {
     // internal use. Note however that some are not _currently_ named by
     // consuming code.
 
+    // Not using parking_lot in Miri due to <https://github.com/Amanieu/parking_lot/issues/477>.
     #[cfg(all(feature = "parking_lot", not(miri)))]
     #[allow(unused_imports)]
     pub(crate) use crate::loom::std::parking_lot::{
@@ -64,15 +60,18 @@ pub(crate) mod sync {
 
     #[cfg(not(all(feature = "parking_lot", not(miri))))]
     #[allow(unused_imports)]
-    pub(crate) use std::sync::{Condvar, MutexGuard, RwLock, RwLockReadGuard, WaitTimeoutResult};
+    pub(crate) use std::sync::{Condvar, MutexGuard, RwLockReadGuard, WaitTimeoutResult};
 
     #[cfg(not(all(feature = "parking_lot", not(miri))))]
     pub(crate) use crate::loom::std::mutex::Mutex;
 
+    #[cfg(not(all(feature = "parking_lot", not(miri))))]
+    pub(crate) use crate::loom::std::rwlock::RwLock;
+
     pub(crate) mod atomic {
         pub(crate) use crate::loom::std::atomic_u16::AtomicU16;
         pub(crate) use crate::loom::std::atomic_u32::AtomicU32;
-        pub(crate) use crate::loom::std::atomic_u64::{AtomicU64, StaticAtomicU64};
+        pub(crate) use crate::loom::std::atomic_u64::AtomicU64;
         pub(crate) use crate::loom::std::atomic_usize::AtomicUsize;
 
         pub(crate) use std::sync::atomic::{fence, AtomicBool, AtomicPtr, AtomicU8, Ordering};
@@ -84,25 +83,23 @@ pub(crate) mod sync {
 pub(crate) mod sys {
     #[cfg(feature = "rt-multi-thread")]
     pub(crate) fn num_cpus() -> usize {
+        use std::num::NonZeroUsize;
+
         const ENV_WORKER_THREADS: &str = "TOKIO_WORKER_THREADS";
 
         match std::env::var(ENV_WORKER_THREADS) {
             Ok(s) => {
                 let n = s.parse().unwrap_or_else(|e| {
-                    panic!(
-                        "\"{}\" must be usize, error: {}, value: {}",
-                        ENV_WORKER_THREADS, e, s
-                    )
+                    panic!("\"{ENV_WORKER_THREADS}\" must be usize, error: {e}, value: {s}")
                 });
-                assert!(n > 0, "\"{}\" cannot be set to 0", ENV_WORKER_THREADS);
+                assert!(n > 0, "\"{ENV_WORKER_THREADS}\" cannot be set to 0");
                 n
             }
-            Err(std::env::VarError::NotPresent) => usize::max(1, num_cpus::get()),
+            Err(std::env::VarError::NotPresent) => {
+                std::thread::available_parallelism().map_or(1, NonZeroUsize::get)
+            }
             Err(std::env::VarError::NotUnicode(e)) => {
-                panic!(
-                    "\"{}\" must be valid unicode, error: {:?}",
-                    ENV_WORKER_THREADS, e
-                )
+                panic!("\"{ENV_WORKER_THREADS}\" must be valid unicode, error: {e:?}")
             }
         }
     }

@@ -3,8 +3,8 @@ use futures_core::ready;
 use futures_core::task::{Context, Poll};
 use futures_io::AsyncBufRead;
 use std::io;
-use std::mem;
 use std::pin::Pin;
+use std::vec::Vec;
 
 /// Future for the [`read_until`](super::AsyncBufReadExt::read_until) method.
 #[derive(Debug)]
@@ -42,10 +42,10 @@ pub(super) fn read_until_internal<R: AsyncBufRead + ?Sized>(
                 (false, available.len())
             }
         };
-        reader.as_mut().consume(used);
         *read += used;
+        reader.as_mut().consume(used);
         if done || used == 0 {
-            return Poll::Ready(Ok(mem::replace(read, 0)));
+            return Poll::Ready(Ok(*read));
         }
     }
 }

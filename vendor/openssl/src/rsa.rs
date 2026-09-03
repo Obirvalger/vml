@@ -23,7 +23,6 @@
 //! let mut buf = vec![0; rsa.size() as usize];
 //! let encrypted_len = rsa.public_encrypt(data, &mut buf, Padding::PKCS1).unwrap();
 //! ```
-use cfg_if::cfg_if;
 use foreign_types::{ForeignType, ForeignTypeRef};
 use libc::c_int;
 use std::fmt;
@@ -234,14 +233,18 @@ where
 
     /// Validates RSA parameters for correctness
     #[corresponds(RSA_check_key)]
-    #[allow(clippy::unnecessary_cast)]
     pub fn check_key(&self) -> Result<bool, ErrorStack> {
         unsafe {
-            let result = ffi::RSA_check_key(self.as_ptr()) as i32;
-            if result == -1 {
-                Err(ErrorStack::get())
+            let result = ffi::RSA_check_key(self.as_ptr());
+            if result != 1 {
+                let errors = ErrorStack::get();
+                if errors.errors().is_empty() {
+                    Ok(false)
+                } else {
+                    Err(errors)
+                }
             } else {
-                Ok(result == 1)
+                Ok(true)
             }
         }
     }
@@ -372,8 +375,8 @@ impl Rsa<Public> {
     ///
     /// This corresponds to [`RSA_new`] and uses [`RSA_set0_key`].
     ///
-    /// [`RSA_new`]: https://www.openssl.org/docs/manmaster/crypto/RSA_new.html
-    /// [`RSA_set0_key`]: https://www.openssl.org/docs/manmaster/crypto/RSA_set0_key.html
+    /// [`RSA_new`]: https://docs.openssl.org/master/man3/RSA_new/
+    /// [`RSA_set0_key`]: https://docs.openssl.org/master/man3/RSA_set0_key/
     pub fn from_public_components(n: BigNum, e: BigNum) -> Result<Rsa<Public>, ErrorStack> {
         unsafe {
             let rsa = cvt_p(ffi::RSA_new())?;
@@ -432,8 +435,8 @@ impl RsaPrivateKeyBuilder {
     ///
     /// This corresponds to [`RSA_new`] and uses [`RSA_set0_key`].
     ///
-    /// [`RSA_new`]: https://www.openssl.org/docs/manmaster/crypto/RSA_new.html
-    /// [`RSA_set0_key`]: https://www.openssl.org/docs/manmaster/crypto/RSA_set0_key.html
+    /// [`RSA_new`]: https://docs.openssl.org/master/man3/RSA_new/
+    /// [`RSA_set0_key`]: https://docs.openssl.org/master/man3/RSA_set0_key/
     pub fn new(n: BigNum, e: BigNum, d: BigNum) -> Result<RsaPrivateKeyBuilder, ErrorStack> {
         unsafe {
             let rsa = cvt_p(ffi::RSA_new())?;
@@ -580,101 +583,10 @@ impl<T> fmt::Debug for Rsa<T> {
     }
 }
 
-cfg_if! {
-    if #[cfg(any(ossl110, libressl273, boringssl))] {
-        use ffi::{
-            RSA_get0_key, RSA_get0_factors, RSA_get0_crt_params, RSA_set0_key, RSA_set0_factors,
-            RSA_set0_crt_params,
-        };
-    } else {
-        #[allow(bad_style)]
-        unsafe fn RSA_get0_key(
-            r: *const ffi::RSA,
-            n: *mut *const ffi::BIGNUM,
-            e: *mut *const ffi::BIGNUM,
-            d: *mut *const ffi::BIGNUM,
-        ) {
-            if !n.is_null() {
-                *n = (*r).n;
-            }
-            if !e.is_null() {
-                *e = (*r).e;
-            }
-            if !d.is_null() {
-                *d = (*r).d;
-            }
-        }
-
-        #[allow(bad_style)]
-        unsafe fn RSA_get0_factors(
-            r: *const ffi::RSA,
-            p: *mut *const ffi::BIGNUM,
-            q: *mut *const ffi::BIGNUM,
-        ) {
-            if !p.is_null() {
-                *p = (*r).p;
-            }
-            if !q.is_null() {
-                *q = (*r).q;
-            }
-        }
-
-        #[allow(bad_style)]
-        unsafe fn RSA_get0_crt_params(
-            r: *const ffi::RSA,
-            dmp1: *mut *const ffi::BIGNUM,
-            dmq1: *mut *const ffi::BIGNUM,
-            iqmp: *mut *const ffi::BIGNUM,
-        ) {
-            if !dmp1.is_null() {
-                *dmp1 = (*r).dmp1;
-            }
-            if !dmq1.is_null() {
-                *dmq1 = (*r).dmq1;
-            }
-            if !iqmp.is_null() {
-                *iqmp = (*r).iqmp;
-            }
-        }
-
-        #[allow(bad_style)]
-        unsafe fn RSA_set0_key(
-            r: *mut ffi::RSA,
-            n: *mut ffi::BIGNUM,
-            e: *mut ffi::BIGNUM,
-            d: *mut ffi::BIGNUM,
-        ) -> c_int {
-            (*r).n = n;
-            (*r).e = e;
-            (*r).d = d;
-            1
-        }
-
-        #[allow(bad_style)]
-        unsafe fn RSA_set0_factors(
-            r: *mut ffi::RSA,
-            p: *mut ffi::BIGNUM,
-            q: *mut ffi::BIGNUM,
-        ) -> c_int {
-            (*r).p = p;
-            (*r).q = q;
-            1
-        }
-
-        #[allow(bad_style)]
-        unsafe fn RSA_set0_crt_params(
-            r: *mut ffi::RSA,
-            dmp1: *mut ffi::BIGNUM,
-            dmq1: *mut ffi::BIGNUM,
-            iqmp: *mut ffi::BIGNUM,
-        ) -> c_int {
-            (*r).dmp1 = dmp1;
-            (*r).dmq1 = dmq1;
-            (*r).iqmp = iqmp;
-            1
-        }
-    }
-}
+use ffi::{
+    RSA_get0_crt_params, RSA_get0_factors, RSA_get0_key, RSA_set0_crt_params, RSA_set0_factors,
+    RSA_set0_key,
+};
 
 #[cfg(test)]
 mod test {
@@ -848,5 +760,22 @@ mod test {
     fn generate_with_e() {
         let e = BigNum::from_u32(0x10001).unwrap();
         Rsa::generate_with_e(2048, &e).unwrap();
+    }
+
+    #[test]
+    fn test_check_key() {
+        let k = Rsa::private_key_from_pem_passphrase(
+            include_bytes!("../test/rsa-encrypted.pem"),
+            b"mypass",
+        )
+        .unwrap();
+        assert!(matches!(k.check_key(), Ok(true)));
+        assert!(ErrorStack::get().errors().is_empty());
+
+        // BoringSSL simply rejects this key, because its corrupted!
+        if let Ok(k) = Rsa::private_key_from_pem(include_bytes!("../test/corrupted-rsa.pem")) {
+            assert!(matches!(k.check_key(), Ok(false) | Err(_)));
+            assert!(ErrorStack::get().errors().is_empty());
+        }
     }
 }

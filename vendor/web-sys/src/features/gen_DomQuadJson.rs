@@ -4,12 +4,60 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = DOMQuadJSON)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "DOMQuadJSON")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `DomQuadJson` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `DomQuadJson`*"]
     pub type DomQuadJson;
+    #[cfg(feature = "DomPoint")]
+    #[doc = "Get the `p1` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[wasm_bindgen(method, getter = "p1")]
+    pub fn get_p1(this: &DomQuadJson) -> Option<DomPoint>;
+    #[cfg(feature = "DomPoint")]
+    #[doc = "Change the `p1` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[wasm_bindgen(method, setter = "p1")]
+    pub fn set_p1(this: &DomQuadJson, val: &DomPoint);
+    #[cfg(feature = "DomPoint")]
+    #[doc = "Get the `p2` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[wasm_bindgen(method, getter = "p2")]
+    pub fn get_p2(this: &DomQuadJson) -> Option<DomPoint>;
+    #[cfg(feature = "DomPoint")]
+    #[doc = "Change the `p2` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[wasm_bindgen(method, setter = "p2")]
+    pub fn set_p2(this: &DomQuadJson, val: &DomPoint);
+    #[cfg(feature = "DomPoint")]
+    #[doc = "Get the `p3` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[wasm_bindgen(method, getter = "p3")]
+    pub fn get_p3(this: &DomQuadJson) -> Option<DomPoint>;
+    #[cfg(feature = "DomPoint")]
+    #[doc = "Change the `p3` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[wasm_bindgen(method, setter = "p3")]
+    pub fn set_p3(this: &DomQuadJson, val: &DomPoint);
+    #[cfg(feature = "DomPoint")]
+    #[doc = "Get the `p4` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[wasm_bindgen(method, getter = "p4")]
+    pub fn get_p4(this: &DomQuadJson) -> Option<DomPoint>;
+    #[cfg(feature = "DomPoint")]
+    #[doc = "Change the `p4` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[wasm_bindgen(method, setter = "p4")]
+    pub fn set_p4(this: &DomQuadJson, val: &DomPoint);
 }
 impl DomQuadJson {
     #[doc = "Construct a new `DomQuadJson`."]
@@ -21,59 +69,27 @@ impl DomQuadJson {
         ret
     }
     #[cfg(feature = "DomPoint")]
-    #[doc = "Change the `p1` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[deprecated = "Use `set_p1()` instead."]
     pub fn p1(&mut self, val: &DomPoint) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("p1"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_p1(val);
         self
     }
     #[cfg(feature = "DomPoint")]
-    #[doc = "Change the `p2` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[deprecated = "Use `set_p2()` instead."]
     pub fn p2(&mut self, val: &DomPoint) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("p2"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_p2(val);
         self
     }
     #[cfg(feature = "DomPoint")]
-    #[doc = "Change the `p3` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[deprecated = "Use `set_p3()` instead."]
     pub fn p3(&mut self, val: &DomPoint) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("p3"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_p3(val);
         self
     }
     #[cfg(feature = "DomPoint")]
-    #[doc = "Change the `p4` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `DomPoint`, `DomQuadJson`*"]
+    #[deprecated = "Use `set_p4()` instead."]
     pub fn p4(&mut self, val: &DomPoint) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("p4"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_p4(val);
         self
     }
 }

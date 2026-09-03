@@ -83,16 +83,12 @@ fn make_fixed_size<T>(buffer: Box<[T]>) -> Box<[T; LOCAL_QUEUE_CAPACITY]> {
 
 /// Create a new local run-queue
 pub(crate) fn local<T: 'static>() -> (Steal<T>, Local<T>) {
-    let mut buffer = Vec::with_capacity(LOCAL_QUEUE_CAPACITY);
-
-    for _ in 0..LOCAL_QUEUE_CAPACITY {
-        buffer.push(UnsafeCell::new(MaybeUninit::uninit()));
-    }
+    let buffer = std::iter::repeat_with(|| UnsafeCell::new(MaybeUninit::uninit()));
 
     let inner = Arc::new(Inner {
         head: AtomicUnsignedLong::new(0),
         tail: AtomicUnsignedShort::new(0),
-        buffer: make_fixed_size(buffer.into_boxed_slice()),
+        buffer: make_fixed_size(buffer.take(LOCAL_QUEUE_CAPACITY).collect()),
     });
 
     let local = Local {
@@ -107,12 +103,19 @@ pub(crate) fn local<T: 'static>() -> (Steal<T>, Local<T>) {
 impl<T> Local<T> {
     /// Returns the number of entries in the queue
     pub(crate) fn len(&self) -> usize {
-        self.inner.len() as usize
+        let (_, head) = unpack(self.inner.head.load(Acquire));
+        // safety: this is the **only** thread that updates this cell.
+        let tail = unsafe { self.inner.tail.unsync_load() };
+        len(head, tail)
     }
 
     /// How many tasks can be pushed into the queue
     pub(crate) fn remaining_slots(&self) -> usize {
-        self.inner.remaining_slots()
+        let (steal, _) = unpack(self.inner.head.load(Acquire));
+        // safety: this is the **only** thread that updates this cell.
+        let tail = unsafe { self.inner.tail.unsync_load() };
+
+        LOCAL_QUEUE_CAPACITY - len(steal, tail)
     }
 
     pub(crate) fn max_capacity(&self) -> usize {
@@ -124,7 +127,7 @@ impl<T> Local<T> {
     /// Separate to `is_stealable` so that refactors of `is_stealable` to "protect"
     /// some tasks from stealing won't affect this
     pub(crate) fn has_tasks(&self) -> bool {
-        !self.inner.is_empty()
+        self.len() != 0
     }
 
     /// Pushes a batch of tasks to the back of the queue. All tasks must fit in
@@ -264,14 +267,10 @@ impl<T> Local<T> {
         assert_eq!(
             tail.wrapping_sub(head) as usize,
             LOCAL_QUEUE_CAPACITY,
-            "queue is not full; tail = {}; head = {}",
-            tail,
-            head
+            "queue is not full; tail = {tail}; head = {head}"
         );
 
-        let prev = pack(head, head);
-
-        // Claim a bunch of tasks
+        // Claim all tasks.
         //
         // We are claiming the tasks **before** reading them out of the buffer.
         // This is safe because only the **current** thread is able to push new
@@ -284,15 +283,7 @@ impl<T> Local<T> {
         if self
             .inner
             .head
-            .compare_exchange(
-                prev,
-                pack(
-                    head.wrapping_add(NUM_TASKS_TAKEN),
-                    head.wrapping_add(NUM_TASKS_TAKEN),
-                ),
-                Release,
-                Relaxed,
-            )
+            .compare_exchange_weak(pack(head, head), pack(tail, tail), Release, Relaxed)
             .is_err()
         {
             // We failed to claim the tasks, losing the race. Return out of
@@ -300,6 +291,29 @@ impl<T> Local<T> {
             // may not be full anymore.
             return Err(task);
         }
+
+        // Add back the first half of tasks.
+        //
+        // We are doing it this way instead of just taking half of the tasks because we want the
+        // *second* half of the tasks, and if you just incremented `head` by `NUM_TASKS_TAKEN`,
+        // then you would be taking the first half instead of the second half.
+        //
+        // Pushing the second half of the local queue to the injection queue is better because when
+        // we take tasks *out* of the injection queue, we always place them in the first half. This
+        // means that if a task is in the second half, then we know for sure that this task is not
+        // a task we just got from the injection queue. This ensures that when we take a task out
+        // of the injection queue, then it will not be moved back into the injection queue (at
+        // least not until after we have polled it at least once).
+        //
+        // Note that if a concurrent worker tries to steal from us between these two operations and
+        // sees that the worker queue is empty, then that worker may go to sleep, and we do not
+        // notify it about these tasks becoming available for stealing again. Ordinarily this would
+        // be a problem, but it isn't in this case because the worker will be notified about the
+        // tasks we are adding to the injection queue instead, which ensures that the stealer wakes
+        // up again to take the tasks from the injection queue.
+        self.inner
+            .tail
+            .store(tail.wrapping_add(NUM_TASKS_TAKEN), Release);
 
         /// An iterator that takes elements out of the run queue.
         struct BatchTaskIter<'a, T: 'static> {
@@ -332,7 +346,7 @@ impl<T> Local<T> {
         // values again, and we are the only producer.
         let batch_iter = BatchTaskIter {
             buffer: &self.inner.buffer,
-            head: head as UnsignedLong,
+            head: head.wrapping_add(NUM_TASKS_TAKEN) as UnsignedLong,
             i: 0,
         };
         overflow.push_batch(batch_iter.chain(std::iter::once(task)));
@@ -373,7 +387,7 @@ impl<T> Local<T> {
             let res = self
                 .inner
                 .head
-                .compare_exchange(head, next, AcqRel, Acquire);
+                .compare_exchange_weak(head, next, AcqRel, Acquire);
 
             match res {
                 Ok(_) => break real as usize & MASK,
@@ -386,8 +400,17 @@ impl<T> Local<T> {
 }
 
 impl<T> Steal<T> {
+    /// Returns the number of entries in the queue
+    pub(crate) fn len(&self) -> usize {
+        let (_, head) = unpack(self.0.head.load(Acquire));
+        let tail = self.0.tail.load(Acquire);
+        len(head, tail)
+    }
+
+    /// Return true if the queue is empty,
+    /// false if there are any entries in the queue
     pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.len() == 0
     }
 
     /// Steals half the tasks from self and place them into `dst`.
@@ -480,7 +503,7 @@ impl<T> Steal<T> {
             let res = self
                 .0
                 .head
-                .compare_exchange(prev_packed, next_packed, AcqRel, Acquire);
+                .compare_exchange_weak(prev_packed, next_packed, AcqRel, Acquire);
 
             match res {
                 Ok(_) => break n,
@@ -490,8 +513,7 @@ impl<T> Steal<T> {
 
         assert!(
             n <= LOCAL_QUEUE_CAPACITY as UnsignedShort / 2,
-            "actual = {}",
-            n
+            "actual = {n}"
         );
 
         let (first, _) = unpack(next_packed);
@@ -530,26 +552,12 @@ impl<T> Steal<T> {
             let res = self
                 .0
                 .head
-                .compare_exchange(prev_packed, next_packed, AcqRel, Acquire);
+                .compare_exchange_weak(prev_packed, next_packed, AcqRel, Acquire);
 
             match res {
                 Ok(_) => return n,
-                Err(actual) => {
-                    let (actual_steal, actual_real) = unpack(actual);
-
-                    assert_ne!(actual_steal, actual_real);
-
-                    prev_packed = actual;
-                }
+                Err(actual) => prev_packed = actual,
             }
-        }
-    }
-}
-
-cfg_unstable_metrics! {
-    impl<T> Steal<T> {
-        pub(crate) fn len(&self) -> usize {
-            self.0.len() as _
         }
     }
 }
@@ -568,24 +576,10 @@ impl<T> Drop for Local<T> {
     }
 }
 
-impl<T> Inner<T> {
-    fn remaining_slots(&self) -> usize {
-        let (steal, _) = unpack(self.head.load(Acquire));
-        let tail = self.tail.load(Acquire);
-
-        LOCAL_QUEUE_CAPACITY - (tail.wrapping_sub(steal) as usize)
-    }
-
-    fn len(&self) -> UnsignedShort {
-        let (_, head) = unpack(self.head.load(Acquire));
-        let tail = self.tail.load(Acquire);
-
-        tail.wrapping_sub(head)
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+/// Calculate the length of the queue using the head and tail.
+/// The `head` can be the `steal` or `real` head.
+fn len(head: UnsignedShort, tail: UnsignedShort) -> usize {
+    tail.wrapping_sub(head) as usize
 }
 
 /// Split the head value into the real head and the index a stealer is working

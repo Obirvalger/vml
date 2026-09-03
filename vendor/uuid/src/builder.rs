@@ -204,24 +204,7 @@ impl Uuid {
     /// );
     /// ```
     pub const fn from_u128(v: u128) -> Self {
-        Uuid::from_bytes([
-            (v >> 120) as u8,
-            (v >> 112) as u8,
-            (v >> 104) as u8,
-            (v >> 96) as u8,
-            (v >> 88) as u8,
-            (v >> 80) as u8,
-            (v >> 72) as u8,
-            (v >> 64) as u8,
-            (v >> 56) as u8,
-            (v >> 48) as u8,
-            (v >> 40) as u8,
-            (v >> 32) as u8,
-            (v >> 24) as u8,
-            (v >> 16) as u8,
-            (v >> 8) as u8,
-            v as u8,
-        ])
+        Uuid::from_bytes(v.to_be_bytes())
     }
 
     /// Creates a UUID from a 128bit value in little-endian order.
@@ -247,24 +230,7 @@ impl Uuid {
     /// );
     /// ```
     pub const fn from_u128_le(v: u128) -> Self {
-        Uuid::from_bytes([
-            v as u8,
-            (v >> 8) as u8,
-            (v >> 16) as u8,
-            (v >> 24) as u8,
-            (v >> 32) as u8,
-            (v >> 40) as u8,
-            (v >> 48) as u8,
-            (v >> 56) as u8,
-            (v >> 64) as u8,
-            (v >> 72) as u8,
-            (v >> 80) as u8,
-            (v >> 88) as u8,
-            (v >> 96) as u8,
-            (v >> 104) as u8,
-            (v >> 112) as u8,
-            (v >> 120) as u8,
-        ])
+        Uuid::from_bytes(v.to_le_bytes())
     }
 
     /// Creates a UUID from two 64bit values.
@@ -286,24 +252,7 @@ impl Uuid {
     /// );
     /// ```
     pub const fn from_u64_pair(high_bits: u64, low_bits: u64) -> Self {
-        Uuid::from_bytes([
-            (high_bits >> 56) as u8,
-            (high_bits >> 48) as u8,
-            (high_bits >> 40) as u8,
-            (high_bits >> 32) as u8,
-            (high_bits >> 24) as u8,
-            (high_bits >> 16) as u8,
-            (high_bits >> 8) as u8,
-            high_bits as u8,
-            (low_bits >> 56) as u8,
-            (low_bits >> 48) as u8,
-            (low_bits >> 40) as u8,
-            (low_bits >> 32) as u8,
-            (low_bits >> 24) as u8,
-            (low_bits >> 16) as u8,
-            (low_bits >> 8) as u8,
-            low_bits as u8,
-        ])
+        Uuid::from_u128(((high_bits as u128) << 64) | low_bits as u128)
     }
 
     /// Creates a UUID using the supplied bytes.
@@ -337,7 +286,7 @@ impl Uuid {
     /// ```
     pub fn from_slice(b: &[u8]) -> Result<Uuid, Error> {
         if b.len() != 16 {
-            return Err(Error(ErrorKind::ByteLength { len: b.len() }));
+            return Err(Error(ErrorKind::ParseByteLength { len: b.len() }));
         }
 
         let mut bytes: Bytes = [0; 16];
@@ -378,7 +327,7 @@ impl Uuid {
     /// ```
     pub fn from_slice_le(b: &[u8]) -> Result<Uuid, Error> {
         if b.len() != 16 {
-            return Err(Error(ErrorKind::ByteLength { len: b.len() }));
+            return Err(Error(ErrorKind::ParseByteLength { len: b.len() }));
         }
 
         let mut bytes: Bytes = [0; 16];
@@ -418,7 +367,8 @@ impl Uuid {
 
     /// Creates a UUID using the supplied bytes in little endian order.
     ///
-    /// The individual fields encoded in the buffer will be flipped.
+    /// Note that ordering is applied to each _field_, rather than to the bytes as a whole.
+    /// This ordering is compatible with Microsoft's mixed endian GUID format.
     ///
     /// # Examples
     ///
@@ -482,8 +432,7 @@ impl Uuid {
     /// ```
     #[inline]
     pub fn from_bytes_ref(bytes: &Bytes) -> &Uuid {
-        // SAFETY: `Bytes` and `Uuid` have the same ABI
-        unsafe { &*(bytes as *const Bytes as *const Uuid) }
+        unsafe_transmute_ref!(bytes)
     }
 
     // NOTE: There is no `from_u128_ref` because in little-endian
@@ -622,7 +571,6 @@ impl Builder {
     /// Creating a UUID using the current system timestamp:
     ///
     /// ```
-    /// # use std::convert::TryInto;
     /// use std::time::{Duration, SystemTime};
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # use uuid::{Builder, Uuid, Variant, Version, Timestamp, NoContext};

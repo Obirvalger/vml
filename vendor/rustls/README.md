@@ -55,10 +55,10 @@ can replace all cryptography dependencies of rustls.  This is a route to being p
 to a wider set of architectures and environments, or compliance requirements.  See the
 [`crypto::CryptoProvider`] documentation for more details.
 
-Specifying `default-features = false` when depending on rustls will remove the
+Specifying `default-features = false` when depending on rustls will remove the implicit
 dependency on aws-lc-rs.
 
-Rustls requires Rust 1.63 or later. It has an optional dependency on zlib-rs which requires 1.75 or later.
+Rustls requires Rust 1.71 or later. It has an optional dependency on zlib-rs which requires 1.75 or later.
 
 [ring-target-platforms]: https://github.com/briansmith/ring/blob/2e8363b433fa3b3962c877d9ed2e9145612f3160/include/ring-core/target.h#L18-L64
 [`crypto::CryptoProvider`]: https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html
@@ -78,10 +78,10 @@ builder types. See the [`crypto::CryptoProvider`] documentation for more details
 
 #### Built-in providers
 
-Rustls ships with two built-in providers controlled with associated feature flags:
+Rustls ships with two built-in providers controlled by associated crate features:
 
-* [`aws-lc-rs`] - enabled by default, available with the `aws_lc_rs` feature flag enabled.
-* [`ring`] - available with the `ring` feature flag enabled.
+* [`aws-lc-rs`] - enabled by default, available with the `aws_lc_rs` crate feature enabled.
+* [`ring`] - available with the `ring` crate feature enabled.
 
 See the documentation for [`crypto::CryptoProvider`] for details on how providers are
 selected.
@@ -90,32 +90,40 @@ selected.
 
 The community has also started developing third-party providers for Rustls:
 
-* [`rustls-mbedtls-provider`] - a provider that uses [`mbedtls`] for cryptography.
 * [`boring-rustls-provider`] - a work-in-progress provider that uses [`boringssl`] for
 cryptography.
+* [`rustls-graviola`] - a provider that uses [`graviola`] for cryptography.
+* [`rustls-mbedtls-provider`] - a provider that uses [`mbedtls`] for cryptography.
+* [`rustls-openssl`] - a provider that uses [OpenSSL] for cryptography.
 * [`rustls-rustcrypto`] - an experimental provider that uses the crypto primitives
 from [`RustCrypto`] for cryptography.
-* [`rustls-post-quantum`]: an experimental provider that adds support for post-quantum
-key exchange to the default aws-lc-rs provider.
+* [`rustls-symcrypt`] - a provider that uses Microsoft's [SymCrypt] library.
+* [`rustls-wolfcrypt-provider`] - a work-in-progress provider that uses [`wolfCrypt`] for cryptography.
 
+[`rustls-graviola`]: https://crates.io/crates/rustls-graviola
+[`graviola`]: https://github.com/ctz/graviola
 [`rustls-mbedtls-provider`]: https://github.com/fortanix/rustls-mbedtls-provider
 [`mbedtls`]: https://github.com/Mbed-TLS/mbedtls
+[`rustls-openssl`]: https://github.com/tofay/rustls-openssl
+[OpenSSL]: https://openssl-library.org/
+[`rustls-symcrypt`]: https://github.com/microsoft/rustls-symcrypt
+[SymCrypt]: https://github.com/microsoft/SymCrypt
 [`boring-rustls-provider`]: https://github.com/janrueth/boring-rustls-provider
 [`boringssl`]: https://github.com/google/boringssl
 [`rustls-rustcrypto`]: https://github.com/RustCrypto/rustls-rustcrypto
 [`RustCrypto`]: https://github.com/RustCrypto
-[`rustls-post-quantum`]: https://crates.io/crates/rustls-post-quantum
+[`rustls-wolfcrypt-provider`]: https://github.com/wolfSSL/rustls-wolfcrypt-provider
+[`wolfCrypt`]: https://www.wolfssl.com/products/wolfcrypt
 
 #### Custom provider
 
-We also provide a simple example of writing your own provider in the [`custom-provider`]
-example. This example implements a minimal provider using parts of the [`RustCrypto`]
-ecosystem.
+We also provide a simple example of writing your own provider in the [custom provider example].
+This example implements a minimal provider using parts of the [`RustCrypto`] ecosystem.
 
 See the [Making a custom CryptoProvider] section of the documentation for more information
 on this topic.
 
-[`custom-provider`]: https://github.com/rustls/rustls/tree/main/provider-example/
+[custom provider example]: https://github.com/rustls/rustls/tree/main/provider-example/
 [`RustCrypto`]: https://github.com/RustCrypto
 [Making a custom CryptoProvider]: https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html#making-a-custom-cryptoprovider
 
@@ -136,43 +144,8 @@ diving in to the more complex MIO examples.
 [`tokio-rustls`]: https://docs.rs/tokio-rustls/latest/tokio_rustls/
 
 ## Client example program
-The MIO client example program is named `tlsclient-mio`.  The interface looks like:
 
-```tlsclient-mio
-Connects to the TLS server at hostname:PORT.  The default PORT
-is 443.  By default, this reads a request from stdin (to EOF)
-before making the connection.  --http replaces this with a
-basic HTTP GET request for /.
-
-If --cafile is not supplied, a built-in set of CA certificates
-are used from the webpki-roots crate.
-
-Usage:
-  tlsclient-mio [options] [--suite SUITE ...] [--proto PROTO ...] [--protover PROTOVER ...] <hostname>
-  tlsclient-mio (--version | -v)
-  tlsclient-mio (--help | -h)
-
-Options:
-    -p, --port PORT     Connect to PORT [default: 443].
-    --http              Send a basic HTTP GET request for /.
-    --cafile CAFILE     Read root certificates from CAFILE.
-    --auth-key KEY      Read client authentication key from KEY.
-    --auth-certs CERTS  Read client authentication certificates from CERTS.
-                        CERTS must match up with KEY.
-    --protover VERSION  Disable default TLS version list, and use
-                        VERSION instead.  May be used multiple times.
-    --suite SUITE       Disable default cipher suite list, and use
-                        SUITE instead.  May be used multiple times.
-    --proto PROTOCOL    Send ALPN extension containing PROTOCOL.
-                        May be used multiple times to offer several protocols.
-    --no-tickets        Disable session ticket support.
-    --no-sni            Disable server name indication support.
-    --insecure          Disable certificate verification.
-    --verbose           Emit log output.
-    --max-frag-size M   Limit outgoing messages to M bytes.
-    --version, -v       Show tool version.
-    --help, -h          Show this screen.
-```
+The MIO client example program is named `tlsclient-mio`.
 
 Some sample runs:
 
@@ -194,58 +167,11 @@ TLS error: InvalidCertificate(Expired)
 Connection closed
 ```
 
+Run `cargo run --bin tlsclient-mio -- --help` for more options.
+
 ## Server example program
-The MIO server example program is named `tlsserver-mio`.  The interface looks like:
 
-```tlsserver-mio
-Runs a TLS server on :PORT.  The default PORT is 443.
-
-`echo' mode means the server echoes received data on each connection.
-
-`http' mode means the server blindly sends a HTTP response on each
-connection.
-
-`forward' means the server forwards plaintext to a connection made to
-localhost:fport.
-
-`--certs' names the full certificate chain, `--key' provides the
-RSA private key.
-
-Usage:
-  tlsserver-mio --certs CERTFILE --key KEYFILE [--suite SUITE ...] [--proto PROTO ...] [--protover PROTOVER ...] [options] echo
-  tlsserver-mio --certs CERTFILE --key KEYFILE [--suite SUITE ...] [--proto PROTO ...] [--protover PROTOVER ...] [options] http
-  tlsserver-mio --certs CERTFILE --key KEYFILE [--suite SUITE ...] [--proto PROTO ...] [--protover PROTOVER ...] [options] forward <fport>
-  tlsserver-mio (--version | -v)
-  tlsserver-mio (--help | -h)
-
-Options:
-    -p, --port PORT     Listen on PORT [default: 443].
-    --certs CERTFILE    Read server certificates from CERTFILE.
-                        This should contain PEM-format certificates
-                        in the right order (the first certificate should
-                        certify KEYFILE, the last should be a root CA).
-    --key KEYFILE       Read private key from KEYFILE.  This should be a RSA
-                        private key or PKCS8-encoded private key, in PEM format.
-    --ocsp OCSPFILE     Read DER-encoded OCSP response from OCSPFILE and staple
-                        to certificate.  Optional.
-    --auth CERTFILE     Enable client authentication, and accept certificates
-                        signed by those roots provided in CERTFILE.
-    --crl CRLFILE ...   Perform client certificate revocation checking using the DER-encoded
-                        CRLFILE. May be used multiple times.
-    --require-auth      Send a fatal alert if the client does not complete client
-                        authentication.
-    --resumption        Support session resumption.
-    --tickets           Support tickets.
-    --protover VERSION  Disable default TLS version list, and use
-                        VERSION instead.  May be used multiple times.
-    --suite SUITE       Disable default cipher suite list, and use
-                        SUITE instead.  May be used multiple times.
-    --proto PROTOCOL    Negotiate PROTOCOL using ALPN.
-                        May be used multiple times.
-    --verbose           Emit log output.
-    --version, -v       Show tool version.
-    --help, -h          Show this screen.
-```
+The MIO server example program is named `tlsserver-mio`.
 
 Here's a sample run; we start a TLS echo server, then connect to it with
 `openssl` and `tlsclient-mio`:
@@ -257,10 +183,12 @@ depth=2 CN = ponytown RSA CA
 verify error:num=19:self signed certificate in certificate chain
 hello world
 ^C
-$ echo hello world | cargo run --bin tlsclient-mio -- --cafile test-ca/rsa-2048/ca.cert -p 8443 localhost
+$ echo hello world | cargo run --bin tlsclient-mio -- --cafile test-ca/rsa-2048/ca.cert --port 8443 localhost
 hello world
 ^C
 ```
+
+Run `cargo run --bin tlsserver-mio -- --help` for more options.
 
 # License
 
@@ -278,7 +206,7 @@ of these licenses, at your option.
 
 - Joe Birr-Pixton ([@ctz], Project Founder - full-time funded by [Prossimo])
 - Dirkjan Ochtman ([@djc], Co-maintainer)
-- Daniel McCarney ([@cpu], Co-maintainer - full-time funded by [Prossimo])
+- Daniel McCarney ([@cpu], Co-maintainer)
 - Josh Aas ([@bdaehlie], Project Management)
 
 [@ctz]: https://github.com/ctz

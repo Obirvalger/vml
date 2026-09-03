@@ -78,22 +78,6 @@ impl Number {
     ///
     /// For any Number on which `is_i64` returns true, `as_i64` is guaranteed to
     /// return the integer value.
-    ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let big = i64::MAX as u64 + 10;
-    /// let v = json!({ "a": 64, "b": big, "c": 256.0 });
-    ///
-    /// assert!(v["a"].is_i64());
-    ///
-    /// // Greater than i64::MAX.
-    /// assert!(!v["b"].is_i64());
-    ///
-    /// // Numbers with a decimal point are not considered integers.
-    /// assert!(!v["c"].is_i64());
-    /// ```
-    #[inline]
     pub fn is_i64(&self) -> bool {
         #[cfg(not(feature = "arbitrary_precision"))]
         match self.n {
@@ -109,21 +93,6 @@ impl Number {
     ///
     /// For any Number on which `is_u64` returns true, `as_u64` is guaranteed to
     /// return the integer value.
-    ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let v = json!({ "a": 64, "b": -64, "c": 256.0 });
-    ///
-    /// assert!(v["a"].is_u64());
-    ///
-    /// // Negative integer.
-    /// assert!(!v["b"].is_u64());
-    ///
-    /// // Numbers with a decimal point are not considered integers.
-    /// assert!(!v["c"].is_u64());
-    /// ```
-    #[inline]
     pub fn is_u64(&self) -> bool {
         #[cfg(not(feature = "arbitrary_precision"))]
         match self.n {
@@ -141,19 +110,6 @@ impl Number {
     ///
     /// Currently this function returns true if and only if both `is_i64` and
     /// `is_u64` return false but this is not a guarantee in the future.
-    ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let v = json!({ "a": 256.0, "b": 64, "c": -64 });
-    ///
-    /// assert!(v["a"].is_f64());
-    ///
-    /// // Integers.
-    /// assert!(!v["b"].is_f64());
-    /// assert!(!v["c"].is_f64());
-    /// ```
-    #[inline]
     pub fn is_f64(&self) -> bool {
         #[cfg(not(feature = "arbitrary_precision"))]
         match self.n {
@@ -164,7 +120,7 @@ impl Number {
         {
             for c in self.n.chars() {
                 if c == '.' || c == 'e' || c == 'E' {
-                    return self.n.parse::<f64>().ok().map_or(false, f64::is_finite);
+                    return self.n.parse::<f64>().is_ok_and(f64::is_finite);
                 }
             }
             false
@@ -173,18 +129,6 @@ impl Number {
 
     /// If the `Number` is an integer, represent it as i64 if possible. Returns
     /// None otherwise.
-    ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let big = i64::MAX as u64 + 10;
-    /// let v = json!({ "a": 64, "b": big, "c": 256.0 });
-    ///
-    /// assert_eq!(v["a"].as_i64(), Some(64));
-    /// assert_eq!(v["b"].as_i64(), None);
-    /// assert_eq!(v["c"].as_i64(), None);
-    /// ```
-    #[inline]
     pub fn as_i64(&self) -> Option<i64> {
         #[cfg(not(feature = "arbitrary_precision"))]
         match self.n {
@@ -204,17 +148,6 @@ impl Number {
 
     /// If the `Number` is an integer, represent it as u64 if possible. Returns
     /// None otherwise.
-    ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let v = json!({ "a": 64, "b": -64, "c": 256.0 });
-    ///
-    /// assert_eq!(v["a"].as_u64(), Some(64));
-    /// assert_eq!(v["b"].as_u64(), None);
-    /// assert_eq!(v["c"].as_u64(), None);
-    /// ```
-    #[inline]
     pub fn as_u64(&self) -> Option<u64> {
         #[cfg(not(feature = "arbitrary_precision"))]
         match self.n {
@@ -226,17 +159,6 @@ impl Number {
     }
 
     /// Represents the number as f64 if possible. Returns None otherwise.
-    ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let v = json!({ "a": 256.0, "b": 64, "c": -64 });
-    ///
-    /// assert_eq!(v["a"].as_f64(), Some(256.0));
-    /// assert_eq!(v["b"].as_f64(), Some(64.0));
-    /// assert_eq!(v["c"].as_f64(), Some(-64.0));
-    /// ```
-    #[inline]
     pub fn as_f64(&self) -> Option<f64> {
         #[cfg(not(feature = "arbitrary_precision"))]
         match self.n {
@@ -252,15 +174,12 @@ impl Number {
     /// numbers.
     ///
     /// ```
-    /// # use std::f64;
-    /// #
     /// # use serde_json::Number;
     /// #
     /// assert!(Number::from_f64(256.0).is_some());
     ///
     /// assert!(Number::from_f64(f64::NAN).is_none());
     /// ```
-    #[inline]
     pub fn from_f64(f: f64) -> Option<Number> {
         if f.is_finite() {
             let n = {
@@ -270,7 +189,7 @@ impl Number {
                 }
                 #[cfg(feature = "arbitrary_precision")]
                 {
-                    ryu::Buffer::new().format_finite(f).to_owned()
+                    zmij::Buffer::new().format_finite(f).to_owned()
                 }
             };
             Some(Number { n })
@@ -279,8 +198,92 @@ impl Number {
         }
     }
 
-    /// Returns the exact original JSON representation that this Number was
-    /// parsed from.
+    /// If the `Number` is an integer, represent it as i128 if possible. Returns
+    /// None otherwise.
+    pub fn as_i128(&self) -> Option<i128> {
+        #[cfg(not(feature = "arbitrary_precision"))]
+        match self.n {
+            N::PosInt(n) => Some(n as i128),
+            N::NegInt(n) => Some(n as i128),
+            N::Float(_) => None,
+        }
+        #[cfg(feature = "arbitrary_precision")]
+        self.n.parse().ok()
+    }
+
+    /// If the `Number` is an integer, represent it as u128 if possible. Returns
+    /// None otherwise.
+    pub fn as_u128(&self) -> Option<u128> {
+        #[cfg(not(feature = "arbitrary_precision"))]
+        match self.n {
+            N::PosInt(n) => Some(n as u128),
+            N::NegInt(_) | N::Float(_) => None,
+        }
+        #[cfg(feature = "arbitrary_precision")]
+        self.n.parse().ok()
+    }
+
+    /// Converts an `i128` to a `Number`. Numbers smaller than i64::MIN or
+    /// larger than u64::MAX can only be represented in `Number` if serde_json's
+    /// "arbitrary_precision" feature is enabled.
+    ///
+    /// ```
+    /// # use serde_json::Number;
+    /// #
+    /// assert!(Number::from_i128(256).is_some());
+    /// ```
+    pub fn from_i128(i: i128) -> Option<Number> {
+        let n = {
+            #[cfg(not(feature = "arbitrary_precision"))]
+            {
+                if let Ok(u) = u64::try_from(i) {
+                    N::PosInt(u)
+                } else if let Ok(i) = i64::try_from(i) {
+                    N::NegInt(i)
+                } else {
+                    return None;
+                }
+            }
+            #[cfg(feature = "arbitrary_precision")]
+            {
+                i.to_string()
+            }
+        };
+        Some(Number { n })
+    }
+
+    /// Converts a `u128` to a `Number`. Numbers greater than u64::MAX can only
+    /// be represented in `Number` if serde_json's "arbitrary_precision" feature
+    /// is enabled.
+    ///
+    /// ```
+    /// # use serde_json::Number;
+    /// #
+    /// assert!(Number::from_u128(256).is_some());
+    /// ```
+    pub fn from_u128(i: u128) -> Option<Number> {
+        let n = {
+            #[cfg(not(feature = "arbitrary_precision"))]
+            {
+                if let Ok(u) = u64::try_from(i) {
+                    N::PosInt(u)
+                } else {
+                    return None;
+                }
+            }
+            #[cfg(feature = "arbitrary_precision")]
+            {
+                i.to_string()
+            }
+        };
+        Some(Number { n })
+    }
+
+    /// Returns the JSON representation that this Number was parsed from.
+    ///
+    /// When parsing with serde_json's `arbitrary_precision` feature enabled,
+    /// positive exponents are normalized to include an explicit `+` sign so
+    /// that `1e140` becomes `1e+140`.
     ///
     /// For numbers constructed not via parsing, such as by `From<i32>`, returns
     /// the JSON representation that serde\_json would serialize for this
@@ -326,7 +329,7 @@ impl Number {
                 }
                 #[cfg(feature = "arbitrary_precision")]
                 {
-                    ryu::Buffer::new().format_finite(f).to_owned()
+                    zmij::Buffer::new().format_finite(f).to_owned()
                 }
             };
             Some(Number { n })
@@ -350,7 +353,7 @@ impl Display for Number {
         match self.n {
             N::PosInt(u) => formatter.write_str(itoa::Buffer::new().format(u)),
             N::NegInt(i) => formatter.write_str(itoa::Buffer::new().format(i)),
-            N::Float(f) => formatter.write_str(ryu::Buffer::new().format_finite(f)),
+            N::Float(f) => formatter.write_str(zmij::Buffer::new().format_finite(f)),
         }
     }
 
@@ -368,7 +371,6 @@ impl Debug for Number {
 
 impl Serialize for Number {
     #[cfg(not(feature = "arbitrary_precision"))]
-    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -381,7 +383,6 @@ impl Serialize for Number {
     }
 
     #[cfg(feature = "arbitrary_precision")]
-    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -409,17 +410,30 @@ impl<'de> Deserialize<'de> for Number {
                 formatter.write_str("a JSON number")
             }
 
-            #[inline]
             fn visit_i64<E>(self, value: i64) -> Result<Number, E> {
                 Ok(value.into())
             }
 
-            #[inline]
+            fn visit_i128<E>(self, value: i128) -> Result<Number, E>
+            where
+                E: de::Error,
+            {
+                Number::from_i128(value)
+                    .ok_or_else(|| de::Error::custom("JSON number out of range"))
+            }
+
             fn visit_u64<E>(self, value: u64) -> Result<Number, E> {
                 Ok(value.into())
             }
 
-            #[inline]
+            fn visit_u128<E>(self, value: u128) -> Result<Number, E>
+            where
+                E: de::Error,
+            {
+                Number::from_u128(value)
+                    .ok_or_else(|| de::Error::custom("JSON number out of range"))
+            }
+
             fn visit_f64<E>(self, value: f64) -> Result<Number, E>
             where
                 E: de::Error,
@@ -428,7 +442,6 @@ impl<'de> Deserialize<'de> for Number {
             }
 
             #[cfg(feature = "arbitrary_precision")]
-            #[inline]
             fn visit_map<V>(self, mut visitor: V) -> Result<Number, V::Error>
             where
                 V: de::MapAccess<'de>,
@@ -522,7 +535,6 @@ fn invalid_number() -> Error {
 macro_rules! deserialize_any {
     (@expand [$($num_string:tt)*]) => {
         #[cfg(not(feature = "arbitrary_precision"))]
-        #[inline]
         fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Error>
         where
             V: Visitor<'de>,
@@ -535,7 +547,6 @@ macro_rules! deserialize_any {
         }
 
         #[cfg(feature = "arbitrary_precision")]
-        #[inline]
         fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Error>
             where V: Visitor<'de>
         {
@@ -543,8 +554,12 @@ macro_rules! deserialize_any {
                 return visitor.visit_u64(u);
             } else if let Some(i) = self.as_i64() {
                 return visitor.visit_i64(i);
+            } else if let Some(u) = self.as_u128() {
+                return visitor.visit_u128(u);
+            } else if let Some(i) = self.as_i128() {
+                return visitor.visit_i128(i);
             } else if let Some(f) = self.as_f64() {
-                if ryu::Buffer::new().format_finite(f) == self.n || f.to_string() == self.n {
+                if zmij::Buffer::new().format_finite(f) == self.n || f.to_string() == self.n {
                     return visitor.visit_f64(f);
                 }
             }
@@ -609,7 +624,7 @@ impl<'de> Deserializer<'de> for Number {
     }
 }
 
-impl<'de, 'a> Deserializer<'de> for &'a Number {
+impl<'de> Deserializer<'de> for &Number {
     type Error = Error;
 
     deserialize_any!(ref);
@@ -692,7 +707,7 @@ impl From<ParserNumber> for Number {
                 }
                 #[cfg(feature = "arbitrary_precision")]
                 {
-                    f.to_string()
+                    zmij::Buffer::new().format_finite(f).to_owned()
                 }
             }
             ParserNumber::U64(u) => {
@@ -702,7 +717,7 @@ impl From<ParserNumber> for Number {
                 }
                 #[cfg(feature = "arbitrary_precision")]
                 {
-                    u.to_string()
+                    itoa::Buffer::new().format(u).to_owned()
                 }
             }
             ParserNumber::I64(i) => {
@@ -712,7 +727,7 @@ impl From<ParserNumber> for Number {
                 }
                 #[cfg(feature = "arbitrary_precision")]
                 {
-                    i.to_string()
+                    itoa::Buffer::new().format(i).to_owned()
                 }
             }
             #[cfg(feature = "arbitrary_precision")]
@@ -728,7 +743,6 @@ macro_rules! impl_from_unsigned {
     ) => {
         $(
             impl From<$ty> for Number {
-                #[inline]
                 fn from(u: $ty) -> Self {
                     let n = {
                         #[cfg(not(feature = "arbitrary_precision"))]
@@ -751,7 +765,6 @@ macro_rules! impl_from_signed {
     ) => {
         $(
             impl From<$ty> for Number {
-                #[inline]
                 fn from(i: $ty) -> Self {
                     let n = {
                         #[cfg(not(feature = "arbitrary_precision"))]

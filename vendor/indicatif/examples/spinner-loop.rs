@@ -13,6 +13,6 @@ fn main() {
         new_spinner.enable_steady_tick(Duration::from_millis(10));
         thread::sleep(Duration::from_millis(500));
         println!("\n\nreplace {}\n\n", i);
-        spinner.replace(new_spinner).map(|t| t.finish());
+        if let Some(t) = spinner.replace(new_spinner) { t.finish() }
     }
 }

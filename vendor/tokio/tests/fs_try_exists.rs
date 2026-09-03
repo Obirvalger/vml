@@ -5,6 +5,7 @@ use tempfile::tempdir;
 use tokio::fs;
 
 #[tokio::test]
+#[cfg_attr(miri, ignore)] // No `chmod` in miri.
 async fn try_exists() {
     let dir = tempdir().unwrap();
 
@@ -15,7 +16,10 @@ async fn try_exists() {
     assert!(fs::try_exists(existing_path).await.unwrap());
     assert!(!fs::try_exists(nonexisting_path).await.unwrap());
     // FreeBSD root user always has permission to stat.
-    #[cfg(all(unix, not(target_os = "freebsd")))]
+    #[cfg(all(
+        unix,
+        not(any(target_os = "freebsd", all(tokio_unstable, feature = "io-uring")))
+    ))]
     {
         use std::os::unix::prelude::PermissionsExt;
         let permission_denied_directory_path = dir.path().join("baz");

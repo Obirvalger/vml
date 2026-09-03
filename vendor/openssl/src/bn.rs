@@ -37,32 +37,18 @@ use crate::{cvt, cvt_n, cvt_p, LenType};
 use openssl_macros::corresponds;
 
 cfg_if! {
-    if #[cfg(any(ossl110, libressl350))] {
-        use ffi::{
-            BN_get_rfc2409_prime_1024, BN_get_rfc2409_prime_768, BN_get_rfc3526_prime_1536,
-            BN_get_rfc3526_prime_2048, BN_get_rfc3526_prime_3072, BN_get_rfc3526_prime_4096,
-            BN_get_rfc3526_prime_6144, BN_get_rfc3526_prime_8192, BN_is_negative,
-        };
-    } else if #[cfg(boringssl)] {
+    if #[cfg(boringssl)] {
         use ffi::BN_is_negative;
     } else {
         use ffi::{
-            get_rfc2409_prime_1024 as BN_get_rfc2409_prime_1024,
-            get_rfc2409_prime_768 as BN_get_rfc2409_prime_768,
-            get_rfc3526_prime_1536 as BN_get_rfc3526_prime_1536,
-            get_rfc3526_prime_2048 as BN_get_rfc3526_prime_2048,
-            get_rfc3526_prime_3072 as BN_get_rfc3526_prime_3072,
-            get_rfc3526_prime_4096 as BN_get_rfc3526_prime_4096,
-            get_rfc3526_prime_6144 as BN_get_rfc3526_prime_6144,
-            get_rfc3526_prime_8192 as BN_get_rfc3526_prime_8192,
+            BN_get_rfc3526_prime_1536, BN_get_rfc3526_prime_2048, BN_get_rfc3526_prime_3072, BN_get_rfc3526_prime_4096,
+            BN_get_rfc3526_prime_6144, BN_get_rfc3526_prime_8192, BN_is_negative,
         };
-
-        #[allow(bad_style)]
-        unsafe fn BN_is_negative(bn: *const ffi::BIGNUM) -> c_int {
-            (*bn).neg
-        }
     }
 }
+
+#[cfg(any(ossl110, libressl))]
+use ffi::{BN_get_rfc2409_prime_1024, BN_get_rfc2409_prime_768};
 
 /// Options for the most significant bits of a randomly generated `BigNum`.
 pub struct MsbOption(c_int);
@@ -91,7 +77,7 @@ foreign_type_and_impl_send_sync! {
     /// to allocate.  BigNumContext and the OpenSSL [`BN_CTX`] structure are used
     /// internally when passing BigNum values between subroutines.
     ///
-    /// [`BN_CTX`]: https://www.openssl.org/docs/manmaster/crypto/BN_CTX_new.html
+    /// [`BN_CTX`]: https://docs.openssl.org/master/man3/BN_CTX_new/
     pub struct BigNumContext;
     /// Reference to [`BigNumContext`]
     ///
@@ -134,7 +120,7 @@ foreign_type_and_impl_send_sync! {
     ///
     /// [`new`]: struct.BigNum.html#method.new
     /// [`Dref<Target = BigNumRef>`]: struct.BigNum.html#deref-methods
-    /// [`BN_new`]: https://www.openssl.org/docs/manmaster/crypto/BN_new.html
+    /// [`BN_new`]: https://docs.openssl.org/master/man3/BN_new/
     ///
     /// # Examples
     /// ```
@@ -337,14 +323,12 @@ impl BigNumRef {
 
     /// Returns `true` is `self` is even.
     #[corresponds(BN_is_even)]
-    #[cfg(any(ossl110, boringssl, libressl350))]
     pub fn is_even(&self) -> bool {
         !self.is_odd()
     }
 
     /// Returns `true` is `self` is odd.
     #[corresponds(BN_is_odd)]
-    #[cfg(any(ossl110, boringssl, libressl350))]
     pub fn is_odd(&self) -> bool {
         unsafe { ffi::BN_is_odd(self.as_ptr()) == 1 }
     }
@@ -847,7 +831,6 @@ impl BigNumRef {
     /// assert_eq!(&bn_vec, &[0, 0, 0x45, 0x43]);
     /// ```
     #[corresponds(BN_bn2binpad)]
-    #[cfg(any(ossl110, libressl340, boringssl))]
     pub fn to_vec_padded(&self, pad_to: i32) -> Result<Vec<u8>, ErrorStack> {
         let mut v = Vec::with_capacity(pad_to as usize);
         unsafe {
@@ -986,7 +969,7 @@ impl BigNum {
     ///
     /// [`RFC 2409`]: https://tools.ietf.org/html/rfc2409#page-21
     #[corresponds(BN_get_rfc2409_prime_768)]
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn get_rfc2409_prime_768() -> Result<BigNum, ErrorStack> {
         unsafe {
             ffi::init();
@@ -1000,7 +983,7 @@ impl BigNum {
     ///
     /// [`RFC 2409`]: https://tools.ietf.org/html/rfc2409#page-21
     #[corresponds(BN_get_rfc2409_prime_1024)]
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn get_rfc2409_prime_1024() -> Result<BigNum, ErrorStack> {
         unsafe {
             ffi::init();
@@ -1094,10 +1077,6 @@ impl BigNum {
 
     /// Creates a new `BigNum` from an unsigned, big-endian encoded number of arbitrary length.
     ///
-    /// OpenSSL documentation at [`BN_bin2bn`]
-    ///
-    /// [`BN_bin2bn`]: https://www.openssl.org/docs/manmaster/crypto/BN_bin2bn.html
-    ///
     /// ```
     /// # use openssl::bn::BigNum;
     /// let bignum = BigNum::from_slice(&[0x12, 0x00, 0x34]).unwrap();
@@ -1177,6 +1156,32 @@ impl fmt::Display for BigNum {
             Ok(s) => f.write_str(&s),
             Err(e) => Err(e.into()),
         }
+    }
+}
+
+impl fmt::UpperHex for BigNumRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.to_hex_str() {
+            Ok(s) => {
+                // BoringSSL's BN_bn2hex() returns lower-case hexadecimal, while everyone
+                // else returns upper case.  Unconditionally convert to upper case here
+                // just in case anyone else decides to change behavior in the future.
+                let s = s.to_uppercase();
+
+                if f.alternate() {
+                    <String as fmt::Display>::fmt(&format!("0x{}", &s), f)
+                } else {
+                    <str as fmt::Display>::fmt(&s, f)
+                }
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+impl fmt::UpperHex for BigNum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_ref().fmt(f)
     }
 }
 
@@ -1272,7 +1277,7 @@ macro_rules! delegate {
     };
 }
 
-impl<'a, 'b> Add<&'b BigNumRef> for &'a BigNumRef {
+impl Add<&BigNumRef> for &BigNumRef {
     type Output = BigNum;
 
     fn add(self, oth: &BigNumRef) -> BigNum {
@@ -1284,7 +1289,7 @@ impl<'a, 'b> Add<&'b BigNumRef> for &'a BigNumRef {
 
 delegate!(Add, add);
 
-impl<'a, 'b> Sub<&'b BigNumRef> for &'a BigNumRef {
+impl Sub<&BigNumRef> for &BigNumRef {
     type Output = BigNum;
 
     fn sub(self, oth: &BigNumRef) -> BigNum {
@@ -1296,7 +1301,7 @@ impl<'a, 'b> Sub<&'b BigNumRef> for &'a BigNumRef {
 
 delegate!(Sub, sub);
 
-impl<'a, 'b> Mul<&'b BigNumRef> for &'a BigNumRef {
+impl Mul<&BigNumRef> for &BigNumRef {
     type Output = BigNum;
 
     fn mul(self, oth: &BigNumRef) -> BigNum {
@@ -1309,7 +1314,7 @@ impl<'a, 'b> Mul<&'b BigNumRef> for &'a BigNumRef {
 
 delegate!(Mul, mul);
 
-impl<'a, 'b> Div<&'b BigNumRef> for &'a BigNumRef {
+impl<'b> Div<&'b BigNumRef> for &BigNumRef {
     type Output = BigNum;
 
     fn div(self, oth: &'b BigNumRef) -> BigNum {
@@ -1322,7 +1327,7 @@ impl<'a, 'b> Div<&'b BigNumRef> for &'a BigNumRef {
 
 delegate!(Div, div);
 
-impl<'a, 'b> Rem<&'b BigNumRef> for &'a BigNumRef {
+impl<'b> Rem<&'b BigNumRef> for &BigNumRef {
     type Output = BigNum;
 
     fn rem(self, oth: &'b BigNumRef) -> BigNum {
@@ -1335,7 +1340,7 @@ impl<'a, 'b> Rem<&'b BigNumRef> for &'a BigNumRef {
 
 delegate!(Rem, rem);
 
-impl<'a> Shl<i32> for &'a BigNumRef {
+impl Shl<i32> for &BigNumRef {
     type Output = BigNum;
 
     fn shl(self, n: i32) -> BigNum {
@@ -1345,7 +1350,7 @@ impl<'a> Shl<i32> for &'a BigNumRef {
     }
 }
 
-impl<'a> Shl<i32> for &'a BigNum {
+impl Shl<i32> for &BigNum {
     type Output = BigNum;
 
     fn shl(self, n: i32) -> BigNum {
@@ -1353,7 +1358,7 @@ impl<'a> Shl<i32> for &'a BigNum {
     }
 }
 
-impl<'a> Shr<i32> for &'a BigNumRef {
+impl Shr<i32> for &BigNumRef {
     type Output = BigNum;
 
     fn shr(self, n: i32) -> BigNum {
@@ -1363,7 +1368,7 @@ impl<'a> Shr<i32> for &'a BigNumRef {
     }
 }
 
-impl<'a> Shr<i32> for &'a BigNum {
+impl Shr<i32> for &BigNum {
     type Output = BigNum;
 
     fn shr(self, n: i32) -> BigNum {
@@ -1371,7 +1376,7 @@ impl<'a> Shr<i32> for &'a BigNum {
     }
 }
 
-impl<'a> Neg for &'a BigNumRef {
+impl Neg for &BigNumRef {
     type Output = BigNum;
 
     fn neg(self) -> BigNum {
@@ -1379,7 +1384,7 @@ impl<'a> Neg for &'a BigNumRef {
     }
 }
 
-impl<'a> Neg for &'a BigNum {
+impl Neg for &BigNum {
     type Output = BigNum;
 
     fn neg(self) -> BigNum {
@@ -1509,7 +1514,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(any(ossl110, boringssl, libressl350))]
     fn test_odd_even() {
         let a = BigNum::from_u32(17).unwrap();
         let b = BigNum::from_u32(18).unwrap();
@@ -1519,5 +1523,31 @@ mod tests {
 
         assert!(!a.is_even());
         assert!(b.is_even());
+    }
+
+    #[test]
+    fn test_format() {
+        let a = BigNum::from_u32(12345678).unwrap();
+
+        assert_eq!(format!("{}", a), "12345678");
+    }
+
+    #[test]
+    fn test_format_upperhex() {
+        let a = BigNum::from_u32(12345678).unwrap();
+
+        assert_eq!(format!("{:X}", a), "BC614E");
+
+        assert_eq!(format!("{:<20X}", a), "BC614E              ");
+        assert_eq!(format!("{:-<20X}", a), "BC614E--------------");
+        assert_eq!(format!("{:^20X}", a), "       BC614E       ");
+        assert_eq!(format!("{:>20X}", a), "              BC614E");
+
+        assert_eq!(format!("{:#X}", a), "0xBC614E");
+
+        assert_eq!(format!("{:<#20X}", a), "0xBC614E            ");
+        assert_eq!(format!("{:-<#20X}", a), "0xBC614E------------");
+        assert_eq!(format!("{:^#20X}", a), "      0xBC614E      ");
+        assert_eq!(format!("{:>#20X}", a), "            0xBC614E");
     }
 }

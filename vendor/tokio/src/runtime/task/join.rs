@@ -1,11 +1,11 @@
-use crate::runtime::task::{Header, RawTask};
+use crate::runtime::task::{AbortHandle, Header, RawTask};
 
 use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
-use std::task::{Context, Poll, Waker};
+use std::task::{ready, Context, Poll, Waker};
 
 cfg_rt! {
     /// An owned permission to join on a task (await its termination).
@@ -22,11 +22,15 @@ cfg_rt! {
     /// This `struct` is created by the [`task::spawn`] and [`task::spawn_blocking`]
     /// functions.
     ///
+    /// It is guaranteed that the destructor of the spawned task has finished
+    /// before task completion is observed via `JoinHandle` `await`,
+    /// [`JoinHandle::is_finished`] or [`AbortHandle::is_finished`].
+    ///
     /// # Cancel safety
     ///
-    /// The `&mut JoinHandle<T>` type is cancel safe. If it is used as the event
-    /// in a `tokio::select!` statement and some other branch completes first,
-    /// then it is guaranteed that the output of the task is not lost.
+    /// Awaiting a `&mut JoinHandle<T>` is cancel safe. If it is used as a
+    /// branch in `tokio::select!` and another branch completes first, then it
+    /// is guaranteed that the output of the task is not lost.
     ///
     /// If a `JoinHandle` is dropped, then the task continues running in the
     /// background and its return value is lost.
@@ -91,21 +95,23 @@ cfg_rt! {
     /// use tokio::task;
     /// use std::io;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> io::Result<()> {
-    ///     let join_handle: task::JoinHandle<Result<i32, io::Error>> = tokio::spawn(async {
-    ///         Ok(5 + 3)
-    ///     });
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() -> io::Result<()> {
+    /// let join_handle: task::JoinHandle<Result<i32, io::Error>> = tokio::spawn(async {
+    ///     Ok(5 + 3)
+    /// });
     ///
-    ///     let result = join_handle.await??;
-    ///     assert_eq!(result, 8);
-    ///     Ok(())
-    /// }
+    /// let result = join_handle.await??;
+    /// assert_eq!(result, 8);
+    /// Ok(())
+    /// # }
     /// ```
     ///
     /// If the task panics, the error is a [`JoinError`] that contains the panic:
     ///
     /// ```
+    /// # #[cfg(not(target_family = "wasm"))]
+    /// # {
     /// use tokio::task;
     /// use std::io;
     /// use std::panic;
@@ -120,7 +126,7 @@ cfg_rt! {
     ///     assert!(err.is_panic());
     ///     Ok(())
     /// }
-    ///
+    /// # }
     /// ```
     /// Child being detached and outliving its parent:
     ///
@@ -129,7 +135,8 @@ cfg_rt! {
     /// use tokio::time;
     /// use std::time::Duration;
     ///
-    /// # #[tokio::main] async fn main() {
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
     /// let original_task = task::spawn(async {
     ///     let _detached_task = task::spawn(async {
     ///         // Here we sleep to make sure that the first task returns before.
@@ -296,22 +303,16 @@ impl<T> JoinHandle<T> {
     /// # }
     /// ```
     /// [cancelled]: method@super::error::JoinError::is_cancelled
-    pub fn abort_handle(&self) -> super::AbortHandle {
+    #[must_use = "abort handles do nothing unless `.abort` is called"]
+    pub fn abort_handle(&self) -> AbortHandle {
         self.raw.ref_inc();
-        super::AbortHandle::new(self.raw)
+        AbortHandle::new(self.raw)
     }
 
     /// Returns a [task ID] that uniquely identifies this task relative to other
     /// currently spawned tasks.
     ///
-    /// **Note**: This is an [unstable API][unstable]. The public API of this type
-    /// may break in 1.x releases. See [the documentation on unstable
-    /// features][unstable] for details.
-    ///
     /// [task ID]: crate::task::Id
-    /// [unstable]: crate#unstable-features
-    #[cfg(tokio_unstable)]
-    #[cfg_attr(docsrs, doc(cfg(tokio_unstable)))]
     pub fn id(&self) -> super::Id {
         // Safety: The header pointer is valid.
         unsafe { Header::get_id(self.raw.header_ptr()) }
@@ -324,11 +325,11 @@ impl<T> Future for JoinHandle<T> {
     type Output = super::Result<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        ready!(crate::trace::trace_leaf(cx));
+        ready!(crate::trace::trace_leaf());
         let mut ret = Poll::Pending;
 
         // Keep track of task budget
-        let coop = ready!(crate::runtime::coop::poll_proceed(cx));
+        let coop = ready!(crate::task::coop::poll_proceed(cx));
 
         // Try to read the task output. If the task is not yet complete, the
         // waker is stored and is notified once the task does complete.
@@ -342,8 +343,7 @@ impl<T> Future for JoinHandle<T> {
         //
         // The type of `T` must match the task's output type.
         unsafe {
-            self.raw
-                .try_read_output(&mut ret as *mut _ as *mut (), cx.waker());
+            self.raw.try_read_output(&mut ret, cx.waker());
         }
 
         if ret.is_ready() {

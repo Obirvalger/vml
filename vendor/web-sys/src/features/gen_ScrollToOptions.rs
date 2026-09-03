@@ -4,12 +4,44 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = ScrollToOptions)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "ScrollToOptions")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `ScrollToOptions` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ScrollToOptions`*"]
     pub type ScrollToOptions;
+    #[cfg(feature = "ScrollBehavior")]
+    #[doc = "Get the `behavior` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ScrollBehavior`, `ScrollToOptions`*"]
+    #[wasm_bindgen(method, getter = "behavior")]
+    pub fn get_behavior(this: &ScrollToOptions) -> Option<ScrollBehavior>;
+    #[cfg(feature = "ScrollBehavior")]
+    #[doc = "Change the `behavior` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ScrollBehavior`, `ScrollToOptions`*"]
+    #[wasm_bindgen(method, setter = "behavior")]
+    pub fn set_behavior(this: &ScrollToOptions, val: ScrollBehavior);
+    #[doc = "Get the `left` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ScrollToOptions`*"]
+    #[wasm_bindgen(method, getter = "left")]
+    pub fn get_left(this: &ScrollToOptions) -> Option<f64>;
+    #[doc = "Change the `left` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ScrollToOptions`*"]
+    #[wasm_bindgen(method, setter = "left")]
+    pub fn set_left(this: &ScrollToOptions, val: f64);
+    #[doc = "Get the `top` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ScrollToOptions`*"]
+    #[wasm_bindgen(method, getter = "top")]
+    pub fn get_top(this: &ScrollToOptions) -> Option<f64>;
+    #[doc = "Change the `top` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ScrollToOptions`*"]
+    #[wasm_bindgen(method, setter = "top")]
+    pub fn set_top(this: &ScrollToOptions, val: f64);
 }
 impl ScrollToOptions {
     #[doc = "Construct a new `ScrollToOptions`."]
@@ -21,47 +53,19 @@ impl ScrollToOptions {
         ret
     }
     #[cfg(feature = "ScrollBehavior")]
-    #[doc = "Change the `behavior` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ScrollBehavior`, `ScrollToOptions`*"]
+    #[deprecated = "Use `set_behavior()` instead."]
     pub fn behavior(&mut self, val: ScrollBehavior) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("behavior"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_behavior(val);
         self
     }
-    #[doc = "Change the `left` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ScrollToOptions`*"]
+    #[deprecated = "Use `set_left()` instead."]
     pub fn left(&mut self, val: f64) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("left"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_left(val);
         self
     }
-    #[doc = "Change the `top` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ScrollToOptions`*"]
+    #[deprecated = "Use `set_top()` instead."]
     pub fn top(&mut self, val: f64) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("top"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_top(val);
         self
     }
 }

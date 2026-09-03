@@ -22,14 +22,13 @@ pub struct ReadableStreamBYOBReader<'stream> {
 
 impl<'stream> ReadableStreamBYOBReader<'stream> {
     pub(crate) fn new(stream: &mut ReadableStream) -> Result<Self, js_sys::Error> {
+        let reader_options = sys::ReadableStreamGetReaderOptions::new();
+        reader_options.set_mode(sys::ReadableStreamReaderMode::Byob);
         Ok(Self {
             raw: stream
                 .as_raw()
                 .unchecked_ref::<sys::ReadableStreamExt>()
-                .try_get_reader_with_options(
-                    sys::ReadableStreamGetReaderOptions::new()
-                        .mode(sys::ReadableStreamReaderMode::Byob),
-                )?
+                .try_get_reader_with_options(&reader_options)?
                 .unchecked_into(),
             _stream: PhantomData,
         })
@@ -78,9 +77,9 @@ impl<'stream> ReadableStreamBYOBReader<'stream> {
     /// the result before copying to `dst`. We cannot pass a view on the backing WebAssembly memory
     /// directly, because:
     /// * `reader.read(view)` needs to transfer `view.buffer`, but `WebAssembly.Memory` buffers
-    ///    are non-transferable.
+    ///   are non-transferable.
     /// * `view.buffer` can be invalidated if the WebAssembly memory grows while `read(view)`
-    ///    is still in progress.
+    ///   is still in progress.
     ///
     /// Therefore, it is necessary to use a separate buffer living in the JavaScript heap.
     /// To avoid repeated allocations for repeated reads,
@@ -119,10 +118,10 @@ impl<'stream> ReadableStreamBYOBReader<'stream> {
         let promise = self.as_raw().read_with_array_buffer_view(&view);
         let js_result = JsFuture::from(promise).await?;
         let result = sys::ReadableStreamReadResult::from(js_result);
-        let js_value = result.value();
+        let js_value = result.get_value();
         let filled_view = if js_value.is_undefined() {
             // No new view was returned. The stream must have been canceled.
-            assert!(result.is_done());
+            assert!(result.get_done().unwrap_or_default());
             return Ok((0, None));
         } else {
             js_value.unchecked_into::<Uint8Array>()
@@ -135,7 +134,7 @@ impl<'stream> ReadableStreamBYOBReader<'stream> {
             buffer_offset,
             buffer_len,
         );
-        if result.is_done() {
+        if result.get_done().unwrap_or_default() {
             debug_assert_eq!(filled_len, 0);
         } else {
             filled_view.copy_to(&mut dst[0..filled_len]);
@@ -189,7 +188,7 @@ impl<'stream> ReadableStreamBYOBReader<'stream> {
     /// still usable. This allows reading only a few bytes from the `AsyncRead`, while still
     /// allowing another reader to read the remaining bytes later on.
     ///
-    /// [`AsyncRead`]: https://docs.rs/futures/0.3.28/futures/io/trait.AsyncRead.html
+    /// [`AsyncRead`]: https://docs.rs/futures/0.3.30/futures/io/trait.AsyncRead.html
     #[inline]
     pub fn into_async_read(self) -> IntoAsyncRead<'stream> {
         IntoAsyncRead::new(self, false)

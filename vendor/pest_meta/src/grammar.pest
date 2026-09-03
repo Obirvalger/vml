@@ -81,7 +81,7 @@ term = { node_tag? ~ prefix_operator* ~ node ~ postfix_operator* }
 node = _{ opening_paren ~ expression ~ closing_paren | terminal }
 
 /// A terminal expression.
-terminal = _{ _push | peek_slice | identifier | string | insensitive_string | range }
+terminal = _{ _push_literal | _push | peek_slice | identifier | string | insensitive_string | range }
 
 /// Possible predicates for a rule.
 prefix_operator = _{ positive_predicate_operator | negative_predicate_operator }
@@ -145,6 +145,9 @@ comma = { "," }
 /// A PUSH expression.
 _push = { "PUSH" ~ opening_paren ~ expression ~ closing_paren }
 
+/// A PUSH_LITERAL expression with one argument, which must be a literal string.
+_push_literal = { "PUSH_LITERAL" ~ opening_paren ~ string ~ closing_paren }
+
 /// A PEEK expression.
 peek_slice = { "PEEK" ~ opening_brack ~ integer? ~ range_operator ~ integer? ~ closing_brack }
 
@@ -173,7 +176,7 @@ character = ${ single_quote ~ inner_chr ~ single_quote }
 inner_str = @{ (!("\"" | "\\") ~ ANY)* ~ (escape ~ inner_str)? }
 
 /// An escaped or any character.
-inner_chr = @{ escape | ANY }
+inner_chr = @{ escape | (!("'" | "\\") ~ ANY) }
 
 /// An escape sequence.
 escape = @{ "\\" ~ ("\"" | "\\" | "r" | "n" | "t" | "0" | "'" | code | unicode) }

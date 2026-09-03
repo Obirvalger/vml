@@ -27,12 +27,23 @@ pub trait Resolve: Send + Sync {
     ///  * It does not need a mutable reference to `self`.
     ///  * Since trait objects cannot make use of associated types, it requires
     ///    wrapping the returned `Future` and its contained `Iterator` with `Box`.
+    ///
+    /// Explicitly specified port in the URL will override any port in the resolved `SocketAddr`s.
+    /// Otherwise, port `0` will be replaced by the conventional port for the given scheme (e.g. 80 for http).
     fn resolve(&self, name: Name) -> Resolving;
 }
 
 /// A name that must be resolved to addresses.
 #[derive(Debug)]
 pub struct Name(pub(super) HyperName);
+
+/// A more general trait implemented for types implementing `Resolve`.
+///
+/// Unnameable, only exported to aid seeing what implements this.
+pub trait IntoResolve {
+    #[doc(hidden)]
+    fn into_resolve(self) -> Arc<dyn Resolve>;
+}
 
 impl Name {
     /// View the name as a string.
@@ -45,7 +56,7 @@ impl FromStr for Name {
     type Err = sealed::InvalidNameError;
 
     fn from_str(host: &str) -> Result<Self, Self::Err> {
-        HyperName::from_str(host.into())
+        HyperName::from_str(host)
             .map(Name)
             .map_err(|_| sealed::InvalidNameError { _ext: () })
     }
@@ -59,6 +70,41 @@ pub(crate) struct DynResolver {
 impl DynResolver {
     pub(crate) fn new(resolver: Arc<dyn Resolve>) -> Self {
         Self { resolver }
+    }
+
+    #[cfg(feature = "socks")]
+    pub(crate) fn gai() -> Self {
+        Self::new(Arc::new(super::gai::GaiResolver::new()))
+    }
+
+    /// Resolve an HTTP host and port, not just a domain name.
+    ///
+    /// This does the same thing that hyper-util's HttpConnector does, before
+    /// calling out to its underlying DNS resolver.
+    #[cfg(feature = "socks")]
+    pub(crate) async fn http_resolve(
+        &self,
+        target: &http::Uri,
+    ) -> Result<impl Iterator<Item = std::net::SocketAddr>, BoxError> {
+        let host = target.host().ok_or("missing host")?;
+        let port = target
+            .port_u16()
+            .unwrap_or_else(|| match target.scheme_str() {
+                Some("https") => 443,
+                Some("socks4") | Some("socks4a") | Some("socks5") | Some("socks5h") => 1080,
+                _ => 80,
+            });
+
+        let explicit_port = target.port().is_some();
+
+        let addrs = self.resolver.resolve(host.parse()?).await?;
+
+        Ok(addrs.map(move |mut addr| {
+            if explicit_port || addr.port() == 0 {
+                addr.set_port(port);
+            }
+            addr
+        }))
     }
 }
 
@@ -98,10 +144,34 @@ impl Resolve for DnsResolverWithOverrides {
         match self.overrides.get(name.as_str()) {
             Some(dest) => {
                 let addrs: Addrs = Box::new(dest.clone().into_iter());
-                Box::pin(futures_util::future::ready(Ok(addrs)))
+                Box::pin(std::future::ready(Ok(addrs)))
             }
             None => self.dns_resolver.resolve(name),
         }
+    }
+}
+
+impl IntoResolve for Arc<dyn Resolve> {
+    fn into_resolve(self) -> Arc<dyn Resolve> {
+        self
+    }
+}
+
+impl<R> IntoResolve for Arc<R>
+where
+    R: Resolve + 'static,
+{
+    fn into_resolve(self) -> Arc<dyn Resolve> {
+        self
+    }
+}
+
+impl<R> IntoResolve for R
+where
+    R: Resolve + 'static,
+{
+    fn into_resolve(self) -> Arc<dyn Resolve> {
+        Arc::new(self)
     }
 }
 

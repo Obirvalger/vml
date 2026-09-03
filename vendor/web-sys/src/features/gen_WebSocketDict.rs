@@ -4,12 +4,22 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = WebSocketDict)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "WebSocketDict")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `WebSocketDict` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `WebSocketDict`*"]
     pub type WebSocketDict;
+    #[doc = "Get the `websockets` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebSocketDict`*"]
+    #[wasm_bindgen(method, getter = "websockets")]
+    pub fn get_websockets(this: &WebSocketDict) -> Option<::js_sys::Array>;
+    #[doc = "Change the `websockets` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebSocketDict`*"]
+    #[wasm_bindgen(method, setter = "websockets")]
+    pub fn set_websockets(this: &WebSocketDict, val: &::wasm_bindgen::JsValue);
 }
 impl WebSocketDict {
     #[doc = "Construct a new `WebSocketDict`."]
@@ -20,21 +30,9 @@ impl WebSocketDict {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `websockets` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `WebSocketDict`*"]
+    #[deprecated = "Use `set_websockets()` instead."]
     pub fn websockets(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("websockets"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_websockets(val);
         self
     }
 }

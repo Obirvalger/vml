@@ -12,11 +12,17 @@
 [package]
 edition = "2018"
 name = "rust-embed-impl"
-version = "8.5.0"
-authors = ["pyros2097 <pyros2097@gmail.com>"]
+version = "8.12.0"
+authors = ["pyrossh"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Rust Custom Derive Macro which loads files into the rust binary at compile time during release and loads the file from the fs during dev"
 documentation = "https://docs.rs/rust-embed"
-readme = "readme.md"
+readme = "README.md"
 keywords = [
     "http",
     "rocket",
@@ -26,10 +32,22 @@ keywords = [
 ]
 categories = ["web-programming::http-server"]
 license = "MIT"
-repository = "https://github.com/pyros2097/rust-embed"
+repository = "https://pyrossh.dev/repos/rust-embed"
+
+[features]
+compression = []
+debug-embed = []
+deterministic-timestamps = []
+include-exclude = ["rust-embed-utils/include-exclude"]
+interpolate-folder-path = ["shellexpand"]
 
 [lib]
+name = "rust_embed_impl"
+path = "src/lib.rs"
 proc-macro = true
+
+[dependencies.mime_guess]
+version = "2.0.4"
 
 [dependencies.proc-macro2]
 version = "1"
@@ -38,7 +56,7 @@ version = "1"
 version = "1"
 
 [dependencies.rust-embed-utils]
-version = "8.4.0"
+version = "8.12.0"
 
 [dependencies.shellexpand]
 version = "3"
@@ -56,10 +74,3 @@ default-features = false
 
 [dependencies.walkdir]
 version = "2.3.1"
-
-[features]
-compression = []
-debug-embed = []
-include-exclude = ["rust-embed-utils/include-exclude"]
-interpolate-folder-path = ["shellexpand"]
-mime-guess = ["rust-embed-utils/mime-guess"]

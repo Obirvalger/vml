@@ -5,6 +5,8 @@ use core::{
 };
 
 pub const PAGE_SIZE: usize = 4096;
+/// Size of the metadata region used to transfer information from the kernel to the bootstrapper.
+pub const KERNEL_METADATA_SIZE: usize = 4 * PAGE_SIZE;
 
 #[cfg(feature = "userspace")]
 macro_rules! syscall {
@@ -152,6 +154,36 @@ impl DerefMut for EnvRegisters {
             slice::from_raw_parts_mut(
                 self as *mut EnvRegisters as *mut u8,
                 mem::size_of::<EnvRegisters>(),
+            )
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C, packed)]
+pub struct Exception {
+    pub kind: usize,
+    pub code: usize,
+    pub address: usize,
+}
+impl Deref for Exception {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        unsafe {
+            slice::from_raw_parts(
+                self as *const Exception as *const u8,
+                mem::size_of::<Exception>(),
+            )
+        }
+    }
+}
+
+impl DerefMut for Exception {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            slice::from_raw_parts_mut(
+                self as *mut Exception as *mut u8,
+                mem::size_of::<Exception>(),
             )
         }
     }

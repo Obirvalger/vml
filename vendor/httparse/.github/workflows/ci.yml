@@ -16,6 +16,7 @@ jobs:
       - test
       - simd
       - check_x86
+      - aarch64
       - msrv_x64
       - msrv_aarch64
       - miri
@@ -153,10 +154,10 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.36.0
+          toolchain: 1.47.0
           override: true
 
-      # Only build, dev-dependencies don't compile on 1.36.0
+      # Only build, dev-dependencies don't compile on 1.47.0
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -179,11 +180,11 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.36.0
+          toolchain: 1.47.0
           override: true
           target: aarch64-unknown-linux-gnu
 
-      # Only build, dev-dependencies don't compile on 1.36.0
+      # Only build, dev-dependencies don't compile on 1.47.0
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -261,7 +262,7 @@ jobs:
       - name: Install QEMU and dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu qemu-user gcc-aarch64-linux-gnu
+          sudo apt-get install -y qemu-user gcc-aarch64-linux-gnu
 
       - name: Build tests
         run: cargo build --tests --target aarch64-unknown-linux-gnu

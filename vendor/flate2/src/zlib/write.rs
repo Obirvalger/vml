@@ -1,5 +1,5 @@
-use std::io;
-use std::io::prelude::*;
+use crate::io;
+use crate::io::{Read, Write};
 
 use crate::zio;
 use crate::{Compress, Decompress};
@@ -59,8 +59,18 @@ impl<W: Write> ZlibEncoder<W> {
 
     /// Acquires a mutable reference to the underlying writer.
     ///
-    /// Note that mutating the output/input state of the stream may corrupt this
-    /// object, so care must be taken when using this method.
+    /// The underlying writer may be mutated or replaced as long as this
+    /// preserves the bytes and ordering of the logical output stream.
+    /// Concatenate output from each writer to reconstruct the complete stream.
+    ///
+    /// Replacing the writer does not require [`flush`](Write::flush). Call it
+    /// first when all input accepted so far must be decodable without output
+    /// from later writes. This inserts a sync-flush point and changes the output
+    /// bitstream. This is useful before applying [`std::mem::take`] to
+    /// [`get_mut`](Self::get_mut) when forwarding the stream incrementally.
+    ///
+    /// To start a new stream, use [`reset`](Self::reset); replacing the writer
+    /// does not reset this encoder.
     pub fn get_mut(&mut self) -> &mut W {
         self.inner.get_mut()
     }
@@ -129,7 +139,7 @@ impl<W: Write> ZlibEncoder<W> {
     ///
     /// This will flush the underlying data stream and then return the contained
     /// writer if the flush succeeded.
-    /// The compressed stream will not closed but only flushed. This
+    /// The compressed stream will not be closed but only flushed. This
     /// means that obtained byte array can by extended by another deflated
     /// stream. To close the stream add the two bytes 0x3 and 0x0.
     ///
@@ -179,6 +189,10 @@ impl<W: Read + Write> Read for ZlibEncoder<W> {
 ///
 /// This structure implements a [`Write`] and will emit a stream of decompressed
 /// data when fed a stream of compressed data.
+///
+/// After decoding a single member of the ZLIB data this writer will return the number of bytes up
+/// to the end of the ZLIB member and subsequent writes will return Ok(0) allowing the caller to
+/// handle any data following the ZLIB member.
 ///
 /// [`Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
 ///
@@ -244,8 +258,17 @@ impl<W: Write> ZlibDecoder<W> {
 
     /// Acquires a mutable reference to the underlying writer.
     ///
-    /// Note that mutating the output/input state of the stream may corrupt this
-    /// object, so care must be taken when using this method.
+    /// The underlying writer may be mutated or replaced as long as this
+    /// preserves the bytes and ordering of the logical output stream.
+    /// Concatenate output from each writer to reconstruct the complete stream.
+    ///
+    /// Replacing the writer does not require [`flush`](Write::flush). Call it
+    /// first to write all decompressed output currently available to the
+    /// current writer. This is useful before applying [`std::mem::take`] to
+    /// [`get_mut`](Self::get_mut) when forwarding output incrementally.
+    ///
+    /// To start a new stream, use [`reset`](Self::reset); replacing the writer
+    /// does not reset this decoder.
     pub fn get_mut(&mut self) -> &mut W {
         self.inner.get_mut()
     }
@@ -341,6 +364,9 @@ impl<W: Read + Write> Read for ZlibDecoder<W> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
     use super::*;
     use crate::Compression;
 
@@ -356,7 +382,7 @@ mod tests {
     fn decode_extra_data() {
         let compressed = {
             let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
-            e.write(STR.as_ref()).unwrap();
+            e.write_all(STR.as_ref()).unwrap();
             let mut b = e.finish().unwrap();
             b.push(b'x');
             b

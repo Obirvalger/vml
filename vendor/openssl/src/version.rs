@@ -13,25 +13,13 @@
 
 //! Build and version information.
 
-use cfg_if::cfg_if;
 use openssl_macros::corresponds;
 use std::ffi::CStr;
 
-cfg_if! {
-    if #[cfg(any(ossl110, libressl271))] {
-        use ffi::{
-            OPENSSL_VERSION, OPENSSL_CFLAGS, OPENSSL_BUILT_ON, OPENSSL_PLATFORM, OPENSSL_DIR,
-            OpenSSL_version_num, OpenSSL_version,
-        };
-    } else {
-        use ffi::{
-            SSLEAY_VERSION as OPENSSL_VERSION, SSLEAY_CFLAGS as OPENSSL_CFLAGS,
-            SSLEAY_BUILT_ON as OPENSSL_BUILT_ON, SSLEAY_PLATFORM as OPENSSL_PLATFORM,
-            SSLEAY_DIR as OPENSSL_DIR, SSLeay as OpenSSL_version_num,
-            SSLeay_version as OpenSSL_version,
-        };
-    }
-}
+use ffi::{
+    OpenSSL_version, OpenSSL_version_num, OPENSSL_BUILT_ON, OPENSSL_CFLAGS, OPENSSL_DIR,
+    OPENSSL_PLATFORM, OPENSSL_VERSION,
+};
 
 /// OPENSSL_VERSION_NUMBER is a numeric release version identifier:
 ///
@@ -111,7 +99,7 @@ fn test_versions() {
     println!("Platform: '{}'", platform());
     println!("Dir: '{}'", dir());
 
-    #[cfg(not(any(libressl, boringssl)))]
+    #[cfg(not(any(libressl, boringssl, awslc)))]
     fn expected_name() -> &'static str {
         "OpenSSL"
     }
@@ -123,6 +111,10 @@ fn test_versions() {
     fn expected_name() -> &'static str {
         "BoringSSL"
     }
+    #[cfg(awslc)]
+    fn expected_name() -> &'static str {
+        "AWS-LC"
+    }
 
     assert!(number() > 0);
     assert!(version().starts_with(expected_name()));
@@ -131,5 +123,4 @@ fn test_versions() {
     if !built_on().is_empty() {
         assert!(built_on().starts_with("built on:"));
     }
-    assert!(dir().starts_with("OPENSSLDIR:"));
 }

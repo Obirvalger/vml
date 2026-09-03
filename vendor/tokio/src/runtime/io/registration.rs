@@ -7,7 +7,7 @@ use crate::runtime::scheduler;
 use mio::event::Source;
 use std::io;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 cfg_io_driver! {
     /// Associates an I/O resource with the reactor instance that drives it.
@@ -118,7 +118,7 @@ impl Registration {
 
     // Uses the poll path, requiring the caller to ensure mutual exclusion for
     // correctness. Only the last task to call this function is notified.
-    #[cfg(not(target_os = "wasi"))]
+    #[cfg(not(all(target_os = "wasi", target_env = "p1")))]
     pub(crate) fn poll_read_io<R>(
         &self,
         cx: &mut Context<'_>,
@@ -146,9 +146,9 @@ impl Registration {
         cx: &mut Context<'_>,
         direction: Direction,
     ) -> Poll<io::Result<ReadyEvent>> {
-        ready!(crate::trace::trace_leaf(cx));
+        ready!(crate::trace::trace_leaf());
         // Keep track of task budget
-        let coop = ready!(crate::runtime::coop::poll_proceed(cx));
+        let coop = ready!(crate::task::coop::poll_proceed(cx));
         let ev = ready!(self.shared.poll_readiness(cx, direction));
 
         if ev.is_shutdown {
@@ -219,7 +219,7 @@ impl Registration {
         loop {
             let event = self.readiness(interest).await?;
 
-            let coop = crate::future::poll_fn(crate::runtime::coop::poll_proceed).await;
+            let coop = std::future::poll_fn(crate::task::coop::poll_proceed).await;
 
             match f() {
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {

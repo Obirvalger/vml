@@ -5,7 +5,11 @@ use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = ImageDecoder , typescript_type = "ImageDecoder")]
+    #[wasm_bindgen(
+        extends = "::js_sys::Object",
+        js_name = "ImageDecoder",
+        typescript_type = "ImageDecoder"
+    )]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `ImageDecoder` class."]
     #[doc = ""]
@@ -14,10 +18,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type ImageDecoder;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "ImageDecoder" , js_name = type)]
+    #[wasm_bindgen(method, getter, js_class = "ImageDecoder", js_name = "type")]
     #[doc = "Getter for the `type` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/type)"]
@@ -25,10 +29,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn type_(this: &ImageDecoder) -> String;
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn type_(this: &ImageDecoder) -> ::alloc::string::String;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "ImageDecoder" , js_name = complete)]
+    #[wasm_bindgen(method, getter, js_class = "ImageDecoder", js_name = "complete")]
     #[doc = "Getter for the `complete` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/complete)"]
@@ -36,10 +40,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn complete(this: &ImageDecoder) -> bool;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "ImageDecoder" , js_name = completed)]
+    #[wasm_bindgen(method, getter, js_class = "ImageDecoder", js_name = "completed")]
     #[doc = "Getter for the `completed` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/completed)"]
@@ -47,11 +51,11 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn completed(this: &ImageDecoder) -> ::js_sys::Promise;
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn completed(this: &ImageDecoder) -> ::js_sys::Promise<::js_sys::Undefined>;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "ImageTrackList")]
-    # [wasm_bindgen (structural , method , getter , js_class = "ImageDecoder" , js_name = tracks)]
+    #[wasm_bindgen(method, getter, js_class = "ImageDecoder", js_name = "tracks")]
     #[doc = "Getter for the `tracks` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/tracks)"]
@@ -59,7 +63,7 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`, `ImageTrackList`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn tracks(this: &ImageDecoder) -> ImageTrackList;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "ImageDecoderInit")]
@@ -71,10 +75,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`, `ImageDecoderInit`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn new(init: &ImageDecoderInit) -> Result<ImageDecoder, JsValue>;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (method , structural , js_class = "ImageDecoder" , js_name = close)]
+    #[wasm_bindgen(method, js_class = "ImageDecoder")]
     #[doc = "The `close()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/close)"]
@@ -82,47 +86,52 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn close(this: &ImageDecoder);
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (method , structural , js_class = "ImageDecoder" , js_name = decode)]
+    #[cfg(feature = "ImageDecodeResult")]
+    #[wasm_bindgen(method, js_class = "ImageDecoder")]
     #[doc = "The `decode()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/decode)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecodeResult`, `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn decode(this: &ImageDecoder) -> ::js_sys::Promise;
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn decode(this: &ImageDecoder) -> ::js_sys::Promise<ImageDecodeResult>;
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "ImageDecodeOptions")]
-    # [wasm_bindgen (method , structural , js_class = "ImageDecoder" , js_name = decode)]
+    #[cfg(all(feature = "ImageDecodeOptions", feature = "ImageDecodeResult",))]
+    #[wasm_bindgen(method, js_class = "ImageDecoder", js_name = "decode")]
     #[doc = "The `decode()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/decode)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ImageDecodeOptions`, `ImageDecoder`*"]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecodeOptions`, `ImageDecodeResult`, `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn decode_with_options(
         this: &ImageDecoder,
         options: &ImageDecodeOptions,
-    ) -> ::js_sys::Promise;
+    ) -> ::js_sys::Promise<ImageDecodeResult>;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (static_method_of = ImageDecoder , js_class = "ImageDecoder" , js_name = isTypeSupported)]
+    #[wasm_bindgen(
+        static_method_of = "ImageDecoder",
+        js_class = "ImageDecoder",
+        js_name = "isTypeSupported"
+    )]
     #[doc = "The `isTypeSupported()` method."]
     #[doc = ""]
-    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/isTypeSupported)"]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/isTypeSupported_static)"]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn is_type_supported(type_: &str) -> ::js_sys::Promise;
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn is_type_supported(type_: &str) -> ::js_sys::Promise<::js_sys::Boolean>;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (method , structural , js_class = "ImageDecoder" , js_name = reset)]
+    #[wasm_bindgen(method, js_class = "ImageDecoder")]
     #[doc = "The `reset()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/ImageDecoder/reset)"]
@@ -130,6 +139,6 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ImageDecoder`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn reset(this: &ImageDecoder);
 }

@@ -1,11 +1,63 @@
-use alloc::sync::{Arc, Weak};
+use super::{atomic, Arc, Weak};
+
 use core::cell::UnsafeCell;
-use core::sync::atomic::Ordering::{self, Relaxed, SeqCst};
-use core::sync::atomic::{AtomicBool, AtomicPtr};
+
+use atomic::Ordering::{self, Relaxed, SeqCst};
+use atomic::{AtomicBool, AtomicPtr};
 
 use super::abort::abort;
 use super::ReadyToRunQueue;
-use crate::task::{waker_ref, ArcWake, WakerRef};
+
+/// Local version of `crate::arc_wake::ArcWake` to allow portable-atomic-util's
+/// `Arc` to be used.
+///
+/// A way of waking up a specific task.
+///
+/// By implementing this trait, types that are expected to be wrapped in an `Arc`
+/// can be converted into [`Waker`] objects.
+/// Those Wakers can be used to signal executors that a task it owns
+/// is ready to be `poll`ed again.
+///
+/// Currently, there are two ways to convert `ArcWake` into [`Waker`]:
+///
+/// * [`waker`](crate::task::waker()) converts `Arc<impl ArcWake>` into [`Waker`].
+/// * [`waker_ref`](crate::task::waker_ref()) converts `&Arc<impl ArcWake>` into [`WakerRef`] that
+///   provides access to a [`&Waker`][`Waker`].
+///
+/// [`Waker`]: std::task::Waker
+/// [`WakerRef`]: crate::task::WakerRef
+// Note: Send + Sync required because `Arc<T>` doesn't automatically imply
+// those bounds, but `Waker` implements them.
+pub(crate) trait ArcWake: Send + Sync {
+    /// Indicates that the associated task is ready to make progress and should
+    /// be `poll`ed.
+    ///
+    /// This function can be called from an arbitrary thread, including threads which
+    /// did not create the `ArcWake` based [`Waker`].
+    ///
+    /// Executors generally maintain a queue of "ready" tasks; `wake` should place
+    /// the associated task onto this queue.
+    ///
+    /// [`Waker`]: std::task::Waker
+    fn wake(this: Arc<Self>) {
+        Self::wake_by_ref(&this)
+    }
+
+    /// Indicates that the associated task is ready to make progress and should
+    /// be `poll`ed.
+    ///
+    /// This function can be called from an arbitrary thread, including threads which
+    /// did not create the `ArcWake` based [`Waker`].
+    ///
+    /// Executors generally maintain a queue of "ready" tasks; `wake_by_ref` should place
+    /// the associated task onto this queue.
+    ///
+    /// This function is similar to [`wake`](ArcWake::wake), but must not consume the provided data
+    /// pointer.
+    ///
+    /// [`Waker`]: std::task::Waker
+    fn wake_by_ref(arc_self: &Arc<Self>);
+}
 
 pub(super) struct Task<Fut> {
     // The future
@@ -77,8 +129,8 @@ impl<Fut> ArcWake for Task<Fut> {
 
 impl<Fut> Task<Fut> {
     /// Returns a waker reference for this task without cloning the Arc.
-    pub(super) fn waker_ref(this: &Arc<Self>) -> WakerRef<'_> {
-        waker_ref(this)
+    pub(super) unsafe fn waker_ref(this: &Arc<Self>) -> waker_ref::WakerRef<'_> {
+        unsafe { waker_ref::waker_ref(this) }
     }
 
     /// Spins until `next_all` is no longer set to `pending_next_all`.
@@ -121,5 +173,98 @@ impl<Fut> Drop for Task<Fut> {
                 abort("future still here when dropping");
             }
         }
+    }
+}
+
+mod waker_ref {
+    use super::ArcWake;
+    #[cfg(not(feature = "portable-atomic-alloc"))]
+    use alloc::sync::Arc;
+    use core::marker::PhantomData;
+    use core::mem;
+    use core::mem::ManuallyDrop;
+    use core::ops::Deref;
+    use core::task::{RawWaker, RawWakerVTable, Waker};
+    #[cfg(feature = "portable-atomic-alloc")]
+    use portable_atomic_util::Arc;
+
+    pub(crate) struct WakerRef<'a> {
+        waker: ManuallyDrop<Waker>,
+        _marker: PhantomData<&'a ()>,
+    }
+
+    impl WakerRef<'_> {
+        #[inline]
+        fn new_unowned(waker: ManuallyDrop<Waker>) -> Self {
+            Self { waker, _marker: PhantomData }
+        }
+    }
+
+    impl Deref for WakerRef<'_> {
+        type Target = Waker;
+
+        #[inline]
+        fn deref(&self) -> &Waker {
+            &self.waker
+        }
+    }
+
+    /// Copy of `future_task::waker_ref` without `W: 'static` bound.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that use-after-free will not occur.
+    #[inline]
+    pub(crate) unsafe fn waker_ref<W>(wake: &Arc<W>) -> WakerRef<'_>
+    where
+        W: ArcWake,
+    {
+        // simply copy the pointer instead of using Arc::into_raw,
+        // as we don't actually keep a refcount by using ManuallyDrop.<
+        let ptr = Arc::as_ptr(wake).cast::<()>();
+
+        let waker =
+            ManuallyDrop::new(unsafe { Waker::from_raw(RawWaker::new(ptr, waker_vtable::<W>())) });
+        WakerRef::new_unowned(waker)
+    }
+
+    fn waker_vtable<W: ArcWake>() -> &'static RawWakerVTable {
+        &RawWakerVTable::new(
+            clone_arc_raw::<W>,
+            wake_arc_raw::<W>,
+            wake_by_ref_arc_raw::<W>,
+            drop_arc_raw::<W>,
+        )
+    }
+
+    // FIXME: panics on Arc::clone / refcount changes could wreak havoc on the
+    // code here. We should guard against this by aborting.
+
+    unsafe fn increase_refcount<T: ArcWake>(data: *const ()) {
+        // Retain Arc, but don't touch refcount by wrapping in ManuallyDrop
+        let arc = mem::ManuallyDrop::new(unsafe { Arc::<T>::from_raw(data.cast::<T>()) });
+        // Now increase refcount, but don't drop new refcount either
+        let _arc_clone: mem::ManuallyDrop<_> = arc.clone();
+    }
+
+    #[inline(always)]
+    unsafe fn clone_arc_raw<T: ArcWake>(data: *const ()) -> RawWaker {
+        unsafe { increase_refcount::<T>(data) }
+        RawWaker::new(data, waker_vtable::<T>())
+    }
+
+    unsafe fn wake_arc_raw<T: ArcWake>(data: *const ()) {
+        let arc: Arc<T> = unsafe { Arc::from_raw(data.cast::<T>()) };
+        ArcWake::wake(arc);
+    }
+
+    unsafe fn wake_by_ref_arc_raw<T: ArcWake>(data: *const ()) {
+        // Retain Arc, but don't touch refcount by wrapping in ManuallyDrop
+        let arc = mem::ManuallyDrop::new(unsafe { Arc::<T>::from_raw(data.cast::<T>()) });
+        ArcWake::wake_by_ref(&arc);
+    }
+
+    unsafe fn drop_arc_raw<T: ArcWake>(data: *const ()) {
+        drop(unsafe { Arc::<T>::from_raw(data.cast::<T>()) })
     }
 }

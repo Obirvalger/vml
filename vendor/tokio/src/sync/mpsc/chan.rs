@@ -9,10 +9,11 @@ use crate::sync::notify::Notify;
 use crate::util::cacheline::CachePadded;
 
 use std::fmt;
+use std::panic;
 use std::process;
 use std::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release};
 use std::task::Poll::{Pending, Ready};
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 /// Channel sender.
 pub(crate) struct Tx<T, S> {
@@ -108,6 +109,8 @@ impl<T> fmt::Debug for RxFields<T> {
 
 unsafe impl<T: Send, S: Send> Send for Chan<T, S> {}
 unsafe impl<T: Send, S: Sync> Sync for Chan<T, S> {}
+impl<T, S> panic::RefUnwindSafe for Chan<T, S> {}
+impl<T, S> panic::UnwindSafe for Chan<T, S> {}
 
 pub(crate) fn channel<T, S: Semaphore>(semaphore: S) -> (Tx<T, S>, Rx<T, S>) {
     let (tx, rx) = list::channel();
@@ -286,10 +289,10 @@ impl<T, S: Semaphore> Rx<T, S> {
     pub(crate) fn recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
         use super::block::Read;
 
-        ready!(crate::trace::trace_leaf(cx));
+        ready!(crate::trace::trace_leaf());
 
         // Keep track of task budget
-        let coop = ready!(crate::runtime::coop::poll_proceed(cx));
+        let coop = ready!(crate::task::coop::poll_proceed(cx));
 
         self.inner.rx_fields.with_mut(|rx_fields_ptr| {
             let rx_fields = unsafe { &mut *rx_fields_ptr };
@@ -303,13 +306,11 @@ impl<T, S: Semaphore> Rx<T, S> {
                             return Ready(Some(value));
                         }
                         Some(Read::Closed) => {
-                            // TODO: This check may not be required as it most
-                            // likely can only return `true` at this point. A
-                            // channel is closed when all tx handles are
+                            // A channel is closed when all tx handles are
                             // dropped. Dropping a tx handle releases memory,
                             // which ensures that if dropping the tx handle is
                             // visible, then all messages sent are also visible.
-                            assert!(self.inner.semaphore.is_idle());
+                            debug_assert!(self.inner.semaphore.is_idle());
                             coop.made_progress();
                             return Ready(None);
                         }
@@ -348,10 +349,10 @@ impl<T, S: Semaphore> Rx<T, S> {
     ) -> Poll<usize> {
         use super::block::Read;
 
-        ready!(crate::trace::trace_leaf(cx));
+        ready!(crate::trace::trace_leaf());
 
         // Keep track of task budget
-        let coop = ready!(crate::runtime::coop::poll_proceed(cx));
+        let coop = ready!(crate::task::coop::poll_proceed(cx));
 
         if limit == 0 {
             coop.made_progress();
@@ -377,13 +378,11 @@ impl<T, S: Semaphore> Rx<T, S> {
                                 if number_added > 0 {
                                     self.inner.semaphore.add_permits(number_added);
                                 }
-                                // TODO: This check may not be required as it most
-                                // likely can only return `true` at this point. A
-                                // channel is closed when all tx handles are
+                                // A channel is closed when all tx handles are
                                 // dropped. Dropping a tx handle releases memory,
                                 // which ensures that if dropping the tx handle is
                                 // visible, then all messages sent are also visible.
-                                assert!(self.inner.semaphore.is_idle());
+                                debug_assert!(self.inner.semaphore.is_idle());
                                 coop.made_progress();
                                 return Ready(number_added);
                             }
@@ -412,7 +411,7 @@ impl<T, S: Semaphore> Rx<T, S> {
             try_recv!();
 
             if rx_fields.rx_closed && self.inner.semaphore.is_idle() {
-                assert!(buffer.is_empty());
+                debug_assert_eq!(buffer.len(), initial_length);
                 coop.made_progress();
                 Ready(0usize)
             } else {
@@ -436,6 +435,12 @@ impl<T, S: Semaphore> Rx<T, S> {
                             return Ok(value);
                         }
                         TryPopResult::Closed => return Err(TryRecvError::Disconnected),
+                        // If close() was called, an empty queue should report Disconnected.
+                        TryPopResult::Empty
+                            if rx_fields.rx_closed && self.inner.semaphore.is_idle() =>
+                        {
+                            return Err(TryRecvError::Disconnected)
+                        }
                         TryPopResult::Empty => return Err(TryRecvError::Empty),
                         TryPopResult::Busy => {} // fall through
                     }
@@ -469,6 +474,14 @@ impl<T, S: Semaphore> Rx<T, S> {
     pub(super) fn semaphore(&self) -> &S {
         &self.inner.semaphore
     }
+
+    pub(super) fn sender_strong_count(&self) -> usize {
+        self.inner.tx_count.load(Acquire)
+    }
+
+    pub(super) fn sender_weak_count(&self) -> usize {
+        self.inner.tx_weak_count.load(Relaxed)
+    }
 }
 
 impl<T, S: Semaphore> Drop for Rx<T, S> {
@@ -479,10 +492,39 @@ impl<T, S: Semaphore> Drop for Rx<T, S> {
 
         self.inner.rx_fields.with_mut(|rx_fields_ptr| {
             let rx_fields = unsafe { &mut *rx_fields_ptr };
-
-            while let Some(Value(_)) = rx_fields.list.pop(&self.inner.tx) {
-                self.inner.semaphore.add_permit();
+            struct Guard<'a, T, S: Semaphore> {
+                list: &'a mut list::Rx<T>,
+                tx: &'a list::Tx<T>,
+                sem: &'a S,
             }
+
+            impl<'a, T, S: Semaphore> Guard<'a, T, S> {
+                fn drain(&mut self) {
+                    // call T's destructor.
+                    while let Some(Value(_)) = self.list.pop(self.tx) {
+                        self.sem.add_permit();
+                    }
+                }
+            }
+
+            impl<'a, T, S: Semaphore> Drop for Guard<'a, T, S> {
+                fn drop(&mut self) {
+                    self.drain();
+                }
+            }
+
+            let mut guard = Guard {
+                list: &mut rx_fields.list,
+                tx: &self.inner.tx,
+                sem: &self.inner.semaphore,
+            };
+
+            // When Rx is dropped, there is nothing for a task to poll anymore.
+            // This means we can drop our waker to potentially free up resources.
+            // Do so before draining the channel where panics may occur.
+            self.inner.rx_waker.take_waker();
+
+            guard.drain();
         });
     }
 }

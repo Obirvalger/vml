@@ -1,156 +1,174 @@
-#[cfg(feature = "std")]
-use std::prelude::v1::*;
-
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::mem::{self, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 use core::str;
 
+use crate::__rt::{marker::ErasableGeneric, WasmWord};
 use crate::__wbindgen_copy_to_typed_array;
-use crate::cast::JsObject;
-use crate::convert::OptionIntoWasmAbi;
 use crate::convert::{
-    FromWasmAbi, IntoWasmAbi, LongRefFromWasmAbi, RefFromWasmAbi, RefMutFromWasmAbi, WasmAbi,
+    js_value_vector_from_abi, js_value_vector_into_abi, FromWasmAbi, IntoWasmAbi,
+    LongRefFromWasmAbi, OptionFromWasmAbi, OptionIntoWasmAbi, RefFromWasmAbi, RefMutFromWasmAbi,
+    UpcastFrom, VectorFromWasmAbi, VectorIntoWasmAbi, WasmAbi,
 };
-use crate::convert::{VectorFromWasmAbi, VectorIntoWasmAbi};
 use crate::describe::*;
+use crate::JsValue;
+
 use cfg_if::cfg_if;
 
-if_std! {
-    use core::mem;
-    use crate::convert::OptionFromWasmAbi;
-    use crate::convert::{js_value_vector_from_abi, js_value_vector_into_abi};
-}
-
+/// # ⚠️ Unstable
+///
+/// This is part of the internal [`convert`](crate::convert) module, **no
+/// stability guarantees** are provided. Use at your own risk. See its
+/// documentation for more details.
 // note: `WasmAbi` types do not need to be FFI-safe themselves, it's just more
 // convenient to directly write `WasmSlice` in some of the manually-written FFI
 // functions in `lib.rs` rather than `WasmRet<WasmSlice>`.
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct WasmSlice {
-    pub ptr: u32,
-    pub len: u32,
+    pub ptr: WasmWord,
+    pub len: WasmWord,
+}
+
+impl WasmSlice {
+    #[inline]
+    pub fn from_usize(ptr: usize, len: usize) -> Self {
+        Self {
+            ptr: WasmWord::from_usize(ptr),
+            len: WasmWord::from_usize(len),
+        }
+    }
 }
 
 impl WasmAbi for WasmSlice {
     /// `self.ptr`
-    type Prim1 = u32;
+    type Prim1 = <WasmWord as WasmAbi>::Prim1;
     /// `self.len`
-    type Prim2 = u32;
+    type Prim2 = <WasmWord as WasmAbi>::Prim1;
     type Prim3 = ();
     type Prim4 = ();
 
     #[inline]
-    fn split(self) -> (u32, u32, (), ()) {
-        (self.ptr, self.len, (), ())
+    fn split(self) -> (Self::Prim1, Self::Prim2, (), ()) {
+        (self.ptr.split().0, self.len.split().0, (), ())
     }
 
     #[inline]
-    fn join(ptr: u32, len: u32, _: (), _: ()) -> Self {
-        Self { ptr, len }
+    fn join(ptr: Self::Prim1, len: Self::Prim2, _: (), _: ()) -> Self {
+        Self {
+            ptr: WasmWord::join(ptr, (), (), ()),
+            len: WasmWord::join(len, (), (), ()),
+        }
     }
 }
 
 #[inline]
 fn null_slice() -> WasmSlice {
-    WasmSlice { ptr: 0, len: 0 }
+    WasmSlice::from_usize(0, 0)
 }
 
-if_std! {
-    pub struct WasmMutSlice {
-        pub slice: WasmSlice,
-        pub idx: u32,
+pub struct WasmMutSlice {
+    pub slice: WasmSlice,
+    pub idx: u32,
+}
+
+impl WasmAbi for WasmMutSlice {
+    /// `self.slice.ptr`
+    type Prim1 = <WasmSlice as WasmAbi>::Prim1;
+    /// `self.slice.len`
+    type Prim2 = <WasmSlice as WasmAbi>::Prim2;
+    /// `self.idx`
+    type Prim3 = u32;
+    type Prim4 = ();
+
+    #[inline]
+    fn split(self) -> (Self::Prim1, Self::Prim2, u32, ()) {
+        let (ptr, len, (), ()) = self.slice.split();
+        (ptr, len, self.idx, ())
     }
 
-    impl WasmAbi for WasmMutSlice {
-        /// `self.slice.ptr`
-        type Prim1 = u32;
-        /// `self.slice.len`
-        type Prim2 = u32;
-        /// `self.idx`
-        type Prim3 = u32;
-        type Prim4 = ();
-
-        #[inline]
-        fn split(self) -> (u32, u32, u32, ()) {
-            (self.slice.ptr, self.slice.len, self.idx, ())
-        }
-
-        #[inline]
-        fn join(ptr: u32, len: u32, idx: u32, _: ()) -> Self {
-            Self {
-                slice: WasmSlice { ptr, len },
-                idx,
-            }
+    #[inline]
+    fn join(ptr: Self::Prim1, len: Self::Prim2, idx: u32, _: ()) -> Self {
+        Self {
+            slice: WasmSlice::join(ptr, len, (), ()),
+            idx,
         }
     }
+}
 
-    /// The representation of a mutable slice passed from JS to Rust.
-    pub struct MutSlice<T> {
-        /// A copy of the data in the JS typed array.
-        contents: Box<[T]>,
-        /// A reference to the original JS typed array.
-        js: JsValue,
+/// The representation of a mutable slice passed from JS to Rust.
+pub struct MutSlice<T> {
+    /// A copy of the data in the JS typed array.
+    contents: Box<[T]>,
+    /// A reference to the original JS typed array.
+    js: JsValue,
+}
+
+impl<T> Drop for MutSlice<T> {
+    fn drop(&mut self) {
+        let byte_slice = unsafe {
+            core::slice::from_raw_parts(
+                self.contents.as_ptr() as *const u8,
+                self.contents.len() * mem::size_of::<T>(),
+            )
+        };
+        __wbindgen_copy_to_typed_array(byte_slice, &self.js);
     }
+}
 
-    impl<T> Drop for MutSlice<T> {
-        fn drop(&mut self) {
-            unsafe {
-                __wbindgen_copy_to_typed_array(
-                    self.contents.as_ptr() as *const u8,
-                    self.contents.len() * mem::size_of::<T>(),
-                    self.js.idx
-                );
-            }
-        }
+impl<T> Deref for MutSlice<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        &self.contents
     }
+}
 
-    impl<T> Deref for MutSlice<T> {
-        type Target = [T];
-
-        fn deref(&self) -> &[T] {
-            &self.contents
-        }
-    }
-
-    impl<T> DerefMut for MutSlice<T> {
-        fn deref_mut(&mut self) -> &mut [T] {
-            &mut self.contents
-        }
+impl<T> DerefMut for MutSlice<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.contents
     }
 }
 
 macro_rules! vectors {
-    ($($t:ident)*) => ($(
-        if_std! {
-            impl WasmDescribeVector for $t {
-                fn describe_vector() {
-                    inform(VECTOR);
-                    $t::describe();
-                }
+    ($($t:ty)*) => ($(
+        vectors_internal!($t);
+        vectors_internal!(MaybeUninit<$t>);
+    )*)
+}
+
+macro_rules! vectors_internal {
+    ($t:ty) => {
+        impl WasmDescribeVector for $t {
+            #[cfg_attr(wasm_bindgen_unstable_test_coverage, coverage(off))]
+            fn describe_vector() {
+                inform(VECTOR);
+                <$t>::describe();
             }
+        }
 
-            impl VectorIntoWasmAbi for $t {
-                type Abi = WasmSlice;
+        impl VectorIntoWasmAbi for $t {
+            type Abi = WasmSlice;
 
-                #[inline]
-                fn vector_into_abi(vector: Box<[$t]>) -> WasmSlice {
-                    let ptr = vector.as_ptr();
-                    let len = vector.len();
-                    mem::forget(vector);
-                    WasmSlice {
-                        ptr: ptr.into_abi(),
-                        len: len as u32,
-                    }
-                }
+            #[inline]
+            fn vector_into_abi(vector: Box<[$t]>) -> WasmSlice {
+                let ptr = vector.as_ptr();
+                let len = vector.len();
+                mem::forget(vector);
+                WasmSlice::from_usize(ptr as usize, len)
             }
+        }
 
-            impl VectorFromWasmAbi for $t {
-                type Abi = WasmSlice;
+        impl VectorFromWasmAbi for $t {
+            type Abi = WasmSlice;
 
-                #[inline]
-                unsafe fn vector_from_abi(js: WasmSlice) -> Box<[$t]> {
-                    let ptr = <*mut $t>::from_abi(js.ptr);
-                    let len = js.len as usize;
-                    Vec::from_raw_parts(ptr, len, len).into_boxed_slice()
-                }
+            #[inline]
+            unsafe fn vector_from_abi(js: WasmSlice) -> Box<[$t]> {
+                let ptr = js.ptr.into_usize() as *mut $t;
+                let len = js.len.into_usize();
+                Vec::from_raw_parts(ptr, len, len).into_boxed_slice()
             }
         }
 
@@ -159,16 +177,15 @@ macro_rules! vectors {
 
             #[inline]
             fn into_abi(self) -> WasmSlice {
-                WasmSlice {
-                    ptr: self.as_ptr().into_abi(),
-                    len: self.len() as u32,
-                }
+                WasmSlice::from_usize(self.as_ptr() as usize, self.len())
             }
         }
 
         impl<'a> OptionIntoWasmAbi for &'a [$t] {
             #[inline]
-            fn none() -> WasmSlice { null_slice() }
+            fn none() -> WasmSlice {
+                null_slice()
+            }
         }
 
         impl<'a> IntoWasmAbi for &'a mut [$t] {
@@ -182,7 +199,9 @@ macro_rules! vectors {
 
         impl<'a> OptionIntoWasmAbi for &'a mut [$t] {
             #[inline]
-            fn none() -> WasmSlice { null_slice() }
+            fn none() -> WasmSlice {
+                null_slice()
+            }
         }
 
         impl RefFromWasmAbi for [$t] {
@@ -216,43 +235,42 @@ macro_rules! vectors {
                 Self::ref_from_abi(js)
             }
         }
-    )*)
+    };
 }
 
 vectors! {
     u8 i8 u16 i16 u32 i32 u64 i64 usize isize f32 f64
 }
 
-if_std! {
-    impl WasmDescribeVector for String {
-        fn describe_vector() {
-            inform(VECTOR);
-            inform(NAMED_EXTERNREF);
-            // Trying to use an actual loop for this breaks the wasm interpreter.
-            inform(6);
-            inform('s' as u32);
-            inform('t' as u32);
-            inform('r' as u32);
-            inform('i' as u32);
-            inform('n' as u32);
-            inform('g' as u32);
-        }
+impl WasmDescribeVector for String {
+    #[cfg_attr(wasm_bindgen_unstable_test_coverage, coverage(off))]
+    fn describe_vector() {
+        inform(VECTOR);
+        inform(NAMED_EXTERNREF);
+        // Trying to use an actual loop for this breaks the Wasm interpreter.
+        inform(6);
+        inform('s' as u32);
+        inform('t' as u32);
+        inform('r' as u32);
+        inform('i' as u32);
+        inform('n' as u32);
+        inform('g' as u32);
     }
+}
 
-    impl VectorIntoWasmAbi for String {
-        type Abi = <Box<[JsValue]> as IntoWasmAbi>::Abi;
+impl VectorIntoWasmAbi for String {
+    type Abi = <Box<[JsValue]> as IntoWasmAbi>::Abi;
 
-        fn vector_into_abi(vector: Box<[Self]>) -> Self::Abi {
-            js_value_vector_into_abi(vector)
-        }
+    fn vector_into_abi(vector: Box<[Self]>) -> Self::Abi {
+        js_value_vector_into_abi(vector)
     }
+}
 
-    impl VectorFromWasmAbi for String {
-        type Abi = <Box<[JsValue]> as FromWasmAbi>::Abi;
+impl VectorFromWasmAbi for String {
+    type Abi = <Box<[JsValue]> as FromWasmAbi>::Abi;
 
-        unsafe fn vector_from_abi(js: Self::Abi) -> Box<[Self]> {
-            js_value_vector_from_abi(js)
-        }
+    unsafe fn vector_from_abi(js: Self::Abi) -> Box<[Self]> {
+        js_value_vector_from_abi(js)
     }
 }
 
@@ -261,7 +279,7 @@ cfg_if! {
         #[inline]
         fn unsafe_get_cached_str(x: &str) -> Option<WasmSlice> {
             // This uses 0 for the ptr as an indication that it is a JsValue and not a str.
-            crate::cache::intern::unsafe_get_str(x).map(|x| WasmSlice { ptr: 0, len: x })
+            crate::cache::intern::unsafe_get_str(x).map(|x| WasmSlice::from_usize(0, x as usize))
         }
 
     } else {
@@ -272,63 +290,155 @@ cfg_if! {
     }
 }
 
-if_std! {
-    impl<T> IntoWasmAbi for Vec<T> where Box<[T]>: IntoWasmAbi<Abi = WasmSlice> {
-        type Abi = <Box<[T]> as IntoWasmAbi>::Abi;
+impl<T> IntoWasmAbi for Vec<T>
+where
+    Box<[T]>: IntoWasmAbi<Abi = WasmSlice>,
+{
+    type Abi = <Box<[T]> as IntoWasmAbi>::Abi;
 
-        #[inline]
-        fn into_abi(self) -> Self::Abi {
-            self.into_boxed_slice().into_abi()
+    #[inline]
+    fn into_abi(self) -> Self::Abi {
+        self.into_boxed_slice().into_abi()
+    }
+}
+
+impl<T> OptionIntoWasmAbi for Vec<T>
+where
+    Box<[T]>: IntoWasmAbi<Abi = WasmSlice>,
+{
+    #[inline]
+    fn none() -> WasmSlice {
+        null_slice()
+    }
+}
+
+/// Internal trait used by the `slice_to_array` macro codegen.
+///
+/// Produces the wire representation JS observes when an outgoing `&[T]`
+/// argument is rendered as a plain `Array`. There are two impl shapes,
+/// neither of which requires `T: Clone`:
+///
+/// * For primitive numeric `T` (`u8`, `i32`, `f64`, ...) the wire is a
+///   borrow of the slice memory directly — no allocation, no copy. The
+///   JS-side shim performs `Array.from(typedArrayView)` to materialise
+///   the JS `Array` and never frees the buffer.
+/// * For everything else (`String`, `JsValue`, imported types, exported
+///   types) the wire is a freshly allocated `Box<[u32]>` of externref
+///   indices — one per element, constructed via `&T -> JsValue` (which
+///   for handle-shaped types is a refcount bump on the existing JS
+///   slot, and for `String` / value-shaped types creates a fresh JS
+///   value). The JS-side shim reads the indices into a JS `Array` and
+///   frees the index buffer.
+///
+/// Both shapes carry the same `WasmSlice` (ptr + len) on the wire. The
+/// cli-support side picks the right JS shim based on the element
+/// `VectorKind` recovered from the descriptor.
+///
+/// Not user-facing: users opt in via `#[wasm_bindgen(slice_to_array)]`
+/// on an imported function or `extern "C"` block.
+pub trait VectorRefIntoWasmAbi {
+    /// Construct the wire representation for `Some(slice)`. The returned
+    /// `WasmSlice` is either a borrow of the input slice (primitive
+    /// case) or a buffer JS owns and frees (handle-shaped case).
+    fn slice_into_abi(slice: &[Self]) -> WasmSlice
+    where
+        Self: Sized;
+
+    /// Wire representation for `None` (used by `Option<&[T]>`). A null
+    /// `WasmSlice` (`ptr == 0`) is the convention shared with every
+    /// other vector-like ABI in the crate.
+    #[inline]
+    fn slice_none() -> WasmSlice
+    where
+        Self: Sized,
+    {
+        null_slice()
+    }
+}
+
+macro_rules! vector_ref_into_wasm_abi_primitive {
+    ($($t:ty)*) => ($(
+        impl VectorRefIntoWasmAbi for $t {
+            #[inline]
+            fn slice_into_abi(slice: &[Self]) -> WasmSlice {
+                // Borrow of the slice memory; the JS shim does
+                // `Array.from(view)` and never frees.
+                WasmSlice::from_usize(slice.as_ptr() as usize, slice.len())
+            }
         }
+    )*);
+}
+
+vector_ref_into_wasm_abi_primitive!(u8 i8 u16 i16 u32 i32 u64 i64 usize isize f32 f64);
+
+impl<T> VectorRefIntoWasmAbi for T
+where
+    for<'a> &'a T: Into<JsValue>,
+{
+    #[inline]
+    fn slice_into_abi(slice: &[Self]) -> WasmSlice {
+        // Build a fresh `[JsValue]` buffer one element at a time. The
+        // existing `Vec<JsValue>` ABI hands off the buffer to JS; the
+        // JS shim drops each externref slot it reads and frees the
+        // buffer.
+        let js_vals: Box<[JsValue]> = slice.iter().map(Into::into).collect();
+        js_vals.into_abi()
     }
+}
 
-    impl<T> OptionIntoWasmAbi for Vec<T> where Box<[T]>: IntoWasmAbi<Abi = WasmSlice> {
-        #[inline]
-        fn none() -> WasmSlice { null_slice() }
+impl<T> FromWasmAbi for Vec<T>
+where
+    Box<[T]>: FromWasmAbi<Abi = WasmSlice>,
+{
+    type Abi = <Box<[T]> as FromWasmAbi>::Abi;
+
+    #[inline]
+    unsafe fn from_abi(js: Self::Abi) -> Self {
+        <Box<[T]>>::from_abi(js).into()
     }
+}
 
-    impl<T> FromWasmAbi for Vec<T> where Box<[T]>: FromWasmAbi<Abi = WasmSlice> {
-        type Abi = <Box<[T]> as FromWasmAbi>::Abi;
-
-        #[inline]
-        unsafe fn from_abi(js: Self::Abi) -> Self {
-            <Box<[T]>>::from_abi(js).into()
-        }
+impl<T> OptionFromWasmAbi for Vec<T>
+where
+    Box<[T]>: FromWasmAbi<Abi = WasmSlice>,
+{
+    #[inline]
+    fn is_none(abi: &WasmSlice) -> bool {
+        abi.ptr.is_zero()
     }
+}
 
-    impl<T> OptionFromWasmAbi for Vec<T> where Box<[T]>: FromWasmAbi<Abi = WasmSlice> {
-        #[inline]
-        fn is_none(abi: &WasmSlice) -> bool { abi.ptr == 0 }
+impl IntoWasmAbi for String {
+    type Abi = <Vec<u8> as IntoWasmAbi>::Abi;
+
+    #[inline]
+    fn into_abi(self) -> Self::Abi {
+        // This is safe because the JsValue is immediately looked up in the heap and
+        // then returned, so use-after-free cannot occur.
+        unsafe_get_cached_str(&self).unwrap_or_else(|| self.into_bytes().into_abi())
     }
+}
 
-    impl IntoWasmAbi for String {
-        type Abi = <Vec<u8> as IntoWasmAbi>::Abi;
-
-        #[inline]
-        fn into_abi(self) -> Self::Abi {
-            // This is safe because the JsValue is immediately looked up in the heap and
-            // then returned, so use-after-free cannot occur.
-            unsafe_get_cached_str(&self).unwrap_or_else(|| self.into_bytes().into_abi())
-        }
+impl OptionIntoWasmAbi for String {
+    #[inline]
+    fn none() -> Self::Abi {
+        null_slice()
     }
+}
 
-    impl OptionIntoWasmAbi for String {
-        #[inline]
-        fn none() -> Self::Abi { null_slice() }
+impl FromWasmAbi for String {
+    type Abi = <Vec<u8> as FromWasmAbi>::Abi;
+
+    #[inline]
+    unsafe fn from_abi(js: Self::Abi) -> Self {
+        String::from_utf8_unchecked(<Vec<u8>>::from_abi(js))
     }
+}
 
-    impl FromWasmAbi for String {
-        type Abi = <Vec<u8> as FromWasmAbi>::Abi;
-
-        #[inline]
-        unsafe fn from_abi(js: Self::Abi) -> Self {
-            String::from_utf8_unchecked(<Vec<u8>>::from_abi(js))
-        }
-    }
-
-    impl OptionFromWasmAbi for String {
-        #[inline]
-        fn is_none(slice: &WasmSlice) -> bool { slice.ptr == 0 }
+impl OptionFromWasmAbi for String {
+    #[inline]
+    fn is_none(slice: &WasmSlice) -> bool {
+        slice.ptr.is_zero()
     }
 }
 
@@ -343,7 +453,7 @@ impl<'a> IntoWasmAbi for &'a str {
     }
 }
 
-impl<'a> OptionIntoWasmAbi for &'a str {
+impl OptionIntoWasmAbi for &str {
     #[inline]
     fn none() -> Self::Abi {
         null_slice()
@@ -370,87 +480,102 @@ impl LongRefFromWasmAbi for str {
     }
 }
 
-if_std! {
-    use crate::JsValue;
+unsafe impl ErasableGeneric for &str {
+    type Repr = &'static str;
+}
 
-    impl<T: VectorIntoWasmAbi> IntoWasmAbi for Box<[T]> {
-        type Abi = <T as VectorIntoWasmAbi>::Abi;
+unsafe impl<T: ErasableGeneric> ErasableGeneric for Box<[T]> {
+    type Repr = Box<[T::Repr]>;
+}
 
-        fn into_abi(self) -> Self::Abi {
-            T::vector_into_abi(self)
-        }
+impl UpcastFrom<&str> for &str {}
+
+impl<T, Target> UpcastFrom<Box<[T]>> for Box<[Target]> where Target: UpcastFrom<T> {}
+
+unsafe impl<T: ErasableGeneric> ErasableGeneric for Vec<T> {
+    type Repr = Vec<T::Repr>;
+}
+
+impl<T, Target> UpcastFrom<Vec<T>> for Vec<Target> where Target: UpcastFrom<T> {}
+
+impl<T: VectorIntoWasmAbi> IntoWasmAbi for Box<[T]> {
+    type Abi = <T as VectorIntoWasmAbi>::Abi;
+
+    fn into_abi(self) -> Self::Abi {
+        T::vector_into_abi(self)
     }
+}
 
-    impl<T> OptionIntoWasmAbi for Box<[T]> where Self: IntoWasmAbi<Abi = WasmSlice> {
-        fn none() -> WasmSlice {
-            null_slice()
-        }
+impl<T> OptionIntoWasmAbi for Box<[T]>
+where
+    Self: IntoWasmAbi<Abi = WasmSlice>,
+{
+    fn none() -> WasmSlice {
+        null_slice()
     }
+}
 
-    impl<T: VectorFromWasmAbi> FromWasmAbi for Box<[T]> {
-        type Abi = <T as VectorFromWasmAbi>::Abi;
+impl<T: VectorFromWasmAbi> FromWasmAbi for Box<[T]> {
+    type Abi = <T as VectorFromWasmAbi>::Abi;
 
-        unsafe fn from_abi(js: Self::Abi) -> Self {
-            T::vector_from_abi(js)
-        }
+    unsafe fn from_abi(js: Self::Abi) -> Self {
+        T::vector_from_abi(js)
     }
+}
 
-    impl<T> OptionFromWasmAbi for Box<[T]> where Self: FromWasmAbi<Abi = WasmSlice> {
-        fn is_none(slice: &WasmSlice) -> bool {
-            slice.ptr == 0
-        }
+impl<T> OptionFromWasmAbi for Box<[T]>
+where
+    Self: FromWasmAbi<Abi = WasmSlice>,
+{
+    fn is_none(slice: &WasmSlice) -> bool {
+        slice.ptr.is_zero()
     }
+}
 
-    impl VectorIntoWasmAbi for JsValue {
-        type Abi = WasmSlice;
+impl<T: ErasableGeneric<Repr = JsValue> + WasmDescribe> VectorFromWasmAbi for T {
+    type Abi = WasmSlice;
 
-        #[inline]
-        fn vector_into_abi(vector: Box<[Self]>) -> WasmSlice {
-            let ptr = vector.as_ptr();
-            let len = vector.len();
-            mem::forget(vector);
-            WasmSlice {
-                ptr: ptr.into_abi(),
-                len: len as u32,
-            }
-        }
+    #[inline]
+    unsafe fn vector_from_abi(js: WasmSlice) -> Box<[Self]> {
+        let ptr = js.ptr.into_usize() as *mut T;
+        let len = js.len.into_usize();
+        Vec::from_raw_parts(ptr, len, len).into_boxed_slice()
     }
+}
 
-    impl VectorFromWasmAbi for JsValue {
-        type Abi = WasmSlice;
+impl<T: ErasableGeneric<Repr = JsValue> + WasmDescribe> VectorIntoWasmAbi for T {
+    type Abi = WasmSlice;
 
-        #[inline]
-        unsafe fn vector_from_abi(js: WasmSlice) -> Box<[Self]> {
-            let ptr = <*mut JsValue>::from_abi(js.ptr);
-            let len = js.len as usize;
-            Vec::from_raw_parts(ptr, len, len).into_boxed_slice()
-        }
+    #[inline]
+    fn vector_into_abi(vector: Box<[T]>) -> WasmSlice {
+        let ptr = vector.as_ptr();
+        let len = vector.len();
+        mem::forget(vector);
+        WasmSlice::from_usize(ptr as usize, len)
     }
+}
 
-    impl<T> VectorIntoWasmAbi for T where T: JsObject {
-        type Abi = WasmSlice;
+// JsValue-like slice support (Rust-to-JS only)
+// JsValue-like are repr(transparent) over u32, so &[JsValue] is a contiguous array of heap indices
 
-        #[inline]
-        fn vector_into_abi(vector: Box<[T]>) -> WasmSlice {
-            let ptr = vector.as_ptr();
-            let len = vector.len();
-            mem::forget(vector);
-            WasmSlice {
-                ptr: ptr.into_abi(),
-                len: len as u32,
-            }
-        }
+unsafe impl<T: ErasableGeneric> ErasableGeneric for &[T] {
+    type Repr = &'static [T::Repr];
+}
+
+impl<'a, T, Target> UpcastFrom<&'a [T]> for &'a [Target] where Target: UpcastFrom<T> {}
+
+impl<T: ErasableGeneric<Repr = JsValue> + WasmDescribe> IntoWasmAbi for &[T] {
+    type Abi = WasmSlice;
+
+    #[inline]
+    fn into_abi(self) -> WasmSlice {
+        WasmSlice::from_usize(self.as_ptr() as usize, self.len())
     }
+}
 
-    impl<T> VectorFromWasmAbi for T where T: JsObject {
-        type Abi = WasmSlice;
-
-        #[inline]
-        unsafe fn vector_from_abi(js: WasmSlice) -> Box<[T]> {
-            let ptr = <*mut JsValue>::from_abi(js.ptr);
-            let len = js.len as usize;
-            let vec: Vec<T> = Vec::from_raw_parts(ptr, len, len).drain(..).map(|js_value| T::unchecked_from_js(js_value)).collect();
-            vec.into_boxed_slice()
-        }
+impl<T: ErasableGeneric<Repr = JsValue> + WasmDescribe> OptionIntoWasmAbi for &[T] {
+    #[inline]
+    fn none() -> WasmSlice {
+        null_slice()
     }
 }

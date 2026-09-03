@@ -1,13 +1,15 @@
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use pki_types::{AlgorithmIdentifier, CertificateDer, SubjectPublicKeyInfoDer};
+use pki_types::{AlgorithmIdentifier, CertificateDer, PrivateKeyDer, SubjectPublicKeyInfoDer};
 
+use super::CryptoProvider;
+use crate::client::ResolvesClientCert;
 use crate::enums::{SignatureAlgorithm, SignatureScheme};
 use crate::error::{Error, InconsistentKeys};
-use crate::server::ParsedCertificate;
+use crate::server::{ClientHello, ParsedCertificate, ResolvesServerCert};
+use crate::sync::Arc;
 use crate::x509;
 
 /// An abstract signing key.
@@ -85,11 +87,57 @@ pub trait Signer: Debug + Send + Sync {
     fn scheme(&self) -> SignatureScheme;
 }
 
+/// Server certificate resolver which always resolves to the same certificate and key.
+///
+/// For use with [`ConfigBuilder::with_cert_resolver()`].
+///
+/// [`ConfigBuilder::with_cert_resolver()`]: crate::ConfigBuilder::with_cert_resolver
+#[derive(Debug)]
+pub struct SingleCertAndKey(Arc<CertifiedKey>);
+
+impl From<CertifiedKey> for SingleCertAndKey {
+    fn from(certified_key: CertifiedKey) -> Self {
+        Self(Arc::new(certified_key))
+    }
+}
+
+impl From<Arc<CertifiedKey>> for SingleCertAndKey {
+    fn from(certified_key: Arc<CertifiedKey>) -> Self {
+        Self(certified_key)
+    }
+}
+
+impl ResolvesClientCert for SingleCertAndKey {
+    fn resolve(
+        &self,
+        _root_hint_subjects: &[&[u8]],
+        _sigschemes: &[SignatureScheme],
+    ) -> Option<Arc<CertifiedKey>> {
+        Some(self.0.clone())
+    }
+
+    fn has_certs(&self) -> bool {
+        true
+    }
+}
+
+impl ResolvesServerCert for SingleCertAndKey {
+    fn resolve(&self, _client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        Some(self.0.clone())
+    }
+}
+
 /// A packaged-together certificate chain, matching `SigningKey` and
 /// optional stapled OCSP response.
+///
+/// Note: this struct is also used to represent an [RFC 7250] raw public key,
+/// when the client/server is configured to use raw public keys instead of
+/// certificates.
+///
+/// [RFC 7250]: https://tools.ietf.org/html/rfc7250
 #[derive(Clone, Debug)]
 pub struct CertifiedKey {
-    /// The certificate chain.
+    /// The certificate chain or raw public key.
     pub cert: Vec<CertificateDer<'static>>,
 
     /// The certified key.
@@ -101,6 +149,30 @@ pub struct CertifiedKey {
 }
 
 impl CertifiedKey {
+    /// Create a new `CertifiedKey` from a certificate chain and DER-encoded private key.
+    ///
+    /// Attempt to parse the private key with the given [`CryptoProvider`]'s [`KeyProvider`] and
+    /// verify that it matches the public key in the first certificate of the `cert_chain`
+    /// if possible.
+    ///
+    /// [`KeyProvider`]: crate::crypto::KeyProvider
+    pub fn from_der(
+        cert_chain: Vec<CertificateDer<'static>>,
+        key: PrivateKeyDer<'static>,
+        provider: &CryptoProvider,
+    ) -> Result<Self, Error> {
+        let private_key = provider
+            .key_provider
+            .load_private_key(key)?;
+
+        let certified_key = Self::new(cert_chain, private_key);
+        match certified_key.keys_match() {
+            // Don't treat unknown consistency as an error
+            Ok(()) | Err(Error::InconsistentKeys(InconsistentKeys::Unknown)) => Ok(certified_key),
+            Err(err) => Err(err),
+        }
+    }
+
     /// Make a new CertifiedKey, with the given chain and key.
     ///
     /// The cert chain must not be empty. The first certificate in the chain
@@ -116,9 +188,8 @@ impl CertifiedKey {
     /// Verify the consistency of this [`CertifiedKey`]'s public and private keys.
     /// This is done by performing a comparison of SubjectPublicKeyInfo bytes.
     pub fn keys_match(&self) -> Result<(), Error> {
-        let key_spki = match self.key.public_key() {
-            Some(key) => key,
-            None => return Err(InconsistentKeys::Unknown.into()),
+        let Some(key_spki) = self.key.public_key() else {
+            return Err(InconsistentKeys::Unknown.into());
         };
 
         let cert = ParsedCertificate::try_from(self.end_entity_cert()?)?;
@@ -136,8 +207,8 @@ impl CertifiedKey {
     }
 }
 
-#[cfg_attr(not(any(feature = "aws_lc_rs", feature = "ring")), allow(dead_code))]
-pub(crate) fn public_key_to_spki(
+/// Convert a public key and algorithm identifier into [`SubjectPublicKeyInfoDer`].
+pub fn public_key_to_spki(
     alg_id: &AlgorithmIdentifier,
     public_key: impl AsRef<[u8]>,
 ) -> SubjectPublicKeyInfoDer<'static> {

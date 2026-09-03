@@ -20,9 +20,9 @@
 
 use core::fmt;
 
-use crate::format::{parse, ParseResult, Parsed, StrftimeItems};
-use crate::naive::{NaiveDate, NaiveDateTime, NaiveTime};
 use crate::Weekday;
+use crate::format::{ParseResult, Parsed, StrftimeItems, parse};
+use crate::naive::{NaiveDate, NaiveDateTime, NaiveTime};
 #[allow(deprecated)]
 use crate::{Date, DateTime};
 
@@ -46,6 +46,26 @@ pub use self::utc::Utc;
 ///   DST.
 /// * No result when the clock is turned forwards during a transition due to for example DST.
 ///
+/// <div class="warning">
+///
+/// In wasm, when using [`Local`], only the [`LocalResult::Single`] variant is returned.
+/// Specifically:
+///
+/// * When the clock is turned backwards, where `Ambiguous(earliest, latest)` would be expected,
+///   `Single(earliest)` is returned instead.
+/// * When the clock is turned forwards, where `None` would be expected, `Single(t)` is returned,
+///   with `t` being the requested local time represented as though there is no transition on that
+///   day (i.e. still "summer time")
+///
+/// This is caused because of limitations in the JavaScript
+/// [`Date`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date)
+/// API, which always parses a local time as a single, valid time - even for an
+/// input which describes a nonexistent or ambiguous time.
+///
+/// See further discussion and workarounds in <https://github.com/chronotope/chrono/issues/1701>.
+///
+/// </div>
+///
 /// When the clock is turned backwards it creates a _fold_ in local time, during which the local
 /// time is _ambiguous_. When the clock is turned forwards it creates a _gap_ in local time, during
 /// which the local time is _missing_, or does not exist.
@@ -56,7 +76,7 @@ pub use self::utc::Utc;
 /// The type of `T` is usually a [`DateTime`] but may also be only an offset.
 pub type MappedLocalTime<T> = LocalResult<T>;
 #[derive(Clone, PartialEq, Debug, Copy, Eq, Hash)]
-
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Old name of [`MappedLocalTime`]. See that type for more documentation.
 pub enum LocalResult<T> {
     /// The local time maps to a single unique result.
@@ -89,7 +109,7 @@ impl<T> MappedLocalTime<T> {
         }
     }
 
-    /// Returns the earliest possible result of a the time zone mapping.
+    /// Returns the earliest possible result of the time zone mapping.
     ///
     /// # Errors
     ///
@@ -102,7 +122,7 @@ impl<T> MappedLocalTime<T> {
         }
     }
 
-    /// Returns the latest possible result of a the time zone mapping.
+    /// Returns the latest possible result of the time zone mapping.
     ///
     /// # Errors
     ///
@@ -261,7 +281,7 @@ impl<T: fmt::Debug> MappedLocalTime<T> {
             MappedLocalTime::None => panic!("No such local time"),
             MappedLocalTime::Single(t) => t,
             MappedLocalTime::Ambiguous(t1, t2) => {
-                panic!("Ambiguous local time, ranging from {:?} to {:?}", t1, t2)
+                panic!("Ambiguous local time, ranging from {t1:?} to {t2:?}")
             }
         }
     }
@@ -653,7 +673,7 @@ mod tests {
                 MappedLocalTime::Single(dt) => {
                     assert_eq!(dt.to_string(), *expected);
                 }
-                e => panic!("Got {:?} instead of an okay answer", e),
+                e => panic!("Got {e:?} instead of an okay answer"),
             }
         }
     }
@@ -674,9 +694,9 @@ mod tests {
 
     #[test]
     fn test_nanos_never_panics() {
-        Utc.timestamp_nanos(i64::max_value());
+        Utc.timestamp_nanos(i64::MAX);
         Utc.timestamp_nanos(i64::default());
-        Utc.timestamp_nanos(i64::min_value());
+        Utc.timestamp_nanos(i64::MIN);
     }
 
     #[test]

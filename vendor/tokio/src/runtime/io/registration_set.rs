@@ -7,6 +7,9 @@ use std::ptr::NonNull;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::Arc;
 
+// Kind of arbitrary, but buffering 16 `ScheduledIo`s doesn't seem like much
+const NOTIFY_AFTER: usize = 16;
+
 pub(super) struct RegistrationSet {
     num_pending_release: AtomicUsize,
 }
@@ -17,7 +20,7 @@ pub(super) struct Synced {
     is_shutdown: bool,
 
     // List of all registrations tracked by the set
-    registrations: LinkedList<Arc<ScheduledIo>, ScheduledIo>,
+    registrations: LinkedList<Arc<ScheduledIo>>,
 
     // Registrations that are pending drop. When a `Registration` is dropped, it
     // stores its `ScheduledIo` in this list. The I/O driver is responsible for
@@ -35,7 +38,7 @@ impl RegistrationSet {
         let synced = Synced {
             is_shutdown: false,
             registrations: LinkedList::new(),
-            pending_release: Vec::with_capacity(16),
+            pending_release: Vec::with_capacity(NOTIFY_AFTER),
         };
 
         (set, synced)
@@ -69,9 +72,6 @@ impl RegistrationSet {
     // Returns `true` if the caller should unblock the I/O driver to purge
     // registrations pending release.
     pub(super) fn deregister(&self, synced: &mut Synced, registration: &Arc<ScheduledIo>) -> bool {
-        // Kind of arbitrary, but buffering 16 `ScheduledIo`s doesn't seem like much
-        const NOTIFY_AFTER: usize = 16;
-
         synced.pending_release.push(registration.clone());
 
         let len = synced.pending_release.len();
@@ -106,7 +106,7 @@ impl RegistrationSet {
 
         for io in pending {
             // safety: the registration is part of our list
-            unsafe { self.remove(synced, io.as_ref()) }
+            unsafe { self.remove(synced, &io) }
         }
 
         self.num_pending_release.store(0, Release);
@@ -114,8 +114,13 @@ impl RegistrationSet {
 
     // This function is marked as unsafe, because the caller must make sure that
     // `io` is part of the registration set.
-    pub(super) unsafe fn remove(&self, synced: &mut Synced, io: &ScheduledIo) {
-        let _ = synced.registrations.remove(io.into());
+    pub(super) unsafe fn remove(&self, synced: &mut Synced, io: &Arc<ScheduledIo>) {
+        // SAFETY: Pointers into an Arc are never null.
+        let io = unsafe { NonNull::new_unchecked(Arc::as_ptr(io).cast_mut()) };
+
+        super::EXPOSE_IO.unexpose_provenance(io.as_ptr());
+        // SAFETY: the caller guarantees that `io` is part of this list.
+        let _ = unsafe { synced.registrations.remove(io) };
     }
 }
 
@@ -137,6 +142,8 @@ unsafe impl linked_list::Link for Arc<ScheduledIo> {
     unsafe fn pointers(
         target: NonNull<Self::Target>,
     ) -> NonNull<linked_list::Pointers<ScheduledIo>> {
-        NonNull::new_unchecked(target.as_ref().linked_list_pointers.get())
+        // safety: `target.as_ref().linked_list_pointers` is a `UnsafeCell` that
+        // always returns a non-null pointer.
+        unsafe { NonNull::new_unchecked(target.as_ref().linked_list_pointers.get()) }
     }
 }

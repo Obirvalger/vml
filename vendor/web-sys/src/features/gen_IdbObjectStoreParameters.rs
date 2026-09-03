@@ -4,12 +4,45 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = IDBObjectStoreParameters)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "IDBObjectStoreParameters")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `IdbObjectStoreParameters` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
     pub type IdbObjectStoreParameters;
+    #[doc = "Get the `autoIncrement` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[wasm_bindgen(method, getter = "autoIncrement")]
+    pub fn get_auto_increment(this: &IdbObjectStoreParameters) -> Option<bool>;
+    #[doc = "Change the `autoIncrement` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[wasm_bindgen(method, setter = "autoIncrement")]
+    pub fn set_auto_increment(this: &IdbObjectStoreParameters, val: bool);
+    #[doc = "Get the `keyPath` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[wasm_bindgen(method, getter = "keyPath")]
+    pub fn get_key_path(this: &IdbObjectStoreParameters) -> ::wasm_bindgen::JsValue;
+    #[doc = "Change the `keyPath` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[wasm_bindgen(method, setter = "keyPath")]
+    pub fn set_key_path(this: &IdbObjectStoreParameters, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `keyPath` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[wasm_bindgen(method, setter = "keyPath")]
+    pub fn set_key_path_opt_str(this: &IdbObjectStoreParameters, val: Option<&str>);
+    #[doc = "Change the `keyPath` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[wasm_bindgen(method, setter = "keyPath")]
+    pub fn set_key_path_opt_str_sequence(
+        this: &IdbObjectStoreParameters,
+        val: Option<&::wasm_bindgen::JsValue>,
+    );
 }
 impl IdbObjectStoreParameters {
     #[doc = "Construct a new `IdbObjectStoreParameters`."]
@@ -20,38 +53,14 @@ impl IdbObjectStoreParameters {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `autoIncrement` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[deprecated = "Use `set_auto_increment()` instead."]
     pub fn auto_increment(&mut self, val: bool) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("autoIncrement"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_auto_increment(val);
         self
     }
-    #[doc = "Change the `keyPath` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[deprecated = "Use `set_key_path()` instead."]
     pub fn key_path(&mut self, val: Option<&::wasm_bindgen::JsValue>) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("keyPath"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_key_path(val.unwrap_or(&::wasm_bindgen::JsValue::NULL));
         self
     }
 }

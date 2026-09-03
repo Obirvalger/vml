@@ -4,12 +4,32 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = FileSystemReadWriteOptions)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "FileSystemReadWriteOptions")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `FileSystemReadWriteOptions` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `FileSystemReadWriteOptions`*"]
     pub type FileSystemReadWriteOptions;
+    #[doc = "Get the `at` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `FileSystemReadWriteOptions`*"]
+    #[wasm_bindgen(method, getter = "at")]
+    pub fn get_at(this: &FileSystemReadWriteOptions) -> Option<f64>;
+    #[doc = "Change the `at` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `FileSystemReadWriteOptions`*"]
+    #[wasm_bindgen(method, setter = "at")]
+    pub fn set_at(this: &FileSystemReadWriteOptions, val: f64);
+    #[doc = "Change the `at` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `FileSystemReadWriteOptions`*"]
+    #[wasm_bindgen(method, setter = "at")]
+    pub fn set_at_u32(this: &FileSystemReadWriteOptions, val: u32);
+    #[doc = "Change the `at` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `FileSystemReadWriteOptions`*"]
+    #[wasm_bindgen(method, setter = "at")]
+    pub fn set_at_f64(this: &FileSystemReadWriteOptions, val: f64);
 }
 impl FileSystemReadWriteOptions {
     #[doc = "Construct a new `FileSystemReadWriteOptions`."]
@@ -20,17 +40,9 @@ impl FileSystemReadWriteOptions {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `at` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `FileSystemReadWriteOptions`*"]
+    #[deprecated = "Use `set_at()` instead."]
     pub fn at(&mut self, val: f64) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("at"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_at(val);
         self
     }
 }

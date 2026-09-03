@@ -1,11 +1,15 @@
 //! This module contains functionality for compression.
 
+use ::core::convert::From;
+
 use crate::alloc::vec;
 use crate::alloc::vec::Vec;
 
 mod buffer;
 pub mod core;
+mod stored;
 pub mod stream;
+mod zlib;
 use self::core::*;
 
 /// How much processing the compressor should do to compress the data.
@@ -13,6 +17,7 @@ use self::core::*;
 /// of checks for matches in the hash chains and whether to use lazy or greedy parsing.
 #[repr(i32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum CompressionLevel {
     /// Don't do any compression, only output uncompressed blocks.
     NoCompression = 0,
@@ -26,6 +31,28 @@ pub enum CompressionLevel {
     DefaultLevel = 6,
     /// Use the default compression level.
     DefaultCompression = -1,
+}
+
+impl From<CompressionLevel> for i8 {
+    fn from(level: CompressionLevel) -> i8 {
+        level as i8
+    }
+}
+
+impl From<CompressionLevel> for i32 {
+    fn from(level: CompressionLevel) -> i32 {
+        level as i32
+    }
+}
+
+impl From<CompressionLevel> for u8 {
+    fn from(level: CompressionLevel) -> u8 {
+        if (level as i32) < 0 {
+            6
+        } else {
+            level as u8
+        }
+    }
 }
 
 // Missing safe rust analogue (this and mem-to-mem are quite similar)
@@ -184,6 +211,15 @@ mod test {
         let test_data = b"Deflate late";
 
         let res = compress_to_vec_inner(test_data, 1, 0, CompressionStrategy::HuffmanOnly as i32);
+        let d = decompress_to_vec(res.as_slice()).expect("Failed to decompress!");
+        assert_eq!(test_data, d.as_slice());
+    }
+
+    #[test]
+    fn compress_rle() {
+        let test_data = b"Deflate late";
+
+        let res = compress_to_vec_inner(test_data, 1, 0, CompressionStrategy::RLE as i32);
         let d = decompress_to_vec(res.as_slice()).expect("Failed to decompress!");
         assert_eq!(test_data, d.as_slice());
     }

@@ -92,3 +92,33 @@ pub mod issue_5243 {
         async fn foo() {}
     );
 }
+
+#[tokio::test(name = "a valid runtime name")]
+async fn test_macro_should_handle_the_name_if_provided() {
+    let handle = tokio::runtime::Handle::current();
+
+    assert_eq!("a valid runtime name", handle.name().unwrap())
+}
+
+#[cfg(tokio_unstable)]
+pub mod macro_rt_arg_unhandled_panic {
+    use tokio_test::assert_err;
+
+    #[tokio::test(flavor = "current_thread", unhandled_panic = "shutdown_runtime")]
+    #[should_panic]
+    async fn unhandled_panic_shutdown_runtime() {
+        let _ = tokio::spawn(async {
+            panic!("This panic should shutdown the runtime.");
+        })
+        .await;
+    }
+
+    #[tokio::test(flavor = "current_thread", unhandled_panic = "ignore")]
+    async fn unhandled_panic_ignore() {
+        let rt = tokio::spawn(async {
+            panic!("This panic should be forwarded to rt as an error.");
+        })
+        .await;
+        assert_err!(rt);
+    }
+}

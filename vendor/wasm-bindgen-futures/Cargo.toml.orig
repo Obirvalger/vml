@@ -2,33 +2,33 @@
 authors = ["The wasm-bindgen Developers"]
 description = "Bridging the gap between Rust Futures and JavaScript Promises"
 documentation = "https://docs.rs/wasm-bindgen-futures"
-homepage = "https://rustwasm.github.io/wasm-bindgen/"
+edition = "2021"
+homepage = "https://wasm-bindgen.github.io/wasm-bindgen/"
+include = ["/LICENSE-*", "/src"]
 license = "MIT OR Apache-2.0"
 name = "wasm-bindgen-futures"
-repository = "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/futures"
 readme = "./README.md"
-version = "0.4.42"
-edition = "2018"
-rust-version = "1.57"
+repository = "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures"
+rust-version = "1.77"
+version = "0.4.77"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-cfg-if = "1.0.0"
-js-sys = { path = "../js-sys", version = '0.3.69' }
-wasm-bindgen = { path = "../..", version = '0.2.92' }
-futures-core =  { version = '0.3.8', default-features = false, optional = true }
+js-sys = { path = "../js-sys", version = "=0.3.104", default-features = false }
+wasm-bindgen = { path = "../..", version = "=0.2.127", default-features = false }
 
 [features]
-futures-core-03-stream = ['futures-core']
-
-[target.'cfg(target_feature = "atomics")'.dependencies.web-sys]
-path = "../web-sys"
-version = "0.3.24"
-features = [
-    "MessageEvent",
-    "Worker",
-]
+default = ["std"]
+futures-core-03-stream = ["js-sys/futures-core-03-stream"]
+std = ["wasm-bindgen/std", "js-sys/std"]
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = { path = '../test', version = '0.3.42' }
-futures-channel-preview = { version = "0.3.0-alpha.18" }
-futures-lite = { version = "1.11.3", default-features = false }
+futures-channel = "0.3"
+futures-lite = { version = "2", default-features = false }
+wasm-bindgen-test = { path = '../test' }
+
+[lints]
+workspace = true

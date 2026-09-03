@@ -1,4 +1,4 @@
-//! HTTP/2 Server Connections
+//! HTTP/2 Server Connections.
 
 use std::error::Error as StdError;
 use std::fmt;
@@ -9,7 +9,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use crate::rt::{Read, Write};
-use futures_util::ready;
+use futures_core::ready;
 use pin_project_lite::pin_project;
 
 use crate::body::{Body, Incoming as IncomingBody};
@@ -116,7 +116,7 @@ impl<E> Builder<E> {
         Self {
             exec,
             timer: Time::Empty,
-            h2_builder: Default::default(),
+            h2_builder: proto::h2::server::Config::default(),
         }
     }
 
@@ -141,7 +141,7 @@ impl<E> Builder<E> {
     /// See <https://rustsec.org/advisories/RUSTSEC-2024-0003.html> for more information.
     #[cfg(feature = "http2")]
     #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
-    pub fn max_local_error_reset_streams(mut self, max: impl Into<Option<usize>>) -> Self {
+    pub fn max_local_error_reset_streams(&mut self, max: impl Into<Option<usize>>) -> &mut Self {
         self.h2_builder.max_local_error_reset_streams = max.into();
         self
     }
@@ -257,6 +257,18 @@ impl<E> Builder<E> {
     /// [extended CONNECT protocol]: https://datatracker.ietf.org/doc/html/rfc8441#section-4
     pub fn enable_connect_protocol(&mut self) -> &mut Self {
         self.h2_builder.enable_connect_protocol = true;
+        self
+    }
+
+    /// Sets the header table size.
+    ///
+    /// This setting informs the peer of the maximum size of the header compression
+    /// table used to encode header blocks, in octets. The encoder may select any value
+    /// equal to or less than the header table size specified by the sender.
+    ///
+    /// The default value of crate `h2` is 4,096.
+    pub fn header_table_size(&mut self, size: impl Into<Option<u32>>) -> &mut Self {
+        self.h2_builder.header_table_size = size.into();
         self
     }
 

@@ -4,12 +4,34 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = ClientQueryOptions)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "ClientQueryOptions")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `ClientQueryOptions` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ClientQueryOptions`*"]
     pub type ClientQueryOptions;
+    #[doc = "Get the `includeUncontrolled` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ClientQueryOptions`*"]
+    #[wasm_bindgen(method, getter = "includeUncontrolled")]
+    pub fn get_include_uncontrolled(this: &ClientQueryOptions) -> Option<bool>;
+    #[doc = "Change the `includeUncontrolled` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ClientQueryOptions`*"]
+    #[wasm_bindgen(method, setter = "includeUncontrolled")]
+    pub fn set_include_uncontrolled(this: &ClientQueryOptions, val: bool);
+    #[cfg(feature = "ClientType")]
+    #[doc = "Get the `type` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ClientQueryOptions`, `ClientType`*"]
+    #[wasm_bindgen(method, getter = "type")]
+    pub fn get_type(this: &ClientQueryOptions) -> Option<ClientType>;
+    #[cfg(feature = "ClientType")]
+    #[doc = "Change the `type` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ClientQueryOptions`, `ClientType`*"]
+    #[wasm_bindgen(method, setter = "type")]
+    pub fn set_type(this: &ClientQueryOptions, val: ClientType);
 }
 impl ClientQueryOptions {
     #[doc = "Construct a new `ClientQueryOptions`."]
@@ -20,35 +42,15 @@ impl ClientQueryOptions {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `includeUncontrolled` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ClientQueryOptions`*"]
+    #[deprecated = "Use `set_include_uncontrolled()` instead."]
     pub fn include_uncontrolled(&mut self, val: bool) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("includeUncontrolled"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_include_uncontrolled(val);
         self
     }
     #[cfg(feature = "ClientType")]
-    #[doc = "Change the `type` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ClientQueryOptions`, `ClientType`*"]
+    #[deprecated = "Use `set_type()` instead."]
     pub fn type_(&mut self, val: ClientType) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("type"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_type(val);
         self
     }
 }

@@ -5,7 +5,11 @@ use wasm_bindgen::prelude::*;
 #[cfg(web_sys_unstable_apis)]
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = GPUTexture , typescript_type = "GPUTexture")]
+    #[wasm_bindgen(
+        extends = "::js_sys::Object",
+        js_name = "GPUTexture",
+        typescript_type = "GPUTexture"
+    )]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `GpuTexture` class."]
     #[doc = ""]
@@ -14,10 +18,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type GpuTexture;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = width)]
+    #[wasm_bindgen(method, getter, js_class = "GPUTexture", js_name = "width")]
     #[doc = "Getter for the `width` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/width)"]
@@ -25,10 +29,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn width(this: &GpuTexture) -> u32;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = height)]
+    #[wasm_bindgen(method, getter, js_class = "GPUTexture", js_name = "height")]
     #[doc = "Getter for the `height` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/height)"]
@@ -36,10 +40,15 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn height(this: &GpuTexture) -> u32;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = depthOrArrayLayers)]
+    #[wasm_bindgen(
+        method,
+        getter,
+        js_class = "GPUTexture",
+        js_name = "depthOrArrayLayers"
+    )]
     #[doc = "Getter for the `depthOrArrayLayers` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/depthOrArrayLayers)"]
@@ -47,10 +56,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn depth_or_array_layers(this: &GpuTexture) -> u32;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = mipLevelCount)]
+    #[wasm_bindgen(method, getter, js_class = "GPUTexture", js_name = "mipLevelCount")]
     #[doc = "Getter for the `mipLevelCount` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/mipLevelCount)"]
@@ -58,10 +67,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn mip_level_count(this: &GpuTexture) -> u32;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = sampleCount)]
+    #[wasm_bindgen(method, getter, js_class = "GPUTexture", js_name = "sampleCount")]
     #[doc = "Getter for the `sampleCount` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/sampleCount)"]
@@ -69,11 +78,11 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn sample_count(this: &GpuTexture) -> u32;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "GpuTextureDimension")]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = dimension)]
+    #[wasm_bindgen(method, getter, js_class = "GPUTexture", js_name = "dimension")]
     #[doc = "Getter for the `dimension` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/dimension)"]
@@ -81,11 +90,11 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`, `GpuTextureDimension`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn dimension(this: &GpuTexture) -> GpuTextureDimension;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "GpuTextureFormat")]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = format)]
+    #[wasm_bindgen(method, getter, js_class = "GPUTexture", js_name = "format")]
     #[doc = "Getter for the `format` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/format)"]
@@ -93,10 +102,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`, `GpuTextureFormat`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn format(this: &GpuTexture) -> GpuTextureFormat;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = usage)]
+    #[wasm_bindgen(method, getter, js_class = "GPUTexture", js_name = "usage")]
     #[doc = "Getter for the `usage` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/usage)"]
@@ -104,10 +113,26 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn usage(this: &GpuTexture) -> u32;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , getter , js_class = "GPUTexture" , js_name = label)]
+    #[wasm_bindgen(
+        method,
+        getter,
+        js_class = "GPUTexture",
+        js_name = "textureBindingViewDimension"
+    )]
+    #[doc = "Getter for the `textureBindingViewDimension` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/textureBindingViewDimension)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn texture_binding_view_dimension(this: &GpuTexture) -> ::wasm_bindgen::JsValue;
+    #[cfg(web_sys_unstable_apis)]
+    #[wasm_bindgen(method, getter, js_class = "GPUTexture", js_name = "label")]
     #[doc = "Getter for the `label` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/label)"]
@@ -115,10 +140,10 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn label(this: &GpuTexture) -> String;
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn label(this: &GpuTexture) -> ::alloc::string::String;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (structural , method , setter , js_class = "GPUTexture" , js_name = label)]
+    #[wasm_bindgen(method, setter, js_class = "GPUTexture", js_name = "label")]
     #[doc = "Setter for the `label` field of this object."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/label)"]
@@ -126,11 +151,11 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn set_label(this: &GpuTexture, value: &str);
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "GpuTextureView")]
-    # [wasm_bindgen (method , structural , js_class = "GPUTexture" , js_name = createView)]
+    #[wasm_bindgen(catch, method, js_class = "GPUTexture", js_name = "createView")]
     #[doc = "The `createView()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/createView)"]
@@ -138,11 +163,11 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`, `GpuTextureView`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn create_view(this: &GpuTexture) -> GpuTextureView;
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn create_view(this: &GpuTexture) -> Result<GpuTextureView, JsValue>;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(all(feature = "GpuTextureView", feature = "GpuTextureViewDescriptor",))]
-    # [wasm_bindgen (method , structural , js_class = "GPUTexture" , js_name = createView)]
+    #[wasm_bindgen(catch, method, js_class = "GPUTexture", js_name = "createView")]
     #[doc = "The `createView()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/createView)"]
@@ -150,13 +175,13 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`, `GpuTextureView`, `GpuTextureViewDescriptor`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn create_view_with_descriptor(
         this: &GpuTexture,
         descriptor: &GpuTextureViewDescriptor,
-    ) -> GpuTextureView;
+    ) -> Result<GpuTextureView, JsValue>;
     #[cfg(web_sys_unstable_apis)]
-    # [wasm_bindgen (method , structural , js_class = "GPUTexture" , js_name = destroy)]
+    #[wasm_bindgen(method, js_class = "GPUTexture")]
     #[doc = "The `destroy()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/GPUTexture/destroy)"]
@@ -164,6 +189,6 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `GpuTexture`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn destroy(this: &GpuTexture);
 }

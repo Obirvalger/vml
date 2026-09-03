@@ -8,6 +8,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
 
 use wasm_streams::writable::*;
+use wasm_streams::WritableStream;
 
 use crate::js::*;
 use crate::util::*;
@@ -198,7 +199,7 @@ async fn test_writable_stream_writer_into_async_write() {
         let writer = writable.get_writer();
         let mut async_write = writer.into_async_write();
 
-        async_write.write(&[1, 2, 3]).await.unwrap();
+        async_write.write_all(&[1, 2, 3]).await.unwrap();
     }
 
     assert_eq!(
@@ -281,4 +282,23 @@ async fn test_writable_stream_from_async_write() {
     let mut dest = vec![];
     assert_eq!(async_read.read_to_end(&mut dest).await.unwrap(), 6);
     assert_eq!(dest, [1, 2, 3, 4, 5, 6]);
+}
+
+#[wasm_bindgen_test]
+async fn test_into_sink_errors_after_failure() {
+    let failing_sink = FailingSink::new();
+    let writable = WritableStream::from_sink(failing_sink);
+    let mut sink = writable.into_sink();
+
+    // First write should fail
+    let result1 = sink.send(JsValue::from(1)).await;
+    assert!(result1.is_err(), "First write should fail");
+
+    // After an error, the stream should be in an errored state and
+    // reject all subsequent operations.
+    let result2 = sink.send(JsValue::from(2)).await;
+    assert!(
+        result2.is_err(),
+        "Second write should fail because stream is errored, but got Ok(())"
+    );
 }

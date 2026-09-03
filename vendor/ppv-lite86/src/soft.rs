@@ -5,9 +5,13 @@ use crate::{vec128_storage, vec256_storage, vec512_storage};
 use core::marker::PhantomData;
 use core::ops::*;
 
-#[derive(Copy, Clone, Default)]
-#[allow(non_camel_case_types)]
-pub struct x2<W, G>(pub [W; 2], PhantomData<G>);
+zerocopy::cryptocorrosion_derive_traits! {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Default)]
+    #[allow(non_camel_case_types)]
+    pub struct x2<W, G>(pub [W; 2], PhantomData<G>);
+}
+
 impl<W, G> x2<W, G> {
     #[inline(always)]
     pub fn new(xs: [W; 2]) -> Self {
@@ -220,9 +224,13 @@ impl<W: Copy + LaneWords4, G: Copy> LaneWords4 for x2<W, G> {
     }
 }
 
-#[derive(Copy, Clone, Default)]
-#[allow(non_camel_case_types)]
-pub struct x4<W>(pub [W; 4]);
+zerocopy::cryptocorrosion_derive_traits! {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Default)]
+    #[allow(non_camel_case_types)]
+    pub struct x4<W>(pub [W; 4]);
+}
+
 impl<W> x4<W> {
     #[inline(always)]
     pub fn new(xs: [W; 4]) -> Self {

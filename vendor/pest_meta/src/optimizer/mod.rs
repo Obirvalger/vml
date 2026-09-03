@@ -24,7 +24,7 @@ mod concatenator;
 mod factorizer;
 mod lister;
 mod restorer;
-mod rotater;
+mod rotator;
 mod skipper;
 mod unroller;
 
@@ -33,7 +33,7 @@ pub fn optimize(rules: Vec<Rule>) -> Vec<OptimizedRule> {
     let map = to_hash_map(&rules);
     let optimized: Vec<OptimizedRule> = rules
         .into_iter()
-        .map(rotater::rotate)
+        .map(rotator::rotate)
         .map(|rule| skipper::skip(rule, &map))
         .map(unroller::unroll)
         .map(concatenator::concatenate)
@@ -69,6 +69,8 @@ fn rule_to_optimized_rule(rule: Rule) -> OptimizedRule {
             Expr::Rep(expr) => OptimizedExpr::Rep(Box::new(to_optimized(*expr))),
             Expr::Skip(strings) => OptimizedExpr::Skip(strings),
             Expr::Push(expr) => OptimizedExpr::Push(Box::new(to_optimized(*expr))),
+            #[cfg(feature = "grammar-extras")]
+            Expr::PushLiteral(string) => OptimizedExpr::PushLiteral(string),
             #[cfg(feature = "grammar-extras")]
             Expr::NodeTag(expr, tag) => OptimizedExpr::NodeTag(Box::new(to_optimized(*expr)), tag),
             #[cfg(feature = "grammar-extras")]
@@ -118,7 +120,7 @@ pub struct OptimizedRule {
 /// There may be non-breaking changes to the meta-grammar
 /// between minor versions. Those non-breaking changes, however,
 /// may translate into semver-breaking changes due to the additional variants
-/// propaged from the `Rule` enum. This is a known issue and will be fixed in the
+/// propagated from the `Rule` enum. This is a known issue and will be fixed in the
 /// future (e.g. by increasing MSRV and non_exhaustive annotations).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OptimizedExpr {
@@ -151,6 +153,9 @@ pub enum OptimizedExpr {
     Skip(Vec<String>),
     /// Matches an expression and pushes it to the stack, e.g. `push(e)`
     Push(Box<OptimizedExpr>),
+    /// Pushes a literal string to the stack, e.g. `push_literal("a")`
+    #[cfg(feature = "grammar-extras")]
+    PushLiteral(String),
     /// Matches an expression and assigns a label to it, e.g. #label = exp
     #[cfg(feature = "grammar-extras")]
     NodeTag(Box<OptimizedExpr>, String),
@@ -325,6 +330,8 @@ impl core::fmt::Display for OptimizedExpr {
                 write!(f, "(!({}) ~ ANY)*", strings)
             }
             OptimizedExpr::Push(expr) => write!(f, "PUSH({})", expr),
+            #[cfg(feature = "grammar-extras")]
+            OptimizedExpr::PushLiteral(s) => write!(f, "PUSH_LITERAL({:?})", s),
             #[cfg(feature = "grammar-extras")]
             OptimizedExpr::NodeTag(expr, tag) => {
                 write!(f, "(#{} = {})", tag, expr)
@@ -1083,6 +1090,15 @@ mod tests {
             assert_eq!(
                 OptimizedExpr::Push(Box::new(OptimizedExpr::Ident("e".to_owned()))).to_string(),
                 "PUSH(e)",
+            );
+        }
+
+        #[test]
+        #[cfg(feature = "grammar-extras")]
+        fn push_literal() {
+            assert_eq!(
+                OptimizedExpr::PushLiteral("a \" b".to_owned()).to_string(),
+                r#"PUSH_LITERAL("a \" b")"#,
             );
         }
 

@@ -1,3 +1,75 @@
+# 0.1.36 (December 18, 2025)
+
+- Fix `record_all` panic ([#3432])
+
+[#3432]: https://github.com/tokio-rs/tracing/pull/3432
+
+# 0.1.35 (November 26, 2025)
+
+### Added
+
+- Switch to unconditional `no_std` ([#3323])
+- Improve code generation at trace points significantly ([#3398])
+
+### Fixed
+
+- Add missing `dyn` keyword in `Visit` documentation code sample ([#3387])
+
+### Documented
+
+- Add favicon for extra pretty docs ([#3351])
+
+[#3323]: https://github.com/tokio-rs/tracing/pull/#3323
+[#3351]: https://github.com/tokio-rs/tracing/pull/#3351
+[#3387]: https://github.com/tokio-rs/tracing/pull/#3387
+[#3398]: https://github.com/tokio-rs/tracing/pull/#3398
+
+# 0.1.34 (June 6, 2025)
+
+### Changed
+
+- Bump MSRV to 1.65 ([#3033])
+
+### Fixed
+
+- Do not compare references to pointers to compare pointers ([#3236])
+
+[#3033]: https://github.com/tokio-rs/tracing/pull/3033
+[#3236]: https://github.com/tokio-rs/tracing/pull/3236
+
+# 0.1.33 (November 25, 2024)
+
+### Added
+
+- Add index API for `Field` ([#2820])
+- allow `&[u8]` to be recorded as event/span field ([#2954])
+
+### Changed
+
+- Bump MSRV to 1.63 ([#2793])
+- Use const `thread_local`s when possible ([#2838])
+
+### Fixed
+
+- Fix missed `register_callsite` error ([#2938])
+- Do not add `valuable/std` feature as dependency unless `valuable` is used ([#3002])
+- prefix macro calls with ::core to avoid clashing with local macros ([#3024])
+
+### Documented
+
+- Fix incorrect (incorrectly updated) docs for LevelFilter ([#2767])
+
+Thanks to new contributor @maddiemort for contributing to this release!
+
+[#2767]: https://github.com/tokio-rs/tracing/pull/2767
+[#2793]: https://github.com/tokio-rs/tracing/pull/2793
+[#2820]: https://github.com/tokio-rs/tracing/pull/2820
+[#2838]: https://github.com/tokio-rs/tracing/pull/2838
+[#2938]: https://github.com/tokio-rs/tracing/pull/2938
+[#2954]: https://github.com/tokio-rs/tracing/pull/2954
+[#3002]: https://github.com/tokio-rs/tracing/pull/3002
+[#3024]: https://github.com/tokio-rs/tracing/pull/3024
+
 # 0.1.32 (October 13, 2023)
 
 ### Documented

@@ -11,9 +11,15 @@
 
 [package]
 edition = "2018"
-rust-version = "1.56"
+rust-version = "1.71"
 name = "futures-channel"
-version = "0.3.30"
+version = "0.3.34"
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = """
 Channels for asynchronous communication using futures-rs.
 """
@@ -29,17 +35,6 @@ rustdoc-args = [
     "docsrs",
 ]
 
-[dependencies.futures-core]
-version = "0.3.30"
-default-features = false
-
-[dependencies.futures-sink]
-version = "0.3.30"
-optional = true
-default-features = false
-
-[dev-dependencies]
-
 [features]
 alloc = ["futures-core/alloc"]
 cfg-target-has-atomic = []
@@ -50,3 +45,53 @@ std = [
     "futures-core/std",
 ]
 unstable = []
+
+[lib]
+name = "futures_channel"
+path = "src/lib.rs"
+
+[[test]]
+name = "channel"
+path = "tests/channel.rs"
+
+[[test]]
+name = "mpsc"
+path = "tests/mpsc.rs"
+
+[[test]]
+name = "mpsc-close"
+path = "tests/mpsc-close.rs"
+
+[[test]]
+name = "mpsc-size_hint"
+path = "tests/mpsc-size_hint.rs"
+
+[[test]]
+name = "oneshot"
+path = "tests/oneshot.rs"
+
+[[bench]]
+name = "sync_mpsc"
+path = "benches/sync_mpsc.rs"
+
+[dependencies.futures-core]
+version = "0.3.34"
+default-features = false
+
+[dependencies.futures-sink]
+version = "0.3.34"
+optional = true
+default-features = false
+
+[dev-dependencies]
+
+[lints.rust]
+missing_debug_implementations = "warn"
+rust_2018_idioms = "warn"
+single_use_lifetimes = "warn"
+unreachable_pub = "warn"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(futures_sanitizer)"]

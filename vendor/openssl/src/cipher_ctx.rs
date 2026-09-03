@@ -52,10 +52,10 @@
 
 use crate::cipher::CipherRef;
 use crate::error::ErrorStack;
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 use crate::pkey::{HasPrivate, HasPublic, PKey, PKeyRef};
 use crate::{cvt, cvt_p};
-#[cfg(ossl102)]
+#[cfg(ossl110)]
 use bitflags::bitflags;
 use cfg_if::cfg_if;
 use foreign_types::{ForeignType, ForeignTypeRef};
@@ -82,7 +82,7 @@ foreign_type_and_impl_send_sync! {
     pub struct CipherCtxRef;
 }
 
-#[cfg(ossl102)]
+#[cfg(ossl110)]
 bitflags! {
     /// Flags for `EVP_CIPHER_CTX`.
     pub struct CipherCtxFlags : c_int {
@@ -202,7 +202,7 @@ impl CipherCtxRef {
     /// Panics if `pub_keys` is not the same size as `encrypted_keys`, the IV buffer is smaller than the cipher's IV
     /// size, or if an IV is provided before the cipher.
     #[corresponds(EVP_SealInit)]
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn seal_init<T>(
         &mut self,
         type_: Option<&CipherRef>,
@@ -259,7 +259,7 @@ impl CipherCtxRef {
     /// Panics if the IV buffer is smaller than the cipher's required IV size or if the IV is provided before the
     /// cipher.
     #[corresponds(EVP_OpenInit)]
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn open_init<T>(
         &mut self,
         type_: Option<&CipherRef>,
@@ -296,6 +296,38 @@ impl CipherCtxRef {
         }
     }
 
+    #[cfg(not(any(boringssl, awslc)))]
+    fn is_wrap_mode(&self) -> bool {
+        unsafe {
+            let cipher = EVP_CIPHER_CTX_get0_cipher(self.as_ptr());
+            if cipher.is_null() {
+                return false;
+            }
+            ffi::EVP_CIPHER_flags(cipher) & ffi::EVP_CIPH_MODE == ffi::EVP_CIPH_WRAP_MODE
+        }
+    }
+
+    #[cfg(any(boringssl, awslc))]
+    fn is_wrap_mode(&self) -> bool {
+        false
+    }
+
+    fn cipher_update_output_size(&self, input_len: usize) -> usize {
+        // Wrap-mode ciphers have EVP_CIPH_FLAG_CUSTOM_CIPHER set and emit their
+        // entire output (plaintext rounded up to 8 bytes + 8-byte IV) in a
+        // single update call, so the usual `inlen + block_size` bound is too
+        // small for key-wrap-with-padding inputs that aren't already a
+        // multiple of 8.
+        if self.is_wrap_mode() {
+            return input_len.saturating_add(7) / 8 * 8 + 8;
+        }
+        let mut block_size = self.block_size();
+        if block_size == 1 {
+            block_size = 0;
+        }
+        input_len + block_size
+    }
+
     /// Returns the block size of the context's cipher.
     ///
     /// Stream ciphers will report a block size of 1.
@@ -328,12 +360,8 @@ impl CipherCtxRef {
     ///
     /// Panics if the context has not been initialized with a cipher or if the buffer is smaller than the cipher's key
     /// length.
-    ///
-    /// This corresponds to [`EVP_CIPHER_CTX_rand_key`].
-    ///
-    /// [`EVP_CIPHER_CTX_rand_key`]: https://www.openssl.org/docs/manmaster/man3/EVP_CIPHER_CTX_rand_key.html
     #[corresponds(EVP_CIPHER_CTX_rand_key)]
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     pub fn rand_key(&self, buf: &mut [u8]) -> Result<(), ErrorStack> {
         assert!(buf.len() >= self.key_length());
 
@@ -530,9 +558,9 @@ impl CipherCtxRef {
 
     /// Set ctx flags.
     ///
-    /// This function is currently used to enable AES key wrap feature supported by OpenSSL 1.0.2 or newer.
+    /// This function is currently used to enable AES key wrap feature supported by OpenSSL 1.1.0 or newer.
     #[corresponds(EVP_CIPHER_CTX_set_flags)]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn set_flags(&mut self, flags: CipherCtxFlags) {
         unsafe {
             ffi::EVP_CIPHER_CTX_set_flags(self.as_ptr(), flags.bits());
@@ -556,11 +584,7 @@ impl CipherCtxRef {
         output: Option<&mut [u8]>,
     ) -> Result<usize, ErrorStack> {
         if let Some(output) = &output {
-            let mut block_size = self.block_size();
-            if block_size == 1 {
-                block_size = 0;
-            }
-            let min_output_size = input.len() + block_size;
+            let min_output_size = self.cipher_update_output_size(input.len());
             assert!(
                 output.len() >= min_output_size,
                 "Output buffer size should be at least {} bytes.",
@@ -616,7 +640,7 @@ impl CipherCtxRef {
         output: &mut Vec<u8>,
     ) -> Result<usize, ErrorStack> {
         let base = output.len();
-        output.resize(base + input.len() + self.block_size(), 0);
+        output.resize(base + self.cipher_update_output_size(input.len()), 0);
         let len = self.cipher_update(input, Some(&mut output[base..]))?;
         output.truncate(base + len);
 
@@ -643,14 +667,12 @@ impl CipherCtxRef {
         inlen: usize,
     ) -> Result<usize, ErrorStack> {
         assert!(inlen <= data.len(), "Input size may not exceed buffer size");
-        let block_size = self.block_size();
-        if block_size != 1 {
-            assert!(
-                data.len() >= inlen + block_size,
-                "Output buffer size must be at least {} bytes.",
-                inlen + block_size
-            );
-        }
+        let min_output_size = self.cipher_update_output_size(inlen);
+        assert!(
+            data.len() >= min_output_size,
+            "Output buffer size must be at least {} bytes.",
+            min_output_size
+        );
 
         let inlen = c_int::try_from(inlen).unwrap();
         let mut outlen = 0;
@@ -732,11 +754,11 @@ impl CipherCtxRef {
 mod test {
     use super::*;
     use crate::{cipher::Cipher, rand::rand_bytes};
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     use std::slice;
 
     #[test]
-    #[cfg(not(boringssl))]
+    #[cfg(not(any(boringssl, awslc)))]
     fn seal_open() {
         let private_pem = include_bytes!("../test/rsa.pem");
         let public_pem = include_bytes!("../test/rsa.pem.pub");
@@ -813,8 +835,173 @@ mod test {
         aes_128_cbc(cipher);
     }
 
+    #[cfg(not(boringssl))]
+    #[test]
+    fn default_aes_128_ccm() {
+        // from https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/mac/ccmtestvectors.zip
+        let cipher = Cipher::aes_128_ccm();
+        aes_ccm(
+            cipher,
+            "26511fb51fcfa75cb4b44da75a6e5a0e",
+            "ea98ec44f5a86715014783172e",
+            "4da40b80579c1d9a5309f7efecb7c059a2f914511ca5fc10",
+            "e4692b9f06b666c7451b146c8aeb07a6e30c629d28065c3dde5940325b14b810",
+            "1bf0ba0ebb20d8edba59f29a9371750c9c714078f73c335d",
+            "2f1322ac69b848b001476323aed84c47",
+        );
+    }
+
+    #[cfg(not(boringssl))]
+    #[test]
+    fn default_aes_192_ccm() {
+        // from https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/mac/ccmtestvectors.zip
+        let cipher = Cipher::aes_192_ccm();
+        aes_ccm(
+            cipher,
+            "26511fb51fcfa75cb4b44da75a6e5a0eb8d9c8f3b906f886",
+            "ea98ec44f5a86715014783172e",
+            "4da40b80579c1d9a5309f7efecb7c059a2f914511ca5fc10",
+            "e4692b9f06b666c7451b146c8aeb07a6e30c629d28065c3dde5940325b14b810",
+            "30c154c616946eccc2e241d336ad33720953e449a0e6b0f0",
+            "dbf8e9464909bdf337e48093c082a10b",
+        );
+    }
+
+    #[cfg(not(boringssl))]
+    #[test]
+    fn default_aes_256_ccm() {
+        // from https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/mac/ccmtestvectors.zip
+        let cipher = Cipher::aes_256_ccm();
+        aes_ccm(
+            cipher,
+            "314a202f836f9f257e22d8c11757832ae5131d357a72df88f3eff0ffcee0da4e",
+            "3542fbe0f59a6d5f3abf619b7d",
+            "c5b3d71312ea14f2f8fae5bd1a453192b6604a45db75c5ed",
+            "dd4531f158a2fa3bc8a339f770595048f4a42bc1b03f2e824efc6ba4985119d8",
+            "39c2e8f6edfe663b90963b98eb79e2d4f7f28a5053ae8881",
+            "567a6b4426f1667136bed4a5e32a2bc1",
+        );
+    }
+
+    #[cfg(not(boringssl))]
+    fn aes_ccm(
+        cipher: &CipherRef,
+        key: &'static str,
+        iv: &'static str,
+        pt: &'static str,
+        aad: &'static str,
+        ct: &'static str,
+        tag: &'static str,
+    ) {
+        let key = hex::decode(key).unwrap();
+        let iv = hex::decode(iv).unwrap();
+        let pt = hex::decode(pt).unwrap();
+        let ct = hex::decode(ct).unwrap();
+        let aad = hex::decode(aad).unwrap();
+        let tag = hex::decode(tag).unwrap();
+
+        let mut ctx = CipherCtx::new().unwrap();
+
+        ctx.encrypt_init(Some(cipher), None, None).unwrap();
+        ctx.set_iv_length(iv.len()).unwrap();
+        ctx.set_tag_length(tag.len()).unwrap();
+        ctx.encrypt_init(None, Some(&key), Some(&iv)).unwrap();
+        ctx.set_data_len(pt.len()).unwrap();
+
+        let mut buf = vec![];
+        ctx.cipher_update(&aad, None).unwrap();
+        ctx.cipher_update_vec(&pt, &mut buf).unwrap();
+        ctx.cipher_final_vec(&mut buf).unwrap();
+        assert_eq!(buf, ct);
+
+        let mut out_tag = vec![0u8; tag.len()];
+        ctx.tag(&mut out_tag).unwrap();
+        assert_eq!(tag, out_tag);
+
+        ctx.decrypt_init(Some(cipher), None, None).unwrap();
+        ctx.set_iv_length(iv.len()).unwrap();
+        ctx.set_tag(&tag).unwrap();
+        ctx.decrypt_init(None, Some(&key), Some(&iv)).unwrap();
+        ctx.set_data_len(pt.len()).unwrap();
+
+        let mut buf = vec![];
+        ctx.cipher_update(&aad, None).unwrap();
+        ctx.cipher_update_vec(&ct, &mut buf).unwrap();
+        // Some older libraries don't support calling EVP_CipherFinal/EVP_DecryptFinal for CCM
+        // https://wiki.openssl.org/index.php/EVP_Authenticated_Encryption_and_Decryption#Authenticated_Decryption_using_CCM_mode
+        #[cfg(any(ossl111, awslc, boringssl))]
+        ctx.cipher_final_vec(&mut buf).unwrap();
+
+        assert_eq!(buf, pt);
+    }
+
+    #[cfg(not(any(boringssl, awslc)))]
+    #[test]
+    fn default_aes_128_xts() {
+        // https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/aes/XTSTestVectors.zip
+        let cipher = Cipher::aes_128_xts();
+        aes_xts(
+            cipher,
+            "a1b90cba3f06ac353b2c343876081762090923026e91771815f29dab01932f2f",
+            "4faef7117cda59c66e4b92013e768ad5",
+            "ebabce95b14d3c8d6fb350390790311c",
+            "778ae8b43cb98d5a825081d5be471c63",
+        );
+    }
+
+    #[cfg(not(boringssl))]
+    #[test]
+    fn default_aes_256_xts() {
+        // https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/aes/XTSTestVectors.zip
+        let cipher = Cipher::aes_256_xts();
+        aes_xts(cipher, "1ea661c58d943a0e4801e42f4b0947149e7f9f8e3e68d0c7505210bd311a0e7cd6e13ffdf2418d8d1911c004cda58da3d619b7e2b9141e58318eea392cf41b08", "adf8d92627464ad2f0428e84a9f87564", "2eedea52cd8215e1acc647e810bbc3642e87287f8d2e57e36c0a24fbc12a202e", "cbaad0e2f6cea3f50b37f934d46a9b130b9d54f07e34f36af793e86f73c6d7db");
+    }
+
+    #[cfg(not(boringssl))]
+    fn aes_xts(
+        cipher: &CipherRef,
+        key: &'static str,
+        i: &'static str,
+        pt: &'static str,
+        ct: &'static str,
+    ) {
+        let key = hex::decode(key).unwrap();
+        let i = hex::decode(i).unwrap();
+        let pt = hex::decode(pt).unwrap();
+        let ct = hex::decode(ct).unwrap();
+
+        let mut ctx = CipherCtx::new().unwrap();
+        ctx.encrypt_init(Some(cipher), Some(&key), Some(&i))
+            .unwrap();
+        let mut buf = vec![];
+        ctx.cipher_update_vec(&pt, &mut buf).unwrap();
+        ctx.cipher_final_vec(&mut buf).unwrap();
+
+        assert_eq!(ct, buf);
+
+        ctx.decrypt_init(Some(cipher), Some(&key), Some(&i))
+            .unwrap();
+        let mut buf = vec![];
+        ctx.cipher_update_vec(&ct, &mut buf).unwrap();
+        ctx.cipher_final_vec(&mut buf).unwrap();
+
+        assert_eq!(pt, buf);
+    }
+
     #[test]
     fn test_stream_ciphers() {
+        #[cfg(not(boringssl))]
+        {
+            test_stream_cipher(Cipher::aes_128_cfb1());
+            test_stream_cipher(Cipher::aes_128_cfb8());
+            test_stream_cipher(Cipher::aes_128_cfb128());
+            test_stream_cipher(Cipher::aes_192_cfb1());
+            test_stream_cipher(Cipher::aes_192_cfb8());
+            test_stream_cipher(Cipher::aes_192_cfb128());
+            test_stream_cipher(Cipher::aes_256_cfb1());
+            test_stream_cipher(Cipher::aes_256_cfb8());
+            test_stream_cipher(Cipher::aes_256_cfb128());
+        }
         test_stream_cipher(Cipher::aes_192_ctr());
         test_stream_cipher(Cipher::aes_256_ctr());
     }
@@ -950,7 +1137,7 @@ mod test {
             .unwrap();
     }
 
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn cipher_wrap_test(cipher: &CipherRef, pt: &str, ct: &str, key: &str, iv: Option<&str>) {
         let pt = hex::decode(pt).unwrap();
         let key = hex::decode(key).unwrap();
@@ -983,7 +1170,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes128_wrap() {
         let pt = "00112233445566778899aabbccddeeff";
         let ct = "7940ff694448b5bb5139c959a4896832e55d69aa04daa27e";
@@ -994,7 +1181,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes128_wrap_default_iv() {
         let pt = "00112233445566778899aabbccddeeff";
         let ct = "38f1215f0212526f8a70b51955b9fbdc9fe3041d9832306e";
@@ -1025,7 +1212,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes192_wrap() {
         let pt = "9f6dee187d35302116aecbfd059657efd9f7589c4b5e7f5b";
         let ct = "83b89142dfeeb4871e078bfb81134d33e23fedc19b03a1cf689973d3831b6813";
@@ -1036,7 +1223,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes192_wrap_default_iv() {
         let pt = "9f6dee187d35302116aecbfd059657efd9f7589c4b5e7f5b";
         let ct = "c02c2cf11505d3e4851030d5534cbf5a1d7eca7ba8839adbf239756daf1b43e6";
@@ -1067,7 +1254,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes256_wrap() {
         let pt = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51";
         let ct = "cc05da2a7f56f7dd0c144231f90bce58648fa20a8278f5a6b7d13bba6aa57a33229d4333866b7fd6";
@@ -1078,7 +1265,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes256_wrap_default_iv() {
         let pt = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51";
         let ct = "0b24f068b50e52bc6987868411c36e1b03900866ed12af81eb87cef70a8d1911731c1d7abf789d88";
@@ -1106,5 +1293,45 @@ mod test {
         let key = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
 
         cipher_wrap_test(Cipher::aes_256_wrap_pad(), pt, ct, key, None);
+    }
+
+    #[test]
+    #[cfg(ossl110)]
+    fn test_aes_wrap_pad_cipher_update_vec_buffer_size() {
+        let cipher = Cipher::aes_256_wrap_pad();
+        let key = [0u8; 32];
+        let iv = [0u8; 4];
+        let pt = [0u8; 9];
+
+        let mut ctx = CipherCtx::new().unwrap();
+        ctx.set_flags(CipherCtxFlags::FLAG_WRAP_ALLOW);
+        ctx.encrypt_init(Some(cipher), Some(&key), Some(&iv))
+            .unwrap();
+
+        let mut out = vec![];
+        let len = ctx.cipher_update_vec(&pt, &mut out).unwrap();
+        // The vec must be large enough to fit the amount of data we wrote.
+        assert!(out.capacity() >= len);
+        assert_eq!(len, 24);
+    }
+
+    #[test]
+    #[cfg(ossl110)]
+    #[should_panic(expected = "Output buffer size must be at least 24 bytes.")]
+    fn test_aes_wrap_pad_cipher_update_inplace_buffer_size() {
+        let cipher = Cipher::aes_256_wrap_pad();
+        let key = [0u8; 32];
+        let iv = [0u8; 4];
+
+        let mut ctx = CipherCtx::new().unwrap();
+        ctx.set_flags(CipherCtxFlags::FLAG_WRAP_ALLOW);
+        ctx.encrypt_init(Some(cipher), Some(&key), Some(&iv))
+            .unwrap();
+
+        // 9 bytes of input would produce 24 bytes of wrap-pad output, but the
+        // previous bound (inlen + block_size = 17) would have let this through
+        // and let OpenSSL write past the end of the slice.
+        let mut buf = [0u8; 17];
+        let _ = ctx.cipher_update_inplace(&mut buf, 9);
     }
 }

@@ -17,8 +17,6 @@
  *    log2(x) = (f - f*f/2 + r)/log(2) + k
  */
 
-use core::f64;
-
 const IVLN2HI: f64 = 1.44269504072144627571e+00; /* 0x3ff71547, 0x65200000 */
 const IVLN2LO: f64 = 1.67517131648865118353e-10; /* 0x3de705fc, 0x2eefa200 */
 const LG1: f64 = 6.666666666666735130e-01; /* 3FE55555 55555593 */
@@ -29,7 +27,8 @@ const LG5: f64 = 1.818357216161805012e-01; /* 3FC74664 96CB03DE */
 const LG6: f64 = 1.531383769920937332e-01; /* 3FC39A09 D078C69F */
 const LG7: f64 = 1.479819860511658591e-01; /* 3FC2F112 DF3E5244 */
 
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+/// The base 2 logarithm of `x` (f64).
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn log2(mut x: f64) -> f64 {
     let x1p54 = f64::from_bits(0x4350000000000000); // 0x1p54 === 2 ^ 54
 
@@ -74,7 +73,7 @@ pub fn log2(mut x: f64) -> f64 {
     hx += 0x3ff00000 - 0x3fe6a09e;
     k += (hx >> 20) as i32 - 0x3ff;
     hx = (hx & 0x000fffff) + 0x3fe6a09e;
-    ui = (hx as u64) << 32 | (ui & 0xffffffff);
+    ui = ((hx as u64) << 32) | (ui & 0xffffffff);
     x = f64::from_bits(ui);
 
     f = x - 1.0;

@@ -11,9 +11,9 @@ use futures_channel::{mpsc, oneshot};
     any(feature = "http1", feature = "http2"),
     any(feature = "client", feature = "server")
 ))]
-use futures_util::ready;
+use futures_core::ready;
 #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-use futures_util::{stream::FusedStream, Stream}; // for mpsc::Receiver
+use futures_core::{stream::FusedStream, Stream}; // for mpsc::Receiver
 #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
 use http::HeaderMap;
 use http_body::{Body, Frame, SizeHint};
@@ -103,6 +103,7 @@ impl Incoming {
     /// Create a `Body` stream with an associated sender half.
     ///
     /// Useful when wanting to stream chunks from another thread.
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[inline]
     #[cfg(test)]
     pub(crate) fn channel() -> (Sender, Incoming) {
@@ -171,15 +172,12 @@ impl Incoming {
 
     #[cfg(feature = "ffi")]
     pub(crate) fn as_ffi_mut(&mut self) -> &mut crate::ffi::UserBody {
-        match self.kind {
-            Kind::Ffi(ref mut body) => return body,
-            _ => {
-                self.kind = Kind::Ffi(crate::ffi::UserBody::new());
-            }
+        if !matches!(self.kind, Kind::Ffi(_)) {
+            self.kind = Kind::Ffi(crate::ffi::UserBody::new());
         }
 
-        match self.kind {
-            Kind::Ffi(ref mut body) => body,
+        match &mut self.kind {
+            Kind::Ffi(body) => body,
             _ => unreachable!(),
         }
     }
@@ -207,14 +205,14 @@ impl Body for Incoming {
         )]
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        match self.kind {
+        match &mut self.kind {
             Kind::Empty => Poll::Ready(None),
             #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
             Kind::Chan {
-                content_length: ref mut len,
-                ref mut data_rx,
-                ref mut want_tx,
-                ref mut trailers_rx,
+                content_length: len,
+                data_rx,
+                want_tx,
+                trailers_rx,
             } => {
                 want_tx.send(WANT_READY);
 
@@ -233,10 +231,10 @@ impl Body for Incoming {
             }
             #[cfg(all(feature = "http2", any(feature = "client", feature = "server")))]
             Kind::H2 {
-                ref mut data_done,
-                ref ping,
-                recv: ref mut h2,
-                content_length: ref mut len,
+                data_done,
+                ping,
+                recv: h2,
+                content_length: len,
             } => {
                 if !*data_done {
                     match ready!(h2.poll_data(cx)) {
@@ -247,14 +245,14 @@ impl Body for Incoming {
                             return Poll::Ready(Some(Ok(Frame::data(bytes))));
                         }
                         Some(Err(e)) => {
-                            return match e.reason() {
-                                // These reasons should cause the body reading to stop, but not fail it.
-                                // The same logic as for `Read for H2Upgraded` is applied here.
-                                Some(h2::Reason::NO_ERROR) | Some(h2::Reason::CANCEL) => {
-                                    Poll::Ready(None)
-                                }
-                                _ => Poll::Ready(Some(Err(crate::Error::new_body(e)))),
-                            };
+                            if let Some(h2::Reason::NO_ERROR) = e.reason() {
+                                // As mentioned in RFC 7540 Section 8.1, a RST_STREAM with NO_ERROR
+                                // indicates an early response, and should cause the body reading
+                                // to stop, but not fail it:
+                                return Poll::Ready(None);
+                            } else {
+                                return Poll::Ready(Some(Err(crate::Error::new_body(e))));
+                            }
                         }
                         None => {
                             *data_done = true;
@@ -269,22 +267,31 @@ impl Body for Incoming {
                         ping.record_non_data();
                         Poll::Ready(Ok(t.map(Frame::trailers)).transpose())
                     }
-                    Err(e) => Poll::Ready(Some(Err(crate::Error::new_h2(e)))),
+                    Err(e) => {
+                        if let Some(h2::Reason::NO_ERROR) = e.reason() {
+                            // Same as above, a RST_STREAM with NO_ERROR indicates an early
+                            // response, and should cause reading the trailers to stop, but
+                            // not fail it:
+                            Poll::Ready(None)
+                        } else {
+                            Poll::Ready(Some(Err(crate::Error::new_h2(e))))
+                        }
+                    }
                 }
             }
 
             #[cfg(feature = "ffi")]
-            Kind::Ffi(ref mut body) => body.poll_data(cx),
+            Kind::Ffi(body) => body.poll_data(cx),
         }
     }
 
     fn is_end_stream(&self) -> bool {
-        match self.kind {
+        match &self.kind {
             Kind::Empty => true,
             #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-            Kind::Chan { content_length, .. } => content_length == DecodedLength::ZERO,
+            Kind::Chan { content_length, .. } => *content_length == DecodedLength::ZERO,
             #[cfg(all(feature = "http2", any(feature = "client", feature = "server")))]
-            Kind::H2 { recv: ref h2, .. } => h2.is_end_stream(),
+            Kind::H2 { recv: h2, .. } => h2.is_end_stream(),
             #[cfg(feature = "ffi")]
             Kind::Ffi(..) => false,
         }
@@ -383,6 +390,7 @@ impl Sender {
 
     /// Send trailers on trailers channel.
     #[allow(unused)]
+    #[allow(clippy::unused_async_trait_impl)]
     pub(crate) async fn send_trailers(&mut self, trailers: HeaderMap) -> crate::Result<()> {
         let tx = match self.trailers_tx.take() {
             Some(tx) => tx,
@@ -457,12 +465,19 @@ impl fmt::Debug for Sender {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     use std::mem;
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     use std::task::Poll;
 
-    use super::{Body, DecodedLength, Incoming, Sender, SizeHint};
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+    use super::{Body, Incoming, SizeHint};
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+    use super::{DecodedLength, Sender};
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     use http_body_util::BodyExt;
 
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[test]
     fn test_size_of() {
         // These are mostly to help catch *accidentally* increasing
@@ -477,8 +492,6 @@ mod tests {
             body_expected_size,
         );
 
-        //assert_eq!(body_size, mem::size_of::<Option<Incoming>>(), "Option<Incoming>");
-
         assert_eq!(
             mem::size_of::<Sender>(),
             mem::size_of::<usize>() * 5,
@@ -492,6 +505,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[test]
     fn size_hint() {
         fn eq(body: Incoming, b: SizeHint, note: &str) {
@@ -511,6 +525,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[cfg(not(miri))]
     #[tokio::test]
     async fn channel_abort() {
@@ -522,6 +537,7 @@ mod tests {
         assert!(err.is_body_write_aborted(), "{:?}", err);
     }
 
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[cfg(all(not(miri), feature = "http1"))]
     #[tokio::test]
     async fn channel_abort_when_buffer_is_full() {
@@ -556,6 +572,7 @@ mod tests {
         assert_eq!(chunk2, "chunk 2");
     }
 
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[cfg(not(miri))]
     #[tokio::test]
     async fn channel_empty() {
@@ -564,6 +581,7 @@ mod tests {
         assert!(rx.frame().await.is_none());
     }
 
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[test]
     fn channel_ready() {
         let (mut tx, _rx) = Incoming::new_channel(DecodedLength::CHUNKED, /*wanter = */ false);
@@ -573,6 +591,7 @@ mod tests {
         assert!(tx_ready.poll().is_ready(), "tx is ready immediately");
     }
 
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[test]
     fn channel_wanter() {
         let (mut tx, mut rx) =
@@ -595,6 +614,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
     #[test]
     fn channel_notices_closure() {
         let (mut tx, rx) = Incoming::new_channel(DecodedLength::CHUNKED, /*wanter = */ true);
@@ -609,8 +629,8 @@ mod tests {
         drop(rx);
         assert!(tx_ready.is_woken(), "dropping rx wakes tx");
 
-        match tx_ready.poll() {
-            Poll::Ready(Err(ref e)) if e.is_closed() => (),
+        match &tx_ready.poll() {
+            Poll::Ready(Err(e)) if e.is_closed() => (),
             unexpected => panic!("tx poll ready unexpected: {:?}", unexpected),
         }
     }

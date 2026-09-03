@@ -4,12 +4,32 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = ConsoleTimerLogOrEnd)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "ConsoleTimerLogOrEnd")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `ConsoleTimerLogOrEnd` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ConsoleTimerLogOrEnd`*"]
     pub type ConsoleTimerLogOrEnd;
+    #[doc = "Get the `duration` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConsoleTimerLogOrEnd`*"]
+    #[wasm_bindgen(method, getter = "duration")]
+    pub fn get_duration(this: &ConsoleTimerLogOrEnd) -> Option<f64>;
+    #[doc = "Change the `duration` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConsoleTimerLogOrEnd`*"]
+    #[wasm_bindgen(method, setter = "duration")]
+    pub fn set_duration(this: &ConsoleTimerLogOrEnd, val: f64);
+    #[doc = "Get the `name` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConsoleTimerLogOrEnd`*"]
+    #[wasm_bindgen(method, getter = "name")]
+    pub fn get_name(this: &ConsoleTimerLogOrEnd) -> Option<::alloc::string::String>;
+    #[doc = "Change the `name` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ConsoleTimerLogOrEnd`*"]
+    #[wasm_bindgen(method, setter = "name")]
+    pub fn set_name(this: &ConsoleTimerLogOrEnd, val: &str);
 }
 impl ConsoleTimerLogOrEnd {
     #[doc = "Construct a new `ConsoleTimerLogOrEnd`."]
@@ -20,34 +40,14 @@ impl ConsoleTimerLogOrEnd {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `duration` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ConsoleTimerLogOrEnd`*"]
+    #[deprecated = "Use `set_duration()` instead."]
     pub fn duration(&mut self, val: f64) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("duration"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_duration(val);
         self
     }
-    #[doc = "Change the `name` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ConsoleTimerLogOrEnd`*"]
+    #[deprecated = "Use `set_name()` instead."]
     pub fn name(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("name"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_name(val);
         self
     }
 }

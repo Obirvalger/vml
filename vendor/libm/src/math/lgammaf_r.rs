@@ -95,11 +95,12 @@ fn sin_pi(mut x: f32) -> f32 {
         1 => k_cosf(y),
         2 => k_sinf(-y),
         3 => -k_cosf(y),
-        0 | _ => k_sinf(y),
+        // 0
+        _ => k_sinf(y),
     }
 }
 
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn lgammaf_r(mut x: f32) -> (f32, i32) {
     let u = x.to_bits();
     let mut t: f32;

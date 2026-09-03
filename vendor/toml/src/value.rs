@@ -318,7 +318,7 @@ pub trait Sealed {}
 impl Sealed for usize {}
 impl Sealed for str {}
 impl Sealed for String {}
-impl<'a, T: Sealed + ?Sized> Sealed for &'a T {}
+impl<T: Sealed + ?Sized> Sealed for &T {}
 
 impl Index for usize {
     fn index<'a>(&self, val: &'a Value) -> Option<&'a Value> {
@@ -362,7 +362,7 @@ impl Index for String {
     }
 }
 
-impl<'s, T> Index for &'s T
+impl<T> Index for &T
 where
     T: Index + ?Sized,
 {
@@ -400,8 +400,6 @@ impl ser::Serialize for Value {
     where
         S: ser::Serializer,
     {
-        use serde::ser::SerializeMap;
-
         match *self {
             Value::String(ref s) => serializer.serialize_str(s),
             Value::Integer(i) => serializer.serialize_i64(i),
@@ -409,35 +407,7 @@ impl ser::Serialize for Value {
             Value::Boolean(b) => serializer.serialize_bool(b),
             Value::Datetime(ref s) => s.serialize(serializer),
             Value::Array(ref a) => a.serialize(serializer),
-            Value::Table(ref t) => {
-                let mut map = serializer.serialize_map(Some(t.len()))?;
-                // Be sure to visit non-tables first (and also non
-                // array-of-tables) as all keys must be emitted first.
-                for (k, v) in t {
-                    if !v.is_table() && !v.is_array()
-                        || (v
-                            .as_array()
-                            .map(|a| !a.iter().any(|v| v.is_table()))
-                            .unwrap_or(false))
-                    {
-                        map.serialize_entry(k, v)?;
-                    }
-                }
-                for (k, v) in t {
-                    if v.as_array()
-                        .map(|a| a.iter().any(|v| v.is_table()))
-                        .unwrap_or(false)
-                    {
-                        map.serialize_entry(k, v)?;
-                    }
-                }
-                for (k, v) in t {
-                    if v.is_table() {
-                        map.serialize_entry(k, v)?;
-                    }
-                }
-                map.end()
-            }
+            Value::Table(ref t) => t.serialize(serializer),
         }
     }
 }
@@ -530,7 +500,7 @@ impl<'de> de::Deserialize<'de> for Value {
                     if let crate::map::Entry::Vacant(vacant) = map.entry(&key) {
                         vacant.insert(visitor.next_value()?);
                     } else {
-                        let msg = format!("duplicate key: `{}`", key);
+                        let msg = format!("duplicate key: `{key}`");
                         return Err(de::Error::custom(msg));
                     }
                 }
@@ -808,7 +778,7 @@ impl<'de> de::VariantAccess<'de> for MapEnumDeserializer {
                 if values.len() == len {
                     de::Deserializer::deserialize_seq(values.into_deserializer(), visitor)
                 } else {
-                    Err(Error::custom(format!("expected tuple with length {}", len)))
+                    Err(Error::custom(format!("expected tuple with length {len}")))
                 }
             }
             Value::Table(values) => {
@@ -818,8 +788,7 @@ impl<'de> de::VariantAccess<'de> for MapEnumDeserializer {
                     .map(|(index, (key, value))| match key.parse::<usize>() {
                         Ok(key_index) if key_index == index => Ok(value),
                         Ok(_) | Err(_) => Err(Error::custom(format!(
-                            "expected table key `{}`, but was `{}`",
-                            index, key
+                            "expected table key `{index}`, but was `{key}`"
                         ))),
                     })
                     .collect();
@@ -828,7 +797,7 @@ impl<'de> de::VariantAccess<'de> for MapEnumDeserializer {
                 if tuple_values.len() == len {
                     de::Deserializer::deserialize_seq(tuple_values.into_deserializer(), visitor)
                 } else {
-                    Err(Error::custom(format!("expected tuple with length {}", len)))
+                    Err(Error::custom(format!("expected tuple with length {len}")))
                 }
             }
             e => Err(Error::custom(format!(
@@ -855,7 +824,7 @@ impl<'de> de::VariantAccess<'de> for MapEnumDeserializer {
     }
 }
 
-impl<'de> IntoDeserializer<'de, crate::de::Error> for Value {
+impl IntoDeserializer<'_, crate::de::Error> for Value {
     type Deserializer = Self;
 
     fn into_deserializer(self) -> Self {
@@ -1409,7 +1378,7 @@ struct DatetimeOrTable<'a> {
     key: &'a mut String,
 }
 
-impl<'a, 'de> de::DeserializeSeed<'de> for DatetimeOrTable<'a> {
+impl<'de> de::DeserializeSeed<'de> for DatetimeOrTable<'_> {
     type Value = bool;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -1420,7 +1389,7 @@ impl<'a, 'de> de::DeserializeSeed<'de> for DatetimeOrTable<'a> {
     }
 }
 
-impl<'a, 'de> de::Visitor<'de> for DatetimeOrTable<'a> {
+impl de::Visitor<'_> for DatetimeOrTable<'_> {
     type Value = bool;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

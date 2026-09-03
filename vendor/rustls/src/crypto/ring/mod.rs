@@ -1,16 +1,15 @@
-use alloc::sync::Arc;
-
 use pki_types::PrivateKeyDer;
 pub(crate) use ring as ring_like;
 use webpki::ring as webpki_algs;
 
-use crate::crypto::{CryptoProvider, KeyProvider, SecureRandom};
+use crate::Error;
+use crate::crypto::{CryptoProvider, KeyProvider, SecureRandom, SupportedKxGroup};
 use crate::enums::SignatureScheme;
 use crate::rand::GetRandomFailed;
 use crate::sign::SigningKey;
 use crate::suites::SupportedCipherSuite;
+use crate::sync::Arc;
 use crate::webpki::WebPkiSupportedAlgorithms;
-use crate::Error;
 
 /// Using software keys for authentication.
 pub mod sign;
@@ -20,7 +19,7 @@ pub(crate) mod hash;
 pub(crate) mod hmac;
 pub(crate) mod kx;
 pub(crate) mod quic;
-#[cfg(any(feature = "std", feature = "hashbrown"))]
+#[cfg(feature = "std")]
 pub(crate) mod ticketer;
 #[cfg(feature = "tls12")]
 pub(crate) mod tls12;
@@ -32,7 +31,7 @@ pub(crate) mod tls13;
 pub fn default_provider() -> CryptoProvider {
     CryptoProvider {
         cipher_suites: DEFAULT_CIPHER_SUITES.to_vec(),
-        kx_groups: ALL_KX_GROUPS.to_vec(),
+        kx_groups: DEFAULT_KX_GROUPS.to_vec(),
         signature_verification_algorithms: SUPPORTED_SIG_ALGS,
         secure_random: &Ring,
         key_provider: &Ring,
@@ -117,7 +116,9 @@ static SUPPORTED_SIG_ALGS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms
         webpki_algs::RSA_PKCS1_2048_8192_SHA256,
         webpki_algs::RSA_PKCS1_2048_8192_SHA384,
         webpki_algs::RSA_PKCS1_2048_8192_SHA512,
-        webpki_algs::RSA_PKCS1_3072_8192_SHA384,
+        webpki_algs::RSA_PKCS1_2048_8192_SHA256_ABSENT_PARAMS,
+        webpki_algs::RSA_PKCS1_2048_8192_SHA384_ABSENT_PARAMS,
+        webpki_algs::RSA_PKCS1_2048_8192_SHA512_ABSENT_PARAMS,
     ],
     mapping: &[
         // Note: for TLS1.2 the curve is not fixed by SignatureScheme. For TLS1.3 it is.
@@ -166,12 +167,19 @@ static SUPPORTED_SIG_ALGS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms
 /// All defined key exchange groups supported by *ring* appear in this module.
 ///
 /// [`ALL_KX_GROUPS`] is provided as an array of all of these values.
+/// [`DEFAULT_KX_GROUPS`] is provided as an array of this provider's defaults.
 pub mod kx_group {
     pub use super::kx::{SECP256R1, SECP384R1, X25519};
 }
 
-pub use kx::ALL_KX_GROUPS;
-#[cfg(any(feature = "std", feature = "hashbrown"))]
+/// A list of the default key exchange groups supported by this provider.
+pub static DEFAULT_KX_GROUPS: &[&dyn SupportedKxGroup] = ALL_KX_GROUPS;
+
+/// A list of all the key exchange groups supported by this provider.
+pub static ALL_KX_GROUPS: &[&dyn SupportedKxGroup] =
+    &[kx_group::X25519, kx_group::SECP256R1, kx_group::SECP384R1];
+
+#[cfg(feature = "std")]
 pub use ticketer::Ticketer;
 
 /// Compatibility shims between ring 0.16.x and 0.17.x API
@@ -189,10 +197,6 @@ mod ring_shim {
         .map_err(|_| ())
     }
 }
-
-/// AEAD algorithm that is used by `mod ticketer`.
-#[cfg(any(feature = "std", feature = "hashbrown"))]
-pub(super) static TICKETER_AEAD: &ring_like::aead::Algorithm = &ring_like::aead::CHACHA20_POLY1305;
 
 pub(super) fn fips() -> bool {
     false

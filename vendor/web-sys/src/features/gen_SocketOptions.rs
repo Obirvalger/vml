@@ -4,12 +4,34 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = SocketOptions)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "SocketOptions")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `SocketOptions` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `SocketOptions`*"]
     pub type SocketOptions;
+    #[cfg(feature = "TcpSocketBinaryType")]
+    #[doc = "Get the `binaryType` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `SocketOptions`, `TcpSocketBinaryType`*"]
+    #[wasm_bindgen(method, getter = "binaryType")]
+    pub fn get_binary_type(this: &SocketOptions) -> Option<TcpSocketBinaryType>;
+    #[cfg(feature = "TcpSocketBinaryType")]
+    #[doc = "Change the `binaryType` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `SocketOptions`, `TcpSocketBinaryType`*"]
+    #[wasm_bindgen(method, setter = "binaryType")]
+    pub fn set_binary_type(this: &SocketOptions, val: TcpSocketBinaryType);
+    #[doc = "Get the `useSecureTransport` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `SocketOptions`*"]
+    #[wasm_bindgen(method, getter = "useSecureTransport")]
+    pub fn get_use_secure_transport(this: &SocketOptions) -> Option<bool>;
+    #[doc = "Change the `useSecureTransport` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `SocketOptions`*"]
+    #[wasm_bindgen(method, setter = "useSecureTransport")]
+    pub fn set_use_secure_transport(this: &SocketOptions, val: bool);
 }
 impl SocketOptions {
     #[doc = "Construct a new `SocketOptions`."]
@@ -21,38 +43,14 @@ impl SocketOptions {
         ret
     }
     #[cfg(feature = "TcpSocketBinaryType")]
-    #[doc = "Change the `binaryType` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `SocketOptions`, `TcpSocketBinaryType`*"]
+    #[deprecated = "Use `set_binary_type()` instead."]
     pub fn binary_type(&mut self, val: TcpSocketBinaryType) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("binaryType"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_binary_type(val);
         self
     }
-    #[doc = "Change the `useSecureTransport` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `SocketOptions`*"]
+    #[deprecated = "Use `set_use_secure_transport()` instead."]
     pub fn use_secure_transport(&mut self, val: bool) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("useSecureTransport"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_use_secure_transport(val);
         self
     }
 }

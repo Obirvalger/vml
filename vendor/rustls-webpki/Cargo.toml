@@ -11,21 +11,24 @@
 
 [package]
 edition = "2021"
-rust-version = "1.63"
+rust-version = "1.71"
 name = "rustls-webpki"
-version = "0.102.6"
+version = "0.103.15"
+build = false
 include = [
     "Cargo.toml",
     "/LICENSE",
-    "README.md",
+    "/README.md",
     "src/aws_lc_rs_algs.rs",
     "src/calendar.rs",
     "src/cert.rs",
     "src/crl/mod.rs",
     "src/crl/types.rs",
+    "src/data/",
     "src/der.rs",
     "src/end_entity.rs",
     "src/error.rs",
+    "src/rpk_entity.rs",
     "src/subject_name/dns_name.rs",
     "src/subject_name/ip_address.rs",
     "src/subject_name/mod.rs",
@@ -41,9 +44,12 @@ include = [
     "src/x509.rs",
     "src/verify_cert.rs",
     "src/lib.rs",
-    "src/data/**/*",
-    "tests/**",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Web PKI X.509 Certificate Verification."
 readme = "README.md"
 categories = [
@@ -53,18 +59,100 @@ categories = [
 license = "ISC"
 repository = "https://github.com/rustls/webpki"
 
+[package.metadata.docs.rs]
+features = [
+    "aws-lc-rs",
+    "ring",
+]
+rustdoc-args = [
+    "--cfg",
+    "webpki_docsrs",
+]
+
 [package.metadata.cargo_check_external_types]
 allowed_external_types = [
     "rustls_pki_types::*",
     "rustls_pki_types",
 ]
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = [
-    "--cfg",
-    "docsrs",
+[package.metadata.cargo-semver-checks.lints]
+enum_variant_marked_deprecated = "warn"
+
+[features]
+alloc = [
+    "ring?/alloc",
+    "pki-types/alloc",
 ]
+aws-lc-rs = [
+    "dep:aws-lc-rs",
+    "aws-lc-rs/aws-lc-sys",
+    "aws-lc-rs/prebuilt-nasm",
+]
+aws-lc-rs-fips = [
+    "dep:aws-lc-rs",
+    "aws-lc-rs/fips",
+]
+aws-lc-rs-unstable = ["aws-lc-rs"]
+default = ["std"]
+ring = ["dep:ring"]
+std = [
+    "alloc",
+    "pki-types/std",
+]
+
+[lib]
+name = "webpki"
+path = "src/lib.rs"
+
+[dependencies.aws-lc-rs]
+version = "1.18"
+optional = true
+default-features = false
+
+[dependencies.pki-types]
+version = "1.12"
+default-features = false
+package = "rustls-pki-types"
+
+[dependencies.ring]
+version = "0.17"
+optional = true
+default-features = false
+
+[dependencies.untrusted]
+version = "0.9"
+
+[dev-dependencies.base64]
+version = "0.23"
+
+[dev-dependencies.bencher]
+version = "0.1.5"
+
+[dev-dependencies.bzip2]
+version = "0.6"
+
+[dev-dependencies.once_cell]
+version = "1.17.2"
+
+[dev-dependencies.rcgen]
+version = "0.14.2"
+features = ["aws_lc_rs"]
+default-features = false
+
+[dev-dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
+[dev-dependencies.serde_json]
+version = "1.0"
+
+[dev-dependencies.x509-parser]
+version = "0.18.1"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(webpki_docsrs)"]
 
 [profile.bench]
 opt-level = 3
@@ -81,70 +169,3 @@ codegen-units = 1
 debug = 0
 debug-assertions = false
 rpath = false
-
-[lib]
-name = "webpki"
-
-[[bench]]
-name = "benchmarks"
-path = "benches/benchmark.rs"
-harness = false
-
-[dependencies.aws-lc-rs]
-version = "1.8.1"
-features = ["aws-lc-sys"]
-optional = true
-default-features = false
-
-[dependencies.pki-types]
-version = "1.7"
-default-features = false
-package = "rustls-pki-types"
-
-[dependencies.ring]
-version = "0.17"
-optional = true
-default-features = false
-
-[dependencies.untrusted]
-version = "0.9"
-
-[dev-dependencies.base64]
-version = "0.22"
-
-[dev-dependencies.bencher]
-version = "0.1.5"
-
-[dev-dependencies.bzip2]
-version = "0.4.4"
-
-[dev-dependencies.once_cell]
-version = "1.17.2"
-
-[dev-dependencies.rcgen]
-version = "0.13"
-features = ["aws_lc_rs"]
-default-features = false
-
-[dev-dependencies.serde]
-version = "1.0"
-features = ["derive"]
-
-[dev-dependencies.serde_json]
-version = "1.0"
-
-[features]
-alloc = [
-    "ring?/alloc",
-    "pki-types/alloc",
-]
-aws_lc_rs = ["dep:aws-lc-rs"]
-default = [
-    "std",
-    "ring",
-]
-ring = ["dep:ring"]
-std = [
-    "alloc",
-    "pki-types/std",
-]

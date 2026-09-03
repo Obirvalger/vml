@@ -13,7 +13,7 @@
  * ====================================================
  */
 
-use super::sqrtf::sqrtf;
+use super::sqrt::sqrtf;
 
 const PIO2_HI: f32 = 1.5707962513e+00; /* 0x3fc90fda */
 const PIO2_LO: f32 = 7.5497894159e-08; /* 0x33a22168 */
@@ -33,7 +33,7 @@ fn r(z: f32) -> f32 {
 /// Computes the inverse cosine (arc cosine) of the input value.
 /// Arguments must be in the range -1 to 1.
 /// Returns values in radians, in the range of 0 to pi.
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn acosf(x: f32) -> f32 {
     let x1p_120 = f32::from_bits(0x03800000); // 0x1p-120 === 2 ^ (-120)
 

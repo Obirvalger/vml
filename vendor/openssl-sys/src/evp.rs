@@ -1,5 +1,6 @@
 use super::*;
-use libc::*;
+use libc::size_t;
+use std::ffi::{c_int, c_uint, c_ulong, c_void};
 
 pub const EVP_MAX_MD_SIZE: c_uint = 64;
 
@@ -7,7 +8,7 @@ pub const PKCS5_SALT_LEN: c_int = 8;
 pub const PKCS12_DEFAULT_ITER: c_int = 2048;
 
 pub const EVP_PKEY_RSA: c_int = NID_rsaEncryption;
-#[cfg(any(ossl111, libressl310, boringssl))]
+#[cfg(any(ossl111, libressl, boringssl, awslc))]
 pub const EVP_PKEY_RSA_PSS: c_int = NID_rsassaPss;
 pub const EVP_PKEY_DSA: c_int = NID_dsa;
 pub const EVP_PKEY_DH: c_int = NID_dhKeyAgreement;
@@ -31,12 +32,27 @@ pub const EVP_PKEY_POLY1305: c_int = NID_poly1305;
 #[cfg(any(ossl110, libressl360))]
 pub const EVP_PKEY_HKDF: c_int = NID_hkdf;
 
-#[cfg(ossl102)]
+#[cfg(ossl110)]
 pub const EVP_CIPHER_CTX_FLAG_WRAP_ALLOW: c_int = 0x1;
+
+pub const EVP_CIPH_MODE: c_ulong = 0xF0007;
+pub const EVP_CIPH_WRAP_MODE: c_ulong = 0x10002;
 
 pub const EVP_CTRL_GCM_SET_IVLEN: c_int = 0x9;
 pub const EVP_CTRL_GCM_GET_TAG: c_int = 0x10;
 pub const EVP_CTRL_GCM_SET_TAG: c_int = 0x11;
+
+cfg_if! {
+    if #[cfg(ossl300)] {
+        pub const EVP_PKEY_KEY_PARAMETERS: c_int = OSSL_KEYMGMT_SELECT_ALL_PARAMETERS;
+        pub const EVP_PKEY_PRIVATE_KEY: c_int = EVP_PKEY_KEY_PARAMETERS | OSSL_KEYMGMT_SELECT_PRIVATE_KEY;
+        pub const EVP_PKEY_PUBLIC_KEY: c_int = EVP_PKEY_KEY_PARAMETERS | OSSL_KEYMGMT_SELECT_PUBLIC_KEY;
+        pub const EVP_PKEY_KEYPAIR: c_int = EVP_PKEY_PUBLIC_KEY | OSSL_KEYMGMT_SELECT_PRIVATE_KEY;
+        pub const EVP_KDF_HKDF_MODE_EXTRACT_AND_EXPAND: c_int = 0;
+        pub const EVP_KDF_HKDF_MODE_EXTRACT_ONLY: c_int = 1;
+        pub const EVP_KDF_HKDF_MODE_EXPAND_ONLY: c_int = 2;
+    }
+}
 
 pub unsafe fn EVP_get_digestbynid(type_: c_int) -> *const EVP_MD {
     EVP_get_digestbyname(OBJ_nid2sn(type_))
@@ -92,6 +108,11 @@ cfg_if! {
         #[inline]
         pub unsafe fn EVP_CIPHER_nid(cipher: *const EVP_CIPHER) -> c_int {
             EVP_CIPHER_get_nid(cipher)
+        }
+
+        #[inline]
+        pub unsafe fn EVP_CIPHER_flags(cipher: *const EVP_CIPHER) -> c_ulong {
+            EVP_CIPHER_get_flags(cipher)
         }
 
         #[inline]
@@ -162,6 +183,7 @@ cfg_if! {
     }
 }
 
+pub const EVP_PKEY_OP_PARAMGEN: c_int = 1 << 1;
 pub const EVP_PKEY_OP_KEYGEN: c_int = 1 << 2;
 cfg_if! {
     if #[cfg(ossl300)] {
@@ -184,12 +206,28 @@ cfg_if! {
         pub const EVP_PKEY_OP_DERIVE: c_int = 1 << 10;
     }
 }
+#[cfg(ossl340)]
+pub const EVP_PKEY_OP_SIGNMSG: c_int = 1 << 14;
+#[cfg(ossl340)]
+pub const EVP_PKEY_OP_VERIFYMSG: c_int = 1 << 15;
 
-pub const EVP_PKEY_OP_TYPE_SIG: c_int = EVP_PKEY_OP_SIGN
-    | EVP_PKEY_OP_VERIFY
-    | EVP_PKEY_OP_VERIFYRECOVER
-    | EVP_PKEY_OP_SIGNCTX
-    | EVP_PKEY_OP_VERIFYCTX;
+cfg_if! {
+    if #[cfg(ossl340)] {
+        pub const EVP_PKEY_OP_TYPE_SIG: c_int = EVP_PKEY_OP_SIGN
+            | EVP_PKEY_OP_SIGNMSG
+            | EVP_PKEY_OP_VERIFY
+            | EVP_PKEY_OP_VERIFYMSG
+            | EVP_PKEY_OP_VERIFYRECOVER
+            | EVP_PKEY_OP_SIGNCTX
+            | EVP_PKEY_OP_VERIFYCTX;
+    } else {
+        pub const EVP_PKEY_OP_TYPE_SIG: c_int = EVP_PKEY_OP_SIGN
+            | EVP_PKEY_OP_VERIFY
+            | EVP_PKEY_OP_VERIFYRECOVER
+            | EVP_PKEY_OP_SIGNCTX
+            | EVP_PKEY_OP_VERIFYCTX;
+    }
+}
 
 pub const EVP_PKEY_OP_TYPE_CRYPT: c_int = EVP_PKEY_OP_ENCRYPT | EVP_PKEY_OP_DECRYPT;
 
@@ -297,7 +335,7 @@ pub unsafe fn EVP_PKEY_CTX_add1_hkdf_info(
     )
 }
 
-#[cfg(all(not(ossl300), not(boringssl)))]
+#[cfg(not(any(ossl300, boringssl, awslc)))]
 pub unsafe fn EVP_PKEY_CTX_set_signature_md(cxt: *mut EVP_PKEY_CTX, md: *mut EVP_MD) -> c_int {
     EVP_PKEY_CTX_ctrl(
         cxt,
@@ -309,18 +347,22 @@ pub unsafe fn EVP_PKEY_CTX_set_signature_md(cxt: *mut EVP_PKEY_CTX, md: *mut EVP
     )
 }
 
+#[cfg(not(osslconf = "OPENSSL_NO_DEPRECATED_3_0"))]
 pub unsafe fn EVP_PKEY_assign_RSA(pkey: *mut EVP_PKEY, rsa: *mut RSA) -> c_int {
     EVP_PKEY_assign(pkey, EVP_PKEY_RSA, rsa as *mut c_void)
 }
 
+#[cfg(not(osslconf = "OPENSSL_NO_DEPRECATED_3_0"))]
 pub unsafe fn EVP_PKEY_assign_DSA(pkey: *mut EVP_PKEY, dsa: *mut DSA) -> c_int {
     EVP_PKEY_assign(pkey, EVP_PKEY_DSA, dsa as *mut c_void)
 }
 
+#[cfg(not(osslconf = "OPENSSL_NO_DEPRECATED_3_0"))]
 pub unsafe fn EVP_PKEY_assign_DH(pkey: *mut EVP_PKEY, dh: *mut DH) -> c_int {
     EVP_PKEY_assign(pkey, EVP_PKEY_DH, dh as *mut c_void)
 }
 
+#[cfg(not(osslconf = "OPENSSL_NO_DEPRECATED_3_0"))]
 pub unsafe fn EVP_PKEY_assign_EC_KEY(pkey: *mut EVP_PKEY, ec_key: *mut EC_KEY) -> c_int {
     EVP_PKEY_assign(pkey, EVP_PKEY_EC, ec_key as *mut c_void)
 }

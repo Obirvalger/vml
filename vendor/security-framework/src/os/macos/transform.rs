@@ -1,8 +1,8 @@
 //! Transform support
-
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::error::CFError;
 use core_foundation::string::CFString;
+use core_foundation::{declare_TCFType, impl_TCFType};
 use security_framework_sys::transform::*;
 use std::ptr;
 
@@ -18,9 +18,7 @@ unsafe impl Send for SecTransform {}
 impl SecTransform {
     /// Sets an attribute of the transform.
     pub fn set_attribute<T>(&mut self, key: &CFString, value: &T) -> Result<(), CFError>
-    where
-        T: TCFType,
-    {
+    where T: TCFType {
         unsafe {
             let mut error = ptr::null_mut();
             SecTransformSetAttribute(
@@ -40,6 +38,7 @@ impl SecTransform {
     /// Executes the transform.
     ///
     /// The return type depends on the type of transform.
+    // FIXME: deprecate and remove: don't expose CFType in Rust APIs.
     pub fn execute(&mut self) -> Result<CFType, CFError> {
         unsafe {
             let mut error = ptr::null_mut();

@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use zeroize::Zeroize;
 
-use super::{hmac, ActiveKeyExchange};
+use super::{ActiveKeyExchange, hmac};
 use crate::error::Error;
 use crate::version::TLS13;
 
@@ -51,7 +51,7 @@ impl HkdfExpander for HkdfExpanderUsingHmac {
 /// Implementation of `Hkdf` (and thence `HkdfExpander`) via `hmac::Hmac`.
 pub struct HkdfUsingHmac<'a>(pub &'a dyn hmac::Hmac);
 
-impl<'a> Hkdf for HkdfUsingHmac<'a> {
+impl Hkdf for HkdfUsingHmac<'_> {
     fn extract_from_zero_ikm(&self, salt: Option<&[u8]>) -> Box<dyn HkdfExpander> {
         let zeroes = [0u8; hmac::Tag::MAX_LEN];
         Box::new(HkdfExpanderUsingHmac(self.0.with_key(
@@ -77,7 +77,7 @@ impl<'a> Hkdf for HkdfUsingHmac<'a> {
     }
 }
 
-impl<'a> HkdfPrkExtract for HkdfUsingHmac<'a> {
+impl HkdfPrkExtract for HkdfUsingHmac<'_> {
     fn extract_prk_from_secret(&self, salt: Option<&[u8]>, secret: &[u8]) -> Vec<u8> {
         let zeroes = [0u8; hmac::Tag::MAX_LEN];
         let salt = match salt {
@@ -266,7 +266,7 @@ pub struct OutputLengthError;
 mod tests {
     use std::prelude::v1::*;
 
-    use super::{expand, Hkdf, HkdfUsingHmac};
+    use super::{Hkdf, HkdfUsingHmac, expand};
     // nb: crypto::aws_lc_rs provider doesn't provide (or need) hmac,
     // so cannot be used for this test.
     use crate::crypto::ring::hmac;
@@ -397,9 +397,10 @@ mod tests {
         let info = &[];
 
         let mut output = [0u8; 32 * 255 + 1];
-        assert!(hkdf
-            .extract_from_secret(None, ikm)
-            .expand_slice(info, &mut output)
-            .is_err());
+        assert!(
+            hkdf.extract_from_secret(None, ikm)
+                .expand_slice(info, &mut output)
+                .is_err()
+        );
     }
 }

@@ -1,7 +1,7 @@
 //! Bindings to OpenSSL
 //!
-//! This crate provides a safe interface to the popular OpenSSL cryptography library. OpenSSL versions 1.0.1 through
-//! 3.x.x and LibreSSL versions 2.5 through 3.7.x are supported.
+//! This crate provides a safe interface to the popular OpenSSL cryptography library. OpenSSL versions 1.0.2 through
+//! 4.x.x and LibreSSL versions 3.5 through 4.3.x are supported.
 //!
 //! # Building
 //!
@@ -30,7 +30,7 @@
 //!
 //! ```not_rust
 //! # macOS (Homebrew)
-//! $ brew install openssl@3
+//! $ brew install openssl@4
 //!
 //! # macOS (MacPorts)
 //! $ sudo port install openssl
@@ -60,19 +60,19 @@
 //! override the automatic detection logic.
 //!
 //! * `OPENSSL_DIR` - If specified, the directory of an OpenSSL installation. The directory should contain `lib` and
-//!     `include` subdirectories containing the libraries and headers respectively.
+//!   `include` subdirectories containing the libraries and headers respectively.
 //! * `OPENSSL_LIB_DIR` and `OPENSSL_INCLUDE_DIR` - If specified, the directories containing the OpenSSL libraries and
-//!     headers respectively. This can be used if the OpenSSL installation is split in a nonstandard directory layout.
+//!   headers respectively. This can be used if the OpenSSL installation is split in a nonstandard directory layout.
 //! * `OPENSSL_STATIC` - If set, the crate will statically link to OpenSSL rather than dynamically link.
 //! * `OPENSSL_LIBS` - If set, a `:`-separated list of library names to link to (e.g. `ssl:crypto`). This can be used
-//!     if nonstandard library names were used for whatever reason.
+//!   if nonstandard library names were used for whatever reason.
 //! * `OPENSSL_NO_VENDOR` - If set, always find OpenSSL in the system, even if the `vendored` feature is enabled.
 //!
 //! If the `vendored` Cargo feature is enabled, the following environment variable can also be used to further configure
 //! the OpenSSL build.
 //!
 //! * `OPENSSL_CONFIG_DIR` - If set, the copy of OpenSSL built by the `openssl-src` crate will be configured to look for
-//!     configuration files and root certificates in this directory.
+//!   configuration files and root certificates in this directory.
 //!
 //! Additionally, these variables can be prefixed with the upper-cased target architecture (e.g.
 //!     `X86_64_UNKNOWN_LINUX_GNU_OPENSSL_DIR`), which can be useful when cross compiling.
@@ -161,13 +161,14 @@ pub mod dsa;
 pub mod ec;
 pub mod ecdsa;
 pub mod encrypt;
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 pub mod envelope;
 pub mod error;
 pub mod ex_data;
 #[cfg(not(any(libressl, ossl300)))]
 pub mod fips;
 pub mod hash;
+pub mod kdf;
 #[cfg(ossl300)]
 pub mod lib_ctx;
 pub mod md;
@@ -176,9 +177,11 @@ pub mod memcmp;
 pub mod nid;
 #[cfg(not(osslconf = "OPENSSL_NO_OCSP"))]
 pub mod ocsp;
+#[cfg(ossl300)]
+mod ossl_param;
 pub mod pkcs12;
 pub mod pkcs5;
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 pub mod pkcs7;
 pub mod pkey;
 pub mod pkey_ctx;
@@ -196,14 +199,14 @@ pub mod symm;
 pub mod version;
 pub mod x509;
 
-#[cfg(boringssl)]
+#[cfg(any(boringssl, awslc))]
 type LenType = libc::size_t;
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 type LenType = libc::c_int;
 
-#[cfg(boringssl)]
+#[cfg(any(boringssl, awslc))]
 type SLenType = libc::ssize_t;
-#[cfg(not(boringssl))]
+#[cfg(not(any(boringssl, awslc)))]
 type SLenType = libc::c_int;
 
 #[inline]

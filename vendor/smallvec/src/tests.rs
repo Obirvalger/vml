@@ -1,11 +1,8 @@
-use crate::{smallvec, SmallVec};
-
-use std::iter::FromIterator;
-
-use alloc::borrow::ToOwned;
-use alloc::boxed::Box;
-use alloc::rc::Rc;
-use alloc::{vec, vec::Vec};
+use {
+    crate::{smallvec, SmallVec},
+    alloc::{borrow::ToOwned, boxed::Box, rc::Rc, vec, vec::Vec},
+    std::iter::FromIterator,
+};
 
 #[test]
 pub fn test_zero() {
@@ -16,7 +13,8 @@ pub fn test_zero() {
     assert_eq!(&*v, &[0]);
 }
 
-// We heap allocate all these strings so that double frees will show up under valgrind.
+// We heap allocate all these strings so that double frees will show up under
+// valgrind.
 
 #[test]
 pub fn test_inline() {
@@ -329,8 +327,10 @@ fn test_insert_many_long_hint() {
 
 // https://github.com/servo/rust-smallvec/issues/96
 mod insert_many_panic {
-    use crate::{smallvec, SmallVec};
-    use alloc::boxed::Box;
+    use {
+        crate::{smallvec, SmallVec},
+        alloc::boxed::Box,
+    };
 
     struct PanicOnDoubleDrop {
         dropped: Box<bool>,
@@ -523,8 +523,7 @@ fn test_ord() {
 
 #[test]
 fn test_hash() {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::Hash;
+    use std::{collections::hash_map::DefaultHasher, hash::Hash};
 
     {
         let mut a: SmallVec<[u32; 2]> = SmallVec::new();
@@ -658,8 +657,8 @@ fn test_into_iter_as_slice() {
 
 #[test]
 fn test_into_iter_clone() {
-    // Test that the cloned iterator yields identical elements and that it owns its own copy
-    // (i.e. no use after move errors).
+    // Test that the cloned iterator yields identical elements and that it owns
+    // its own copy (i.e. no use after move errors).
     let mut iter = SmallVec::<[u8; 2]>::from_iter(0..3).into_iter();
     let mut clone_iter = iter.clone();
     while let Some(x) = iter.next() {
@@ -670,7 +669,8 @@ fn test_into_iter_clone() {
 
 #[test]
 fn test_into_iter_clone_partially_consumed_iterator() {
-    // Test that the cloned iterator only contains the remaining elements of the original iterator.
+    // Test that the cloned iterator only contains the remaining elements of the
+    // original iterator.
     let mut iter = SmallVec::<[u8; 2]>::from_iter(0..3).into_iter().skip(1);
     let mut clone_iter = iter.clone();
     while let Some(x) = iter.next() {
@@ -752,7 +752,7 @@ fn test_from_vec() {
 
 #[test]
 fn test_retain() {
-    // Test inline data storate
+    // Test inline data storage
     let mut sv: SmallVec<[i32; 5]> = SmallVec::from_slice(&[1, 2, 3, 3, 4]);
     sv.retain(|&mut i| i != 3);
     assert_eq!(sv.pop(), Some(4));
@@ -835,9 +835,11 @@ fn test_write() {
 #[cfg(feature = "serde")]
 #[test]
 fn test_serde() {
-    use bincode::{config, deserialize};
+    #[allow(deprecated)]
+    use bincode1::{config, deserialize};
     let mut small_vec: SmallVec<[i32; 2]> = SmallVec::new();
     small_vec.push(1);
+    #[allow(deprecated)]
     let encoded = config().limit(100).serialize(&small_vec).unwrap();
     let decoded: SmallVec<[i32; 2]> = deserialize(&encoded).unwrap();
     assert_eq!(small_vec, decoded);
@@ -846,6 +848,7 @@ fn test_serde() {
     small_vec.push(3);
     small_vec.push(4);
     // Check again after spilling.
+    #[allow(deprecated)]
     let encoded = config().limit(100).serialize(&small_vec).unwrap();
     let decoded: SmallVec<[i32; 2]> = deserialize(&encoded).unwrap();
     assert_eq!(small_vec, decoded);
@@ -943,9 +946,7 @@ const fn const_new_inline_args() -> SmallVec<[i32; 2]> {
 }
 #[cfg(feature = "const_new")]
 const fn const_new_with_len() -> SmallVec<[i32; 4]> {
-    unsafe {
-        SmallVec::<[i32; 4]>::from_const_with_len_unchecked([2, 5, 7, 0], 3)
-    }
+    unsafe { SmallVec::<[i32; 4]>::from_const_with_len_unchecked([2, 5, 7, 0], 3) }
 }
 
 #[test]
@@ -996,7 +997,23 @@ fn test_clone_from() {
 #[test]
 fn test_size() {
     use core::mem::size_of;
-    assert_eq!(24, size_of::<SmallVec<[u8; 8]>>());
+    const PTR_SIZE: usize = size_of::<usize>();
+    #[cfg(feature = "union")]
+    {
+        assert_eq!(3 * PTR_SIZE, size_of::<SmallVec<[u8; 0]>>());
+        assert_eq!(3 * PTR_SIZE, size_of::<SmallVec<[u8; 1]>>());
+        assert_eq!(3 * PTR_SIZE, size_of::<SmallVec<[u8; PTR_SIZE]>>());
+        assert_eq!(3 * PTR_SIZE, size_of::<SmallVec<[u8; PTR_SIZE + 1]>>());
+        assert_eq!(3 * PTR_SIZE, size_of::<SmallVec<[u8; 2 * PTR_SIZE]>>());
+        assert_eq!(4 * PTR_SIZE, size_of::<SmallVec<[u8; 2 * PTR_SIZE + 1]>>());
+    }
+    #[cfg(not(feature = "union"))]
+    {
+        assert_eq!(3 * PTR_SIZE, size_of::<SmallVec<[u8; 0]>>());
+        assert_eq!(3 * PTR_SIZE, size_of::<SmallVec<[u8; 1]>>());
+        assert_eq!(3 * PTR_SIZE, size_of::<SmallVec<[u8; PTR_SIZE]>>());
+        assert_eq!(4 * PTR_SIZE, size_of::<SmallVec<[u8; PTR_SIZE + 1]>>());
+    }
 }
 
 #[cfg(feature = "drain_filter")]
@@ -1024,11 +1041,36 @@ fn drain_keep_rest() {
     assert_eq!(a, SmallVec::<[i32; 3]>::from_slice(&[1i32, 3, 5, 6, 7, 8]));
 }
 
-/// This assortment of tests, in combination with miri, verifies we handle UB on fishy arguments
-/// given to SmallVec. Draining and extending the allocation are fairly well-tested earlier, but
-/// `smallvec.insert(usize::MAX, val)` once slipped by!
+// Regression test: keep_rest on a SmallVec with zero inline capacity must
+// still move tail elements to fill the gap left by drained items.
+// Using Box<u8> so that Miri detects the use-after-move / double-drop
+// caused by the missing backshift.
+#[cfg(feature = "drain_keep_rest")]
+#[test]
+fn drain_keep_rest_zero_inline_capacity() {
+    let mut a: SmallVec<[Box<u8>; 0]> = SmallVec::new();
+    for i in 1u8..=8 {
+        a.push(Box::new(i));
+    }
+
+    let mut df = a.drain_filter(|x| **x % 2 == 0);
+
+    assert_eq!(*df.next().unwrap(), 2);
+    assert_eq!(*df.next().unwrap(), 4);
+
+    df.keep_rest();
+
+    let values: Vec<u8> = a.iter().map(|b| **b).collect();
+    assert_eq!(values, vec![1, 3, 5, 6, 7, 8]);
+}
+
+/// This assortment of tests, in combination with miri, verifies we handle UB on
+/// fishy arguments given to SmallVec. Draining and extending the allocation are
+/// fairly well-tested earlier, but `smallvec.insert(usize::MAX, val)` once
+/// slipped by!
 ///
-/// All code that indexes into SmallVecs should be tested with such "trivially wrong" args.
+/// All code that indexes into SmallVecs should be tested with such "trivially
+/// wrong" args.
 #[test]
 fn max_dont_panic() {
     let mut sv: SmallVec<[i32; 2]> = smallvec![0];
@@ -1055,4 +1097,66 @@ fn max_swap_remove() {
 fn test_insert_out_of_bounds() {
     let mut v: SmallVec<[i32; 4]> = SmallVec::new();
     v.insert(10, 6);
+}
+
+#[cfg(feature = "impl_bincode")]
+#[test]
+fn test_bincode() {
+    let config = bincode::config::standard();
+    let mut small_vec: SmallVec<[i32; 2]> = SmallVec::new();
+    let mut buffer = [0u8; 128];
+    small_vec.push(1);
+    let bytes_written = bincode::encode_into_slice(&small_vec, &mut buffer, config).unwrap();
+    let (decoded, bytes_read) =
+        bincode::decode_from_slice::<SmallVec<[i32; 2]>, _>(&buffer, config).unwrap();
+    assert_eq!(bytes_written, bytes_read);
+    assert_eq!(small_vec, decoded);
+    let (decoded, bytes_read) =
+        bincode::borrow_decode_from_slice::<SmallVec<[i32; 2]>, _>(&buffer, config).unwrap();
+    assert_eq!(bytes_written, bytes_read);
+    assert_eq!(small_vec, decoded);
+    // Spill the vec
+    small_vec.push(2);
+    small_vec.push(3);
+    small_vec.push(4);
+    // Check again after spilling.
+    let bytes_written = bincode::encode_into_slice(&small_vec, &mut buffer, config).unwrap();
+    let (decoded, bytes_read) =
+        bincode::decode_from_slice::<SmallVec<[i32; 2]>, _>(&buffer, config).unwrap();
+    assert_eq!(bytes_written, bytes_read);
+    assert_eq!(small_vec, decoded);
+    let (decoded, bytes_read) =
+        bincode::borrow_decode_from_slice::<SmallVec<[i32; 2]>, _>(&buffer, config).unwrap();
+    assert_eq!(bytes_written, bytes_read);
+    assert_eq!(small_vec, decoded);
+}
+
+#[cfg(feature = "impl_bincode")]
+#[test]
+fn test_bincode_u8() {
+    let config = bincode::config::standard();
+    let mut small_vec: SmallVec<[u8; 16]> = SmallVec::new();
+    let mut buffer = [0u8; 128];
+    small_vec.extend_from_slice(b"testing test");
+    let bytes_written = bincode::encode_into_slice(&small_vec, &mut buffer, config).unwrap();
+    let (decoded, bytes_read) =
+        bincode::decode_from_slice::<SmallVec<[u8; 16]>, _>(&buffer, config).unwrap();
+    assert_eq!(bytes_written, bytes_read);
+    assert_eq!(small_vec, decoded);
+    let (decoded, bytes_read) =
+        bincode::borrow_decode_from_slice::<SmallVec<[u8; 16]>, _>(&buffer, config).unwrap();
+    assert_eq!(bytes_written, bytes_read);
+    assert_eq!(small_vec, decoded);
+    // Spill the vec
+    small_vec.extend_from_slice(b"some more testing");
+    // Check again after spilling.
+    let bytes_written = bincode::encode_into_slice(&small_vec, &mut buffer, config).unwrap();
+    let (decoded, bytes_read) =
+        bincode::decode_from_slice::<SmallVec<[u8; 16]>, _>(&buffer, config).unwrap();
+    assert_eq!(bytes_written, bytes_read);
+    assert_eq!(small_vec, decoded);
+    let (decoded, bytes_read) =
+        bincode::borrow_decode_from_slice::<SmallVec<[u8; 16]>, _>(&buffer, config).unwrap();
+    assert_eq!(bytes_written, bytes_read);
+    assert_eq!(small_vec, decoded);
 }

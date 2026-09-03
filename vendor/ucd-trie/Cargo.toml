@@ -12,8 +12,13 @@
 [package]
 edition = "2021"
 name = "ucd-trie"
-version = "0.1.6"
+version = "0.1.7"
 authors = ["Andrew Gallant <jamslam@gmail.com>"]
+build = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = """
 A trie for storing Unicode codepoint sets and maps.
 """
@@ -29,6 +34,14 @@ keywords = [
 ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/BurntSushi/ucd-generate"
+
+[lib]
+name = "ucd_trie"
+path = "src/lib.rs"
+
+[[bench]]
+name = "bench"
+path = "benches/bench.rs"
 
 [dev-dependencies.once_cell]
 version = "1"

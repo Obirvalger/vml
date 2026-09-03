@@ -94,16 +94,30 @@
 //!       `JoinHandle` needs to (i) successfully set `JOIN_WAKER` to zero if it is
 //!       not already zero to gain exclusive access to the waker field per rule
 //!       2, (ii) write a waker, and (iii) successfully set `JOIN_WAKER` to one.
+//!       If the `JoinHandle` unsets `JOIN_WAKER` in the process of being dropped
+//!       to clear the waker field, only steps (i) and (ii) are relevant.
 //!
 //!    6. The `JoinHandle` can change `JOIN_WAKER` only if COMPLETE is zero (i.e.
-//!       the task hasn't yet completed).
+//!       the task hasn't yet completed). The runtime can change `JOIN_WAKER` only
+//!       if COMPLETE is one.
+//!
+//!    7. If `JOIN_INTEREST` is zero and COMPLETE is one, then the runtime has
+//!       exclusive (mutable) access to the waker field. This might happen if the
+//!       `JoinHandle` gets dropped right after the task completes and the runtime
+//!       sets the `COMPLETE` bit. In this case the runtime needs the mutable access
+//!       to the waker field to drop it.
 //!
 //!    Rule 6 implies that the steps (i) or (iii) of rule 5 may fail due to a
 //!    race. If step (i) fails, then the attempt to write a waker is aborted. If
 //!    step (iii) fails because COMPLETE is set to one by another thread after
 //!    step (i), then the waker field is cleared. Once COMPLETE is one (i.e.
 //!    task has completed), the `JoinHandle` will not modify `JOIN_WAKER`. After the
-//!    runtime sets COMPLETE to one, it invokes the waker if there is one.
+//!    runtime sets COMPLETE to one, it invokes the waker if there is one so in this
+//!    case when a task completes the `JOIN_WAKER` bit implicates to the runtime
+//!    whether it should invoke the waker or not. After the runtime is done with
+//!    using the waker during task completion, it unsets the `JOIN_WAKER` bit to give
+//!    the `JoinHandle` exclusive access again so that it is able to drop the waker
+//!    at a later point.
 //!
 //! All other fields are immutable and can be accessed immutably without
 //! synchronization by anyone.
@@ -164,10 +178,6 @@
 //! poll call will notice it when the poll finishes, and the task is cancelled
 //! at that point.
 
-// Some task infrastructure is here to support `JoinSet`, which is currently
-// unstable. This should be removed once `JoinSet` is stabilized.
-#![cfg_attr(not(tokio_unstable), allow(dead_code))]
-
 mod core;
 use self::core::Cell;
 use self::core::Header;
@@ -179,7 +189,6 @@ mod harness;
 use self::harness::Harness;
 
 mod id;
-#[cfg_attr(not(tokio_unstable), allow(unreachable_pub, unused_imports))]
 pub use id::{id, try_id, Id};
 
 #[cfg(feature = "rt")]
@@ -202,6 +211,8 @@ use self::state::State;
 
 mod waker;
 
+pub(crate) use self::spawn_location::SpawnLocation;
+
 cfg_taskdump! {
     pub(crate) mod trace;
 }
@@ -210,7 +221,10 @@ use crate::future::Future;
 use crate::util::linked_list;
 use crate::util::sharded_list;
 
+use crate::runtime::metrics::ScheduleLatencyInstant;
+use crate::runtime::TaskCallback;
 use std::marker::PhantomData;
+use std::panic::Location;
 use std::ptr::NonNull;
 use std::{fmt, mem};
 
@@ -228,6 +242,23 @@ unsafe impl<S> Sync for Task<S> {}
 #[repr(transparent)]
 pub(crate) struct Notified<S: 'static>(Task<S>);
 
+impl<S> Notified<S> {
+    #[cfg(all(tokio_unstable, feature = "rt-multi-thread"))]
+    #[inline]
+    pub(crate) fn task_meta<'meta>(&self) -> crate::runtime::TaskMeta<'meta> {
+        self.0.task_meta()
+    }
+
+    pub(crate) fn set_scheduled_at(&self, scheduled_at: ScheduleLatencyInstant) {
+        // SAFETY: There are no concurrent writes because there is only ever one `Notified`
+        // reference per task. There are no concurrent reads because this field is only read
+        // when polling the task, which can only happen after it's scheduled.
+        unsafe {
+            self.0.header().set_scheduled_at(scheduled_at);
+        }
+    }
+}
+
 // safety: This type cannot be used to touch the task without first verifying
 // that the value is on a thread where it is safe to poll the task.
 unsafe impl<S: Schedule> Send for Notified<S> {}
@@ -239,6 +270,18 @@ unsafe impl<S: Schedule> Sync for Notified<S> {}
 pub(crate) struct LocalNotified<S: 'static> {
     task: Task<S>,
     _not_send: PhantomData<*const ()>,
+}
+
+impl<S> LocalNotified<S> {
+    #[cfg(tokio_unstable)]
+    #[inline]
+    pub(crate) fn task_meta<'meta>(&self) -> crate::runtime::TaskMeta<'meta> {
+        self.task.task_meta()
+    }
+
+    pub(crate) fn get_scheduled_at(&self) -> ScheduleLatencyInstant {
+        self.task.header().get_scheduled_at()
+    }
 }
 
 /// A task that is not owned by any `OwnedTasks`. Used for blocking tasks.
@@ -255,6 +298,12 @@ unsafe impl<S> Sync for UnownedTask<S> {}
 /// Task result sent back.
 pub(crate) type Result<T> = std::result::Result<T, JoinError>;
 
+/// Hooks for scheduling tasks which are needed in the task harness.
+#[derive(Clone)]
+pub(crate) struct TaskHarnessScheduleHooks {
+    pub(crate) task_terminate_callback: Option<TaskCallback>,
+}
+
 pub(crate) trait Schedule: Sync + Sized + 'static {
     /// The task has completed work and is ready to be released. The scheduler
     /// should release it immediately and return it. The task module will batch
@@ -265,6 +314,8 @@ pub(crate) trait Schedule: Sync + Sized + 'static {
 
     /// Schedule the task
     fn schedule(&self, task: Notified<Self>);
+
+    fn hooks(&self) -> TaskHarnessScheduleHooks;
 
     /// Schedule the task to run in the near future, yielding the thread to
     /// other tasks.
@@ -287,13 +338,19 @@ cfg_rt! {
         task: T,
         scheduler: S,
         id: Id,
+        spawned_at: SpawnLocation,
     ) -> (Task<S>, Notified<S>, JoinHandle<T::Output>)
     where
         S: Schedule,
         T: Future + 'static,
         T::Output: 'static,
     {
-        let raw = RawTask::new::<T, S>(task, scheduler, id);
+        let raw = RawTask::new::<T, S>(
+            task,
+            scheduler,
+            id,
+            spawned_at,
+        );
         let task = Task {
             raw,
             _p: PhantomData,
@@ -311,13 +368,23 @@ cfg_rt! {
     /// only when the task is not going to be stored in an `OwnedTasks` list.
     ///
     /// Currently only blocking tasks use this method.
-    pub(crate) fn unowned<T, S>(task: T, scheduler: S, id: Id) -> (UnownedTask<S>, JoinHandle<T::Output>)
+    pub(crate) fn unowned<T, S>(
+        task: T,
+        scheduler: S,
+        id: Id,
+        spawned_at: SpawnLocation,
+    ) -> (UnownedTask<S>, JoinHandle<T::Output>)
     where
         S: Schedule,
         T: Send + Future + 'static,
         T::Output: Send + 'static,
     {
-        let (task, notified, join) = new_task(task, scheduler, id);
+        let (task, notified, join) = new_task(
+            task,
+            scheduler,
+            id,
+            spawned_at,
+        );
 
         // This transfers the ref-count of task and notified into an UnownedTask.
         // This is valid because an UnownedTask holds two ref-counts.
@@ -340,19 +407,17 @@ impl<S: 'static> Task<S> {
         }
     }
 
+    /// # Safety
+    ///
+    /// `ptr` must be a valid pointer to a [`Header`].
     unsafe fn from_raw(ptr: NonNull<Header>) -> Task<S> {
-        Task::new(RawTask::from_raw(ptr))
+        unsafe { Task::new(RawTask::from_raw(ptr)) }
     }
 
-    #[cfg(all(
-        tokio_unstable,
-        tokio_taskdump,
-        feature = "rt",
-        target_os = "linux",
-        any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
-    ))]
-    pub(super) fn as_raw(&self) -> RawTask {
-        self.raw
+    cfg_taskdump! {
+        pub(super) fn as_raw(&self) -> RawTask {
+            self.raw
+        }
     }
 
     fn header(&self) -> &Header {
@@ -361,6 +426,34 @@ impl<S: 'static> Task<S> {
 
     fn header_ptr(&self) -> NonNull<Header> {
         self.raw.header_ptr()
+    }
+
+    /// Returns a [task ID] that uniquely identifies this task relative to other
+    /// currently spawned tasks.
+    ///
+    /// [task ID]: crate::task::Id
+    #[cfg(tokio_unstable)]
+    pub(crate) fn id(&self) -> crate::task::Id {
+        // Safety: The header pointer is valid.
+        unsafe { Header::get_id(self.raw.header_ptr()) }
+    }
+
+    #[cfg(tokio_unstable)]
+    pub(crate) fn spawned_at(&self) -> &'static Location<'static> {
+        // Safety: The header pointer is valid.
+        unsafe { Header::get_spawn_location(self.raw.header_ptr()) }
+    }
+
+    // Explicit `'task` and `'meta` lifetimes are necessary here, as otherwise,
+    // the compiler infers the lifetimes to be the same, and considers the task
+    // to be borrowed for the lifetime of the returned `TaskMeta`.
+    #[cfg(tokio_unstable)]
+    pub(crate) fn task_meta<'meta>(&self) -> crate::runtime::TaskMeta<'meta> {
+        crate::runtime::TaskMeta {
+            id: self.id(),
+            spawned_at: self.spawned_at().into(),
+            _phantom: PhantomData,
+        }
     }
 
     cfg_taskdump! {
@@ -377,16 +470,6 @@ impl<S: 'static> Task<S> {
             }
         }
 
-        /// Returns a [task ID] that uniquely identifies this task relative to other
-        /// currently spawned tasks.
-        ///
-        /// [task ID]: crate::task::Id
-        #[cfg(tokio_unstable)]
-        #[cfg_attr(docsrs, doc(cfg(tokio_unstable)))]
-        pub(crate) fn id(&self) -> crate::task::Id {
-            // Safety: The header pointer is valid.
-            unsafe { Header::get_id(self.raw.header_ptr()) }
-        }
     }
 }
 
@@ -394,11 +477,20 @@ impl<S: 'static> Notified<S> {
     fn header(&self) -> &Header {
         self.0.header()
     }
+
+    #[cfg(tokio_unstable)]
+    #[allow(dead_code)]
+    pub(crate) fn task_id(&self) -> crate::task::Id {
+        self.0.id()
+    }
 }
 
 impl<S: 'static> Notified<S> {
+    /// # Safety
+    ///
+    /// [`RawTask::ptr`] must be a valid pointer to a [`Header`].
     pub(crate) unsafe fn from_raw(ptr: RawTask) -> Notified<S> {
-        Notified(Task::new(ptr))
+        Notified(unsafe { Task::new(ptr) })
     }
 }
 
@@ -425,6 +517,15 @@ impl<S: Schedule> LocalNotified<S> {
         let raw = self.task.raw;
         mem::forget(self);
         raw.poll();
+    }
+
+    cfg_taskdump! {
+        /// Returns a `WakerRef` borrowing from this task.
+        ///
+        /// `WakerRef` derefs to `Waker` without bumping the task's refcount.
+        pub(crate) fn waker_ref(&self) -> waker::WakerRef<'_, S> {
+            waker::waker_ref::<S>(self.task.raw.header_ptr_ref())
+        }
     }
 }
 
@@ -515,11 +616,11 @@ unsafe impl<S> linked_list::Link for Task<S> {
     }
 
     unsafe fn from_raw(ptr: NonNull<Header>) -> Task<S> {
-        Task::from_raw(ptr)
+        unsafe { Task::from_raw(ptr) }
     }
 
     unsafe fn pointers(target: NonNull<Header>) -> NonNull<linked_list::Pointers<Header>> {
-        self::core::Trailer::addr_of_owned(Header::get_trailer(target))
+        unsafe { self::core::Trailer::addr_of_owned(Header::get_trailer(target)) }
     }
 }
 
@@ -532,6 +633,51 @@ unsafe impl<S> sharded_list::ShardedListItem for Task<S> {
     unsafe fn get_shard_id(target: NonNull<Self::Target>) -> usize {
         // SAFETY: The caller guarantees that `target` points at a valid task.
         let task_id = unsafe { Header::get_id(target) };
-        task_id.0 as usize
+        task_id.0.get() as usize
+    }
+}
+
+/// Wrapper around [`std::panic::Location`] that's conditionally compiled out
+/// when `tokio_unstable` is not enabled.
+#[cfg(tokio_unstable)]
+mod spawn_location {
+
+    use std::panic::Location;
+
+    #[derive(Copy, Clone)]
+    pub(crate) struct SpawnLocation(pub &'static Location<'static>);
+
+    impl From<&'static Location<'static>> for SpawnLocation {
+        fn from(location: &'static Location<'static>) -> Self {
+            Self(location)
+        }
+    }
+}
+
+#[cfg(not(tokio_unstable))]
+mod spawn_location {
+    use std::panic::Location;
+
+    #[derive(Copy, Clone)]
+    pub(crate) struct SpawnLocation();
+
+    impl From<&'static Location<'static>> for SpawnLocation {
+        fn from(_: &'static Location<'static>) -> Self {
+            Self()
+        }
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn spawn_location_is_zero_sized() {
+        assert_eq!(std::mem::size_of::<SpawnLocation>(), 0);
+    }
+}
+
+impl SpawnLocation {
+    #[track_caller]
+    #[inline]
+    pub(crate) fn capture() -> Self {
+        Self::from(Location::caller())
     }
 }

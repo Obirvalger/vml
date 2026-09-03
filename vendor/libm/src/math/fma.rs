@@ -1,200 +1,139 @@
-use core::{f32, f64};
+/* SPDX-License-Identifier: MIT */
+/* origin: musl src/math/fma.c, fmaf.c Ported to generic Rust algorithm in 2025, TG. */
 
-use super::scalbn;
+use super::generic;
+use crate::support::Round;
 
-const ZEROINFNAN: i32 = 0x7ff - 0x3ff - 52 - 1;
-
-struct Num {
-    m: u64,
-    e: i32,
-    sign: i32,
+// Placeholder so we can have `fmaf16` in the `Float` trait.
+#[allow(unused)]
+#[cfg(f16_enabled)]
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
+pub(crate) fn fmaf16(_x: f16, _y: f16, _z: f16) -> f16 {
+    unimplemented!()
 }
 
-fn normalize(x: f64) -> Num {
-    let x1p63: f64 = f64::from_bits(0x43e0000000000000); // 0x1p63 === 2 ^ 63
-
-    let mut ix: u64 = x.to_bits();
-    let mut e: i32 = (ix >> 52) as i32;
-    let sign: i32 = e & 0x800;
-    e &= 0x7ff;
-    if e == 0 {
-        ix = (x * x1p63).to_bits();
-        e = (ix >> 52) as i32 & 0x7ff;
-        e = if e != 0 { e - 63 } else { 0x800 };
-    }
-    ix &= (1 << 52) - 1;
-    ix |= 1 << 52;
-    ix <<= 1;
-    e -= 0x3ff + 52 + 1;
-    Num { m: ix, e, sign }
-}
-
-#[inline]
-fn mul(x: u64, y: u64) -> (u64, u64) {
-    let t = (x as u128).wrapping_mul(y as u128);
-    ((t >> 64) as u64, t as u64)
-}
-
-/// Floating multiply add (f64)
+/// Floating multiply add (f32)
 ///
-/// Computes `(x*y)+z`, rounded as one ternary operation:
-/// Computes the value (as if) to infinite precision and rounds once to the result format,
-/// according to the rounding mode characterized by the value of FLT_ROUNDS.
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+/// Computes `(x*y)+z`, rounded as one ternary operation (i.e. calculated with infinite precision).
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
+pub fn fmaf(x: f32, y: f32, z: f32) -> f32 {
+    select_implementation! {
+        name: fmaf,
+        use_arch: any(
+            all(target_arch = "aarch64", target_feature = "neon"),
+            target_feature = "sse2",
+        ),
+        args: x, y, z,
+    }
+
+    generic::fma_wide_round(x, y, z, Round::Nearest).val
+}
+
+/// Fused multiply add (f64)
+///
+/// Computes `(x*y)+z`, rounded as one ternary operation (i.e. calculated with infinite precision).
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn fma(x: f64, y: f64, z: f64) -> f64 {
-    let x1p63: f64 = f64::from_bits(0x43e0000000000000); // 0x1p63 === 2 ^ 63
-    let x0_ffffff8p_63 = f64::from_bits(0x3bfffffff0000000); // 0x0.ffffff8p-63
-
-    /* normalize so top 10bits and last bit are 0 */
-    let nx = normalize(x);
-    let ny = normalize(y);
-    let nz = normalize(z);
-
-    if nx.e >= ZEROINFNAN || ny.e >= ZEROINFNAN {
-        return x * y + z;
-    }
-    if nz.e >= ZEROINFNAN {
-        if nz.e > ZEROINFNAN {
-            /* z==0 */
-            return x * y + z;
-        }
-        return z;
+    select_implementation! {
+        name: fma,
+        use_arch: any(
+            all(target_arch = "aarch64", target_feature = "neon"),
+            target_feature = "sse2",
+        ),
+        args: x, y, z,
     }
 
-    /* mul: r = x*y */
-    let zhi: u64;
-    let zlo: u64;
-    let (mut rhi, mut rlo) = mul(nx.m, ny.m);
-    /* either top 20 or 21 bits of rhi and last 2 bits of rlo are 0 */
+    generic::fma_round(x, y, z, Round::Nearest).val
+}
 
-    /* align exponents */
-    let mut e: i32 = nx.e + ny.e;
-    let mut d: i32 = nz.e - e;
-    /* shift bits z<<=kz, r>>=kr, so kz+kr == d, set e = e+kr (== ez-kz) */
-    if d > 0 {
-        if d < 64 {
-            zlo = nz.m << d;
-            zhi = nz.m >> (64 - d);
-        } else {
-            zlo = 0;
-            zhi = nz.m;
-            e = nz.e - 64;
-            d -= 64;
-            if d == 0 {
-            } else if d < 64 {
-                rlo = rhi << (64 - d) | rlo >> d | ((rlo << (64 - d)) != 0) as u64;
-                rhi = rhi >> d;
-            } else {
-                rlo = 1;
-                rhi = 0;
-            }
-        }
-    } else {
-        zhi = 0;
-        d = -d;
-        if d == 0 {
-            zlo = nz.m;
-        } else if d < 64 {
-            zlo = nz.m >> d | ((nz.m << (64 - d)) != 0) as u64;
-        } else {
-            zlo = 1;
-        }
-    }
-
-    /* add */
-    let mut sign: i32 = nx.sign ^ ny.sign;
-    let samesign: bool = (sign ^ nz.sign) == 0;
-    let mut nonzero: i32 = 1;
-    if samesign {
-        /* r += z */
-        rlo = rlo.wrapping_add(zlo);
-        rhi += zhi + (rlo < zlo) as u64;
-    } else {
-        /* r -= z */
-        let (res, borrow) = rlo.overflowing_sub(zlo);
-        rlo = res;
-        rhi = rhi.wrapping_sub(zhi.wrapping_add(borrow as u64));
-        if (rhi >> 63) != 0 {
-            rlo = (rlo as i64).wrapping_neg() as u64;
-            rhi = (rhi as i64).wrapping_neg() as u64 - (rlo != 0) as u64;
-            sign = (sign == 0) as i32;
-        }
-        nonzero = (rhi != 0) as i32;
-    }
-
-    /* set rhi to top 63bit of the result (last bit is sticky) */
-    if nonzero != 0 {
-        e += 64;
-        d = rhi.leading_zeros() as i32 - 1;
-        /* note: d > 0 */
-        rhi = rhi << d | rlo >> (64 - d) | ((rlo << d) != 0) as u64;
-    } else if rlo != 0 {
-        d = rlo.leading_zeros() as i32 - 1;
-        if d < 0 {
-            rhi = rlo >> 1 | (rlo & 1);
-        } else {
-            rhi = rlo << d;
-        }
-    } else {
-        /* exact +-0 */
-        return x * y + z;
-    }
-    e -= d;
-
-    /* convert to double */
-    let mut i: i64 = rhi as i64; /* i is in [1<<62,(1<<63)-1] */
-    if sign != 0 {
-        i = -i;
-    }
-    let mut r: f64 = i as f64; /* |r| is in [0x1p62,0x1p63] */
-
-    if e < -1022 - 62 {
-        /* result is subnormal before rounding */
-        if e == -1022 - 63 {
-            let mut c: f64 = x1p63;
-            if sign != 0 {
-                c = -c;
-            }
-            if r == c {
-                /* min normal after rounding, underflow depends
-                on arch behaviour which can be imitated by
-                a double to float conversion */
-                let fltmin: f32 = (x0_ffffff8p_63 * f32::MIN_POSITIVE as f64 * r) as f32;
-                return f64::MIN_POSITIVE / f32::MIN_POSITIVE as f64 * fltmin as f64;
-            }
-            /* one bit is lost when scaled, add another top bit to
-            only round once at conversion if it is inexact */
-            if (rhi << 53) != 0 {
-                i = (rhi >> 1 | (rhi & 1) | 1 << 62) as i64;
-                if sign != 0 {
-                    i = -i;
-                }
-                r = i as f64;
-                r = 2. * r - c; /* remove top bit */
-
-                /* raise underflow portably, such that it
-                cannot be optimized away */
-                {
-                    let tiny: f64 = f64::MIN_POSITIVE / f32::MIN_POSITIVE as f64 * r;
-                    r += (tiny * tiny) * (r - r);
-                }
-            }
-        } else {
-            /* only round once when scaled */
-            d = 10;
-            i = ((rhi >> d | ((rhi << (64 - d)) != 0) as u64) << d) as i64;
-            if sign != 0 {
-                i = -i;
-            }
-            r = i as f64;
-        }
-    }
-    scalbn(r, e)
+/// Fused multiply add (f128)
+///
+/// Computes `(x*y)+z`, rounded as one ternary operation (i.e. calculated with infinite precision).
+#[cfg(f128_enabled)]
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
+pub fn fmaf128(x: f128, y: f128, z: f128) -> f128 {
+    generic::fma_round(x, y, z, Round::Nearest).val
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::support::{CastFrom, CastInto, Float, FpResult, HInt, MinInt, Round, Status};
+
+    /// Test the generic `fma_round` algorithm for a given float.
+    fn spec_test<F>(f: impl Fn(F, F, F) -> F)
+    where
+        F: Float,
+        F: CastFrom<F::SignedInt>,
+        F: CastFrom<i8>,
+        F::Int: HInt,
+        u32: CastInto<F::Int>,
+    {
+        let x = F::from_bits(F::Int::ONE);
+        let y = F::from_bits(F::Int::ONE);
+        let z = F::ZERO;
+
+        // 754-2020 says "When the exact result of (a × b) + c is non-zero yet the result of
+        // fusedMultiplyAdd is zero because of rounding, the zero result takes the sign of the
+        // exact result"
+        assert_biteq!(f(x, y, z), F::ZERO);
+        assert_biteq!(f(x, -y, z), F::NEG_ZERO);
+        assert_biteq!(f(-x, y, z), F::NEG_ZERO);
+        assert_biteq!(f(-x, -y, z), F::ZERO);
+    }
+
+    #[test]
+    fn spec_test_f32() {
+        spec_test::<f32>(fmaf);
+
+        // Also do a small check that the non-widening version works for f32 (this should ideally
+        // get tested some more).
+        spec_test::<f32>(|x, y, z| generic::fma_round(x, y, z, Round::Nearest).val);
+    }
+
+    #[test]
+    fn spec_test_f64() {
+        spec_test::<f64>(fma);
+
+        let expect_underflow = [
+            (
+                hf64!("0x1.0p-1070"),
+                hf64!("0x1.0p-1070"),
+                hf64!("0x1.ffffffffffffp-1023"),
+                hf64!("0x0.ffffffffffff8p-1022"),
+            ),
+            (
+                // FIXME: we raise underflow but this should only be inexact (based on C and
+                // `rustc_apfloat`).
+                hf64!("0x1.0p-1070"),
+                hf64!("0x1.0p-1070"),
+                hf64!("-0x1.0p-1022"),
+                hf64!("-0x1.0p-1022"),
+            ),
+        ];
+
+        for (x, y, z, res) in expect_underflow {
+            let FpResult { val, status } = generic::fma_round(x, y, z, Round::Nearest);
+            assert_biteq!(val, res);
+            assert_eq!(status, Status::UNDERFLOW);
+        }
+    }
+
+    #[test]
+    #[cfg(f128_enabled)]
+    fn spec_test_f128() {
+        spec_test::<f128>(fmaf128);
+    }
+
+    #[test]
+    fn issue_263() {
+        let a = f32::from_bits(1266679807);
+        let b = f32::from_bits(1300234242);
+        let c = f32::from_bits(1115553792);
+        let expected = f32::from_bits(1501560833);
+        assert_eq!(fmaf(a, b, c), expected);
+    }
+
     #[test]
     fn fma_segfault() {
         // These two inputs cause fma to segfault on release due to overflow:

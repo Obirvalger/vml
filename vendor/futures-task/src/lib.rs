@@ -1,9 +1,6 @@
 //! Tools for working with tasks.
 
-#![cfg_attr(not(feature = "std"), no_std)]
-#![warn(missing_debug_implementations, missing_docs, rust_2018_idioms, unreachable_pub)]
-// It cannot be included in the published code because this lints have false positives in the minimum required version.
-#![cfg_attr(test, warn(single_use_lifetimes))]
+#![no_std]
 #![doc(test(
     no_crate_inject,
     attr(
@@ -11,31 +8,34 @@
         allow(dead_code, unused_assignments, unused_variables)
     )
 ))]
+#![warn(missing_docs, unsafe_op_in_unsafe_fn)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 mod spawn;
 pub use crate::spawn::{LocalSpawn, Spawn, SpawnError};
 
-#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
+#[cfg(target_has_atomic = "ptr")]
 #[cfg(feature = "alloc")]
 mod arc_wake;
-#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
+#[cfg(target_has_atomic = "ptr")]
 #[cfg(feature = "alloc")]
 pub use crate::arc_wake::ArcWake;
 
-#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
+#[cfg(target_has_atomic = "ptr")]
 #[cfg(feature = "alloc")]
 mod waker;
-#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
+#[cfg(target_has_atomic = "ptr")]
 #[cfg(feature = "alloc")]
 pub use crate::waker::waker;
 
-#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
+#[cfg(target_has_atomic = "ptr")]
 #[cfg(feature = "alloc")]
 mod waker_ref;
-#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
+#[cfg(target_has_atomic = "ptr")]
 #[cfg(feature = "alloc")]
 pub use crate::waker_ref::{waker_ref, WakerRef};
 
@@ -48,3 +48,7 @@ pub use crate::noop_waker::noop_waker_ref;
 
 #[doc(no_inline)]
 pub use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+#[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+#[doc(no_inline)]
+pub use alloc::task::Wake;

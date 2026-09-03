@@ -1,23 +1,24 @@
-/// HTTP2 Ping usage
-///
-/// hyper uses HTTP2 pings for two purposes:
-///
-/// 1. Adaptive flow control using BDP
-/// 2. Connection keep-alive
-///
-/// Both cases are optional.
-///
-/// # BDP Algorithm
-///
-/// 1. When receiving a DATA frame, if a BDP ping isn't outstanding:
-///   1a. Record current time.
-///   1b. Send a BDP ping.
-/// 2. Increment the number of received bytes.
-/// 3. When the BDP ping ack is received:
-///   3a. Record duration from sent time.
-///   3b. Merge RTT with a running average.
-///   3c. Calculate bdp as bytes/rtt.
-///   3d. If bdp is over 2/3 max, set new max to bdp and update windows.
+//! HTTP2 Ping usage.
+//!
+//! hyper uses HTTP2 pings for two purposes:
+//!
+//! 1. Adaptive flow control using BDP
+//! 2. Connection keep-alive
+//!
+//! Both cases are optional.
+//!
+//! # BDP Algorithm
+//!
+//! 1. When receiving a DATA frame, if a BDP ping isn't outstanding:
+//!    1a. Record current time.
+//!    1b. Send a BDP ping.
+//! 2. Increment the number of received bytes.
+//! 3. When the BDP ping ack is received:
+//!    3a. Record duration from sent time.
+//!    3b. Merge RTT with a running average.
+//!    3c. Calculate bdp as bytes/rtt.
+//!    3d. If bdp is over 2/3 max, set new max to bdp and update windows.
+
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -27,6 +28,7 @@ use std::time::{Duration, Instant};
 
 use h2::{Ping, PingPong};
 
+use crate::common::lock::LockResultExt;
 use crate::common::time::Time;
 use crate::rt::Sleep;
 
@@ -36,7 +38,7 @@ pub(super) fn disabled() -> Recorder {
     Recorder { shared: None }
 }
 
-pub(super) fn channel(ping_pong: PingPong, config: Config, __timer: Time) -> (Recorder, Ponger) {
+pub(super) fn channel(ping_pong: PingPong, config: Config, timer: Time) -> (Recorder, Ponger) {
     debug_assert!(
         config.is_enabled(),
         "ping channel requires bdp or keep-alive config",
@@ -50,8 +52,10 @@ pub(super) fn channel(ping_pong: PingPong, config: Config, __timer: Time) -> (Re
         stable_count: 0,
     });
 
+    let now = timer.now();
+
     let (bytes, next_bdp_at) = if bdp.is_some() {
-        (Some(0), Some(Instant::now()))
+        (Some(0), Some(now))
     } else {
         (None, None)
     };
@@ -60,12 +64,12 @@ pub(super) fn channel(ping_pong: PingPong, config: Config, __timer: Time) -> (Re
         interval,
         timeout: config.keep_alive_timeout,
         while_idle: config.keep_alive_while_idle,
-        sleep: __timer.sleep(interval),
+        sleep: timer.sleep(interval),
         state: KeepAliveState::Init,
-        timer: __timer,
+        timer: timer.clone(),
     });
 
-    let last_read_at = keep_alive.as_ref().map(|_| Instant::now());
+    let last_read_at = keep_alive.as_ref().map(|_| now);
 
     let shared = Arc::new(Mutex::new(Shared {
         bytes,
@@ -74,6 +78,7 @@ pub(super) fn channel(ping_pong: PingPong, config: Config, __timer: Time) -> (Re
         ping_pong,
         ping_sent_at: None,
         next_bdp_at,
+        timer,
     }));
 
     (
@@ -129,14 +134,15 @@ struct Shared {
     last_read_at: Option<Instant>,
 
     is_keep_alive_timed_out: bool,
+    timer: Time,
 }
 
 struct Bdp {
-    /// Current BDP in bytes
+    /// Current BDP in bytes.
     bdp: u32,
     /// Largest bandwidth we've seen so far.
     max_bandwidth: f64,
-    /// Round trip time in seconds
+    /// Round trip time in seconds.
     rtt: f64,
     /// Delay the next ping by this amount.
     ///
@@ -185,28 +191,28 @@ impl Config {
 
 impl Recorder {
     pub(crate) fn record_data(&self, len: usize) {
-        let shared = if let Some(ref shared) = self.shared {
+        let shared = if let Some(shared) = &self.shared {
             shared
         } else {
             return;
         };
 
-        let mut locked = shared.lock().unwrap();
+        let mut locked = shared.lock().panic_if_poisoned();
 
         locked.update_last_read_at();
 
         // are we ready to send another bdp ping?
         // if not, we don't need to record bytes either
 
-        if let Some(ref next_bdp_at) = locked.next_bdp_at {
-            if Instant::now() < *next_bdp_at {
+        if let Some(next_bdp_at) = &locked.next_bdp_at {
+            if locked.timer.now() < *next_bdp_at {
                 return;
             } else {
                 locked.next_bdp_at = None;
             }
         }
 
-        if let Some(ref mut bytes) = locked.bytes {
+        if let Some(bytes) = &mut locked.bytes {
             *bytes += len;
         } else {
             // no need to send bdp ping if bdp is disabled
@@ -219,13 +225,13 @@ impl Recorder {
     }
 
     pub(crate) fn record_non_data(&self) {
-        let shared = if let Some(ref shared) = self.shared {
+        let shared = if let Some(shared) = &self.shared {
             shared
         } else {
             return;
         };
 
-        let mut locked = shared.lock().unwrap();
+        let mut locked = shared.lock().panic_if_poisoned();
 
         locked.update_last_read_at();
     }
@@ -242,8 +248,8 @@ impl Recorder {
     }
 
     pub(super) fn ensure_not_timed_out(&self) -> crate::Result<()> {
-        if let Some(ref shared) = self.shared {
-            let locked = shared.lock().unwrap();
+        if let Some(shared) = &self.shared {
+            let locked = shared.lock().panic_if_poisoned();
             if locked.is_keep_alive_timed_out {
                 return Err(KeepAliveTimedOut.crate_error());
             }
@@ -258,11 +264,11 @@ impl Recorder {
 
 impl Ponger {
     pub(super) fn poll(&mut self, cx: &mut task::Context<'_>) -> Poll<Ponged> {
-        let now = Instant::now();
-        let mut locked = self.shared.lock().unwrap();
+        let mut locked = self.shared.lock().panic_if_poisoned();
+        let now = locked.timer.now(); // hoping this is fine to move within the lock
         let is_idle = self.is_idle();
 
-        if let Some(ref mut ka) = self.keep_alive {
+        if let Some(ka) = &mut self.keep_alive {
             ka.maybe_schedule(is_idle, &locked);
             ka.maybe_ping(cx, is_idle, &mut locked);
         }
@@ -281,13 +287,13 @@ impl Ponger {
                 let rtt = now - start;
                 trace!("recv pong");
 
-                if let Some(ref mut ka) = self.keep_alive {
+                if let Some(ka) = &mut self.keep_alive {
                     locked.update_last_read_at();
                     ka.maybe_schedule(is_idle, &locked);
                     ka.maybe_ping(cx, is_idle, &mut locked);
                 }
 
-                if let Some(ref mut bdp) = self.bdp {
+                if let Some(bdp) = &mut self.bdp {
                     let bytes = locked.bytes.expect("bdp enabled implies bytes");
                     locked.bytes = Some(0); // reset
                     trace!("received BDP ack; bytes = {}, rtt = {:?}", bytes, rtt);
@@ -303,7 +309,7 @@ impl Ponger {
                 debug!("pong error: {}", _e);
             }
             Poll::Pending => {
-                if let Some(ref mut ka) = self.keep_alive {
+                if let Some(ka) = &mut self.keep_alive {
                     if let Err(KeepAliveTimedOut) = ka.maybe_timeout(cx) {
                         self.keep_alive = None;
                         locked.is_keep_alive_timed_out = true;
@@ -328,7 +334,7 @@ impl Shared {
     fn send_ping(&mut self) {
         match self.ping_pong.send_ping(Ping::opaque()) {
             Ok(()) => {
-                self.ping_sent_at = Some(Instant::now());
+                self.ping_sent_at = Some(self.timer.now());
                 trace!("sent ping");
             }
             Err(_err) => {
@@ -343,7 +349,7 @@ impl Shared {
 
     fn update_last_read_at(&mut self) {
         if self.last_read_at.is_some() {
-            self.last_read_at = Some(Instant::now());
+            self.last_read_at = Some(self.timer.now());
         }
     }
 
@@ -417,7 +423,7 @@ impl Bdp {
 fn seconds(dur: Duration) -> f64 {
     const NANOS_PER_SEC: f64 = 1_000_000_000.0;
     let secs = dur.as_secs() as f64;
-    secs + (dur.subsec_nanos() as f64) / NANOS_PER_SEC
+    secs + (f64::from(dur.subsec_nanos())) / NANOS_PER_SEC
 }
 
 // ===== impl KeepAlive =====
@@ -467,7 +473,7 @@ impl KeepAlive {
                 trace!("keep-alive interval ({:?}) reached", self.interval);
                 shared.send_ping();
                 self.state = KeepAliveState::PingSent;
-                let timeout = Instant::now() + self.timeout;
+                let timeout = self.timer.now() + self.timeout;
                 self.timer.reset(&mut self.sleep, timeout);
             }
             KeepAliveState::Init | KeepAliveState::PingSent => (),

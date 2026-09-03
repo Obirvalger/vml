@@ -51,7 +51,7 @@ impl VarInt {
     }
 
     /// Compute the number of bytes needed to encode this value
-    pub(crate) fn size(self) -> usize {
+    pub(crate) const fn size(self) -> usize {
         let x = self.0;
         if x < 2u64.pow(6) {
             1
@@ -62,7 +62,7 @@ impl VarInt {
         } else if x < 2u64.pow(62) {
             8
         } else {
-            unreachable!("malformed VarInt");
+            panic!("malformed VarInt");
         }
     }
 }
@@ -181,11 +181,11 @@ impl Codec for VarInt {
         if x < 2u64.pow(6) {
             w.put_u8(x as u8);
         } else if x < 2u64.pow(14) {
-            w.put_u16(0b01 << 14 | x as u16);
+            w.put_u16((0b01 << 14) | x as u16);
         } else if x < 2u64.pow(30) {
-            w.put_u32(0b10 << 30 | x as u32);
+            w.put_u32((0b10 << 30) | x as u32);
         } else if x < 2u64.pow(62) {
-            w.put_u64(0b11 << 62 | x);
+            w.put_u64((0b11 << 62) | x);
         } else {
             unreachable!("malformed VarInt")
         }

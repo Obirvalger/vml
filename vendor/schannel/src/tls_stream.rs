@@ -198,6 +198,7 @@ impl Builder {
             out_buf: Cursor::new(buf.map(|b| b.to_owned()).unwrap_or_else(Vec::new)),
             last_write_len: 0,
             requested_application_protocols: self.requested_application_protocols.clone(),
+            is_renegotiating: false,
         };
 
         MidHandshakeTlsStream { inner: stream }.handshake()
@@ -240,6 +241,9 @@ pub struct TlsStream<S> {
     /// the (unencrypted) length of the last write call used to track writes
     last_write_len: usize,
     requested_application_protocols: Option<Vec<Vec<u8>>>,
+    /// set when renegotiation (SEC_I_RENEGOTIATE) fires with pending data in out_buf.
+    /// while set, write_out() is a no-op to prevent double-sending the pending data.
+    is_renegotiating: bool,
 }
 
 /// ensures that a TlsStream is always Sync/Send
@@ -527,9 +531,6 @@ where
                     if let Some(to_write) = to_write {
                         self.out_buf.get_mut().extend_from_slice(&to_write);
                     }
-                    if self.enc_in.position() != 0 {
-                        self.decrypt()?;
-                    }
                     if let State::Initializing {
                         ref mut more_calls, ..
                     } = self.state
@@ -627,6 +628,7 @@ where
                                 sizes: self.context.stream_sizes()?,
                             }
                         };
+                        self.is_renegotiating = false;
                         continue;
                     }
 
@@ -692,7 +694,7 @@ where
             let mut cert_chain = mem::zeroed();
 
             let res = Cryptography::CertGetCertificateChain(
-                Cryptography::HCERTCHAINENGINE::default(),
+                ptr::null_mut(),
                 cert_context.as_inner(),
                 ptr::null_mut(),
                 cert_store,
@@ -774,6 +776,9 @@ where
     }
 
     fn write_out(&mut self) -> io::Result<usize> {
+        if self.is_renegotiating {
+            return Ok(0);
+        }
         let mut out = 0;
         while self.out_buf.position() as usize != self.out_buf.get_ref().len() {
             let position = self.out_buf.position() as usize;
@@ -839,7 +844,8 @@ where
                 Foundation::SEC_E_OK => {
                     let start = bufs[1].pvBuffer as usize - self.enc_in.get_ref().as_ptr() as usize;
                     let end = start + bufs[1].cbBuffer as usize;
-                    self.dec_in.get_mut().clear();
+                    let dec_in_read_pos = self.dec_in.position() as usize;
+                    self.dec_in.get_mut().drain(..dec_in_read_pos);
                     self.dec_in
                         .get_mut()
                         .extend_from_slice(&self.enc_in.get_ref()[start..end]);
@@ -871,6 +877,12 @@ where
                         validated: false,
                     };
 
+                    // If there's unsent data in out_buf, flag it so write_out()
+                    // skips sending during renegotiation (avoids double-send).
+                    if (self.out_buf.position() as usize) < self.out_buf.get_ref().len() {
+                        self.is_renegotiating = true;
+                    }
+
                     let nread = if bufs[3].BufferType == Identity::SECBUFFER_EXTRA {
                         self.enc_in.position() as usize - bufs[3].cbBuffer as usize
                     } else {
@@ -891,6 +903,7 @@ where
         sizes: &Identity::SecPkgContext_StreamSizes,
     ) -> io::Result<()> {
         assert!(buf.len() <= sizes.cbMaximumMessage as usize);
+        debug_assert!(!self.is_renegotiating);
 
         unsafe {
             let len = sizes.cbHeader as usize + buf.len() + sizes.cbTrailer as usize;

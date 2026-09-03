@@ -6,7 +6,7 @@
 
 use std::error::Error as StdError;
 use std::fmt;
-use std::future::Future;
+use std::future::{poll_fn, Future};
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::time::Duration;
@@ -56,6 +56,8 @@ struct Config {
 pub struct Error {
     kind: ErrorKind,
     source: Option<Box<dyn StdError + Send + Sync>>,
+    #[cfg(any(feature = "http1", feature = "http2"))]
+    connect_info: Option<Connected>,
 }
 
 #[derive(Debug)]
@@ -74,12 +76,14 @@ macro_rules! e {
         Error {
             kind: ErrorKind::$kind,
             source: None,
+            connect_info: None,
         }
     };
     ($kind:ident, $src:expr) => {
         Error {
             kind: ErrorKind::$kind,
             source: Some($src.into()),
+            connect_info: None,
         }
     };
 }
@@ -88,7 +92,11 @@ macro_rules! e {
 type PoolKey = (http::uri::Scheme, http::uri::Authority);
 
 enum TrySendError<B> {
-    Retryable { error: Error, req: Request<B> },
+    Retryable {
+        error: Error,
+        req: Request<B>,
+        connection_reused: bool,
+    },
     Nope(Error),
 }
 
@@ -114,9 +122,10 @@ impl Client<(), ()> {
     /// # fn run () {
     /// use std::time::Duration;
     /// use hyper_util::client::legacy::Client;
-    /// use hyper_util::rt::TokioExecutor;
+    /// use hyper_util::rt::{TokioExecutor, TokioTimer};
     ///
     /// let client = Client::builder(TokioExecutor::new())
+    ///     .pool_timer(TokioTimer::new())
     ///     .pool_idle_timeout(Duration::from_secs(30))
     ///     .http2_only(true)
     ///     .build_http();
@@ -240,8 +249,12 @@ where
             req = match self.try_send_request(req, pool_key.clone()).await {
                 Ok(resp) => return Ok(resp),
                 Err(TrySendError::Nope(err)) => return Err(err),
-                Err(TrySendError::Retryable { mut req, error }) => {
-                    if !self.config.retry_canceled_requests {
+                Err(TrySendError::Retryable {
+                    mut req,
+                    error,
+                    connection_reused,
+                }) => {
+                    if !self.config.retry_canceled_requests || !connection_reused {
                         // if client disabled, don't retry
                         // a fresh connection means we definitely can't retry
                         return Err(error);
@@ -270,14 +283,16 @@ where
             // it returns an error, there's not much else to retry
             .map_err(TrySendError::Nope)?;
 
-        req.extensions_mut()
-            .get_mut::<CaptureConnectionExtension>()
-            .map(|conn| conn.set(&pooled.conn_info));
+        if let Some(conn) = req.extensions_mut().get_mut::<CaptureConnectionExtension>() {
+            conn.set(&pooled.conn_info);
+        }
 
         if pooled.is_http1() {
             if req.version() == Version::HTTP_2 {
                 warn!("Connection is HTTP/1, but request requires HTTP/2");
-                return Err(TrySendError::Nope(e!(UserUnsupportedVersion)));
+                return Err(TrySendError::Nope(
+                    e!(UserUnsupportedVersion).with_connect_info(pooled.conn_info.clone()),
+                ));
             }
 
             if self.config.set_host {
@@ -285,8 +300,8 @@ where
                 req.headers_mut().entry(HOST).or_insert_with(|| {
                     let hostname = uri.host().expect("authority implies host");
                     if let Some(port) = get_non_default_port(&uri) {
-                        let s = format!("{}:{}", hostname, port);
-                        HeaderValue::from_str(&s)
+                        let s = format!("{hostname}:{port}");
+                        HeaderValue::from_maybe_shared(bytes::Bytes::from(s))
                     } else {
                         HeaderValue::from_str(hostname)
                     }
@@ -302,7 +317,7 @@ where
             } else {
                 origin_form(req.uri_mut());
             }
-        } else if req.method() == Method::CONNECT {
+        } else if req.method() == Method::CONNECT && !pooled.is_http2() {
             authority_form(req.uri_mut());
         }
 
@@ -311,31 +326,23 @@ where
             Err(mut err) => {
                 return if let Some(req) = err.take_message() {
                     Err(TrySendError::Retryable {
-                        error: e!(Canceled, err.into_error()),
+                        connection_reused: pooled.is_reused(),
+                        error: e!(Canceled, err.into_error())
+                            .with_connect_info(pooled.conn_info.clone()),
                         req,
                     })
                 } else {
-                    Err(TrySendError::Nope(e!(SendRequest, err.into_error())))
-                }
+                    Err(TrySendError::Nope(
+                        e!(SendRequest, err.into_error())
+                            .with_connect_info(pooled.conn_info.clone()),
+                    ))
+                };
             }
         };
-        //.send_request_retryable(req)
-        //.map_err(ClientError::map_with_reused(pooled.is_reused()));
 
         // If the Connector included 'extra' info, add to Response...
         if let Some(extra) = &pooled.conn_info.extra {
             extra.set(res.extensions_mut());
-        }
-
-        // As of futures@0.1.21, there is a race condition in the mpsc
-        // channel, such that sending when the receiver is closing can
-        // result in the message being stuck inside the queue. It won't
-        // ever notify until the Sender side is dropped.
-        //
-        // To counteract this, we must check if our senders 'want' channel
-        // has been closed after having tried to send. If so, error out...
-        if pooled.is_closed() {
-            return Ok(res);
         }
 
         // If pooled is HTTP/2, we can toss this reference immediately.
@@ -350,21 +357,8 @@ where
         // It won't be ready if there is a body to stream.
         if pooled.is_http2() || !pooled.is_pool_enabled() || pooled.is_ready() {
             drop(pooled);
-        } else if !res.body().is_end_stream() {
-            //let (delayed_tx, delayed_rx) = oneshot::channel::<()>();
-            //res.body_mut().delayed_eof(delayed_rx);
-            let on_idle = future::poll_fn(move |cx| pooled.poll_ready(cx)).map(move |_| {
-                // At this point, `pooled` is dropped, and had a chance
-                // to insert into the pool (if conn was idle)
-                //drop(delayed_tx);
-            });
-
-            self.exec.execute(on_idle);
         } else {
-            // There's no body to delay, but the connection isn't
-            // ready yet. Only re-insert when it's ready
-            let on_idle = future::poll_fn(move |cx| pooled.poll_ready(cx)).map(|_| ());
-
+            let on_idle = poll_fn(move |cx| pooled.poll_ready(cx)).map(|_| ());
             self.exec.execute(on_idle);
         }
 
@@ -569,22 +563,89 @@ where
                                 panic!("http2 feature is not enabled");
                             } else {
                                 #[cfg(feature = "http1")] {
+                                    // Perform the HTTP/1.1 handshake on the provided I/O stream.
+                                    // Uses the h1_builder to establish a connection, returning a sender (tx) for requests
+                                    // and a connection task (conn) that manages the connection lifecycle.
                                     let (mut tx, conn) =
-                                        h1_builder.handshake(io).await.map_err(Error::tx)?;
+                                        h1_builder.handshake(io).await.map_err(crate::client::legacy::client::Error::tx)?;
 
+                                    // Log that the HTTP/1.1 handshake has completed successfully.
+                                    // This indicates the connection is established and ready for request processing.
                                     trace!(
                                         "http1 handshake complete, spawning background dispatcher task"
                                     );
+                                    // Create a oneshot channel to communicate errors from the connection task.
+                                    // err_tx sends errors from the connection task, and err_rx receives them
+                                    // to correlate connection failures with request readiness errors.
+                                    let (err_tx, err_rx) = tokio::sync::oneshot::channel();
+                                    // Spawn the connection task in the background using the executor.
+                                    // The task manages the HTTP/1.1 connection, including upgrades (e.g., WebSocket).
+                                    // Errors are sent via err_tx to ensure they can be checked if the sender (tx) fails.
                                     executor.execute(
                                         conn.with_upgrades()
-                                            .map_err(|e| debug!("client connection error: {}", e))
+                                            .map_err(|e| {
+                                                // Log the connection error at debug level for diagnostic purposes.
+                                                debug!("client connection error: {:?}", e);
+                                                // Log that the error is being sent to the error channel.
+                                                trace!("sending connection error to error channel");
+                                                // Send the error via the oneshot channel, ignoring send failures
+                                                // (e.g., if the receiver is dropped, which is handled later).
+                                                let _ =err_tx.send(e);
+                                            })
                                             .map(|_| ()),
                                     );
-
+                                    // Log that the client is waiting for the connection to be ready.
+                                    // Readiness indicates the sender (tx) can accept a request without blocking.
+                                    trace!("waiting for connection to be ready");
+                                    // Check if the sender is ready to accept a request.
+                                    // This ensures the connection is fully established before proceeding.
+                                    // aka:
                                     // Wait for 'conn' to ready up before we
                                     // declare this tx as usable
-                                    tx.ready().await.map_err(Error::tx)?;
-                                    PoolTx::Http1(tx)
+                                    match tx.ready().await {
+                                        // If ready, the connection is usable for sending requests.
+                                        Ok(_) => {
+                                            // Log that the connection is ready for use.
+                                            trace!("connection is ready");
+                                            // Drop the error receiver, as it’s no longer needed since the sender is ready.
+                                            // This prevents waiting for errors that won’t occur in a successful case.
+                                            drop(err_rx);
+                                            // Wrap the sender in PoolTx::Http1 for use in the connection pool.
+                                            PoolTx::Http1(tx)
+                                        }
+                                        // If the sender fails with a closed channel error, check for a specific connection error.
+                                        // This distinguishes between a vague ChannelClosed error and an actual connection failure.
+                                        Err(e) if e.is_closed() => {
+                                            // Log that the channel is closed, indicating a potential connection issue.
+                                            trace!("connection channel closed, checking for connection error");
+                                            // Check the oneshot channel for a specific error from the connection task.
+                                            match err_rx.await {
+                                                // If an error was received, it’s a specific connection failure.
+                                                Ok(err) => {
+                                                     // Log the specific connection error for diagnostics.
+                                                    trace!("received connection error: {:?}", err);
+                                                    // Return the error wrapped in Error::tx to propagate it.
+                                                    return Err(crate::client::legacy::client::Error::tx(err));
+                                                }
+                                                // If the error channel is closed, no specific error was sent.
+                                                // Fall back to the vague ChannelClosed error.
+                                                Err(_) => {
+                                                    // Log that the error channel is closed, indicating no specific error.
+                                                    trace!("error channel closed, returning the vague ChannelClosed error");
+                                                    // Return the original error wrapped in Error::tx.
+                                                    return Err(crate::client::legacy::client::Error::tx(e));
+                                                }
+                                            }
+                                        }
+                                        // For other errors (e.g., timeout, I/O issues), propagate them directly.
+                                        // These are not ChannelClosed errors and don’t require error channel checks.
+                                        Err(e) => {
+                                            // Log the specific readiness failure for diagnostics.
+                                            trace!("connection readiness failed: {:?}", e);
+                                            // Return the error wrapped in Error::tx to propagate it.
+                                            return Err(crate::client::legacy::client::Error::tx(e));
+                                        }
+                                    }
                                 }
                                 #[cfg(not(feature = "http1"))] {
                                     panic!("http1 feature is not enabled");
@@ -740,21 +801,16 @@ impl<B> PoolClient<B> {
         }
     }
 
+    fn is_poisoned(&self) -> bool {
+        self.conn_info.poisoned.poisoned()
+    }
+
     fn is_ready(&self) -> bool {
         match self.tx {
             #[cfg(feature = "http1")]
             PoolTx::Http1(ref tx) => tx.is_ready(),
             #[cfg(feature = "http2")]
             PoolTx::Http2(ref tx) => tx.is_ready(),
-        }
-    }
-
-    fn is_closed(&self) -> bool {
-        match self.tx {
-            #[cfg(feature = "http1")]
-            PoolTx::Http1(ref tx) => tx.is_closed(),
-            #[cfg(feature = "http2")]
-            PoolTx::Http2(ref tx) => tx.is_closed(),
         }
     }
 }
@@ -789,25 +845,6 @@ impl<B: Body + 'static> PoolClient<B> {
             PoolTx::Http2(ref mut tx) => tx.try_send_request(req),
         };
     }
-    /*
-    //TODO: can we re-introduce this somehow? Or must people use tower::retry?
-    fn send_request_retryable(
-        &mut self,
-        req: Request<B>,
-    ) -> impl Future<Output = Result<Response<hyper::body::Incoming>, (Error, Option<Request<B>>)>>
-    where
-        B: Send,
-    {
-        match self.tx {
-            #[cfg(not(feature = "http2"))]
-            PoolTx::Http1(ref mut tx) => tx.send_request_retryable(req),
-            #[cfg(feature = "http1")]
-            PoolTx::Http1(ref mut tx) => Either::Left(tx.send_request_retryable(req)),
-            #[cfg(feature = "http2")]
-            PoolTx::Http2(ref mut tx) => Either::Right(tx.send_request_retryable(req)),
-        }
-    }
-    */
 }
 
 impl<B> pool::Poolable for PoolClient<B>
@@ -815,7 +852,7 @@ where
     B: Send + 'static,
 {
     fn is_open(&self) -> bool {
-        self.is_ready()
+        !self.is_poisoned() && self.is_ready()
     }
 
     fn reserve(self) -> pool::Reservation<Self> {
@@ -871,12 +908,6 @@ fn absolute_form(uri: &mut Uri) {
         uri.authority().is_some(),
         "absolute_form needs an authority"
     );
-    // If the URI is to HTTPS, and the connector claimed to be a proxy,
-    // then it *should* have tunneled, and so we don't want to send
-    // absolute-form in that case.
-    if uri.scheme() == Some(&Scheme::HTTPS) {
-        origin_form(uri);
-    }
 }
 
 fn authority_form(uri: &mut Uri) {
@@ -1385,6 +1416,16 @@ impl Builder {
         self
     }
 
+    /// Sets the max size of received header frames for HTTP2.
+    ///
+    /// Default is currently 16KB, but can change.
+    #[cfg(feature = "http2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http2")))]
+    pub fn http2_max_header_list_size(&mut self, max: u32) -> &mut Self {
+        self.h2_builder.max_header_list_size(max);
+        self
+    }
+
     /// Sets an interval for HTTP2 Ping frames should be sent to keep a
     /// connection alive.
     ///
@@ -1602,6 +1643,19 @@ impl Error {
         matches!(self.kind, ErrorKind::Connect)
     }
 
+    /// Returns the info of the client connection on which this error occurred.
+    #[cfg(any(feature = "http1", feature = "http2"))]
+    pub fn connect_info(&self) -> Option<&Connected> {
+        self.connect_info.as_ref()
+    }
+
+    #[cfg(any(feature = "http1", feature = "http2"))]
+    fn with_connect_info(self, connect_info: Connected) -> Self {
+        Self {
+            connect_info: Some(connect_info),
+            ..self
+        }
+    }
     fn is_canceled(&self) -> bool {
         matches!(self.kind, ErrorKind::Canceled)
     }

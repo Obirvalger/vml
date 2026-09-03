@@ -3,8 +3,9 @@
 //! See the [`new`] function for documentation.
 
 use std::io;
-use std::os::unix::io::RawFd;
+use std::os::fd::RawFd;
 
+#[cfg_attr(not(feature = "os-ext"), allow(dead_code))] // Used by pipe waker, but not for all OS.
 pub(crate) fn new_raw() -> io::Result<[RawFd; 2]> {
     let mut fds: [RawFd; 2] = [-1, -1];
 
@@ -12,6 +13,8 @@ pub(crate) fn new_raw() -> io::Result<[RawFd; 2]> {
         target_os = "android",
         target_os = "dragonfly",
         target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "hurd",
         target_os = "linux",
         target_os = "netbsd",
         target_os = "openbsd",
@@ -19,6 +22,8 @@ pub(crate) fn new_raw() -> io::Result<[RawFd; 2]> {
         target_os = "redox",
         target_os = "solaris",
         target_os = "vita",
+        target_os = "cygwin",
+        target_os = "nuttx",
     ))]
     unsafe {
         if libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) != 0 {
@@ -28,11 +33,14 @@ pub(crate) fn new_raw() -> io::Result<[RawFd; 2]> {
 
     #[cfg(any(
         target_os = "aix",
+        target_os = "haiku",
         target_os = "ios",
         target_os = "macos",
         target_os = "tvos",
+        target_os = "visionos",
         target_os = "watchos",
         target_os = "espidf",
+        target_os = "nto",
     ))]
     unsafe {
         // For platforms that don't have `pipe2(2)` we need to manually set the
@@ -54,33 +62,13 @@ pub(crate) fn new_raw() -> io::Result<[RawFd; 2]> {
         }
     }
 
-    #[cfg(not(any(
-        target_os = "aix",
-        target_os = "android",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "illumos",
-        target_os = "ios",
-        target_os = "linux",
-        target_os = "macos",
-        target_os = "netbsd",
-        target_os = "openbsd",
-        target_os = "redox",
-        target_os = "tvos",
-        target_os = "watchos",
-        target_os = "espidf",
-        target_os = "solaris",
-        target_os = "vita",
-    )))]
-    compile_error!("unsupported target for `mio::unix::pipe`");
-
     Ok(fds)
 }
 
 cfg_os_ext! {
 use std::fs::File;
 use std::io::{IoSlice, IoSliceMut, Read, Write};
-use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd};
 use std::process::{ChildStderr, ChildStdin, ChildStdout};
 
 use crate::io_source::IoSource;
@@ -260,7 +248,7 @@ impl Sender {
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
     /// use std::io;
-    /// use std::os::unix::io::AsRawFd;
+    /// use std::os::fd::AsRawFd;
     /// use mio::unix::pipe;
     ///
     /// let (sender, receiver) = pipe::new()?;
@@ -393,6 +381,26 @@ impl IntoRawFd for Sender {
     }
 }
 
+impl From<Sender> for OwnedFd {
+    fn from(sender: Sender) -> Self {
+        sender.inner.into_inner().into()
+    }
+}
+
+impl AsFd for Sender {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
+    }
+}
+
+impl From<OwnedFd> for Sender {
+    fn from(fd: OwnedFd) -> Self {
+        Sender {
+            inner: IoSource::new(File::from(fd)),
+        }
+    }
+}
+
 /// Receiving end of an Unix pipe.
 ///
 /// See [`new`] for documentation, including examples.
@@ -425,7 +433,7 @@ impl Receiver {
     /// #
     /// # fn main() -> Result<(), Box<dyn Error>> {
     /// use std::io;
-    /// use std::os::unix::io::AsRawFd;
+    /// use std::os::fd::AsRawFd;
     /// use mio::unix::pipe;
     ///
     /// let (sender, receiver) = pipe::new()?;
@@ -540,11 +548,9 @@ impl From<ChildStderr> for Receiver {
     }
 }
 
-impl FromRawFd for Receiver {
-    unsafe fn from_raw_fd(fd: RawFd) -> Receiver {
-        Receiver {
-            inner: IoSource::new(File::from_raw_fd(fd)),
-        }
+impl IntoRawFd for Receiver {
+    fn into_raw_fd(self) -> RawFd {
+        self.inner.into_inner().into_raw_fd()
     }
 }
 
@@ -554,13 +560,35 @@ impl AsRawFd for Receiver {
     }
 }
 
-impl IntoRawFd for Receiver {
-    fn into_raw_fd(self) -> RawFd {
-        self.inner.into_inner().into_raw_fd()
+impl FromRawFd for Receiver {
+    unsafe fn from_raw_fd(fd: RawFd) -> Receiver {
+        Receiver {
+            inner: IoSource::new(File::from_raw_fd(fd)),
+        }
     }
 }
 
-#[cfg(not(any(target_os = "illumos", target_os = "solaris", target_os = "vita")))]
+impl From<Receiver> for OwnedFd {
+    fn from(receiver: Receiver) -> Self {
+        receiver.inner.into_inner().into()
+    }
+}
+
+impl AsFd for Receiver {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
+    }
+}
+
+impl From<OwnedFd> for Receiver {
+    fn from(fd: OwnedFd) -> Self {
+        Receiver {
+            inner: IoSource::new(File::from(fd)),
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "aix", target_os = "illumos", target_os = "solaris", target_os = "vita")))]
 fn set_nonblocking(fd: RawFd, nonblocking: bool) -> io::Result<()> {
     let value = nonblocking as libc::c_int;
     if unsafe { libc::ioctl(fd, libc::FIONBIO, &value) } == -1 {
@@ -570,7 +598,7 @@ fn set_nonblocking(fd: RawFd, nonblocking: bool) -> io::Result<()> {
     }
 }
 
-#[cfg(any(target_os = "illumos", target_os = "solaris", target_os = "vita"))]
+#[cfg(any(target_os = "aix", target_os = "illumos", target_os = "solaris", target_os = "vita"))]
 fn set_nonblocking(fd: RawFd, nonblocking: bool) -> io::Result<()> {
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags < 0 {

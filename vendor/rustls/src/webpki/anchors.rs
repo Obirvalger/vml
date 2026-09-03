@@ -5,7 +5,6 @@ use pki_types::{CertificateDer, TrustAnchor};
 use webpki::anchor_from_trusted_cert;
 
 use super::pki_error;
-#[cfg(feature = "logging")]
 use crate::log::{debug, trace};
 use crate::{DistinguishedName, Error};
 
@@ -46,15 +45,14 @@ impl RootCertStore {
                 }
                 Err(err) => {
                     trace!("invalid cert der {:?}", der_cert.as_ref());
-                    debug!("certificate parsing failed: {:?}", err);
+                    debug!("certificate parsing failed: {err:?}");
                     invalid_count += 1;
                 }
             };
         }
 
         debug!(
-            "add_parsable_certificates processed {} valid and {} invalid certs",
-            valid_count, invalid_count
+            "add_parsable_certificates processed {valid_count} valid and {invalid_count} invalid certs"
         );
 
         (valid_count, invalid_count)
@@ -120,7 +118,7 @@ impl Extend<TrustAnchor<'static>> for RootCertStore {
 impl fmt::Debug for RootCertStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RootCertStore")
-            .field("roots", &format!("({} roots)", &self.roots.len()))
+            .field("roots", &format!("({} roots)", self.roots.len()))
             .finish()
     }
 }
@@ -139,7 +137,7 @@ fn root_cert_store_debug() {
     let store = RootCertStore::from_iter(iter::repeat(ta).take(138));
 
     assert_eq!(
-        format!("{:?}", store),
+        format!("{store:?}"),
         "RootCertStore { roots: \"(138 roots)\" }"
     );
 }

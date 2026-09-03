@@ -72,7 +72,7 @@ use crate::{
 /// string literals. This can be quite convenient!
 #[allow(non_snake_case)]
 #[inline]
-pub fn B<'a, B: ?Sized + AsRef<[u8]>>(bytes: &'a B) -> &'a [u8] {
+pub fn B<B: ?Sized + AsRef<[u8]>>(bytes: &B) -> &[u8] {
     bytes.as_ref()
 }
 
@@ -126,7 +126,7 @@ pub trait ByteSlice: private::Sealed {
 
     /// Return this byte slice as a `&BStr`.
     ///
-    /// Use `&BStr` is useful because of its `fmt::Debug` representation
+    /// `&BStr` is useful because of its `fmt::Debug` representation
     /// and various other trait implementations (such as `PartialEq` and
     /// `PartialOrd`). In particular, the `Debug` implementation for `BStr`
     /// shows its bytes as a normal string. For invalid UTF-8, hex escape
@@ -148,7 +148,7 @@ pub trait ByteSlice: private::Sealed {
 
     /// Return this byte slice as a `&mut BStr`.
     ///
-    /// Use `&mut BStr` is useful because of its `fmt::Debug` representation
+    /// `&mut BStr` is useful because of its `fmt::Debug` representation
     /// and various other trait implementations (such as `PartialEq` and
     /// `PartialOrd`). In particular, the `Debug` implementation for `BStr`
     /// shows its bytes as a normal string. For invalid UTF-8, hex escape
@@ -528,7 +528,7 @@ pub trait ByteSlice: private::Sealed {
 
         #[cfg(not(unix))]
         #[inline]
-        fn imp(bytes: &[u8]) -> Cow<OsStr> {
+        fn imp(bytes: &[u8]) -> Cow<'_, OsStr> {
             use std::ffi::OsString;
 
             match bytes.to_str_lossy() {
@@ -1102,6 +1102,7 @@ pub trait ByteSlice: private::Sealed {
     /// assert_eq!(0, B("  \n\t\u{2003}\n  \t").fields().count());
     /// ```
     #[cfg(feature = "unicode")]
+    #[doc(alias = "split_whitespace")]
     #[inline]
     fn fields(&self) -> Fields<'_> {
         Fields::new(self.as_bytes())
@@ -1542,6 +1543,7 @@ pub trait ByteSlice: private::Sealed {
     /// assert_eq!(s, "ZfZoZoZ".as_bytes());
     /// ```
     #[cfg(feature = "alloc")]
+    #[must_use]
     #[inline]
     fn replace<N: AsRef<[u8]>, R: AsRef<[u8]>>(
         &self,
@@ -1588,6 +1590,7 @@ pub trait ByteSlice: private::Sealed {
     /// assert_eq!(s, "ZfZoo".as_bytes());
     /// ```
     #[cfg(feature = "alloc")]
+    #[must_use]
     #[inline]
     fn replacen<N: AsRef<[u8]>, R: AsRef<[u8]>>(
         &self,
@@ -2783,11 +2786,11 @@ pub trait ByteSlice: private::Sealed {
     /// The dual of this function is [`ByteVec::unescape_bytes`].
     ///
     /// Note that this is similar to, but not equivalent to the `Debug`
-    /// implementation on [`BStr`] and [`BString`]. The `Debug` implementations
-    /// also use the debug representation for all Unicode codepoints. However,
-    /// this escaping routine only escapes individual bytes. All Unicode
-    /// codepoints above `U+007F` are passed through unchanged without any
-    /// escaping.
+    /// implementation on [`BStr`] and [`BString`](crate::BString). The `Debug`
+    /// implementations also use the debug representation for all Unicode
+    /// codepoints. However, this escaping routine only escapes individual
+    /// bytes. All Unicode codepoints above `U+007F` are passed through
+    /// unchanged without any escaping.
     ///
     /// # Examples
     ///
@@ -3045,7 +3048,7 @@ pub trait ByteSlice: private::Sealed {
     #[inline]
     fn last_byte(&self) -> Option<u8> {
         let bytes = self.as_bytes();
-        bytes.get(bytes.len().saturating_sub(1)).map(|&b| b)
+        bytes.last().copied()
     }
 
     /// Returns the index of the first non-ASCII byte in this byte string (if
@@ -3079,7 +3082,7 @@ pub trait ByteSlice: private::Sealed {
 /// The purpose of this type is to permit callers to construct a substring
 /// searcher that can be used to search haystacks without the overhead of
 /// constructing the searcher in the first place. This is a somewhat niche
-/// concern when it's necessary to re-use the same needle to search multiple
+/// concern when it's necessary to reuse the same needle to search multiple
 /// different haystacks with as little overhead as possible. In general, using
 /// [`ByteSlice::find`](trait.ByteSlice.html#method.find)
 /// or
@@ -3331,7 +3334,7 @@ impl<'a> Iterator for Bytes<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<u8> {
-        self.it.next().map(|&b| b)
+        self.it.next().copied()
     }
 
     #[inline]
@@ -3343,7 +3346,7 @@ impl<'a> Iterator for Bytes<'a> {
 impl<'a> DoubleEndedIterator for Bytes<'a> {
     #[inline]
     fn next_back(&mut self) -> Option<u8> {
-        self.it.next_back().map(|&b| b)
+        self.it.next_back().copied()
     }
 }
 
@@ -3366,6 +3369,7 @@ impl<'a> iter::FusedIterator for Bytes<'a> {}
 ///
 /// `'a` is the lifetime of the byte string being split.
 #[cfg(feature = "unicode")]
+#[doc(alias = "SplitWhitespace")]
 #[derive(Clone, Debug)]
 pub struct Fields<'a> {
     it: FieldsWith<'a, fn(char) -> bool>,
@@ -3374,7 +3378,7 @@ pub struct Fields<'a> {
 #[cfg(feature = "unicode")]
 impl<'a> Fields<'a> {
     fn new(bytes: &'a [u8]) -> Fields<'a> {
-        Fields { it: bytes.fields_with(|ch| ch.is_whitespace()) }
+        Fields { it: bytes.fields_with(char::is_whitespace) }
     }
 }
 
@@ -3428,7 +3432,7 @@ impl<'a, F: FnMut(char) -> bool> Iterator for FieldsWith<'a, F> {
                 }
             }
         }
-        while let Some((_, e, ch)) = self.chars.next() {
+        for (_, e, ch) in self.chars.by_ref() {
             if (self.f)(ch) {
                 break;
             }
@@ -3744,7 +3748,7 @@ impl<'a> Iterator for LinesWithTerminator<'a> {
                 Some(line)
             }
             Some(end) => {
-                let line = &self.bytes[..end + 1];
+                let line = &self.bytes[..=end];
                 self.bytes = &self.bytes[end + 1..];
                 Some(line)
             }
@@ -3764,7 +3768,7 @@ impl<'a> DoubleEndedIterator for LinesWithTerminator<'a> {
             }
             Some(end) => {
                 let line = &self.bytes[end + 1..];
-                self.bytes = &self.bytes[..end + 1];
+                self.bytes = &self.bytes[..=end];
                 Some(line)
             }
         }

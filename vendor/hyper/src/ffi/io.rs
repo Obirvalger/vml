@@ -2,10 +2,9 @@ use std::ffi::c_void;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::rt::{Read, Write};
-use libc::size_t;
-
 use super::task::hyper_context;
+use crate::ffi::size_t;
+use crate::rt::{Read, Write};
 
 /// Sentinel value to return from a read or write callback that the operation
 /// is pending.
@@ -148,7 +147,7 @@ impl Read for hyper_io {
         cx: &mut Context<'_>,
         mut buf: crate::rt::ReadBufCursor<'_>,
     ) -> Poll<std::io::Result<()>> {
-        let buf_ptr = unsafe { buf.as_mut() }.as_mut_ptr() as *mut u8;
+        let buf_ptr = unsafe { buf.as_mut() }.as_mut_ptr().cast::<u8>();
         let buf_len = buf.remaining();
 
         match (self.read)(self.userdata, hyper_context::wrap(cx), buf_ptr, buf_len) {

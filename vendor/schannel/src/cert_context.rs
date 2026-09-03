@@ -16,6 +16,7 @@ use crate::ncrypt_key::NcryptKey;
 use crate::Inner;
 
 /// A supported hashing algorithm
+#[derive(Copy, Clone)]
 pub struct HashAlgorithm(u32, usize);
 
 #[allow(missing_docs)]
@@ -513,7 +514,7 @@ impl<'a> AcquirePrivateKeyOptions<'a> {
             let flags = self.flags | Cryptography::CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG;
             let mut handle = Cryptography::HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
             let mut spec = Cryptography::CERT_KEY_SPEC::default();
-            let mut free = Foundation::BOOL::default();
+            let mut free = windows_sys::core::BOOL::default();
             let res = Cryptography::CryptAcquireCertificatePrivateKey(
                 self.cert.0,
                 flags,
@@ -526,7 +527,7 @@ impl<'a> AcquirePrivateKeyOptions<'a> {
                 return Err(io::Error::last_os_error());
             }
             assert_ne!(free, 0);
-            if spec & Cryptography::CERT_NCRYPT_KEY_SPEC != 0 {
+            if spec == Cryptography::CERT_NCRYPT_KEY_SPEC {
                 Ok(PrivateKey::NcryptKey(NcryptKey::from_inner(handle)))
             } else {
                 Ok(PrivateKey::CryptProv(CryptProv::from_inner(handle)))

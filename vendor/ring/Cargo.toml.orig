@@ -1,32 +1,35 @@
 [package]
-authors = ["Brian Smith <brian@briansmith.org>"]
 build = "build.rs"
 categories = ["cryptography", "no-std"]
-description = "Safe, fast, small crypto using Rust."
+description = "An experiment."
 edition = "2021"
 keywords = ["crypto", "cryptography", "rand", "ECC", "RSA"]
-license-file = "LICENSE"
+license = "Apache-2.0 AND ISC"
 name = "ring"
 repository = "https://github.com/briansmith/ring"
 
 # Keep in sync with .github/workflows/ci.yml ("MSRV") and see the MSRV note
-# in cpu/arm.rs
-rust-version = "1.61.0"
+# in cpu/arm.rs.
+# 1.66 is required on x86/x86_64 for https://github.com/rust-lang/rust/pull/101861.
+rust-version = "1.66.0"
 
 # Keep in sync with `links` below.
-version = "0.17.8"
+version = "0.17.14"
 
 # Keep in sync with `version` above.
 #
-# "ring_core_" + version, replacing punctuation with underscores.
-#
-# build.rs uses this to derive the prefix for FFI symbols and the file names
-# of the FFI libraries, so it must be a valid identifier prefix and a valid
-# filename prefix.
-links = "ring_core_0_17_8"
+# build.rs verifies that this equals "ring_core_{major}_{minor}_{patch}_{pre}"
+# as keeping this in sync with the symbol prefixing is crucial for ensuring
+# the safety of multiple versions of *ring* being used in a program.
+links = "ring_core_0_17_14_"
 
 include = [
     "LICENSE",
+    "LICENSE-other-bits",
+    "LICENSE-BoringSSL",
+    "src/polyfill/once_cell/LICENSE-APACHE",
+    "src/polyfill/once_cell/LICENSE-MIT",
+
     "Cargo.toml",
 
     "pregenerated/*",
@@ -38,8 +41,6 @@ include = [
     "crypto/chacha/asm/chacha-armv8.pl",
     "crypto/chacha/asm/chacha-x86.pl",
     "crypto/chacha/asm/chacha-x86_64.pl",
-    "crypto/cipher_extra/test/aes_128_gcm_siv_tests.txt",
-    "crypto/cipher_extra/test/aes_256_gcm_siv_tests.txt",
     "crypto/constant_time_test.c",
     "crypto/cpu_intel.c",
     "crypto/crypto.c",
@@ -49,12 +50,22 @@ include = [
     "crypto/curve25519/curve25519_tables.h",
     "crypto/curve25519/internal.h",
     "crypto/fipsmodule/aes/aes_nohw.c",
+    "crypto/fipsmodule/aes/asm/aes-gcm-avx2-x86_64.pl",
     "crypto/fipsmodule/aes/asm/aesni-x86.pl",
+    "crypto/fipsmodule/aes/asm/aesni-gcm-x86_64.pl",
     "crypto/fipsmodule/aes/asm/aesni-x86_64.pl",
     "crypto/fipsmodule/aes/asm/aesv8-armx.pl",
+    "crypto/fipsmodule/aes/asm/aesv8-gcm-armv8.pl",
+    "crypto/fipsmodule/aes/asm/ghash-armv4.pl",
+    "crypto/fipsmodule/aes/asm/ghash-neon-armv8.pl",
+    "crypto/fipsmodule/aes/asm/ghash-x86.pl",
+    "crypto/fipsmodule/aes/asm/ghash-x86_64.pl",
+    "crypto/fipsmodule/aes/asm/ghashv8-armx.pl",
     "crypto/fipsmodule/aes/asm/bsaes-armv7.pl",
     "crypto/fipsmodule/aes/asm/bsaes-x86_64.pl",
     "crypto/fipsmodule/aes/asm/vsaes-armv7.pl",
+    "crypto/fipsmodule/aes/asm/vpaes-armv7.pl",
+    "crypto/fipsmodule/aes/asm/vpaes-armv8.pl",
     "crypto/fipsmodule/aes/asm/vpaes-x86.pl",
     "crypto/fipsmodule/aes/asm/vpaes-x86_64.pl",
     "crypto/fipsmodule/bn/asm/armv4-mont.pl",
@@ -81,12 +92,6 @@ include = [
     "crypto/fipsmodule/ec/p256_table.h",
     "crypto/fipsmodule/ec/util.h",
     "crypto/fipsmodule/ecdsa/ecdsa_verify_tests.txt",
-    "crypto/fipsmodule/modes/asm/aesni-gcm-x86_64.pl",
-    "crypto/fipsmodule/modes/asm/ghash-armv4.pl",
-    "crypto/fipsmodule/modes/asm/ghash-x86.pl",
-    "crypto/fipsmodule/modes/asm/ghash-x86_64.pl",
-    "crypto/fipsmodule/modes/asm/ghashv8-armx.pl",
-    "crypto/fipsmodule/modes/asm/aesv8-gcm-armv8.pl",
     "crypto/fipsmodule/sha/asm/sha256-armv4.pl",
     "crypto/fipsmodule/sha/asm/sha512-armv4.pl",
     "crypto/fipsmodule/sha/asm/sha512-armv8.pl",
@@ -101,21 +106,17 @@ include = [
     "crypto/perlasm/x86gas.pl",
     "crypto/perlasm/x86nasm.pl",
     "crypto/perlasm/x86_64-xlate.pl",
-    "crypto/poly1305/internal.h",
     "crypto/poly1305/poly1305.c",
     "crypto/poly1305/poly1305_arm.c",
     "crypto/poly1305/poly1305_arm_asm.S",
-    "crypto/poly1305/poly1305_vec.c",
-    "crypto/cipher_extra/asm/chacha20_poly1305_armv8.pl",
-    "crypto/cipher_extra/asm/chacha20_poly1305_x86_64.pl",
+    "crypto/cipher/asm/chacha20_poly1305_armv8.pl",
+    "crypto/cipher/asm/chacha20_poly1305_x86_64.pl",
     "examples/**/*.rs",
     "include/ring-core/aes.h",
-    "include/ring-core/arm_arch.h",
     "include/ring-core/asm_base.h",
     "include/ring-core/base.h",
     "include/ring-core/check.h",
     "include/ring-core/mem.h",
-    "include/ring-core/poly1305.h",
     "include/ring-core/target.h",
     "include/ring-core/type_check.h",
     "src/**/*.rs",
@@ -148,21 +149,6 @@ include = [
     "third_party/fiat/p256_64.h",
     "third_party/fiat/p256_64_msvc.h",
     "third_party/fiat/LICENSE",
-    "third_party/NIST/SHAVS/SHA1LongMsg.rsp",
-    "third_party/NIST/SHAVS/SHA1Monte.rsp",
-    "third_party/NIST/SHAVS/SHA1ShortMsg.rsp",
-    "third_party/NIST/SHAVS/SHA224LongMsg.rsp",
-    "third_party/NIST/SHAVS/SHA224Monte.rsp",
-    "third_party/NIST/SHAVS/SHA224ShortMsg.rsp",
-    "third_party/NIST/SHAVS/SHA256LongMsg.rsp",
-    "third_party/NIST/SHAVS/SHA256Monte.rsp",
-    "third_party/NIST/SHAVS/SHA256ShortMsg.rsp",
-    "third_party/NIST/SHAVS/SHA384LongMsg.rsp",
-    "third_party/NIST/SHAVS/SHA384Monte.rsp",
-    "third_party/NIST/SHAVS/SHA384ShortMsg.rsp",
-    "third_party/NIST/SHAVS/SHA512LongMsg.rsp",
-    "third_party/NIST/SHAVS/SHA512Monte.rsp",
-    "third_party/NIST/SHAVS/SHA512ShortMsg.rsp",
 ]
 
 [package.metadata.docs.rs]
@@ -176,23 +162,23 @@ cfg-if = { version = "1.0.0", default-features = false }
 getrandom = { version = "0.2.10" }
 untrusted = { version = "0.9" }
 
-[target.'cfg(any(target_arch = "aarch64", target_arch = "arm", target_arch = "x86",target_arch = "x86_64"))'.dependencies]
-spin = { version = "0.9.8", default-features = false, features = ["once"] }
-
-[target.'cfg(all(any(target_os = "android", target_os = "linux"), any(target_arch = "aarch64", target_arch = "arm")))'.dependencies]
+[target.'cfg(all(any(all(target_arch = "aarch64", target_endian = "little"), all(target_arch = "arm", target_endian = "little")), any(target_os = "android", target_os = "linux")))'.dependencies]
 libc = { version = "0.2.148", default-features = false }
 
-[target.'cfg(all(target_arch = "aarch64", target_os = "windows"))'.dependencies]
+[target.'cfg(all(all(target_arch = "aarch64", target_endian = "little"), target_vendor = "apple", any(target_os = "ios", target_os = "macos", target_os = "tvos", target_os = "visionos", target_os = "watchos")))'.dependencies]
+libc = { version = "0.2.155", default-features = false }
+
+[target.'cfg(all(all(target_arch = "aarch64", target_endian = "little"), target_os = "windows"))'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
-wasm-bindgen-test = { version = "0.3.37", default-features = false }
+wasm-bindgen-test = { version = "0.3.37", default-features = false, features = ["std"] }
 
 [target.'cfg(any(unix, windows, target_os = "wasi"))'.dev-dependencies]
 libc = { version = "0.2.148", default-features = false }
 
 [build-dependencies]
-cc = { version = "1.0.83", default-features = false }
+cc = { version = "1.2.8", default-features = false }
 
 [features]
 # These features are documented in the top-level module's documentation.
@@ -200,6 +186,7 @@ default = ["alloc", "dev_urandom_fallback"]
 alloc = []
 dev_urandom_fallback = []
 less-safe-getrandom-custom-or-rdrand = []
+less-safe-getrandom-espidf = []
 slow_tests = []
 std = ["alloc"]
 unstable-testing-arm-no-hw = []
@@ -230,4 +217,10 @@ members = [
     # intentionally not a default member so that `cargo test` doesn't cause criterion.rs and all its
     # dependencies to get built.
     "bench",
+
+    "cavp",
+]
+default-members = [
+    ".",
+    "cavp"
 ]

@@ -23,9 +23,18 @@ flate2 = "1.0"
 
 ## MSRV (Minimum Supported Rust Version) Policy
 
-This crate supports the current stable and the last stable for the latest version.
-For example, if the current stable is 1.64, this crate supports 1.64 and 1.63.
-Older stables may work, but we don't guarantee these will continue to work.
+This crate supports the current and previous stable versions of the Rust compiler.
+For example, if the current stable is 1.80, this crate supports 1.80 and 1.79.
+
+Other compiler versions may work, but failures may not be treated as a `flate2` bug.
+
+The `Cargo.toml` file specifies a `rust-version` for which builds of the current version
+passed at some point. This value is indicative only, and may change at any time.
+
+The `rust-version` is a best-effort measured value and is different to the MSRV. The
+`rust-version` can be incremented by a PR in order to pass tests, as long as the MSRV
+continues to hold. When the `rust-version` increases, the next release should be a minor
+version, to allow any affected users to pin to a previous minor version.
 
 ## Compression
 
@@ -58,8 +67,20 @@ fn main() {
 
 ## Backends
 
-The default `miniz_oxide` backend has the advantage of being pure Rust. If you
-want maximum performance, you can use the zlib-ng C library:
+The default `miniz_oxide` backend has the advantage of only using safe Rust.
+
+If you want maximum performance while still benefiting from a Rust
+implementation at the cost of some `unsafe`, you can use `zlib-rs`:
+
+```toml
+[dependencies]
+flate2 = { version = "1.0.17", features = ["zlib-rs"], default-features = false }
+```
+
+### C backends
+
+While zlib-rs is [the fastest overall](https://trifectatech.org/blog/zlib-rs-is-faster-than-c/),
+the zlib-ng C library can be slightly faster in certain cases:
 
 ```toml
 [dependencies]
@@ -92,15 +113,6 @@ without `default-features = false`, you'll get stock zlib rather than zlib-ng.
 See [the libz-sys
 README](https://github.com/rust-lang/libz-sys/blob/main/README.md) for details.
 To avoid that, use the `"zlib-ng"` feature instead.
-
-For compatibility with previous versions of `flate2`, the Cloudflare optimized
-version of zlib is available, via the `cloudflare_zlib` feature. It's not as
-fast as zlib-ng, but it's faster than stock zlib. It requires an x86-64 CPU with
-SSE 4.2 or ARM64 with NEON & CRC. It does not support 32-bit CPUs at all and is
-incompatible with mingw. For more information check the [crate
-documentation](https://crates.io/crates/cloudflare-zlib-sys). Note that
-`cloudflare_zlib` will cause breakage if any other crate in your crate graph
-uses another version of zlib/libz.
 
 # License
 

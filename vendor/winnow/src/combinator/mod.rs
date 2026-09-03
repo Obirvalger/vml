@@ -1,10 +1,14 @@
 //! # List of parsers and combinators
 //!
+//! <div class="warning">
+//!
 //! **Note**: this list is meant to provide a nicer way to find a parser than reading through the documentation on docs.rs. Function combinators are organized in module so they are a bit easier to find.
+//!
+//! </div>
 //!
 //! ## Basic elements
 //!
-//! Those are used to recognize the lowest level elements of your grammar, like, "here is a dot", or "here is an big endian integer".
+//! Those are used to take a series of tokens for the lowest level elements of your grammar, like, "here is a dot", or "here is an big endian integer".
 //!
 //! | combinator | usage | input | new input | output | comment |
 //! |---|---|---|---|---|---|
@@ -28,12 +32,12 @@
 //!
 //! | combinator | usage | input | new input | output | comment |
 //! |---|---|---|---|---|---|
-//! | [`(...)` (tuples)][crate::Parser] | `("ab", "XY", take(1))` | `"abXYZ!"` | `"!"` | `Ok(("ab", "XY", "Z"))` |Chains parsers and assemble the sub results in a tuple. You can use as many child parsers as you can put elements in a tuple|
-//! | [`seq!`] | `seq!(_: '(', take(2), _: ')')` | `"(ab)cd"` | `"cd"` | `Ok("ab")` ||
-//! | [`delimited`] | `delimited('(', take(2), ')')` | `"(ab)cd"` | `"cd"` | `Ok("ab")` ||
-//! | [`preceded`] | `preceded("ab", "XY")` | `"abXYZ"` | `"Z"` | `Ok("XY")` ||
-//! | [`terminated`] | `terminated("ab", "XY")` | `"abXYZ"` | `"Z"` | `Ok("ab")` ||
-//! | [`separated_pair`] | `separated_pair("hello", ',', "world")` | `"hello,world!"` | `"!"` | `Ok(("hello", "world"))` ||
+//! | [`(...)` (tuples)][crate::Parser] | `("ab", "XY", take(1))` | `"abXYZ!"` | `"!"` | `Ok(("ab", "XY", "Z"))` |Parse a series of values|
+//! | [`seq!`] | `seq!(_: '(', take(2), _: ')')` | `"(ab)cd"` | `"cd"` | `Ok("ab")` |Parse a series of values, discarding those you specify|
+//! | [`delimited`] | `delimited('(', take(2), ')')` | `"(ab)cd"` | `"cd"` | `Ok("ab")` |Parse three values, discarding the first and third value|
+//! | [`preceded`] | `preceded("ab", "XY")` | `"abXYZ"` | `"Z"` | `Ok("XY")` |Parse two values, discarding the first value|
+//! | [`terminated`] | `terminated("ab", "XY")` | `"abXYZ"` | `"Z"` | `Ok("ab")` |Parse two values, discarding the second value|
+//! | [`separated_pair`] | `separated_pair("hello", ',', "world")` | `"hello,world!"` | `"!"` | `Ok(("hello", "world"))` | Parse three values, discarding the middle value|
 //!
 //! ## Applying a parser multiple times
 //!
@@ -42,7 +46,7 @@
 //! | [`repeat`] | `repeat(1..=3, "ab")` | `"ababc"` | `"c"` | `Ok(vec!["ab", "ab"])` |Applies the parser between m and n times (n included) and returns the list of results in a Vec|
 //! | [`repeat_till`] | `repeat_till(0.., "ab", "ef")` | `"ababefg"` | `"g"` | `Ok((vec!["ab", "ab"], "ef"))` |Applies the first parser until the second applies. Returns a tuple containing the list of results from the first in a Vec and the result of the second|
 //! | [`separated`] | `separated(1..=3, "ab", ",")` | `"ab,ab,ab."` | `"."` | `Ok(vec!["ab", "ab", "ab"])` |Applies the parser and separator between m and n times (n included) and returns the list of results in a Vec|
-//! | [`Repeat::fold`] | `repeat(1..=2, be_u8).fold(|| 0, |acc, item| acc + item)` | `[1, 2, 3]` | `[3]` | `Ok(3)` |Applies the parser between m and n times (n included) and folds the list of return value|
+//! | [`Repeat::fold`] | <code>repeat(1..=2, `be_u8`).fold(\|\| 0, \|acc, item\| acc + item)</code> | `[1, 2, 3]` | `[3]` | `Ok(3)` |Applies the parser between m and n times (n included) and folds the list of return value|
 //!
 //! ## Partial related
 //!
@@ -64,8 +68,8 @@
 //! - [`not`]: Returns a result only if the embedded parser returns `Backtrack` or `Incomplete`. Does not consume the input
 //! - [`opt`]: Make the underlying parser optional
 //! - [`peek`]: Returns a result without consuming the input
-//! - [`Parser::recognize`]: If the child parser was successful, return the consumed input as the produced value
-//! - [`Parser::with_recognized`]: If the child parser was successful, return a tuple of the consumed input and the produced output.
+//! - [`Parser::take`]: If the child parser was successful, return the consumed input as the produced value
+//! - [`Parser::with_taken`]: If the child parser was successful, return a tuple of the consumed input and the produced output.
 //! - [`Parser::span`]: If the child parser was successful, return the location of the consumed input as the produced value
 //! - [`Parser::with_span`]: If the child parser was successful, return a tuple of the location of the consumed input and the produced output.
 //! - [`Parser::verify`]: Returns the result of the child parser if it satisfies a verification function
@@ -81,7 +85,7 @@
 //!
 //! ## Remaining combinators
 //!
-//! - [`empty`]: Returns a value without consuming any input, always succeeds
+//! - [`empty`]: Succeed, consuming no input
 //! - [`fail`]: Inversion of [`empty`]. Always fails.
 //! - [`Parser::by_ref`]: Allow moving `&mut impl Parser` into other parsers
 //!
@@ -93,7 +97,7 @@
 //! - [`line_ending`][crate::ascii::line_ending]: Recognizes an end of line (both `\n` and `\r\n`)
 //! - [`newline`][crate::ascii::newline]: Matches a newline character `\n`
 //! - [`till_line_ending`][crate::ascii::till_line_ending]: Recognizes a string of any char except `\r` or `\n`
-//! - [`rest`]: Return the remaining input
+//! - [`rest`][crate::token::rest]: Return the remaining input
 //!
 //! - [`alpha0`][crate::ascii::alpha0]: Recognizes zero or more lowercase and uppercase alphabetic characters: `[a-zA-Z]`. [`alpha1`][crate::ascii::alpha1] does the same but returns at least one character
 //! - [`alphanumeric0`][crate::ascii::alphanumeric0]: Recognizes zero or more numerical and alphabetic characters: `[0-9a-zA-Z]`. [`alphanumeric1`][crate::ascii::alphanumeric1] does the same but returns at least one character
@@ -109,7 +113,9 @@
 //! - [`hex_uint`][crate::ascii::hex_uint]: Decode a variable-width, hexadecimal integer
 //!
 //! - [`take_escaped`][crate::ascii::take_escaped]: Recognize the input slice with escaped characters
-//! - [`escaped_transform`][crate::ascii::escaped_transform]: Parse escaped characters, unescaping them
+//! - [`escaped`][crate::ascii::escaped]: Parse escaped characters, unescaping them
+//!
+//! - [`expression()`]: Parse an operator precedence expression with Pratt parsing
 //!
 //! ### Character test functions
 //!
@@ -158,18 +164,20 @@
 mod branch;
 mod core;
 mod debug;
+mod expression;
 mod multi;
-mod parser;
 mod sequence;
 
 #[cfg(test)]
 mod tests;
 
+pub mod impls;
+
 pub use self::branch::*;
 pub use self::core::*;
 pub use self::debug::*;
+pub use self::expression::*;
 pub use self::multi::*;
-pub use self::parser::*;
 pub use self::sequence::*;
 
 #[allow(unused_imports)]

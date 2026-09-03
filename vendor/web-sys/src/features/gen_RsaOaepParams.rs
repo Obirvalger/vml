@@ -4,12 +4,47 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = RsaOaepParams)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "RsaOaepParams")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `RsaOaepParams` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
     pub type RsaOaepParams;
+    #[doc = "Get the `name` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[wasm_bindgen(method, getter = "name")]
+    pub fn get_name(this: &RsaOaepParams) -> ::alloc::string::String;
+    #[doc = "Change the `name` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[wasm_bindgen(method, setter = "name")]
+    pub fn set_name(this: &RsaOaepParams, val: &str);
+    #[doc = "Get the `label` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[wasm_bindgen(method, getter = "label")]
+    pub fn get_label(this: &RsaOaepParams) -> Option<::js_sys::Object>;
+    #[doc = "Change the `label` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[wasm_bindgen(method, setter = "label")]
+    pub fn set_label(this: &RsaOaepParams, val: &::js_sys::Object);
+    #[doc = "Change the `label` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[wasm_bindgen(method, setter = "label")]
+    pub fn set_label_buffer_source(this: &RsaOaepParams, val: &::js_sys::Object);
+    #[doc = "Change the `label` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[wasm_bindgen(method, setter = "label")]
+    pub fn set_label_u8_slice(this: &RsaOaepParams, val: &mut [u8]);
+    #[doc = "Change the `label` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[wasm_bindgen(method, setter = "label")]
+    pub fn set_label_u8_array(this: &RsaOaepParams, val: &::js_sys::Uint8Array);
 }
 impl RsaOaepParams {
     #[doc = "Construct a new `RsaOaepParams`."]
@@ -18,33 +53,17 @@ impl RsaOaepParams {
     pub fn new(name: &str) -> Self {
         #[allow(unused_mut)]
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
-        ret.name(name);
+        ret.set_name(name);
         ret
     }
-    #[doc = "Change the `name` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[deprecated = "Use `set_name()` instead."]
     pub fn name(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("name"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_name(val);
         self
     }
-    #[doc = "Change the `label` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `RsaOaepParams`*"]
+    #[deprecated = "Use `set_label()` instead."]
     pub fn label(&mut self, val: &::js_sys::Object) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("label"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_label(val);
         self
     }
 }

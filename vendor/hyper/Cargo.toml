@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.63"
 name = "hyper"
-version = "1.4.1"
+version = "1.11.1"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 build = false
 include = [
@@ -21,11 +21,12 @@ include = [
     "LICENSE",
     "src/**/*",
 ]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "A fast and correct HTTP library."
+description = "A protective and efficient HTTP library for all."
 homepage = "https://hyper.rs"
 documentation = "https://docs.rs/hyper"
 readme = "README.md"
@@ -58,17 +59,59 @@ rustdoc-args = [
 [package.metadata.playground]
 features = ["full"]
 
-[profile.bench]
-codegen-units = 1
-incremental = false
+[package.metadata.capi.header]
+generation = false
+subdirectory = false
 
-[profile.release]
-codegen-units = 1
-incremental = false
+[[package.metadata.capi.install.include.asset]]
+from = "capi/include/hyper.h"
+
+[features]
+capi = []
+client = [
+    "dep:want",
+    "dep:pin-project-lite",
+    "dep:smallvec",
+]
+default = []
+ffi = [
+    "dep:http-body-util",
+    "dep:futures-util",
+]
+full = [
+    "client",
+    "http1",
+    "http2",
+    "server",
+]
+http1 = [
+    "dep:atomic-waker",
+    "dep:futures-channel",
+    "dep:futures-core",
+    "dep:httparse",
+    "dep:itoa",
+]
+http2 = [
+    "dep:atomic-waker",
+    "dep:futures-channel",
+    "dep:futures-core",
+    "dep:h2",
+]
+nightly = []
+server = [
+    "dep:httpdate",
+    "dep:pin-project-lite",
+    "dep:smallvec",
+]
+tracing = ["dep:tracing"]
 
 [lib]
 name = "hyper"
 path = "src/lib.rs"
+
+[dependencies.atomic-waker]
+version = "1.1.2"
+optional = true
 
 [dependencies.bytes]
 version = "1.2"
@@ -77,13 +120,18 @@ version = "1.2"
 version = "0.3"
 optional = true
 
+[dependencies.futures-core]
+version = "0.3.31"
+optional = true
+
 [dependencies.futures-util]
 version = "0.3"
+features = ["alloc"]
 optional = true
 default-features = false
 
 [dependencies.h2]
-version = "0.4.2"
+version = "0.4.14"
 optional = true
 
 [dependencies.http]
@@ -97,7 +145,7 @@ version = "0.1"
 optional = true
 
 [dependencies.httparse]
-version = "1.8"
+version = "1.9"
 optional = true
 
 [dependencies.httpdate]
@@ -106,10 +154,6 @@ optional = true
 
 [dependencies.itoa]
 version = "1"
-optional = true
-
-[dependencies.libc]
-version = "0.2"
 optional = true
 
 [dependencies.pin-project-lite]
@@ -156,6 +200,9 @@ default-features = false
 [dev-dependencies.http-body-util]
 version = "0.1"
 
+[dev-dependencies.pin-project-lite]
+version = "0.2.4"
+
 [dev-dependencies.pretty_env_logger]
 version = "0.5"
 
@@ -190,42 +237,108 @@ version = "0.4"
 [dev-dependencies.tokio-util]
 version = "0.7.10"
 
-[features]
-client = [
-    "dep:want",
-    "dep:pin-project-lite",
-    "dep:smallvec",
-]
-default = []
-ffi = [
-    "dep:libc",
-    "dep:http-body-util",
-    "futures-util?/alloc",
-]
-full = [
-    "client",
-    "http1",
-    "http2",
-    "server",
-]
-http1 = [
-    "dep:futures-channel",
-    "dep:futures-util",
-    "dep:httparse",
-    "dep:itoa",
-]
-http2 = [
-    "dep:futures-channel",
-    "dep:futures-util",
-    "dep:h2",
-]
-nightly = []
-server = [
-    "dep:httpdate",
-    "dep:pin-project-lite",
-    "dep:smallvec",
-]
-tracing = ["dep:tracing"]
+[dev-dependencies.tracing]
+version = "0.1"
+
+[dev-dependencies.tracing-subscriber]
+version = "0.3"
+
+[lints.clippy]
+absolute_paths = "allow"
+arbitrary_source_item_ordering = "allow"
+arithmetic_side_effects = "allow"
+as_conversions = "allow"
+blanket_clippy_restriction_lints = "allow"
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+checked_conversions = "allow"
+clone_on_ref_ptr = "allow"
+cognitive_complexity = "allow"
+collapsible_match = "allow"
+decimal_literal_representation = "allow"
+default_numeric_fallback = "allow"
+else_if_without_else = "allow"
+enum_glob_use = "allow"
+error_impl_error = "allow"
+expect_used = "allow"
+field_scoped_visibility_modifiers = "allow"
+float_arithmetic = "allow"
+if_not_else = "allow"
+if_then_some_else_none = "allow"
+ignored_unit_patterns = "allow"
+impl_trait_in_params = "allow"
+implicit_return = "allow"
+indexing_slicing = "allow"
+inline_modules = "allow"
+inline_trait_bounds = "allow"
+integer_division = "allow"
+integer_division_remainder_used = "allow"
+items_after_statements = "allow"
+let_underscore_must_use = "allow"
+let_underscore_untyped = "allow"
+let_unit_value = "allow"
+map_err_ignore = "allow"
+map_unwrap_or = "allow"
+match_wild_err_arm = "allow"
+min_ident_chars = "allow"
+missing_assert_message = "allow"
+missing_docs_in_private_items = "allow"
+missing_fields_in_debug = "allow"
+missing_inline_in_public_items = "allow"
+missing_panics_doc = "allow"
+missing_trait_methods = "allow"
+mod_module_files = "allow"
+module_inception = "allow"
+module_name_repetitions = "allow"
+multiple_inherent_impl = "allow"
+multiple_unsafe_ops_per_block = "allow"
+must_use_candidate = "allow"
+needless_pass_by_value = "allow"
+new_without_default = "allow"
+panic = "allow"
+panic_in_result_fn = "allow"
+pattern_type_mismatch = "allow"
+pub_use = "allow"
+pub_with_shorthand = "allow"
+question_mark_used = "allow"
+redundant_closure_for_method_calls = "allow"
+redundant_else = "allow"
+renamed_function_params = "allow"
+same_name_method = "allow"
+self_named_module_files = "deny"
+semicolon_inside_block = "allow"
+semicolon_outside_block = "allow"
+shadow_reuse = "allow"
+shadow_same = "allow"
+shadow_unrelated = "allow"
+single_call_fn = "allow"
+single_char_lifetime_names = "allow"
+std_instead_of_alloc = "allow"
+std_instead_of_core = "allow"
+struct_excessive_bools = "allow"
+struct_field_names = "allow"
+too_many_lines = "allow"
+trivially_copy_pass_by_ref = "allow"
+type_complexity = "allow"
+unnecessary_safety_comment = "allow"
+unnecessary_trailing_comma = "allow"
+unnested_or_patterns = "allow"
+unreachable = "allow"
+unseparated_literal_suffix = "allow"
+unused_async = "allow"
+unused_trait_names = "allow"
+unwrap_in_result = "allow"
+used_underscore_items = "allow"
+useless_borrows_in_formatting = "allow"
+wildcard_enum_match_arm = "allow"
+
+[lints.clippy.pedantic]
+level = "warn"
+priority = -1
+
+[lints.clippy.restriction]
+level = "warn"
+priority = -2
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
@@ -234,3 +347,11 @@ check-cfg = [
     "cfg(hyper_unstable_tracing)",
     "cfg(hyper_unstable_ffi)",
 ]
+
+[profile.bench]
+codegen-units = 1
+incremental = false
+
+[profile.release]
+codegen-units = 1
+incremental = false

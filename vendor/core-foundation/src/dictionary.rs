@@ -11,17 +11,17 @@
 
 pub use core_foundation_sys::dictionary::*;
 
+use core::ffi::c_void;
 use core_foundation_sys::base::{kCFAllocatorDefault, CFRelease, CFTypeRef};
 use std::marker::PhantomData;
 use std::mem;
-use std::os::raw::c_void;
 use std::ptr;
 
 use crate::base::{CFIndexConvertible, TCFType};
 use crate::base::{FromVoid, ItemRef, ToVoid};
 use crate::ConcreteCFType;
 
-// consume the type parameters with PhantomDatas
+// consume the type parameters with `PhantomData`
 pub struct CFDictionary<K = *const c_void, V = *const c_void>(
     CFDictionaryRef,
     PhantomData<K>,
@@ -148,7 +148,7 @@ impl<K, V> CFDictionary<K, V> {
     }
 }
 
-// consume the type parameters with PhantomDatas
+// consume the type parameters with `PhantomData`
 pub struct CFMutableDictionary<K = *const c_void, V = *const c_void>(
     CFMutableDictionaryRef,
     PhantomData<K>,
@@ -471,7 +471,7 @@ pub mod test {
         assert_eq!(mut_dict.retain_count(), 2);
         assert_eq!(dict.retain_count(), 2);
         assert_eq!(
-            *dict.get(&CFString::from_static_string("Bar")),
+            *dict.get(CFString::from_static_string("Bar")),
             CFBoolean::false_value()
         );
 

@@ -8,9 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::cmp;
-
 use crate::tables::grapheme::GraphemeCat;
+use core::cmp;
 
 /// External iterator for grapheme clusters and byte offsets.
 ///
@@ -19,7 +18,7 @@ use crate::tables::grapheme::GraphemeCat;
 ///
 /// [`grapheme_indices`]: trait.UnicodeSegmentation.html#tymethod.grapheme_indices
 /// [`UnicodeSegmentation`]: trait.UnicodeSegmentation.html
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct GraphemeIndices<'a> {
     start_offset: usize,
     iter: Graphemes<'a>,
@@ -140,7 +139,7 @@ impl<'a> DoubleEndedIterator for Graphemes<'a> {
 }
 
 #[inline]
-pub fn new_graphemes<'b>(s: &'b str, is_extended: bool) -> Graphemes<'b> {
+pub fn new_graphemes(s: &str, is_extended: bool) -> Graphemes<'_> {
     let len = s.len();
     Graphemes {
         string: s,
@@ -150,29 +149,38 @@ pub fn new_graphemes<'b>(s: &'b str, is_extended: bool) -> Graphemes<'b> {
 }
 
 #[inline]
-pub fn new_grapheme_indices<'b>(s: &'b str, is_extended: bool) -> GraphemeIndices<'b> {
+pub fn new_grapheme_indices(s: &str, is_extended: bool) -> GraphemeIndices<'_> {
     GraphemeIndices {
         start_offset: s.as_ptr() as usize,
         iter: new_graphemes(s, is_extended),
     }
 }
 
-// maybe unify with PairResult?
-// An enum describing information about a potential boundary.
+/// maybe unify with PairResult?
+/// An enum describing information about a potential boundary.
 #[derive(PartialEq, Eq, Clone, Debug)]
 enum GraphemeState {
-    // No information is known.
+    /// No information is known.
     Unknown,
-    // It is known to not be a boundary.
+    /// It is known to not be a boundary.
     NotBreak,
-    // It is known to be a boundary.
+    /// It is known to be a boundary.
     Break,
-    // The codepoint after is a Regional Indicator Symbol, so a boundary iff
-    // it is preceded by an even number of RIS codepoints. (GB12, GB13)
+    /// The codepoint after it has Indic_Conjunct_Break=Consonant,
+    /// so there is a break before so a boundary if it is preceded by another
+    /// InCB=Consonant follwoed by a sequence consisting of one or more InCB=Linker
+    /// and zero or more InCB = Extend (in any order).
+    InCbConsonant,
+    /// The codepoint after is a Regional Indicator Symbol, so a boundary iff
+    /// it is preceded by an even number of RIS codepoints. (GB12, GB13)
     Regional,
-    // The codepoint after is Extended_Pictographic,
-    // so whether it's a boundary depends on pre-context according to GB11.
-    Emoji,
+    /// The codepoint after is Extended_Pictographic,
+    /// so whether it's a boundary depends on pre-context according to GB11.
+    Emoji {
+        /// Whether the ZWJ char has been seen already an only a "\p{Extended_Pictographic} Extend*"
+        /// part of GB11 has to be checked
+        seen_zwj: bool,
+    },
 }
 
 /// Cursor-based segmenter for grapheme clusters.
@@ -181,30 +189,33 @@ enum GraphemeState {
 /// fully known at initialization time.
 #[derive(Clone, Debug)]
 pub struct GraphemeCursor {
-    // Current cursor position.
+    /// Current cursor position.
     offset: usize,
-    // Total length of the string.
+    /// Total length of the string.
     len: usize,
-    // A config flag indicating whether this cursor computes legacy or extended
-    // grapheme cluster boundaries (enables GB9a and GB9b if set).
+    /// A config flag indicating whether this cursor computes legacy or extended
+    /// grapheme cluster boundaries (enables GB9a and GB9b if set).
     is_extended: bool,
-    // Information about the potential boundary at `offset`
+    /// Information about the potential boundary at `offset`
     state: GraphemeState,
-    // Category of codepoint immediately preceding cursor, if known.
+    /// Category of codepoint immediately preceding cursor, if known.
     cat_before: Option<GraphemeCat>,
-    // Category of codepoint immediately after cursor, if known.
+    /// Category of codepoint immediately after cursor, if known.
     cat_after: Option<GraphemeCat>,
-    // If set, at least one more codepoint immediately preceding this offset
-    // is needed to resolve whether there's a boundary at `offset`.
+    /// If set, at least one more codepoint immediately preceding this offset
+    /// is needed to resolve whether there's a boundary at `offset`.
     pre_context_offset: Option<usize>,
-    // The number of RIS codepoints preceding `offset`. If `pre_context_offset`
-    // is set, then counts the number of RIS between that and `offset`, otherwise
-    // is an accurate count relative to the string.
+    /// The number of `InCB=Linker` codepoints preceding `offset`
+    /// (potentially intermingled with `InCB=Extend`).
+    incb_linker_count: Option<usize>,
+    /// The number of RIS codepoints preceding `offset`. If `pre_context_offset`
+    /// is set, then counts the number of RIS between that and `offset`, otherwise
+    /// is an accurate count relative to the string.
     ris_count: Option<usize>,
-    // Set if a call to `prev_boundary` or `next_boundary` was suspended due
-    // to needing more input.
+    /// Set if a call to `prev_boundary` or `next_boundary` was suspended due
+    /// to needing more input.
     resuming: bool,
-    // Cached grapheme category and associated scalar value range.
+    /// Cached grapheme category and associated scalar value range.
     grapheme_cat_cache: (u32, u32, GraphemeCat),
 }
 
@@ -235,11 +246,21 @@ pub enum GraphemeIncomplete {
 // An enum describing the result from lookup of a pair of categories.
 #[derive(PartialEq, Eq)]
 enum PairResult {
-    NotBreak, // definitely not a break
-    Break,    // definitely a break
-    Extended, // a break iff not in extended mode
-    Regional, // a break if preceded by an even number of RIS
-    Emoji,    // a break if preceded by emoji base and (Extend)*
+    /// definitely not a break
+    NotBreak,
+    /// definitely a break
+    Break,
+    /// a break iff not in extended mode
+    Extended,
+    /// a break unless in extended mode and preceded by
+    /// a sequence of 0 or more InCB=Extend and one or more
+    /// InCB = Linker (in any order),
+    /// preceded by another InCB=Consonant
+    InCbConsonant,
+    /// a break if preceded by an even number of RIS
+    Regional,
+    /// a break if preceded by emoji base and (Extend)*
+    Emoji,
 }
 
 #[inline]
@@ -248,26 +269,15 @@ fn check_pair(before: GraphemeCat, after: GraphemeCat) -> PairResult {
     use crate::tables::grapheme::GraphemeCat::*;
     match (before, after) {
         (GC_CR, GC_LF) => NotBreak,                                 // GB3
-        (GC_Control, _) => Break,                                   // GB4
-        (GC_CR, _) => Break,                                        // GB4
-        (GC_LF, _) => Break,                                        // GB4
-        (_, GC_Control) => Break,                                   // GB5
-        (_, GC_CR) => Break,                                        // GB5
-        (_, GC_LF) => Break,                                        // GB5
-        (GC_L, GC_L) => NotBreak,                                   // GB6
-        (GC_L, GC_V) => NotBreak,                                   // GB6
-        (GC_L, GC_LV) => NotBreak,                                  // GB6
-        (GC_L, GC_LVT) => NotBreak,                                 // GB6
-        (GC_LV, GC_V) => NotBreak,                                  // GB7
-        (GC_LV, GC_T) => NotBreak,                                  // GB7
-        (GC_V, GC_V) => NotBreak,                                   // GB7
-        (GC_V, GC_T) => NotBreak,                                   // GB7
-        (GC_LVT, GC_T) => NotBreak,                                 // GB8
-        (GC_T, GC_T) => NotBreak,                                   // GB8
-        (_, GC_Extend) => NotBreak,                                 // GB9
-        (_, GC_ZWJ) => NotBreak,                                    // GB9
+        (GC_Control | GC_CR | GC_LF, _) => Break,                   // GB4
+        (_, GC_Control | GC_CR | GC_LF) => Break,                   // GB5
+        (GC_L, GC_L | GC_V | GC_LV | GC_LVT) => NotBreak,           // GB6
+        (GC_LV | GC_V, GC_V | GC_T) => NotBreak,                    // GB7
+        (GC_LVT | GC_T, GC_T) => NotBreak,                          // GB8
+        (_, GC_Extend | GC_ZWJ) => NotBreak,                        // GB9
         (_, GC_SpacingMark) => Extended,                            // GB9a
         (GC_Prepend, _) => Extended,                                // GB9b
+        (_, GC_InCB_Consonant) => InCbConsonant,                    // GB9c
         (GC_ZWJ, GC_Extended_Pictographic) => Emoji,                // GB11
         (GC_Regional_Indicator, GC_Regional_Indicator) => Regional, // GB12, GB13
         (_, _) => Break,                                            // GB999
@@ -296,13 +306,14 @@ impl GraphemeCursor {
             GraphemeState::Unknown
         };
         GraphemeCursor {
-            offset: offset,
-            len: len,
-            state: state,
-            is_extended: is_extended,
+            offset,
+            len,
+            state,
+            is_extended,
             cat_before: None,
             cat_after: None,
             pre_context_offset: None,
+            incb_linker_count: None,
             ris_count: None,
             resuming: false,
             grapheme_cat_cache: (0, 0, GraphemeCat::GC_Control),
@@ -360,6 +371,7 @@ impl GraphemeCursor {
             // reset state derived from text around cursor
             self.cat_before = None;
             self.cat_after = None;
+            self.incb_linker_count = None;
             self.ris_count = None;
         }
     }
@@ -403,21 +415,22 @@ impl GraphemeCursor {
     /// ```
     pub fn provide_context(&mut self, chunk: &str, chunk_start: usize) {
         use crate::tables::grapheme as gr;
-        assert!(chunk_start + chunk.len() == self.pre_context_offset.unwrap());
+        assert!(chunk_start.saturating_add(chunk.len()) == self.pre_context_offset.unwrap());
         self.pre_context_offset = None;
         if self.is_extended && chunk_start + chunk.len() == self.offset {
-            let ch = chunk.chars().rev().next().unwrap();
+            let ch = chunk.chars().next_back().unwrap();
             if self.grapheme_category(ch) == gr::GC_Prepend {
                 self.decide(false); // GB9b
                 return;
             }
         }
         match self.state {
+            GraphemeState::InCbConsonant => self.handle_incb_consonant(chunk, chunk_start),
             GraphemeState::Regional => self.handle_regional(chunk, chunk_start),
-            GraphemeState::Emoji => self.handle_emoji(chunk, chunk_start),
+            GraphemeState::Emoji { seen_zwj } => self.handle_emoji(chunk, chunk_start, seen_zwj),
             _ => {
                 if self.cat_before.is_none() && self.offset == chunk.len() + chunk_start {
-                    let ch = chunk.chars().rev().next().unwrap();
+                    let ch = chunk.chars().next_back().unwrap();
                     self.cat_before = Some(self.grapheme_category(ch));
                 }
             }
@@ -452,6 +465,54 @@ impl GraphemeCursor {
         }
     }
 
+    /// For handling rule GB9c:
+    ///
+    /// There's an `InCB=Consonant` after this, and we need to look back
+    /// to verify whether there should be a break.
+    ///
+    /// Seek backward to find an `InCB=Linker` preceded by an `InCB=Consonsnt`
+    /// (potentially separated by some number of `InCB=Linker` or `InCB=Extend`).
+    /// If we find the consonant in question, then there's no break; if we find a consonant
+    /// with no linker, or a non-linker non-extend non-consonant, or the start of text, there's a break;
+    /// otherwise we need more context
+    #[inline]
+    fn handle_incb_consonant(&mut self, chunk: &str, chunk_start: usize) {
+        use crate::tables::{self, grapheme as gr};
+
+        // GB9c only applies to extended grapheme clusters
+        if !self.is_extended {
+            self.decide(true);
+            return;
+        }
+
+        let mut incb_linker_count = self.incb_linker_count.unwrap_or(0);
+
+        for ch in chunk.chars().rev() {
+            if tables::is_incb_linker(ch) {
+                // We found an InCB linker
+                incb_linker_count += 1;
+                self.incb_linker_count = Some(incb_linker_count);
+            } else if tables::derived_property::InCB_Extend(ch) {
+                // We ignore InCB extends, continue
+            } else {
+                // Prev character is neither linker nor extend, break suppressed iff it's InCB=Consonant
+                let result = !(self.incb_linker_count.unwrap_or(0) > 0
+                    && self.grapheme_category(ch) == gr::GC_InCB_Consonant);
+                self.decide(result);
+                return;
+            }
+        }
+
+        if chunk_start == 0 {
+            // Start of text and we still haven't found a consonant, so break
+            self.decide(true);
+        } else {
+            // We need more context
+            self.pre_context_offset = Some(chunk_start);
+            self.state = GraphemeState::InCbConsonant;
+        }
+    }
+
     #[inline]
     fn handle_regional(&mut self, chunk: &str, chunk_start: usize) {
         use crate::tables::grapheme as gr;
@@ -459,28 +520,33 @@ impl GraphemeCursor {
         for ch in chunk.chars().rev() {
             if self.grapheme_category(ch) != gr::GC_Regional_Indicator {
                 self.ris_count = Some(ris_count);
-                self.decide((ris_count % 2) == 0);
+                self.decide(ris_count % 2 == 0);
                 return;
             }
             ris_count += 1;
         }
         self.ris_count = Some(ris_count);
         if chunk_start == 0 {
-            self.decide((ris_count % 2) == 0);
-            return;
+            self.decide(ris_count % 2 == 0);
+        } else {
+            self.pre_context_offset = Some(chunk_start);
+            self.state = GraphemeState::Regional;
         }
-        self.pre_context_offset = Some(chunk_start);
-        self.state = GraphemeState::Regional;
     }
 
     #[inline]
-    fn handle_emoji(&mut self, chunk: &str, chunk_start: usize) {
+    fn handle_emoji(&mut self, chunk: &str, chunk_start: usize, mut seen_zwj: bool) {
+        // \p{Extended_Pictographic} Extend* ZWJ 	× 	\p{Extended_Pictographic}
         use crate::tables::grapheme as gr;
         let mut iter = chunk.chars().rev();
-        if let Some(ch) = iter.next() {
-            if self.grapheme_category(ch) != gr::GC_ZWJ {
-                self.decide(true);
-                return;
+        if !seen_zwj {
+            if let Some(ch) = iter.next() {
+                if self.grapheme_category(ch) != gr::GC_ZWJ {
+                    self.decide(true);
+                    return;
+                } else {
+                    seen_zwj = true;
+                }
             }
         }
         for ch in iter {
@@ -498,10 +564,10 @@ impl GraphemeCursor {
         }
         if chunk_start == 0 {
             self.decide(true);
-            return;
+        } else {
+            self.pre_context_offset = Some(chunk_start);
+            self.state = GraphemeState::Emoji { seen_zwj };
         }
-        self.pre_context_offset = Some(chunk_start);
-        self.state = GraphemeState::Emoji;
     }
 
     #[inline]
@@ -540,15 +606,15 @@ impl GraphemeCursor {
         if self.state == GraphemeState::NotBreak {
             return Ok(false);
         }
-        if self.offset < chunk_start || self.offset >= chunk_start + chunk.len() {
-            if self.offset > chunk_start + chunk.len() || self.cat_after.is_none() {
-                return Err(GraphemeIncomplete::InvalidOffset);
-            }
+        if (self.offset < chunk_start || self.offset >= chunk_start.saturating_add(chunk.len()))
+            && (self.offset > chunk_start.saturating_add(chunk.len()) || self.cat_after.is_none())
+        {
+            return Err(GraphemeIncomplete::InvalidOffset);
         }
         if let Some(pre_context_offset) = self.pre_context_offset {
             return Err(GraphemeIncomplete::PreContext(pre_context_offset));
         }
-        let offset_in_chunk = self.offset - chunk_start;
+        let offset_in_chunk = self.offset.saturating_sub(chunk_start);
         if self.cat_after.is_none() {
             let ch = chunk[offset_in_chunk..].chars().next().unwrap();
             self.cat_after = Some(self.grapheme_category(ch));
@@ -556,8 +622,11 @@ impl GraphemeCursor {
         if self.offset == chunk_start {
             let mut need_pre_context = true;
             match self.cat_after.unwrap() {
+                gr::GC_InCB_Consonant => self.state = GraphemeState::InCbConsonant,
                 gr::GC_Regional_Indicator => self.state = GraphemeState::Regional,
-                gr::GC_Extended_Pictographic => self.state = GraphemeState::Emoji,
+                gr::GC_Extended_Pictographic => {
+                    self.state = GraphemeState::Emoji { seen_zwj: false }
+                }
                 _ => need_pre_context = self.cat_before.is_none(),
             }
             if need_pre_context {
@@ -566,15 +635,19 @@ impl GraphemeCursor {
             }
         }
         if self.cat_before.is_none() {
-            let ch = chunk[..offset_in_chunk].chars().rev().next().unwrap();
+            let ch = chunk[..offset_in_chunk].chars().next_back().unwrap();
             self.cat_before = Some(self.grapheme_category(ch));
         }
         match check_pair(self.cat_before.unwrap(), self.cat_after.unwrap()) {
-            PairResult::NotBreak => return self.decision(false),
-            PairResult::Break => return self.decision(true),
+            PairResult::NotBreak => self.decision(false),
+            PairResult::Break => self.decision(true),
             PairResult::Extended => {
                 let is_extended = self.is_extended;
-                return self.decision(!is_extended);
+                self.decision(!is_extended)
+            }
+            PairResult::InCbConsonant => {
+                self.handle_incb_consonant(&chunk[..offset_in_chunk], chunk_start);
+                self.is_boundary_result()
             }
             PairResult::Regional => {
                 if let Some(ris_count) = self.ris_count {
@@ -584,7 +657,7 @@ impl GraphemeCursor {
                 self.is_boundary_result()
             }
             PairResult::Emoji => {
-                self.handle_emoji(&chunk[..offset_in_chunk], chunk_start);
+                self.handle_emoji(&chunk[..offset_in_chunk], chunk_start, false);
                 self.is_boundary_result()
             }
         }
@@ -631,19 +704,27 @@ impl GraphemeCursor {
         if self.offset == self.len {
             return Ok(None);
         }
-        let mut iter = chunk[self.offset - chunk_start..].chars();
-        let mut ch = iter.next().unwrap();
+        let mut iter = chunk[self.offset.saturating_sub(chunk_start)..].chars();
+        let mut ch = match iter.next() {
+            Some(ch) => ch,
+            None => return Err(GraphemeIncomplete::NextChunk),
+        };
         loop {
             if self.resuming {
                 if self.cat_after.is_none() {
                     self.cat_after = Some(self.grapheme_category(ch));
                 }
             } else {
-                self.offset += ch.len_utf8();
+                self.offset = self.offset.saturating_add(ch.len_utf8());
                 self.state = GraphemeState::Unknown;
                 self.cat_before = self.cat_after.take();
                 if self.cat_before.is_none() {
                     self.cat_before = Some(self.grapheme_category(ch));
+                }
+                if crate::tables::is_incb_linker(ch) {
+                    self.incb_linker_count = Some(self.incb_linker_count.map_or(1, |c| c + 1));
+                } else if !crate::tables::derived_property::InCB_Extend(ch) {
+                    self.incb_linker_count = Some(0);
                 }
                 if self.cat_before.unwrap() == GraphemeCat::GC_Regional_Indicator {
                     self.ris_count = self.ris_count.map(|c| c + 1);
@@ -713,7 +794,9 @@ impl GraphemeCursor {
         if self.offset == chunk_start {
             return Err(GraphemeIncomplete::PrevChunk);
         }
-        let mut iter = chunk[..self.offset - chunk_start].chars().rev();
+        let mut iter = chunk[..self.offset.saturating_sub(chunk_start)]
+            .chars()
+            .rev();
         let mut ch = iter.next().unwrap();
         loop {
             if self.offset == chunk_start {
@@ -726,6 +809,16 @@ impl GraphemeCursor {
                 self.offset -= ch.len_utf8();
                 self.cat_after = self.cat_before.take();
                 self.state = GraphemeState::Unknown;
+                if let Some(incb_linker_count) = self.incb_linker_count {
+                    self.incb_linker_count =
+                        if incb_linker_count > 0 && crate::tables::is_incb_linker(ch) {
+                            Some(incb_linker_count - 1)
+                        } else if crate::tables::derived_property::InCB_Extend(ch) {
+                            Some(incb_linker_count)
+                        } else {
+                            None
+                        };
+                }
                 if let Some(ris_count) = self.ris_count {
                     self.ris_count = if ris_count > 0 {
                         Some(ris_count - 1)
@@ -798,4 +891,106 @@ fn test_grapheme_cursor_prev_boundary_chunk_start() {
         Err(GraphemeIncomplete::PrevChunk)
     );
     assert_eq!(c.prev_boundary(&s[..2], 0), Ok(Some(1)));
+}
+
+#[test]
+fn test_grapheme_cursor_boundary_with_zwj_on_chunk_start() {
+    use GraphemeIncomplete::*;
+
+    let chunk0 = "👩"; // 4 bytes
+    let chunk1 = "\u{200d}🔬"; // 3 bytes + 4 bytes
+
+    let full_len = chunk0.len() + chunk1.len();
+
+    let mut cur = GraphemeCursor::new(0, full_len, true);
+    assert_eq!(cur.next_boundary(chunk0, 0), Err(NextChunk));
+    match cur.next_boundary(chunk1, chunk0.len()) {
+        Ok(res) => assert_eq!(res, Some(11)),
+        Err(PreContext(_)) => {
+            cur.provide_context(chunk0, 0);
+            assert_eq!(cur.next_boundary(chunk1, chunk0.len()), Ok(Some(11)));
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn test_grapheme_cursor_emoji_no_zwj() {
+    use GraphemeIncomplete::*;
+    let chunk0 = "🍒"; // 4 bytes
+    let chunk1 = "🥑"; // 4 bytes
+    let full_len = chunk0.len() + chunk1.len();
+
+    let mut c = GraphemeCursor::new(0, full_len, true);
+    assert_eq!(c.next_boundary(chunk0, 0), Err(NextChunk));
+    assert_eq!(
+        c.next_boundary(chunk1, chunk0.len()),
+        Err(PreContext(chunk0.len()))
+    );
+    c.provide_context(chunk0, 0);
+    assert_eq!(c.next_boundary(chunk1, chunk0.len()), Ok(Some(4)));
+    assert_eq!(c.next_boundary(chunk1, chunk0.len()), Ok(Some(8)));
+    assert_eq!(c.next_boundary(chunk1, chunk0.len()), Ok(None));
+}
+
+#[test]
+fn test_grapheme_cursor_emoji_chunk_boundary_before_zwj() {
+    use GraphemeIncomplete::*;
+    let chunk0 = "🍒"; // 4 bytes
+    let chunk1 = "\u{200d}🥑"; // 3 + 4 bytes
+    let full_len = chunk0.len() + chunk1.len(); // 11
+
+    let mut c = GraphemeCursor::new(0, full_len, true);
+    assert_eq!(c.next_boundary(chunk0, 0), Err(NextChunk));
+    assert_eq!(
+        c.next_boundary(chunk1, chunk0.len()),
+        Err(PreContext(chunk0.len()))
+    );
+    c.provide_context(chunk0, 0);
+    assert_eq!(c.next_boundary(chunk1, chunk0.len()), Ok(Some(11)));
+    assert_eq!(c.next_boundary(chunk1, chunk0.len()), Ok(None));
+}
+
+#[test]
+fn test_grapheme_cursor_emoji_chunk_boundary_after_zwj() {
+    use GraphemeIncomplete::*;
+    let chunk0 = "🍒\u{200d}"; // 4 + 3 bytes
+    let chunk1 = "🥑"; // 4 bytes
+    let full_len = chunk0.len() + chunk1.len(); // 11
+
+    let mut c = GraphemeCursor::new(0, full_len, true);
+    assert_eq!(c.next_boundary(chunk0, 0), Err(NextChunk));
+    assert_eq!(
+        c.next_boundary(chunk1, chunk0.len()),
+        Err(PreContext(chunk0.len()))
+    );
+    c.provide_context(chunk0, 0);
+    assert_eq!(c.next_boundary(chunk1, chunk0.len()), Ok(Some(11)));
+    assert_eq!(c.next_boundary(chunk1, chunk0.len()), Ok(None));
+}
+
+#[test]
+fn test_grapheme_cursor_emoji_zwj_across_chunks() {
+    use GraphemeIncomplete::*;
+    let chunk0 = "🍒"; // 4 bytes
+    let chunk1 = "\u{200d}"; // 3 bytes
+    let chunk2 = "🥑"; // 4 bytes
+    let full_len = chunk0.len() + chunk1.len() + chunk2.len(); // 11
+    let chunk2_start = chunk0.len() + chunk1.len();
+
+    let mut c = GraphemeCursor::new(0, full_len, true);
+    assert_eq!(c.next_boundary(chunk0, 0), Err(NextChunk));
+    assert_eq!(c.next_boundary(chunk1, chunk0.len()), Err(NextChunk));
+    assert_eq!(
+        c.next_boundary(chunk2, chunk2_start),
+        Err(PreContext(chunk2_start))
+    );
+    c.provide_context(chunk1, chunk0.len());
+    assert_eq!(
+        c.next_boundary(chunk2, chunk2_start),
+        Err(PreContext(chunk0.len()))
+    );
+    c.provide_context(chunk0, 0);
+    assert_eq!(c.next_boundary(chunk2, chunk2_start), Ok(Some(11)));
+    assert_eq!(c.next_boundary(chunk2, chunk2_start), Ok(None));
 }

@@ -1,4 +1,132 @@
-# 0.1.40
+# 0.1.44 (December 18, 2025)
+
+### Fixed
+
+- Fix `record_all` panic ([#3432])
+
+### Changed
+
+- `tracing-core`: updated to 0.1.36 ([#3440])
+
+[#3432]: https://github.com/tokio-rs/tracing/pull/3432
+[#3440]: https://github.com/tokio-rs/tracing/pull/3440
+
+# 0.1.43 (November 28, 2025)
+
+#### Important
+
+The previous release [0.1.42] was yanked because [#3382] was a breaking change.
+See further details in [#3424]. This release contains all the changes from that
+version, plus a revert for the problematic part of the breaking PR.
+
+### Fixed
+
+- Revert "make `valueset` macro sanitary" ([#3425])
+
+[#3382]: https://github.com/tokio-rs/tracing/pull/3382
+[#3424]: https://github.com/tokio-rs/tracing/pull/3424
+[#3425]: https://github.com/tokio-rs/tracing/pull/3425
+[0.1.42]: https://github.com/tokio-rs/tracing/releases/tag/tracing-0.1.42
+
+# 0.1.42 (November 26, 2025)
+
+### Important
+
+The [`Span::record_all`] method has been removed from the documented API. It
+was always unsuable via the documented API as it requried a `ValueSet` which
+has no publically documented constructors. The method remains, but should not
+be used outside of `tracing` macros.
+
+### Added
+
+- **attributes**: Support constant expressions as instrument field names ([#3158])
+- Add `record_all!` macro for recording multiple values in one call ([#3227])
+- **core**: Improve code generation at trace points significantly ([#3398])
+
+### Changed
+
+- `tracing-core`: updated to 0.1.35 ([#3414])
+- `tracing-attributes`: updated to 0.1.31 ([#3417])
+
+### Fixed
+
+- Fix "name / parent" variant of `event!` ([#2983])
+- Remove 'r#' prefix from raw identifiers in field names ([#3130])
+- Fix perf regression when `release_max_level_*` not set ([#3373])
+- Use imported instead of fully qualified path ([#3374])
+- Make `valueset` macro sanitary ([#3382])
+
+### Documented
+
+- **core**: Add missing `dyn` keyword in `Visit` documentation code sample ([#3387])
+
+[#2983]: https://github.com/tokio-rs/tracing/pull/2983
+[#3130]: https://github.com/tokio-rs/tracing/pull/3130
+[#3158]: https://github.com/tokio-rs/tracing/pull/3158
+[#3227]: https://github.com/tokio-rs/tracing/pull/3227
+[#3373]: https://github.com/tokio-rs/tracing/pull/3373
+[#3374]: https://github.com/tokio-rs/tracing/pull/3374
+[#3382]: https://github.com/tokio-rs/tracing/pull/3382
+[#3387]: https://github.com/tokio-rs/tracing/pull/3387
+[#3398]: https://github.com/tokio-rs/tracing/pull/3398
+[#3414]: https://github.com/tokio-rs/tracing/pull/3414
+[#3417]: https://github.com/tokio-rs/tracing/pull/3417
+[`Span::record_all`]: https://docs.rs/tracing/0.1.41/tracing/struct.Span.html#method.record_all
+
+# 0.1.41 (November 27, 2024)
+
+[ [crates.io][crate-0.1.41] ] | [ [docs.rs][docs-0.1.41] ]
+
+This release updates the `tracing-core` dependency to [v0.1.33][core-0.1.33] and
+the `tracing-attributes` dependency to [v0.1.28][attrs-0.1.28].
+
+### Added
+
+- **core**: Add index API for `Field` ([#2820])
+- **core**: Allow `&[u8]` to be recorded as event/span field ([#2954])
+
+### Changed
+
+- Bump MSRV to 1.63 ([#2793])
+- **core**: Use const `thread_local`s when possible ([#2838])
+
+### Fixed
+
+- Removed core imports in macros ([#2762])
+- **attributes**: Added missing RecordTypes for instrument ([#2781])
+- **attributes**: Change order of async and unsafe modifier ([#2864])
+- Fix missing field prefixes ([#2878])
+- **attributes**: Extract match scrutinee ([#2880])
+- Fix non-simple macro usage without message ([#2879])
+- Fix event macros with constant field names in the first position ([#2883])
+- Allow field path segments to be keywords ([#2925])
+- **core**: Fix missed `register_callsite` error ([#2938])
+- **attributes**: Support const values for `target` and `name` ([#2941])
+- Prefix macro calls with ::core to avoid clashing with local macros ([#3024])
+
+[#2762]: https://github.com/tokio-rs/tracing/pull/2762
+[#2781]: https://github.com/tokio-rs/tracing/pull/2781
+[#2793]: https://github.com/tokio-rs/tracing/pull/2793
+[#2820]: https://github.com/tokio-rs/tracing/pull/2820
+[#2838]: https://github.com/tokio-rs/tracing/pull/2838
+[#2864]: https://github.com/tokio-rs/tracing/pull/2864
+[#2878]: https://github.com/tokio-rs/tracing/pull/2878
+[#2879]: https://github.com/tokio-rs/tracing/pull/2879
+[#2880]: https://github.com/tokio-rs/tracing/pull/2880
+[#2883]: https://github.com/tokio-rs/tracing/pull/2883
+[#2925]: https://github.com/tokio-rs/tracing/pull/2925
+[#2938]: https://github.com/tokio-rs/tracing/pull/2938
+[#2941]: https://github.com/tokio-rs/tracing/pull/2941
+[#2954]: https://github.com/tokio-rs/tracing/pull/2954
+[#3024]: https://github.com/tokio-rs/tracing/pull/3024
+[attrs-0.1.28]:
+    https://github.com/tokio-rs/tracing/releases/tag/tracing-attributes-0.1.28
+[core-0.1.33]:
+    https://github.com/tokio-rs/tracing/releases/tag/tracing-core-0.1.33
+[docs-0.1.41]: https://docs.rs/tracing/0.1.41/tracing/
+[crate-0.1.41]: https://crates.io/crates/tracing/0.1.41
+
+# 0.1.40 (October 19, 2023)
 
 This release fixes a potential stack use-after-free in the
 `Instrument::into_inner` method. Only uses of this method are affected by this
@@ -651,7 +779,7 @@ this release!
   filtering, improving performance when a span or event is disabled by a
   `static_max_level_XXX` feature flag (#868) 
 - `LevelFilter` is now a re-export of the `tracing_core::LevelFilter` type, it
-  can now be used interchangably with the versions in `tracing-core` and
+  can now be used interchangeably with the versions in `tracing-core` and
   `tracing-subscriber` (#853)
 - Significant performance improvements when comparing `LevelFilter`s and
   `Level`s (#853)

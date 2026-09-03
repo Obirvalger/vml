@@ -109,7 +109,7 @@ impl Md {
             let ptr = cvt_p(ffi::EVP_MD_fetch(
                 ctx.map_or(ptr::null_mut(), ForeignTypeRef::as_ptr),
                 algorithm.as_ptr(),
-                properties.map_or(ptr::null_mut(), |s| s.as_ptr()),
+                properties.as_ref().map_or(ptr::null_mut(), |s| s.as_ptr()),
             ))?;
 
             Ok(Md::from_ptr(ptr))
@@ -194,7 +194,7 @@ impl Md {
         unsafe { MdRef::from_ptr(ffi::EVP_ripemd160() as *mut _) }
     }
 
-    #[cfg(all(any(ossl111, libressl291), not(osslconf = "OPENSSL_NO_SM3")))]
+    #[cfg(all(any(ossl111, libressl), not(osslconf = "OPENSSL_NO_SM3")))]
     #[inline]
     pub fn sm3() -> &'static MdRef {
         unsafe { MdRef::from_ptr(ffi::EVP_sm3() as *mut _) }
@@ -231,5 +231,17 @@ impl MdRef {
     #[inline]
     pub fn type_(&self) -> Nid {
         unsafe { Nid::from_raw(ffi::EVP_MD_type(self.as_ptr())) }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[cfg(ossl300)]
+    use super::Md;
+
+    #[test]
+    #[cfg(ossl300)]
+    fn test_md_fetch_properties() {
+        assert!(Md::fetch(None, "SHA-256", Some("provider=gibberish")).is_err());
     }
 }

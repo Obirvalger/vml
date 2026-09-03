@@ -48,6 +48,7 @@ See the documentation for `WalkBuilder` for many other options.
 
 use std::path::{Path, PathBuf};
 
+pub use crate::incremental::{IncrementalIgnore, IncrementalMatch};
 pub use crate::walk::{
     DirEntry, ParallelVisitor, ParallelVisitorBuilder, Walk, WalkBuilder,
     WalkParallel, WalkState,
@@ -56,6 +57,7 @@ pub use crate::walk::{
 mod default_types;
 mod dir;
 pub mod gitignore;
+mod incremental;
 pub mod overrides;
 mod pathutil;
 pub mod types;
@@ -294,7 +296,10 @@ impl Error {
             };
         }
         let path = err.path().map(|p| p.to_path_buf());
-        let mut ig_err = Error::Io(std::io::Error::from(err));
+        let mut ig_err = Error::WithDepth {
+            depth,
+            err: Box::new(Error::Io(std::io::Error::from(err))),
+        };
         if let Some(path) = path {
             ig_err = Error::WithPath { path, err: Box::new(ig_err) };
         }
@@ -477,11 +482,7 @@ impl<T> Match<T> {
 
     /// Return the match if it is not none. Otherwise, return other.
     pub fn or(self, other: Self) -> Self {
-        if self.is_none() {
-            other
-        } else {
-            self
-        }
+        if self.is_none() { other } else { self }
     }
 }
 
@@ -527,7 +528,7 @@ mod tests {
 
             let tmpdir = env::temp_dir();
             for _ in 0..TRIES {
-                let count = COUNTER.fetch_add(1, Ordering::SeqCst);
+                let count = COUNTER.fetch_add(1, Ordering::Relaxed);
                 let path = tmpdir.join("rust-ignore").join(count.to_string());
                 if path.is_dir() {
                     continue;

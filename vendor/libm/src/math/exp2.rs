@@ -28,7 +28,7 @@ use super::scalbn;
 
 const TBLSIZE: usize = 256;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 static TBL: [u64; TBLSIZE * 2] = [
     //  exp2(z + eps)          eps
     0x3fe6a09e667f3d5d, 0x3d39880000000000,
@@ -322,8 +322,14 @@ static TBL: [u64; TBLSIZE * 2] = [
 /// Exponential, base 2 (f64)
 ///
 /// Calculate `2^x`, that is, 2 raised to the power `x`.
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn exp2(mut x: f64) -> f64 {
+    select_implementation! {
+        name: x87_exp2,
+        use_arch_required: x86_no_sse,
+        args: x,
+    }
+
     let redux = f64::from_bits(0x4338000000000000) / TBLSIZE as f64;
     let p1 = f64::from_bits(0x3fe62e42fefa39ef);
     let p2 = f64::from_bits(0x3fcebfbdff82c575);
@@ -341,7 +347,7 @@ pub fn exp2(mut x: f64) -> f64 {
 
     /* Filter out exceptional cases. */
     let ui = f64::to_bits(x);
-    let ix = ui >> 32 & 0x7fffffff;
+    let ix = (ui >> 32) & 0x7fffffff;
     if ix >= 0x408ff000 {
         /* |x| >= 1022 or nan */
         if ix >= 0x40900000 && ui >> 63 == 0 {

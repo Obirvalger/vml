@@ -1,5 +1,5 @@
-use super::{Bucket, Entries, IndexSet, IntoIter, Iter};
-use crate::util::try_simplify_range;
+use super::{Bucket, IndexSet, IntoIter, Iter};
+use crate::util::{slice_eq, try_simplify_range};
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -59,40 +59,61 @@ impl<T> Slice<T> {
 
     /// Get a value by index.
     ///
-    /// Valid indices are *0 <= index < self.len()*
+    /// Valid indices are `0 <= index < self.len()`.
     pub fn get_index(&self, index: usize) -> Option<&T> {
         self.entries.get(index).map(Bucket::key_ref)
     }
 
     /// Returns a slice of values in the given range of indices.
     ///
-    /// Valid indices are *0 <= index < self.len()*
+    /// Valid indices are `0 <= index < self.len()`.
     pub fn get_range<R: RangeBounds<usize>>(&self, range: R) -> Option<&Self> {
         let range = try_simplify_range(range, self.entries.len())?;
         self.entries.get(range).map(Self::from_slice)
     }
 
     /// Get the first value.
-    pub fn first(&self) -> Option<&T> {
-        self.entries.first().map(Bucket::key_ref)
+    pub const fn first(&self) -> Option<&T> {
+        if let [first, ..] = &self.entries {
+            Some(&first.key)
+        } else {
+            None
+        }
     }
 
     /// Get the last value.
-    pub fn last(&self) -> Option<&T> {
-        self.entries.last().map(Bucket::key_ref)
+    pub const fn last(&self) -> Option<&T> {
+        if let [.., last] = &self.entries {
+            Some(&last.key)
+        } else {
+            None
+        }
     }
 
     /// Divides one slice into two at an index.
     ///
     /// ***Panics*** if `index > len`.
-    pub fn split_at(&self, index: usize) -> (&Self, &Self) {
+    /// For a non-panicking alternative see [`split_at_checked`][Self::split_at_checked].
+    #[track_caller]
+    pub const fn split_at(&self, index: usize) -> (&Self, &Self) {
         let (first, second) = self.entries.split_at(index);
         (Self::from_slice(first), Self::from_slice(second))
     }
 
+    /// Divides one slice into two at an index.
+    ///
+    /// Returns `None` if `index > len`.
+    pub const fn split_at_checked(&self, index: usize) -> Option<(&Self, &Self)> {
+        if let Some((first, second)) = self.entries.split_at_checked(index) {
+            Some((Self::from_slice(first), Self::from_slice(second)))
+        } else {
+            None
+        }
+    }
+
     /// Returns the first value and the rest of the slice,
     /// or `None` if it is empty.
-    pub fn split_first(&self) -> Option<(&T, &Self)> {
+    pub const fn split_first(&self) -> Option<(&T, &Self)> {
         if let [first, rest @ ..] = &self.entries {
             Some((&first.key, Self::from_slice(rest)))
         } else {
@@ -102,7 +123,7 @@ impl<T> Slice<T> {
 
     /// Returns the last value and the rest of the slice,
     /// or `None` if it is empty.
-    pub fn split_last(&self) -> Option<(&T, &Self)> {
+    pub const fn split_last(&self) -> Option<(&T, &Self)> {
         if let [rest @ .., last] = &self.entries {
             Some((&last.key, Self::from_slice(rest)))
         } else {
@@ -157,6 +178,34 @@ impl<T> Slice<T> {
         B: Ord,
     {
         self.binary_search_by(|k| f(k).cmp(b))
+    }
+
+    /// Checks if the values of this slice are sorted.
+    #[inline]
+    pub fn is_sorted(&self) -> bool
+    where
+        T: PartialOrd,
+    {
+        self.entries.is_sorted_by(|a, b| a.key <= b.key)
+    }
+
+    /// Checks if this slice is sorted using the given comparator function.
+    #[inline]
+    pub fn is_sorted_by<'a, F>(&'a self, mut cmp: F) -> bool
+    where
+        F: FnMut(&'a T, &'a T) -> bool,
+    {
+        self.entries.is_sorted_by(move |a, b| cmp(&a.key, &b.key))
+    }
+
+    /// Checks if this slice is sorted using the given sort-key function.
+    #[inline]
+    pub fn is_sorted_by_key<'a, F, K>(&'a self, mut sort_key: F) -> bool
+    where
+        F: FnMut(&'a T) -> K,
+        K: PartialOrd,
+    {
+        self.entries.is_sorted_by_key(move |a| sort_key(&a.key))
     }
 
     /// Returns the index of the partition point of a sorted set according to the given predicate
@@ -222,9 +271,48 @@ impl<T: fmt::Debug> fmt::Debug for Slice<T> {
     }
 }
 
-impl<T: PartialEq> PartialEq for Slice<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len() && self.iter().eq(other)
+impl<T, U> PartialEq<Slice<U>> for Slice<T>
+where
+    T: PartialEq<U>,
+{
+    fn eq(&self, other: &Slice<U>) -> bool {
+        slice_eq(&self.entries, &other.entries, |b1, b2| b1.key == b2.key)
+    }
+}
+
+impl<T, U> PartialEq<[U]> for Slice<T>
+where
+    T: PartialEq<U>,
+{
+    fn eq(&self, other: &[U]) -> bool {
+        slice_eq(&self.entries, other, |b, o| b.key == *o)
+    }
+}
+
+impl<T, U> PartialEq<Slice<U>> for [T]
+where
+    T: PartialEq<U>,
+{
+    fn eq(&self, other: &Slice<U>) -> bool {
+        slice_eq(self, &other.entries, |o, b| *o == b.key)
+    }
+}
+
+impl<T, U, const N: usize> PartialEq<[U; N]> for Slice<T>
+where
+    T: PartialEq<U>,
+{
+    fn eq(&self, other: &[U; N]) -> bool {
+        <Self as PartialEq<[U]>>::eq(self, other)
+    }
+}
+
+impl<T, const N: usize, U> PartialEq<Slice<U>> for [T; N]
+where
+    T: PartialEq<U>,
+{
+    fn eq(&self, other: &Slice<U>) -> bool {
+        <[T] as PartialEq<Slice<U>>>::eq(self, other)
     }
 }
 
@@ -306,6 +394,7 @@ mod tests {
         let slice = set.as_slice();
 
         // RangeFull
+        #[expect(clippy::redundant_slicing)]
         check(&vec[..], &set[..], &slice[..]);
 
         for i in 0usize..10 {

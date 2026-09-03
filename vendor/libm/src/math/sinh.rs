@@ -4,7 +4,9 @@ use super::{expm1, expo2};
 //         = (exp(x)-1 + (exp(x)-1)/exp(x))/2
 //         = x + x^3/6 + o(x^5)
 //
-#[cfg_attr(all(test, assert_no_panic), no_panic::no_panic)]
+
+/// The hyperbolic sine of `x` (f64).
+#[cfg_attr(assert_no_panic, no_panic::no_panic)]
 pub fn sinh(x: f64) -> f64 {
     // union {double f; uint64_t i;} u = {.f = x};
     // uint32_t w;

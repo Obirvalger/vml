@@ -11,16 +11,22 @@
 
 [package]
 edition = "2018"
-rust-version = "1.70"
+rust-version = "1.85"
 name = "tera"
-version = "1.20.0"
+version = "1.20.1"
 authors = ["Vincent Prouillet <hello@prouilletvincent.com>"]
+build = false
 include = [
     "/src/**/*",
     "/LICENSE",
     "/README.md",
     "/CHANGELOG.md",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Template engine based on Jinja2/Django templates"
 homepage = "https://keats.github.io/tera/"
 readme = "README.md"
@@ -34,6 +40,27 @@ keywords = [
 categories = ["template-engine"]
 license = "MIT"
 repository = "https://github.com/Keats/tera"
+
+[features]
+builtins = [
+    "urlencode",
+    "slug",
+    "humansize",
+    "chrono",
+    "chrono-tz",
+    "rand",
+]
+date-locale = [
+    "builtins",
+    "chrono/unstable-locales",
+]
+default = ["builtins"]
+preserve_order = ["serde_json/preserve_order"]
+urlencode = ["percent-encoding"]
+
+[lib]
+name = "tera"
+path = "src/lib.rs"
 
 [dependencies.chrono]
 version = "0.4.27"
@@ -85,8 +112,8 @@ version = "1.0"
 version = "0.1"
 optional = true
 
-[dependencies.unic-segment]
-version = "0.9"
+[dependencies.unicode-segmentation]
+version = "1.12"
 
 [dev-dependencies.pretty_assertions]
 version = "1"
@@ -96,20 +123,3 @@ version = "1.0"
 
 [dev-dependencies.tempfile]
 version = "3"
-
-[features]
-builtins = [
-    "urlencode",
-    "slug",
-    "humansize",
-    "chrono",
-    "chrono-tz",
-    "rand",
-]
-date-locale = [
-    "builtins",
-    "chrono/unstable-locales",
-]
-default = ["builtins"]
-preserve_order = ["serde_json/preserve_order"]
-urlencode = ["percent-encoding"]

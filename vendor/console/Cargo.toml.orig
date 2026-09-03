@@ -1,11 +1,11 @@
 [package]
 name = "console"
 description = "A terminal and console abstraction for Rust"
-version = "0.15.10"
+version = "0.15.11"
 keywords = ["cli", "terminal", "colors", "console", "ansi"]
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
 license = "MIT"
-edition = "2018"
+edition = "2021"
 homepage = "https://github.com/console-rs/console"
 repository = "https://github.com/console-rs/console"
 documentation = "https://docs.rs/console"

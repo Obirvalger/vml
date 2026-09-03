@@ -1,11 +1,11 @@
-use std::time::Instant;
 use tracing::{debug, trace};
 
+use crate::Instant;
 use crate::connection::spaces::PacketSpace;
 use crate::crypto::{HeaderKey, KeyPair, PacketKey};
 use crate::packet::{Packet, PartialDecode, SpaceId};
 use crate::token::ResetToken;
-use crate::{TransportError, RESET_TOKEN_SIZE};
+use crate::{RESET_TOKEN_SIZE, TransportError};
 
 /// Removes header protection of a packet, or returns `None` if the packet was dropped
 pub(super) fn unprotect_header(
@@ -88,17 +88,12 @@ pub(super) fn decrypt_packet_body(
         &zero_rtt_crypto.unwrap().packet
     } else if packet_key_phase == conn_key_phase || space != SpaceId::Data {
         &spaces[space].crypto.as_ref().unwrap().packet.remote
-    } else if let Some(prev) = prev_crypto.and_then(|crypto| {
-        // If this packet comes prior to acknowledgment of the key update by the peer,
-        if crypto.end_packet.map_or(true, |(pn, _)| number < pn) {
-            // use the previous keys.
-            Some(crypto)
-        } else {
-            // Otherwise, this must be a remotely-initiated key update, so fall through to the
-            // final case.
-            None
-        }
-    }) {
+    } else if let Some(prev) = prev_crypto.filter(|&crypto|
+        // Use the previous keys if this packet comes prior to acknowledgment of the
+        // key update by the peer; otherwise, this must be a remotely-initiated key
+        // update, so fall through to the final case.
+        crypto.end_packet.is_none_or(|(pn, _)| number < pn))
+    {
         &prev.crypto.remote
     } else {
         // We're in the Data space with a key phase mismatch and either there is no locally
@@ -131,7 +126,7 @@ pub(super) fn decrypt_packet_body(
 
     if crypto_update {
         // Validate incoming key update
-        if number <= rx_packet || prev_crypto.map_or(false, |x| x.update_unacked) {
+        if number <= rx_packet || prev_crypto.is_some_and(|x| x.update_unacked) {
             return Err(Some(TransportError::KEY_UPDATE_ERROR("")));
         }
     }

@@ -1,12 +1,19 @@
 #![doc(html_root_url = "https://docs.rs/wasm-bindgen-shared/0.2")]
+#![no_std]
 
+extern crate alloc;
+
+use alloc::string::{String, ToString};
+
+pub mod identifier;
 #[cfg(test)]
 mod schema_hash_approval;
+pub mod tys;
 
 // This gets changed whenever our schema changes.
 // At this time versions of wasm-bindgen and wasm-bindgen-cli are required to have the exact same
 // SCHEMA_VERSION in order to work together.
-pub const SCHEMA_VERSION: &str = "0.2.92";
+pub const SCHEMA_VERSION: &str = "0.2.122";
 
 #[macro_export]
 macro_rules! shared_api {
@@ -17,7 +24,11 @@ macro_rules! shared_api {
             enums: Vec<Enum<'a>>,
             imports: Vec<Import<'a>>,
             structs: Vec<Struct<'a>>,
-            typescript_custom_sections: Vec<&'a str>,
+            // NOTE: Originally typescript_custom_sections are just some strings
+            // But the expression type can only be parsed into a string during compilation
+            // So when encoding, LitOrExpr contains two types, one is that expressions are parsed into strings during compilation, and the other is can be parsed directly.
+            // When decoding, LitOrExpr can be decoded as a string.
+            typescript_custom_sections: Vec<LitOrExpr<'a>>,
             local_modules: Vec<LocalModule<'a>>,
             inline_js: Vec<&'a str>,
             unique_crate_identifier: &'a str,
@@ -28,6 +39,8 @@ macro_rules! shared_api {
         struct Import<'a> {
             module: Option<ImportModule<'a>>,
             js_namespace: Option<Vec<String>>,
+            reexport: Option<String>,
+            generate_typescript: bool,
             kind: ImportKind<'a>,
         }
 
@@ -45,8 +58,10 @@ macro_rules! shared_api {
         enum ImportKind<'a> {
             Function(ImportFunction<'a>),
             Static(ImportStatic<'a>),
+            String(ImportString<'a>),
             Type(ImportType<'a>),
-            Enum(ImportEnum),
+            Enum(StringEnum<'a>),
+            DynamicUnion(DynamicUnion<'a>),
         }
 
         struct ImportFunction<'a> {
@@ -76,6 +91,7 @@ macro_rules! shared_api {
 
         enum OperationKind<'a> {
             Regular,
+            RegularThis,
             Getter(&'a str),
             Setter(&'a str),
             IndexingGetter,
@@ -88,28 +104,61 @@ macro_rules! shared_api {
             shim: &'a str,
         }
 
+        struct ImportString<'a> {
+            shim: &'a str,
+            string: &'a str,
+        }
+
         struct ImportType<'a> {
             name: &'a str,
             instanceof_shim: &'a str,
             vendor_prefixes: Vec<&'a str>,
         }
 
-        struct ImportEnum {}
+        struct StringEnum<'a> {
+            name: &'a str,
+            variant_values: Vec<&'a str>,
+            comments: Vec<&'a str>,
+            generate_typescript: bool,
+            private: bool,
+            js_namespace: Option<Vec<&'a str>>,
+        }
+
+        enum StartKind {
+            None,
+            Public,
+            Private,
+        }
+
+        struct DynamicUnion<'a> {
+            name: &'a str,
+            variant_strings: Vec<&'a str>,
+            variant_type_cnt: u32,
+            comments: Vec<&'a str>,
+            generate_typescript: bool,
+            private: bool,
+            fallback: bool,
+        }
+
 
         struct Export<'a> {
             class: Option<&'a str>,
             comments: Vec<&'a str>,
             consumed: bool,
             function: Function<'a>,
+            js_namespace: Option<Vec<&'a str>>,
             method_kind: MethodKind<'a>,
-            start: bool,
+            start: StartKind,
         }
 
         struct Enum<'a> {
             name: &'a str,
+            signed: bool,
             variants: Vec<EnumVariant<'a>>,
             comments: Vec<&'a str>,
             generate_typescript: bool,
+            js_namespace: Option<Vec<&'a str>>,
+            private: bool,
         }
 
         struct EnumVariant<'a> {
@@ -119,12 +168,21 @@ macro_rules! shared_api {
         }
 
         struct Function<'a> {
-            arg_names: Vec<String>,
+            args: Vec<FunctionArgumentData<'a>>,
             asyncness: bool,
             name: &'a str,
             generate_typescript: bool,
             generate_jsdoc: bool,
             variadic: bool,
+            ret_ty_override: Option<&'a str>,
+            ret_desc: Option<&'a str>,
+        }
+
+        struct FunctionArgumentData<'a> {
+            name: String,
+            ty_override: Option<&'a str>,
+            optional: bool,
+            desc: Option<&'a str>,
         }
 
         struct Struct<'a> {
@@ -133,6 +191,11 @@ macro_rules! shared_api {
             comments: Vec<&'a str>,
             is_inspectable: bool,
             generate_typescript: bool,
+            js_namespace: Option<Vec<&'a str>>,
+            private: bool,
+            extends: Option<&'a str>,
+            extends_js_class: Option<&'a str>,
+            extends_js_namespace: Option<Vec<&'a str>>,
         }
 
         struct StructField<'a> {
@@ -146,10 +209,32 @@ macro_rules! shared_api {
         struct LocalModule<'a> {
             identifier: &'a str,
             contents: &'a str,
+            linked_module: bool,
         }
         }
     }; // end of mac case
 } // end of mac definition
+
+/// Compute a "qualified name" by prepending the namespace (joined with `__`) to the js_name.
+/// When there is no namespace, this returns the js_name unchanged.
+/// This is used to disambiguate internal wasm symbols when the same js_name
+/// appears in different namespaces. `__` is used as the separator because
+/// double underscores are unlikely to appear in user-defined names.
+pub fn qualified_name(js_namespace: Option<&[impl AsRef<str>]>, js_name: &str) -> String {
+    match js_namespace {
+        Some(ns) if !ns.is_empty() => {
+            let mut name = ns
+                .iter()
+                .map(|s| s.as_ref())
+                .collect::<alloc::vec::Vec<_>>()
+                .join("__");
+            name.push_str("__");
+            name.push_str(js_name);
+            name
+        }
+        _ => js_name.to_string(),
+    }
+}
 
 pub fn new_function(struct_name: &str) -> String {
     let mut name = "__wbg_".to_string();
@@ -172,8 +257,46 @@ pub fn unwrap_function(struct_name: &str) -> String {
     name
 }
 
+/// Convert a JS-side name into a form suitable as a wasm-side export
+/// symbol suffix. Plain identifier names pass through unchanged. The
+/// bracket form `"[Symbol.<ident>]"` collapses to `Symbol_<ident>`. Any
+/// other non-alphanumeric characters are replaced with `_` so that the
+/// result is always a valid C identifier suffix.
+fn export_name_suffix(name: &str) -> alloc::borrow::Cow<'_, str> {
+    if name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        return alloc::borrow::Cow::Borrowed(name);
+    }
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            out.push(c);
+        } else if c == '.' || c == '[' || c == ']' {
+            // Bracket / dotted forms collapse cleanly; we represent
+            // `[Symbol.iterator]` as `Symbol_iterator` (the `[` and `]`
+            // drop, the `.` becomes `_`).
+            if c == '.' {
+                out.push('_');
+            }
+        } else {
+            out.push('_');
+        }
+    }
+    alloc::borrow::Cow::Owned(out)
+}
+
+/// Symbol name of the wasm export that upcasts a `*const WasmRefCell<Child>`
+/// pointer to a cloned `Rc<WasmRefCell<Parent>>` raw pointer. Used by the
+/// macro codegen and by cli-support's JS emission to call each other.
+pub fn upcast_function(child_struct: &str, parent_struct: &str) -> String {
+    let mut name = "__wbg_upcast_".to_string();
+    name.extend(child_struct.chars().flat_map(|s| s.to_lowercase()));
+    name.push_str("_to_");
+    name.extend(parent_struct.chars().flat_map(|s| s.to_lowercase()));
+    name
+}
+
 pub fn free_function_export_name(function_name: &str) -> String {
-    function_name.to_string()
+    export_name_suffix(function_name).into_owned()
 }
 
 pub fn struct_function_export_name(struct_: &str, f: &str) -> String {
@@ -182,7 +305,7 @@ pub fn struct_function_export_name(struct_: &str, f: &str) -> String {
         .flat_map(|s| s.to_lowercase())
         .collect::<String>();
     name.push('_');
-    name.push_str(f);
+    name.push_str(&export_name_suffix(f));
     name
 }
 
@@ -190,7 +313,7 @@ pub fn struct_field_get(struct_: &str, f: &str) -> String {
     let mut name = String::from("__wbg_get_");
     name.extend(struct_.chars().flat_map(|s| s.to_lowercase()));
     name.push('_');
-    name.push_str(f);
+    name.push_str(&export_name_suffix(f));
     name
 }
 
@@ -198,7 +321,15 @@ pub fn struct_field_set(struct_: &str, f: &str) -> String {
     let mut name = String::from("__wbg_set_");
     name.extend(struct_.chars().flat_map(|s| s.to_lowercase()));
     name.push('_');
-    name.push_str(f);
+    name.push_str(&export_name_suffix(f));
+    name
+}
+
+pub fn dynamic_union_variant(union_name: &str, variant_idx: u32) -> String {
+    let mut name = String::from("__wbg_dynamic_union_");
+    name.extend(union_name.chars().flat_map(|s| s.to_lowercase()));
+    name.push('_');
+    name.push_str(&variant_idx.to_string());
     name
 }
 
@@ -210,4 +341,19 @@ pub fn version() -> String {
         v.push(')');
     }
     v
+}
+
+pub fn escape_string(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => result.push_str("\\\\"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\'' => result.push_str("\\'"),
+            '"' => result.push_str("\\\""),
+            _ => result.push(c),
+        }
+    }
+    result
 }

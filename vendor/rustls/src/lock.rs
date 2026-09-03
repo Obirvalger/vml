@@ -11,7 +11,7 @@ mod std_lock {
     /// A wrapper around [`std::sync::Mutex`].
     #[derive(Debug)]
     pub struct Mutex<T> {
-        inner: std::sync::Mutex<T>,
+        inner: StdMutex<T>,
     }
 
     impl<T> Mutex<T> {
@@ -35,12 +35,13 @@ mod std_lock {
 #[cfg(not(feature = "std"))]
 mod no_std_lock {
     use alloc::boxed::Box;
-    use alloc::sync::Arc;
     use core::fmt::Debug;
     use core::ops::DerefMut;
 
-    #[derive(Debug)]
+    use crate::sync::Arc;
+
     /// A no-std compatible wrapper around [`Lock`].
+    #[derive(Debug)]
     pub struct Mutex<T> {
         inner: Arc<dyn Lock<T>>,
     }
@@ -72,9 +73,9 @@ mod no_std_lock {
         fn lock(&self) -> Result<MutexGuard<'_, T>, Poisoned>;
     }
 
-    /// A lock builder.                                                                                     
+    /// A lock builder.
     pub trait MakeMutex {
-        /// Create a new mutex.                                                                             
+        /// Create a new mutex.
         fn make_mutex<T>(value: T) -> Arc<dyn Lock<T>>
         where
             T: Send + 'static;

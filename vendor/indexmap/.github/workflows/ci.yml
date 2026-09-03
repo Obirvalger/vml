@@ -1,11 +1,11 @@
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
   merge_group:
 
-name: Continuous integration
+name: CI
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - rust: 1.63.0 # MSRV
+          - rust: 1.85.0 # MSRV
             features:
           - rust: stable
             features: arbitrary
@@ -26,9 +26,9 @@ jobs:
           - rust: stable
             features: rayon
           - rust: stable
-            features: rustc-rayon
-          - rust: stable
             features: serde
+          - rust: stable
+            features: sval
           - rust: stable
             features: borsh
           - rust: stable
@@ -39,12 +39,7 @@ jobs:
             bench: test build benchmarks
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        if: matrix.rust == '1.63.0'
-        with:
-          path: ~/.cargo/registry/index
-          key: cargo-git-index
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -58,6 +53,10 @@ jobs:
         if: matrix.features == 'serde'
         run: |
           cargo test --verbose -p test-serde
+      - name: Tests (sval)
+        if: matrix.features == 'sval'
+        run: |
+          cargo test --verbose -p test-sval
       - name: Test run benchmarks
         if: matrix.bench != ''
         run: cargo test -v --benches
@@ -67,18 +66,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - rust: 1.63.0
+          - rust: 1.85.0
             target: thumbv6m-none-eabi
           - rust: stable
             target: thumbv6m-none-eabi
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        if: matrix.rust == '1.63.0'
-        with:
-          path: ~/.cargo/registry/index
-          key: cargo-git-index
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -91,7 +85,7 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@beta
         with:
           components: clippy
@@ -100,31 +94,34 @@ jobs:
   miri:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: miri
-      - run: cargo miri test
+          components: miri, rust-src
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+        if: github.event_name == 'merge_group'
+      - run: cargo miri nextest run
+        if: github.event_name == 'merge_group'
+      - run: cargo miri test --doc
 
   minimal-versions:
     name: Check MSRV and minimal-versions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/index
-          key: cargo-git-index
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: dtolnay/rust-toolchain@1.63.0 # MSRV
+      - uses: dtolnay/rust-toolchain@1.85.0 # MSRV
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - run: cargo +nightly hack generate-lockfile --remove-dev-deps -Z direct-minimal-versions
+      - name: Lock minimal direct dependencies
+        run: cargo +nightly hack generate-lockfile --remove-dev-deps -Z direct-minimal-versions
       - name: Build (nightly)
         run: cargo +nightly build --verbose --all-features
       - name: Build (MSRV)
-        run: cargo build --verbose --features arbitrary,quickcheck,serde,rayon
+        run: cargo build --verbose --features arbitrary,quickcheck,serde,sval,rayon
 
   # One job that "summarizes" the success state of this pipeline. This can then be added to branch
   # protection, rather than having to add each job separately.

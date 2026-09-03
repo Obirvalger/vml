@@ -5,7 +5,7 @@
 #[macro_use]
 mod auxiliary;
 
-use core::{
+use std::{
     marker::{PhantomData, PhantomPinned},
     pin::Pin,
 };
@@ -449,8 +449,8 @@ fn dst() {
     }
 
     let mut x = Struct1 { f: 0_u8 };
-    let x: Pin<&mut Struct1<dyn core::fmt::Debug>> = Pin::new(&mut x as _);
-    let _: &mut (dyn core::fmt::Debug) = x.project().f;
+    let x: Pin<&mut Struct1<dyn core::fmt::Debug>> = Pin::new(&mut x);
+    let _: &mut dyn core::fmt::Debug = x.project().f;
 
     pin_project! {
         pub struct Struct2<T: ?Sized> {
@@ -460,7 +460,7 @@ fn dst() {
     }
 
     let mut x = Struct2 { f: 0_u8 };
-    let x: Pin<&mut Struct2<dyn core::fmt::Debug + Unpin>> = Pin::new(&mut x as _);
+    let x: Pin<&mut Struct2<dyn core::fmt::Debug + Unpin>> = Pin::new(&mut x);
     let _: Pin<&mut (dyn core::fmt::Debug + Unpin)> = x.project().f;
 
     pin_project! {

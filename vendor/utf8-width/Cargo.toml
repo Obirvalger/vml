@@ -13,15 +13,20 @@
 edition = "2021"
 rust-version = "1.56"
 name = "utf8-width"
-version = "0.1.7"
+version = "0.1.9"
 authors = ["Magic Len <len@magiclen.org>"]
+build = false
 include = [
     "src/**/*",
     "Cargo.toml",
     "README.md",
     "LICENSE",
-    "benches/bench.rs",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "To determine the width of a UTF-8 character by providing its first byte."
 homepage = "https://magiclen.org/utf8-width"
 readme = "README.md"
@@ -38,9 +43,9 @@ categories = [
 license = "MIT"
 repository = "https://github.com/magiclen/utf8-width"
 
-[[bench]]
-name = "bench"
-harness = false
+[lib]
+name = "utf8_width"
+path = "src/lib.rs"
 
 [dependencies]
 

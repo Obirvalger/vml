@@ -1,7 +1,6 @@
+use std::ffi::c_int;
 use std::ptr;
 use std::sync::Arc;
-
-use libc::c_int;
 
 use crate::client::conn;
 use crate::rt::Executor as _;
@@ -148,9 +147,9 @@ ffi_fn! {
         // Update request with original-case map of headers
         req.finalize_request();
 
-        let fut = match non_null! { &mut *conn ?= ptr::null_mut() }.tx {
-            Tx::Http1(ref mut tx) => futures_util::future::Either::Left(tx.send_request(req.0)),
-            Tx::Http2(ref mut tx) => futures_util::future::Either::Right(tx.send_request(req.0)),
+        let fut = match &mut non_null! { &mut *conn ?= ptr::null_mut() }.tx {
+            Tx::Http1(tx) => futures_util::future::Either::Left(tx.send_request(req.0)),
+            Tx::Http2(tx) => futures_util::future::Either::Right(tx.send_request(req.0)),
         };
 
         let fut = async move {

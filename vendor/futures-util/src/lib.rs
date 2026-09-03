@@ -1,15 +1,7 @@
 //! Combinators and utilities for working with `Future`s, `Stream`s, `Sink`s,
 //! and the `AsyncRead` and `AsyncWrite` traits.
 
-#![cfg_attr(feature = "write-all-vectored", feature(io_slice_advance))]
-#![cfg_attr(not(feature = "std"), no_std)]
-#![warn(
-    missing_debug_implementations,
-    missing_docs,
-    rust_2018_idioms,
-    single_use_lifetimes,
-    unreachable_pub
-)]
+#![no_std]
 #![doc(test(
     no_crate_inject,
     attr(
@@ -17,6 +9,7 @@
         allow(dead_code, unused_assignments, unused_variables)
     )
 ))]
+#![warn(missing_docs, unsafe_op_in_unsafe_fn)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(all(feature = "bilock", not(feature = "unstable")))]
@@ -24,10 +17,11 @@ compile_error!("The `bilock` feature requires the `unstable` feature as an expli
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 // Macro re-exports
 pub use futures_core::ready;
-pub use pin_utils::pin_mut;
 
 #[cfg(feature = "async-await")]
 #[macro_use]
@@ -37,7 +31,6 @@ mod async_await;
 pub use self::async_await::*;
 
 // Not public API.
-#[cfg(feature = "async-await")]
 #[doc(hidden)]
 pub mod __private {
     pub use crate::*;
@@ -47,6 +40,7 @@ pub mod __private {
         result::Result::{Err, Ok},
     };
 
+    #[cfg(feature = "async-await")]
     pub mod async_await {
         pub use crate::async_await::*;
     }
@@ -329,9 +323,10 @@ pub use crate::io::{
 #[cfg(feature = "alloc")]
 pub mod lock;
 
-#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
+#[cfg(target_has_atomic = "ptr")]
 #[cfg(feature = "alloc")]
 mod abortable;
 
 mod fns;
+mod macros;
 mod unfold_state;

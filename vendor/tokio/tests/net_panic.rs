@@ -12,6 +12,7 @@ mod support {
 use support::panic::test_panic;
 
 #[test]
+#[cfg_attr(miri, ignore)] // No UDP sockets in miri.
 fn udp_socket_from_std_panic_caller() -> Result<(), Box<dyn Error>> {
     use std::net::SocketAddr;
     use tokio::net::UdpSocket;
@@ -73,6 +74,7 @@ fn tcp_stream_from_std_panic_caller() -> Result<(), Box<dyn Error>> {
 
 #[test]
 #[cfg(unix)]
+#[cfg_attr(miri, ignore)] // No Unix domain sockets in miri.
 fn unix_listener_bind_panic_caller() -> Result<(), Box<dyn Error>> {
     use tokio::net::UnixListener;
 
@@ -94,6 +96,7 @@ fn unix_listener_bind_panic_caller() -> Result<(), Box<dyn Error>> {
 
 #[test]
 #[cfg(unix)]
+#[cfg_attr(miri, ignore)] // No Unix domain sockets in miri.
 fn unix_listener_from_std_panic_caller() -> Result<(), Box<dyn Error>> {
     use tokio::net::UnixListener;
 
@@ -116,6 +119,7 @@ fn unix_listener_from_std_panic_caller() -> Result<(), Box<dyn Error>> {
 
 #[test]
 #[cfg(unix)]
+#[cfg_attr(miri, ignore)] // No Unix domain sockets in miri.
 fn unix_stream_from_std_panic_caller() -> Result<(), Box<dyn Error>> {
     use tokio::net::UnixStream;
 
@@ -139,6 +143,7 @@ fn unix_stream_from_std_panic_caller() -> Result<(), Box<dyn Error>> {
 
 #[test]
 #[cfg(unix)]
+#[cfg_attr(miri, ignore)] // No Unix domain sockets in miri.
 fn unix_datagram_from_std_panic_caller() -> Result<(), Box<dyn Error>> {
     use std::os::unix::net::UnixDatagram as StdUDS;
     use tokio::net::UnixDatagram;

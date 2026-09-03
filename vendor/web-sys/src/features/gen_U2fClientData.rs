@@ -4,12 +4,42 @@ use super::*;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
-    # [wasm_bindgen (extends = :: js_sys :: Object , js_name = U2FClientData)]
+    #[wasm_bindgen(extends = "::js_sys::Object", js_name = "U2FClientData")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[doc = "The `U2fClientData` dictionary."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
     pub type U2fClientData;
+    #[doc = "Get the `challenge` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[wasm_bindgen(method, getter = "challenge")]
+    pub fn get_challenge(this: &U2fClientData) -> Option<::alloc::string::String>;
+    #[doc = "Change the `challenge` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[wasm_bindgen(method, setter = "challenge")]
+    pub fn set_challenge(this: &U2fClientData, val: &str);
+    #[doc = "Get the `origin` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[wasm_bindgen(method, getter = "origin")]
+    pub fn get_origin(this: &U2fClientData) -> Option<::alloc::string::String>;
+    #[doc = "Change the `origin` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[wasm_bindgen(method, setter = "origin")]
+    pub fn set_origin(this: &U2fClientData, val: &str);
+    #[doc = "Get the `typ` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[wasm_bindgen(method, getter = "typ")]
+    pub fn get_typ(this: &U2fClientData) -> Option<::alloc::string::String>;
+    #[doc = "Change the `typ` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[wasm_bindgen(method, setter = "typ")]
+    pub fn set_typ(this: &U2fClientData, val: &str);
 }
 impl U2fClientData {
     #[doc = "Construct a new `U2fClientData`."]
@@ -20,48 +50,19 @@ impl U2fClientData {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret
     }
-    #[doc = "Change the `challenge` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[deprecated = "Use `set_challenge()` instead."]
     pub fn challenge(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(
-            self.as_ref(),
-            &JsValue::from("challenge"),
-            &JsValue::from(val),
-        );
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_challenge(val);
         self
     }
-    #[doc = "Change the `origin` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[deprecated = "Use `set_origin()` instead."]
     pub fn origin(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r =
-            ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("origin"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_origin(val);
         self
     }
-    #[doc = "Change the `typ` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `U2fClientData`*"]
+    #[deprecated = "Use `set_typ()` instead."]
     pub fn typ(&mut self, val: &str) -> &mut Self {
-        use wasm_bindgen::JsValue;
-        let r = ::js_sys::Reflect::set(self.as_ref(), &JsValue::from("typ"), &JsValue::from(val));
-        debug_assert!(
-            r.is_ok(),
-            "setting properties should never fail on our dictionary objects"
-        );
-        let _ = r;
+        self.set_typ(val);
         self
     }
 }

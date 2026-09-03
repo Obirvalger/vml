@@ -1,13 +1,13 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(non_camel_case_types)]
-use crate::crypto::KeyExchangeAlgorithm;
+use crate::crypto::{KeyExchangeAlgorithm, hash};
 use crate::msgs::codec::{Codec, Reader};
 
 enum_builder! {
     /// The `HashAlgorithm` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub enum HashAlgorithm {
         NONE => 0x00,
         MD5 => 0x01,
@@ -19,11 +19,37 @@ enum_builder! {
     }
 }
 
+impl HashAlgorithm {
+    /// Returns the hash of the empty input.
+    ///
+    /// This returns `None` for some hash algorithms, so the caller
+    /// should be prepared to do the computation themselves in this case.
+    pub(crate) fn hash_for_empty_input(&self) -> Option<hash::Output> {
+        match self {
+            Self::SHA256 => Some(hash::Output::new(
+                b"\xe3\xb0\xc4\x42\x98\xfc\x1c\x14\
+                  \x9a\xfb\xf4\xc8\x99\x6f\xb9\x24\
+                  \x27\xae\x41\xe4\x64\x9b\x93\x4c\
+                  \xa4\x95\x99\x1b\x78\x52\xb8\x55",
+            )),
+            Self::SHA384 => Some(hash::Output::new(
+                b"\x38\xb0\x60\xa7\x51\xac\x96\x38\
+                  \x4c\xd9\x32\x7e\xb1\xb1\xe3\x6a\
+                  \x21\xfd\xb7\x11\x14\xbe\x07\x43\
+                  \x4c\x0c\xc7\xbf\x63\xf6\xe1\xda\
+                  \x27\x4e\xde\xbf\xe7\x6f\x65\xfb\
+                  \xd5\x1a\xd2\xf1\x48\x98\xb9\x5b",
+            )),
+            _ => None,
+        }
+    }
+}
+
 enum_builder! {
     /// The `ClientCertificateType` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub(crate) enum ClientCertificateType {
         RSASign => 0x01,
         DSSSign => 0x02,
@@ -42,7 +68,7 @@ enum_builder! {
     /// The `Compression` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub enum Compression {
         Null => 0x00,
         Deflate => 0x01,
@@ -54,7 +80,7 @@ enum_builder! {
     /// The `AlertLevel` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub enum AlertLevel {
         Warning => 0x01,
         Fatal => 0x02,
@@ -65,7 +91,7 @@ enum_builder! {
     /// The `HeartbeatMessageType` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub(crate) enum HeartbeatMessageType {
         Request => 0x01,
         Response => 0x02,
@@ -76,7 +102,7 @@ enum_builder! {
     /// The `ExtensionType` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U16
+    #[repr(u16)]
     pub enum ExtensionType {
         ServerName => 0x0000,
         MaxFragmentLength => 0x0001,
@@ -96,6 +122,8 @@ enum_builder! {
         Heartbeat => 0x000f,
         ALProtocolNegotiation => 0x0010,
         SCT => 0x0012,
+        ClientCertificateType => 0x0013,
+        ServerCertificateType => 0x0014,
         Padding => 0x0015,
         ExtendedMasterSecret => 0x0017,
         CompressCertificate => 0x001b,
@@ -112,6 +140,7 @@ enum_builder! {
         SignatureAlgorithmsCert => 0x0032,
         KeyShare => 0x0033,
         TransportParameters => 0x0039,
+        TicketRequest => 0x003a,
         NextProtocolNegotiation => 0x3374,
         ChannelId => 0x754f,
         RenegotiationInfo => 0xff01,
@@ -153,7 +182,7 @@ enum_builder! {
     /// The `ServerNameType` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub(crate) enum ServerNameType {
         HostName => 0x00,
     }
@@ -168,7 +197,7 @@ enum_builder! {
     /// by a peer during a TLS handshake. It is **not** a list of curves that
     /// Rustls supports. See [`crate::crypto::ring::kx_group`] for the list of supported
     /// elliptic curve groups.
-    @U16
+    #[repr(u16)]
     pub(crate) enum NamedCurve {
         sect163k1 => 0x0001,
         sect163r1 => 0x0002,
@@ -209,7 +238,7 @@ enum_builder! {
     /// The `NamedGroup` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U16
+    #[repr(u16)]
     pub enum NamedGroup {
         secp256r1 => 0x0017,
         secp384r1 => 0x0018,
@@ -221,6 +250,11 @@ enum_builder! {
         FFDHE4096 => 0x0102,
         FFDHE6144 => 0x0103,
         FFDHE8192 => 0x0104,
+        MLKEM512 => 0x0200,
+        MLKEM768 => 0x0201,
+        MLKEM1024 => 0x0202,
+        secp256r1MLKEM768 => 0x11eb,
+        X25519MLKEM768 => 0x11ec,
     }
 }
 
@@ -238,7 +272,7 @@ enum_builder! {
     /// The `ECPointFormat` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub enum ECPointFormat {
         Uncompressed => 0x00,
         ANSIX962CompressedPrime => 0x01,
@@ -246,15 +280,11 @@ enum_builder! {
     }
 }
 
-impl ECPointFormat {
-    pub(crate) const SUPPORTED: [Self; 1] = [Self::Uncompressed];
-}
-
 enum_builder! {
     /// The `HeartbeatMode` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub(crate) enum HeartbeatMode {
         PeerAllowedToSend => 0x01,
         PeerNotAllowedToSend => 0x02,
@@ -265,7 +295,7 @@ enum_builder! {
     /// The `ECCurveType` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub(crate) enum ECCurveType {
         ExplicitPrime => 0x01,
         ExplicitChar2 => 0x02,
@@ -274,11 +304,11 @@ enum_builder! {
 }
 
 enum_builder! {
-    /// The `PSKKeyExchangeMode` TLS protocol enum.  Values in this enum are taken
+    /// The `PskKeyExchangeMode` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
-    pub enum PSKKeyExchangeMode {
+    #[repr(u8)]
+    pub enum PskKeyExchangeMode {
         PSK_KE => 0x00,
         PSK_DHE_KE => 0x01,
     }
@@ -288,7 +318,7 @@ enum_builder! {
     /// The `KeyUpdateRequest` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub enum KeyUpdateRequest {
         UpdateNotRequested => 0x00,
         UpdateRequested => 0x01,
@@ -299,7 +329,7 @@ enum_builder! {
     /// The `CertificateStatusType` TLS protocol enum.  Values in this enum are taken
     /// from the various RFCs covering TLS, and are listed by IANA.
     /// The `Unknown` item is used when processing unrecognised ordinals.
-    @U8
+    #[repr(u8)]
     pub enum CertificateStatusType {
         OCSP => 0x01,
     }
@@ -310,7 +340,7 @@ enum_builder! {
     /// Listed by IANA, as specified in [RFC 9180 Section 7.1]
     ///
     /// [RFC 9180 Section 7.1]: <https://datatracker.ietf.org/doc/html/rfc9180#kemid-values>
-    @U16
+    #[repr(u16)]
     pub enum HpkeKem {
         DHKEM_P256_HKDF_SHA256 => 0x0010,
         DHKEM_P384_HKDF_SHA384 => 0x0011,
@@ -325,18 +355,14 @@ enum_builder! {
     /// Listed by IANA, as specified in [RFC 9180 Section 7.2]
     ///
     /// [RFC 9180 Section 7.2]: <https://datatracker.ietf.org/doc/html/rfc9180#name-key-derivation-functions-kd>
-    @U16
+    #[repr(u16)]
+    #[derive(Default)]
     pub enum HpkeKdf {
+        // TODO(XXX): revisit the default configuration. This is just what Cloudflare ships right now.
+        #[default]
         HKDF_SHA256 => 0x0001,
         HKDF_SHA384 => 0x0002,
         HKDF_SHA512 => 0x0003,
-    }
-}
-
-impl Default for HpkeKdf {
-    // TODO(XXX): revisit the default configuration. This is just what Cloudflare ships right now.
-    fn default() -> Self {
-        Self::HKDF_SHA256
     }
 }
 
@@ -345,8 +371,11 @@ enum_builder! {
     /// Listed by IANA, as specified in [RFC 9180 Section 7.3]
     ///
     /// [RFC 9180 Section 7.3]: <https://datatracker.ietf.org/doc/html/rfc9180#name-authenticated-encryption-wi>
-    @U16
+    #[repr(u16)]
+    #[derive(Default)]
     pub enum HpkeAead {
+        // TODO(XXX): revisit the default configuration. This is just what Cloudflare ships right now.
+        #[default]
         AES_128_GCM => 0x0001,
         AES_256_GCM => 0x0002,
         CHACHA20_POLY_1305 => 0x0003,
@@ -367,13 +396,6 @@ impl HpkeAead {
     }
 }
 
-impl Default for HpkeAead {
-    // TODO(XXX): revisit the default configuration. This is just what Cloudflare ships right now.
-    fn default() -> Self {
-        Self::AES_128_GCM
-    }
-}
-
 enum_builder! {
     /// The Encrypted Client Hello protocol version (`EchVersion`).
     ///
@@ -381,7 +403,7 @@ enum_builder! {
     /// TODO(XXX): Update reference once RFC is published.
     ///
     /// [draft-ietf-tls-esni Section 4]: <https://www.ietf.org/archive/id/draft-ietf-tls-esni-17.html#section-4>
-    @U16
+    #[repr(u16)]
     pub enum EchVersion {
         V18 => 0xfe0d,
     }
@@ -425,9 +447,9 @@ pub(crate) mod tests {
             HeartbeatMode::PeerNotAllowedToSend,
         );
         test_enum8::<ECCurveType>(ECCurveType::ExplicitPrime, ECCurveType::NamedCurve);
-        test_enum8::<PSKKeyExchangeMode>(
-            PSKKeyExchangeMode::PSK_KE,
-            PSKKeyExchangeMode::PSK_DHE_KE,
+        test_enum8::<PskKeyExchangeMode>(
+            PskKeyExchangeMode::PSK_KE,
+            PskKeyExchangeMode::PSK_DHE_KE,
         );
         test_enum8::<KeyUpdateRequest>(
             KeyUpdateRequest::UpdateNotRequested,
