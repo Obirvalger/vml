@@ -96,20 +96,20 @@ impl Net {
     }
 
     pub fn gateway4(&self) -> Option<String> {
-        if let Net::Tap { gateway: Some(gateway), .. } = self {
-            if gateway.parse::<Ipv4Addr>().is_ok() {
-                return Some(gateway.to_string());
-            }
+        if let Net::Tap { gateway: Some(gateway), .. } = self
+            && gateway.parse::<Ipv4Addr>().is_ok()
+        {
+            return Some(gateway.to_string());
         }
 
         None
     }
 
     pub fn gateway6(&self) -> Option<String> {
-        if let Net::Tap { gateway: Some(gateway), .. } = self {
-            if gateway.parse::<Ipv6Addr>().is_ok() {
-                return Some(gateway.to_string());
-            }
+        if let Net::Tap { gateway: Some(gateway), .. } = self
+            && gateway.parse::<Ipv6Addr>().is_ok()
+        {
+            return Some(gateway.to_string());
         }
 
         None

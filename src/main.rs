@@ -349,7 +349,7 @@ async fn main() -> Result<()> {
         }
         ssh.arg(host).args(&args);
 
-        debug!("{:?}", &ssh);
+        debug!("{:?}", ssh);
         ssh.spawn().context("failed to run executable ssh")?.wait()?;
 
         return Ok(());
@@ -585,7 +585,7 @@ async fn main() -> Result<()> {
                     vm.stop(true)?;
                     openssh_config::rm(&config.openssh_config.vm_configs_dir, &name)?;
                     vm.remove()?;
-                    debug!("Removed {}", &name);
+                    debug!("Removed {}", name);
                 }
                 if res != Some(0) && ssh_matches.is_present("check") {
                     if let Some(code) = res {

@@ -156,23 +156,21 @@ impl VMsCreator<'_> {
                     // process vanished
                     continue;
                 };
-                if let Ok(path) = proc.exe() {
-                    if let Some(file_name) = path.file_name() {
-                        if file_name.to_string_lossy().starts_with("qemu-system") {
-                            if let Ok(fds) = proc.fd() {
-                                for fd in fds {
-                                    let Ok(fd) = fd else {
-                                        // process vanished
-                                        continue;
-                                    };
-                                    if let FDTarget::Path(f) = fd.target {
-                                        if let Some(vm) = vms.get_mut(&f) {
-                                            vm.set_pid(proc.pid);
-                                            with_pid_vms.insert(vm.name.to_string());
-                                        }
-                                    }
-                                }
-                            }
+                if let Ok(path) = proc.exe()
+                    && let Some(file_name) = path.file_name()
+                    && file_name.to_string_lossy().starts_with("qemu-system")
+                    && let Ok(fds) = proc.fd()
+                {
+                    for fd in fds {
+                        let Ok(fd) = fd else {
+                            // process vanished
+                            continue;
+                        };
+                        if let FDTarget::Path(f) = fd.target
+                            && let Some(vm) = vms.get_mut(&f)
+                        {
+                            vm.set_pid(proc.pid);
+                            with_pid_vms.insert(vm.name.to_string());
                         }
                     }
                 }
@@ -194,10 +192,11 @@ impl VMsCreator<'_> {
             Ok(vms.values().cloned().collect())
         };
 
-        if let Ok(result_vms) = &result_vms {
-            if self.error_on_empty && result_vms.is_empty() {
-                bail!(Error::EmptyVMsList);
-            }
+        if let Ok(result_vms) = &result_vms
+            && self.error_on_empty
+            && result_vms.is_empty()
+        {
+            bail!(Error::EmptyVMsList);
         }
 
         result_vms

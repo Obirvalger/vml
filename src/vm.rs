@@ -66,13 +66,12 @@ pub async fn create<S: AsRef<str>>(
         images_dirs.extend(config.images.other_directories_ro.iter());
         match images::find(&images_dirs, image_name) {
             Ok(image_path) => {
-                if config.images.update_on_create {
-                    if let Some(image) = available_images.get(image_name) {
-                        if image.outdate() {
-                            info!("Update {} image", &image.name);
-                            image.pull(show_pb).await?;
-                        }
-                    }
+                if config.images.update_on_create
+                    && let Some(image) = available_images.get(image_name)
+                    && image.outdate()
+                {
+                    info!("Update {} image", image.name);
+                    image.pull(show_pb).await?;
                 }
                 image_path
             }
@@ -211,7 +210,7 @@ impl VM {
         let data = vm_config.data.unwrap_or_default();
         let disk = directory.join(vm_config.disk.unwrap_or_else(|| PathBuf::from("disk.qcow2")));
         if !disk.is_file() {
-            bail!("disk `{}` for vm `{}` not found", &disk.display(), &name);
+            bail!("disk `{}` for vm `{}` not found", disk.display(), name);
         }
         let mut default_gui = config.default.gui.to_owned();
         let mut default_display = config.default.display.to_owned();
@@ -436,14 +435,14 @@ impl VM {
                     context.insert("gui", gui);
                 }
 
-                if let Some(ssh) = &self.ssh {
-                    if ssh.has_key() {
-                        let keys = ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
-                        context.insert("ssh_authorized_keys", &keys.authorized_keys());
+                if let Some(ssh) = &self.ssh
+                    && ssh.has_key()
+                {
+                    let keys = ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
+                    context.insert("ssh_authorized_keys", &keys.authorized_keys());
 
-                        if let Some(user) = ssh.user() {
-                            users.push(user)
-                        }
+                    if let Some(user) = ssh.user() {
+                        users.push(user)
                     }
                 }
 
@@ -477,7 +476,7 @@ impl VM {
                     qemu.args(["-nic", &user_net]);
 
                     qemu.args(&self.modify_command.qemu.append);
-                    debug!("{:?}", &qemu);
+                    debug!("{:?}", qemu);
                     let exit_status = qemu
                         .spawn()
                         .with_context(|| {
@@ -499,7 +498,7 @@ impl VM {
         }
 
         qemu.args(&self.modify_command.qemu.append);
-        debug!("{:?}", &qemu);
+        debug!("{:?}", qemu);
         let exit_status = qemu
             .spawn()
             .with_context(|| format!("failed to run executable executable {}", self.qemu_binary))?
@@ -560,12 +559,12 @@ impl VM {
     fn get_ssh_private_key(&self) -> Result<Option<String>> {
         let mut key = None;
 
-        if let Some(self_ssh) = &self.ssh {
-            if self_ssh.has_key() {
-                let keys = self_ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
-                if let Some(pvt_key) = keys.private() {
-                    key = Some(pvt_key);
-                }
+        if let Some(self_ssh) = &self.ssh
+            && self_ssh.has_key()
+        {
+            let keys = self_ssh.ensure_keys(&self.vml_directory.join("ssh"))?;
+            if let Some(pvt_key) = keys.private() {
+                key = Some(pvt_key);
             }
         }
 
@@ -620,7 +619,7 @@ impl VM {
             ssh_cmd.args(cmd);
         }
 
-        debug!("{:?}", &ssh_cmd);
+        debug!("{:?}", ssh_cmd);
         let rc = ssh_cmd.spawn().context("failed to run executable ssh")?.wait()?.code();
 
         Ok(rc)
@@ -701,7 +700,7 @@ impl VM {
             }
         }
 
-        debug!("{:#?}", &rsync);
+        debug!("{:#?}", rsync);
         let rc = rsync.spawn().context("failed to run executable rsync")?.wait()?.code();
         if check && rc != Some(0) {
             if to {
@@ -973,7 +972,7 @@ fn image_size<S: AsRef<OsStr>>(image: S) -> Result<u64> {
 
     bail!(
         "failed to parse `{:?}` out\n\nCaused by:\n\t{}",
-        &qemu_img,
+        qemu_img,
         "can't read virtual-size as u64"
     )
 }

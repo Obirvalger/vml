@@ -44,10 +44,10 @@ impl<'a> Image<'a> {
         config: &'a ConfigImages,
     ) -> Self {
         let mut arch = ARCH.to_string();
-        if let Some(arch_mapping) = &image.arch_mapping {
-            if let Some(mapped_arch) = arch_mapping.get(&arch) {
-                arch = mapped_arch.to_string();
-            }
+        if let Some(arch_mapping) = &image.arch_mapping
+            && let Some(mapped_arch) = arch_mapping.get(&arch)
+        {
+            arch = mapped_arch.to_string();
         }
 
         let mut url = image.url;
@@ -105,10 +105,10 @@ impl<'a> Image<'a> {
 
             let arch = &self.arch;
 
-            if let Ok(output) = run_fun!(ARCH=$arch $prog $name) {
-                if !output.is_empty() {
-                    url = output
-                }
+            if let Ok(output) = run_fun!(ARCH=$arch $prog $name)
+                && !output.is_empty()
+            {
+                url = output
             }
         };
 
@@ -121,7 +121,7 @@ impl<'a> Image<'a> {
         let images_dir = &self.config.directory;
         let mut tmp = tempfile::Builder::new().tempfile_in(images_dir)?;
 
-        info!("Downloading image {} {}", &self.name, url);
+        info!("Downloading image {} {}", self.name, url);
         download_file(url, &mut tmp, show_pb).await?;
 
         if let Ok(Some(mtype)) = infer::get_from_path(tmp.path()) {

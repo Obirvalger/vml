@@ -100,10 +100,10 @@ impl Ssh {
         };
 
         let mut key = config.key.to_owned();
-        if let Some(key_str) = &key {
-            if key_str.to_lowercase() == "none" {
-                key = None;
-            }
+        if let Some(key_str) = &key
+            && key_str.to_lowercase() == "none"
+        {
+            key = None;
         }
 
         let port = if config_net.is_user() {
