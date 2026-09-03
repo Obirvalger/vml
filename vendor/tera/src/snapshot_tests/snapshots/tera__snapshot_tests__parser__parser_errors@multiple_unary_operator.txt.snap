@@ -1,0 +1,10 @@
+---
+source: tera/src/snapshot_tests/parser.rs
+expression: res.unwrap_err()
+input_file: tera/src/snapshot_tests/parser_inputs/errors/multiple_unary_operator.txt
+---
+error: `-` and `not` cannot be used consecutively.
+ --> multiple_unary_operator.txt:1:5
+  |
+1 | {{ -- 1}}
+  |     ^

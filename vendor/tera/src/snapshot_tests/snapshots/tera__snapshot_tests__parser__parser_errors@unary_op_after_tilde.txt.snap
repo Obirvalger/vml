@@ -1,0 +1,10 @@
+---
+source: tera/src/snapshot_tests/parser.rs
+expression: res.unwrap_err()
+input_file: tera/src/snapshot_tests/parser_inputs/errors/unary_op_after_tilde.txt
+---
+error: `-` is not allowed after `~`
+ --> unary_op_after_tilde.txt:1:13
+  |
+1 | {{ "ho" ~ - "hey" }}
+  |             ^^^^^

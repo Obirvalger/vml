@@ -1,0 +1,92 @@
+---
+source: tera/src/snapshot_tests/rendering.rs
+expression: "&normalized_out"
+input_file: tera/src/snapshot_tests/rendering_inputs/success/filters.txt
+---
+&lt;html&gt;
+<html>
+B&amp;b
+B&b
+€ hello €
+should not print
+1
+empty
+not empty
+Default val
+Default val
+Hello
+3
+["abc", "efgh", "ijklm"]
+6.0
+HELLO
+hello
+HTML
+<html>
+&lt;HTML&gt;
+<HTML>
+<HTML>
+<HTML>
+ hello 
+ hello $
+$ hello 
+2
+2
+19.0
+2.2
+true
+true
+True
+[3, 2, 1]
+1
+3
+2
+1, 2, 3
+[1, 2, 3, 4]
+{2015: [{"id": 1, "year": 2015}, {"id": 2, "year": 2015}], 2016: [{"id": 3, "year": 2016}], 2017: [{"id": 4, "year": 2017}], 2018: [{"id": 5, "year": 2018}, {"id": 7, "year": 2018}]}
+indent1:one
+    two
+    three
+indent2:  one
+  two
+  three
+indent3:one
+    two
+    three
+    
+
+indent4:a
+    b
+END
+indent5:a
+END
+indent6:	one
+	two
+	three
+Bob
+7
+Child
+[]
+[1, 2]
+["a", "b"]
+[]
+["a", "b"]
+[1, 2]
+["Tchoupi", "Pilou", "Fanny"]
+[1]
+hello
+he…
+he^
+wordcount: 3
+&amp;lt;html&amp;gt;
+one<br>two<br>three
+pluralize(singular): message
+pluralize(zero): categories
+pluralize(multiple): categories
+sort: [-1, 2, 3, 4, 5]
+sort(empty): []
+sort(strings): ["a", "b", "c"]
+sort(attribute): [1, 2, 3, 4, 5, 7, 6]
+sort(tuple index): [[1], [2], [3]]
+pairs(sorted): [["a", 2], ["b", 1]]
+pairs(sort by value): [["b", 1], ["a", 2]]
+pairs(empty): []

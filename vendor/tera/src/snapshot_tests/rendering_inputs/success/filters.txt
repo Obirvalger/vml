@@ -1,0 +1,74 @@
+{{ "<html>" }}
+{{ "<html>" | safe}}
+{{ name | replace(from="o", to=to) }}
+{{ name | replace(from="o", to=to) | safe }}
+{{ "$ hello $" | replace(from="$", to="€") }}
+{{ existing | default(value="should not print") }}
+{{ undefined_val | default(value=1) }}
+{{ "" | default(value="empty", boolean=true) }}
+{{ "not empty" | default(value="empty", boolean=true) }}
+{{ undefined_val | default(value="default val") | capitalize }}
+{{ product.undefined_field | default(value="default val") | capitalize }}
+{{ "HELLO" | capitalize }}
+{{ [1, 2, 3] | length }}
+{{ "abcdefghdijklm" | split(pat="d") | safe }}
+{{ (2.8 * 2) | round }}
+{{ "hello" | upper }}
+{{ "HELLO" | lower }}
+{{ " html " | upper | trim }}
+{{ malicious | safe }}
+{{ malicious | upper }}
+{{ malicious | upper | safe }}
+{{ malicious | safe | upper }}
+{{ malicious | safe | upper | safe }}
+{{ "$ hello $" | trim(pat="$") }}
+{{ "$ hello $" | trim_start(pat="$") }}
+{{ "$ hello $" | trim_end(pat="$") }}
+{{ reviews | length }}
+{{ data | length }}
+{{ (1.9 + age) | round - 1 }}
+{{ -1.2 | abs + 1 }}
+{{ reviews | length > 1 }}
+{{ reviews | length == 2 }}
+{{ (reviews | length == 2) | str | capitalize }}
+{{ [1, 2, 3] | reverse }}
+{{ [1, 2, 3] | first }}
+{{ [1, 2, 3] | last }}
+{{ [1, 2, 3] | nth(n=1) }}
+{{ [1, 2, 3] | join(sep=", ") }}
+{{ [1, 2, 3, 2, 3, 4] | unique }}
+{{ year_data | group_by(attribute="year") | safe }}
+indent1:{{ "one\ntwo\nthree" | indent }}
+indent2:{{ "one\ntwo\nthree" | indent(first=true, width=2) }}
+indent3:{{ "one\ntwo\nthree\n\n" | indent(blank=true) }}
+indent4:{{ "a\nb\n" | indent }}END
+indent5:{{ "a\n" | indent(blank=true) }}END
+indent6:{{ "one\ntwo\nthree" | indent(first=true, width=1, indentation="\t") }}
+{{ "name" | read_ctx }}
+{{ "vectors.1.2" | read_ctx }}
+{{ "objects.0.label" | read_ctx }}
+{{ {} | values }}
+{{ { "a": 2, "b": 1 } | values | sort }}
+{{ { 1: "b", 2: "a" } | values | sort | safe }}
+{{ {} | keys }}
+{{ { "a": 2, "b": 1 } | keys | sort | safe }}
+{{ { 1: "b", 2: "a" } | keys | sort }}
+{{ data | get(key="names") | safe }}
+{{ data | get(key="ages", default=[1]) }}
+{{ "hello" | truncate(length=255) }}
+{{ "hello" | truncate(length=2) }}
+{{ "hello" | truncate(length=2, end="^") }}
+wordcount: {{ "one\ntwo\nthree" | wordcount }}
+{{ "<html>" | safe | escape_html }}
+{{ "one\ntwo\nthree" | newlines_to_br | safe }}
+pluralize(singular): message{{1 | pluralize}}
+pluralize(zero): categor{{0 | pluralize(singular="y", plural="ies")}}
+pluralize(multiple): categor{{2 | pluralize(singular="y", plural="ies")}}
+sort: {{ [3, -1, 2, 5, 4] | sort }}
+sort(empty): {{ [] | sort }}
+sort(strings): {{ ["c", "a", "b"] | sort | safe }}
+sort(attribute): {{ [data.id for data in year_data | sort(attribute="year")] | safe }}
+sort(tuple index): {{ [[2], [1], [3]] | sort(attribute="0") }}
+pairs(sorted): {{ {"b": 1, "a": 2} | pairs | sort | safe }}
+pairs(sort by value): {{ {"b": 1, "a": 2} | pairs | sort(attribute="1") | safe }}
+pairs(empty): {{ {} | pairs }}

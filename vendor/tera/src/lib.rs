@@ -1,4 +1,3 @@
-#![doc(html_root_url = "https://docs.rs/tera")]
 //! # Tera
 //!
 //! A powerful, fast and easy-to-use template engine for Rust
@@ -19,9 +18,7 @@
 //! - Expressive and familiar syntax
 //! - Extensible with custom filters and functions
 //! - Automatic escaping of HTML/XML by default
-//! - Strict mode for enforcing variable existence
 //! - Template caching and auto-reloading for efficient development
-//! - Built-in support for JSON and other data formats
 //! - Comprehensive error messages and debugging information
 //!
 //! ## Example
@@ -30,7 +27,7 @@
 //! use tera::Tera;
 //!
 //! // Create a new Tera instance and add a template from a string
-//! let mut tera = Tera::new("templates/**/*").unwrap();
+//! let mut tera = Tera::new();
 //! tera.add_raw_template("hello", "Hello, {{ name }}!").unwrap();
 //! // Prepare the context with some data
 //! let mut context = tera::Context::new();
@@ -47,8 +44,18 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tera = "1.0"
+//! # By default no features are selected.
+//! tera = {version = "2", features = ["fast"]}
 //! ```
+//!
+//! A few features requiring more dependencies are available:
+//!
+//! - `fast`: speed up template rendering (you can also select only some of the features from that feature group)
+//! - `glob_fs`: allows loading template on the filesystem using a glob
+//! - `unicode`: if you want Tera to work with graphemes clusters rather than utf-8 characters when iterating on strings
+//! - `preserve_order`: keep order of insertion for values
+//!
+//! Unless you want to trim down completely on your dependencies, the `fast` feature should be enabled.
 //!
 //! Then, consult the official documentation and examples to learn more about using Tera in your
 //! Rust projects.
@@ -58,48 +65,49 @@
 
 #![deny(missing_docs)]
 
-#[macro_use]
-mod macros;
-mod builtins;
+mod args;
+mod components;
 mod context;
+mod delimiters;
 mod errors;
-mod filter_utils;
-mod parser;
-mod renderer;
+mod filters;
+mod functions;
+#[cfg(feature = "glob_fs")]
+mod globbing;
+mod parsing;
+mod reporting;
 mod template;
 mod tera;
+mod tests;
 mod utils;
+/// The value type used by Tera and supporting types (`Key`, `Map`, `Number`, `ValueKind`).
+pub mod value;
+pub(crate) mod vm;
 
-// Library exports.
+pub use crate::tera::{EscapeFn, Tera};
+pub use args::{ArgFromValue, Kwargs, StringInput};
+pub use components::{ComponentArg, ComponentArgType, ComponentInfo};
+pub use context::Context;
+pub use delimiters::Delimiters;
+pub use errors::{Error, ErrorKind, ReportError, TeraResult};
+pub use filters::Filter;
+pub use functions::Function;
+pub use tests::{Test, TestResult};
+pub use utils::{Span, escape_html};
+#[doc(inline)]
+pub use value::FunctionResult;
+pub use value::number::Number;
+pub use value::{Map, Value};
+pub use vm::state::State;
 
-pub use crate::builtins::filters::Filter;
-pub use crate::builtins::functions::Function;
-pub use crate::builtins::testers::Test;
-pub use crate::context::Context;
-pub use crate::errors::{Error, ErrorKind, Result};
-// Template, dotted_pointer and get_json_pointer are meant to be used internally only but is exported for test/bench.
+#[cfg(feature = "glob_fs")]
 #[doc(hidden)]
-pub use crate::context::dotted_pointer;
-#[doc(hidden)]
-#[allow(deprecated)]
-pub use crate::context::get_json_pointer;
-#[doc(hidden)]
-pub use crate::template::Template;
-pub use crate::tera::Tera;
-pub use crate::utils::escape_html;
-// Re-export Value and other useful things from serde
-// so apps/tools can encode data in Tera types
-pub use serde_json::value::{from_value, to_value, Map, Number, Value};
+pub use globbing::load_from_glob;
 
-// Exposes the AST if one needs it but changing the AST is not considered
-// a breaking change so it isn't public
-#[doc(hidden)]
-pub use crate::parser::ast;
+#[cfg(feature = "fast_hash")]
+pub(crate) use ahash::{AHashMap as HashMap, AHashSet as HashSet};
+#[cfg(not(feature = "fast_hash"))]
+pub(crate) use std::collections::{HashMap, HashSet};
 
-/// Re-export some helper fns useful to write filters/fns/tests
-pub mod helpers {
-    /// Functions helping writing tests
-    pub mod tests {
-        pub use crate::builtins::testers::{extract_string, number_args_allowed, value_defined};
-    }
-}
+#[cfg(test)]
+mod snapshot_tests;

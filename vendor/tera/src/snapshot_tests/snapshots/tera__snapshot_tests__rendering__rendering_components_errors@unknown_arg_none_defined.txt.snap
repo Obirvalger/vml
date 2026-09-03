@@ -1,0 +1,10 @@
+---
+source: tera/src/snapshot_tests/rendering.rs
+expression: "&err"
+input_file: tera/src/snapshot_tests/rendering_inputs/errors/components/unknown_arg_none_defined.txt
+---
+error: Unknown argument(s) `hello` in component call.
+ --> tpl:1:4
+  |
+1 | {{ <display_name hello={1}/> }}
+  |    ^^^^^^^^^^^^^^^^^^^^^^^^^

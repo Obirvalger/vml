@@ -1,0 +1,14 @@
+{% set a = 1 %}
+{% set a = (b + 1) | round %}
+{% set a = 'hi' %}
+{% set a = <something/> %}
+{% set a = utcnow() %}
+{% set a = [1, true, 'hello'] %}
+{% set a = [1, true, [1,2]] %}
+{% set_global a = 1 %}
+{% set body | upper %}Hello{% endset %}
+{% set_global body | upper(with=1) | trans(lang='fr') %}Hello{% endset %}
+{% set value = {"hello": 0} %}
+{% set value = {"hello": data} %}
+{% set value = {1: data} %}
+{% set value = {true: data} %}

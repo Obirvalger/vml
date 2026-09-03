@@ -1,0 +1,143 @@
+---
+source: tera/src/snapshot_tests/parser.rs
+expression: "&nodes"
+input_file: tera/src/snapshot_tests/parser_inputs/success/tpl/tpl_slightly_complex.txt
+---
+[
+    "<html>\n  <head>\n    <title>",
+    Block {
+        name: "title" @ 3:20-3:25 (36..41),
+        body: [
+            GetAttr {
+                expr: Var {
+                    name: "product",
+                } @ 3:31-3:38 (47..54),
+                name: "name",
+                optional: false,
+            } @ 3:39-3:43 (55..59),
+        ],
+    },
+    "</title>\n  </head>\n  <body>",
+    Block {
+        name: "content" @ 6:14-6:21 (124..131),
+        body: [
+            ForLoop {
+                key: None,
+                value: "item",
+                target: Var {
+                    name: "items",
+                } @ 7:24-7:29 (160..165),
+                body: [
+                    If {
+                        expr: GetAttr {
+                            expr: Var {
+                                name: "item",
+                            } @ 8:19-8:23 (189..193),
+                            name: "show",
+                            optional: false,
+                        } @ 8:24-8:28 (194..198),
+                        body: [
+                            GetAttr {
+                                expr: Var {
+                                    name: "item",
+                                } @ 8:34-8:38 (204..208),
+                                name: "name",
+                                optional: false,
+                            } @ 8:39-8:43 (209..213),
+                        ],
+                        false_body: [
+                            "-",
+                        ],
+                    },
+                    "Price: $",
+                    BinaryOperation {
+                        op: Minus,
+                        left: BinaryOperation {
+                            op: Mul,
+                            left: GetAttr {
+                                expr: Var {
+                                    name: "item",
+                                } @ 9:23-9:27 (265..269),
+                                name: "price",
+                                optional: false,
+                            } @ 9:28-9:33 (270..275),
+                            right: Var {
+                                name: "vat",
+                            } @ 9:36-9:39 (278..281),
+                        } @ 9:23-9:39 (265..281),
+                        right: Filter {
+                            expr: BinaryOperation {
+                                op: Mul,
+                                left: GetAttr {
+                                    expr: Var {
+                                        name: "item",
+                                    } @ 9:43-9:47 (285..289),
+                                    name: "price",
+                                    optional: false,
+                                } @ 9:48-9:53 (290..295),
+                                right: Var {
+                                    name: "discount",
+                                } @ 9:56-9:64 (298..306),
+                            } @ 9:43-9:64 (285..306),
+                            name: "integer",
+                            kwargs: {
+                                "base": 10 @ 9:81-9:83 (323..325),
+                            },
+                        } @ 9:68-9:84 (310..326),
+                    } @ 9:23-9:84 (265..326),
+                    "\n\n            ",
+                    FilterSection {
+                        filters: [
+                            Filter {
+                                expr: () @ 11:15-11:21 (346..352),
+                                name: "markdown",
+                                kwargs: {},
+                            } @ 11:22-11:30 (353..361),
+                        ],
+                        body: [
+                            "\n            ## Description\n\n            ",
+                            Filter {
+                                expr: GetAttr {
+                                    expr: Var {
+                                        name: "page",
+                                    } @ 14:15-14:19 (408..412),
+                                    name: "description",
+                                    optional: false,
+                                } @ 14:20-14:31 (413..424),
+                                name: "safe",
+                                kwargs: {},
+                            } @ 14:34-14:38 (427..431),
+                            "\n            ",
+                        ],
+                    },
+                    "\n\n            ",
+                    Filter {
+                        expr: ComponentCall {
+                            name: "cta",
+                            kwargs: [
+                                KeyValue {
+                                    key: String(
+                                        "title",
+                                    ),
+                                    value: "Buy now" @ 17:25-17:26 (489..490),
+                                },
+                            ],
+                            body: [],
+                            self_closing: true,
+                        } @ 17:15-17:37 (479..501),
+                        name: "safe",
+                        kwargs: {},
+                    } @ 17:40-17:44 (504..508),
+                    "\n\n            ",
+                    Include {
+                        name: "sales.html" @ 19:23-19:35 (536..548),
+                    },
+                ],
+                else_body: [
+                    "No items.",
+                ],
+            },
+        ],
+    },
+    "</body>\n</html>\n",
+]

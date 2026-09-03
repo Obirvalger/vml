@@ -29,7 +29,7 @@ rust-embed = "8.5.0"
 serde = { version = "1.0.145", features = ["derive"] }
 shellexpand = "3.1.0"
 tempfile = "3.3.0"
-tera = "1.17.1"
+tera = "2.3.0"
 thiserror = "2.0.20"
 tokio = { version = "1.13.0", features = ["full"] }
 toml = "1.1.5"

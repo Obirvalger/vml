@@ -1,0 +1,16 @@
+{% block start -%}
+Hello {{world}}!
+  {% block nested %}
+    Even nested!
+  {% endblock %}
+{%- endblock %}
+
+And inline {% block second %}{{super()}}{% endblock second %}.
+
+{% if true %}
+{% block hello %}{% endblock hello %}
+{% elif 0 == 1 %}
+{% block hello2 %}{% endblock hello2 %}
+{% else %}
+{% block hello3 %}{% endblock hello3 %}
+{% endif %}

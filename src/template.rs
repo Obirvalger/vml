@@ -9,7 +9,7 @@ use tera::Tera;
 pub fn create_context<S: AsRef<str>>(pairs: &[(S, S)]) -> Context {
     let mut context = Context::new();
     for (k, v) in pairs {
-        context.insert(k.as_ref(), v.as_ref());
+        context.insert(k.as_ref().to_owned(), v.as_ref());
     }
 
     context

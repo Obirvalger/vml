@@ -1,0 +1,13 @@
+---
+source: tera/src/snapshot_tests/rendering.rs
+expression: "&normalized_out"
+input_file: tera/src/snapshot_tests/rendering_inputs/success/escaping.txt
+---
+&lt;p&gt;I should be escaped by default&lt;/p&gt;
+true
+true
+true
+escaped: [&quot;&lt;p&gt;Some HTML chars &amp; more&lt;/p&gt;&quot;]
+safe: ["<p>Some HTML chars & more</p>"]
+escaped: {&quot;a&quot;: &quot;&lt;p&gt;Some HTML chars &amp; more&lt;/p&gt;&quot;}
+safe: {"a": "<p>Some HTML chars & more</p>"}

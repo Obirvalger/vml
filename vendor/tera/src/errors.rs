@@ -1,19 +1,113 @@
-use std::convert::Into;
+//! The Tera error type, with optional nice terminal error reporting.
 use std::error::Error as StdError;
-use std::fmt;
+use std::fmt::{self};
 
-/// The kind of an error (non-exhaustive)
-#[derive(Debug)]
-#[allow(clippy::manual_non_exhaustive)] // reason = "we want to stay backwards compatible, therefore we keep the manual implementation of non_exhaustive"
+use crate::reporting::generate_report;
+
+use crate::utils::Span;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Note {
+    pub(crate) label: String,
+    pub(crate) filename: String,
+    pub(crate) source: String,
+    pub(crate) span: Span,
+}
+
+/// An error that knows how to present itself nicely, with the right spans/notes etc.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportError {
+    pub(crate) message: String,
+    pub(crate) filename: String,
+    pub(crate) source: String,
+    pub(crate) span: Span,
+    pub(crate) notes: Vec<Note>,
+}
+
+impl ReportError {
+    pub(crate) fn new(message: String, filename: &str, source: &str, span: &Span) -> Self {
+        Self {
+            message,
+            filename: filename.to_string(),
+            source: source.to_string(),
+            span: span.clone(),
+            notes: Vec::new(),
+        }
+    }
+
+    /// Create a ReportError without filename/source - must call set_source before generating report
+    pub(crate) fn new_without_source(message: String, span: &Span) -> Self {
+        Self {
+            message,
+            filename: String::new(),
+            source: String::new(),
+            span: span.clone(),
+            notes: Vec::new(),
+        }
+    }
+
+    pub(crate) fn set_source(&mut self, filename: &str, source: &str) {
+        self.filename = filename.to_string();
+        self.source = source.to_string();
+    }
+
+    pub(crate) fn add_note(&mut self, label: &str, filename: &str, source: &str, span: &Span) {
+        self.notes.push(Note {
+            label: label.to_string(),
+            filename: filename.to_string(),
+            source: source.to_string(),
+            span: span.clone(),
+        });
+    }
+
+    pub(crate) fn generate_report(&self) -> String {
+        generate_report(self)
+    }
+
+    /// The error message, without the source context.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Where in the template source the error occurred.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
+
+    /// The name of the template the error occurred in.
+    pub fn filename(&self) -> &str {
+        &self.filename
+    }
+
+    pub(crate) fn unexpected_end_of_input(span: &Span) -> Self {
+        Self::new_without_source("Unexpected end of input".to_string(), span)
+    }
+}
+
+/// All the kind of errors Tera can produce.
+/// Non-exhaustive so we can add more if needed without a breaking change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// Generic error
     Msg(String),
+    /// Both lexer and parser errors. Will point to the source file
+    SyntaxError(Box<ReportError>),
+    /// An error that happens while rendering a template. Will point to the source file
+    RenderingError(Box<ReportError>),
     /// A loop was found while looking up the inheritance chain
     CircularExtend {
         /// Name of the template with the loop
         tpl: String,
         /// All the parents templates we found so far
         inheritance_chain: Vec<String>,
+    },
+    /// A loop was found while following `{% include %}` calls between templates
+    CircularInclude {
+        /// Name of the template where the cycle was detected
+        tpl: String,
+        /// Ordered chain of templates from `tpl` back to `tpl`
+        include_chain: Vec<String>,
     },
     /// A template is extending a template that wasn't found in the Tera instance
     MissingParent {
@@ -22,106 +116,158 @@ pub enum ErrorKind {
         /// The missing template
         parent: String,
     },
-    /// A template was missing (more generic version of MissingParent)
+    /// A template was missing
     TemplateNotFound(String),
-    /// A filter wasn't found
-    FilterNotFound(String),
-    /// A test wasn't found
-    TestNotFound(String),
-    /// A macro was defined in the middle of a template
-    InvalidMacroDefinition(String),
-    /// A function wasn't found
-    FunctionNotFound(String),
-    /// An error happened while serializing JSON
-    Json(serde_json::Error),
-    /// An error occured while executing a function.
-    CallFunction(String),
-    /// An error occured while executing a filter.
-    CallFilter(String),
-    /// An error occured while executing a test.
-    CallTest(String),
-    /// An IO error occured
+    /// A component was missing
+    /// Only raised if you're trying to render a specific component
+    ComponentNotFound(String),
+    /// A filter/test main value was not the expected type
+    InvalidArgument {
+        #[allow(missing_docs)]
+        expected_type: String,
+        #[allow(missing_docs)]
+        actual_type: String,
+    },
+    /// A function/test/filter was expecting an argument but it wasn't found
+    MissingArgument {
+        #[allow(missing_docs)]
+        arg_name: String,
+    },
+    /// A numeric argument had the right type but did not fit in the target type
+    OutOfRangeArgument {
+        #[allow(missing_docs)]
+        value: String,
+        #[allow(missing_docs)]
+        target_type: String,
+    },
+    /// An IO error occurred
     Io(std::io::ErrorKind),
-    /// UTF-8 conversion error
+    /// UTF-8 conversion error when converting output to UTF-8
     ///
     /// This should not occur unless invalid UTF8 chars are rendered
-    Utf8Conversion {
-        /// The context that indicates where the error occurs in the rendering process
-        context: String,
-    },
-    /// This enum may grow additional variants, so this makes sure clients
-    /// don't count on exhaustive matching. (Otherwise, adding a new variant
-    /// could break existing code.)
-    #[doc(hidden)]
-    __Nonexhaustive,
+    Utf8Conversion,
 }
 
-/// The Error type
-#[derive(Debug)]
-pub struct Error {
-    /// Kind of error
-    pub kind: ErrorKind,
-    source: Option<Box<dyn StdError + Sync + Send>>,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.kind {
-            ErrorKind::Msg(ref message) => write!(f, "{}", message),
-            ErrorKind::CircularExtend { ref tpl, ref inheritance_chain } => write!(
+impl fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ErrorKind::Msg(message) => write!(f, "{message}"),
+            ErrorKind::SyntaxError(s) | ErrorKind::RenderingError(s) => {
+                write!(f, "{}", s.generate_report())
+            }
+            ErrorKind::CircularExtend {
+                tpl,
+                inheritance_chain,
+            } => write!(
                 f,
-                "Circular extend detected for template '{}'. Inheritance chain: `{:?}`",
-                tpl, inheritance_chain
+                "Circular extend detected for template '{tpl}'. Inheritance chain: `{inheritance_chain:?}`",
             ),
-            ErrorKind::MissingParent { ref current, ref parent } => write!(
+            ErrorKind::CircularInclude { tpl, include_chain } => write!(
                 f,
-                "Template '{}' is inheriting from '{}', which doesn't exist or isn't loaded.",
-                current, parent
+                "Circular include detected for template '{tpl}'. Include chain: `{include_chain:?}`",
             ),
-            ErrorKind::TemplateNotFound(ref name) => write!(f, "Template '{}' not found", name),
-            ErrorKind::FilterNotFound(ref name) => write!(f, "Filter '{}' not found", name),
-            ErrorKind::TestNotFound(ref name) => write!(f, "Test '{}' not found", name),
-            ErrorKind::FunctionNotFound(ref name) => write!(f, "Function '{}' not found", name),
-            ErrorKind::InvalidMacroDefinition(ref info) => {
-                write!(f, "Invalid macro definition: `{}`", info)
+            ErrorKind::MissingParent { current, parent } => write!(
+                f,
+                "Template '{current}' is inheriting from '{parent}', which doesn't exist or isn't loaded.",
+            ),
+            ErrorKind::TemplateNotFound(name) => write!(f, "Template '{name}' not found"),
+            ErrorKind::ComponentNotFound(name) => write!(f, "Component '{name}' not found"),
+            ErrorKind::InvalidArgument {
+                expected_type,
+                actual_type,
+            } => write!(
+                f,
+                "Invalid type for the value, expected `{expected_type}` but got `{actual_type}`"
+            ),
+            ErrorKind::MissingArgument { arg_name } => {
+                write!(f, "Missing keyword argument `{arg_name}`")
             }
-            ErrorKind::Json(ref e) => write!(f, "{}", e),
-            ErrorKind::CallFunction(ref name) => write!(f, "Function call '{}' failed", name),
-            ErrorKind::CallFilter(ref name) => write!(f, "Filter call '{}' failed", name),
-            ErrorKind::CallTest(ref name) => write!(f, "Test call '{}' failed", name),
-            ErrorKind::Io(ref io_error) => {
-                write!(f, "Io error while writing rendered value to output: {:?}", io_error)
+            ErrorKind::OutOfRangeArgument { value, target_type } => {
+                write!(f, "Value `{value}` is out of range for `{target_type}`")
             }
-            ErrorKind::Utf8Conversion { ref context } => {
-                write!(f, "UTF-8 conversion error occured while rendering template: {}", context)
+            ErrorKind::Io(io_error) => {
+                write!(
+                    f,
+                    "Io error while writing rendered value to output: {:?}",
+                    io_error
+                )
             }
-            ErrorKind::__Nonexhaustive => write!(f, "Nonexhaustive"),
+            ErrorKind::Utf8Conversion => {
+                write!(f, "Invalid UTF-8 characters found while rendering.")
+            }
         }
     }
 }
 
-impl StdError for Error {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        self.source.as_ref().map(|c| &**c as &(dyn StdError + 'static))
+/// The Error struct for Tera.
+#[derive(Debug)]
+pub struct Error {
+    pub(crate) kind: ErrorKind,
+    // If the error comes from some third party libs, TODO we need that?
+    pub(crate) source: Option<Box<dyn std::error::Error + Send + Sync>>,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.kind)
     }
 }
 
 impl Error {
-    /// Creates generic error
-    pub fn msg(value: impl ToString) -> Self {
-        Self { kind: ErrorKind::Msg(value.to_string()), source: None }
+    /// Creates a new error of the given kind.
+    pub fn new(kind: ErrorKind) -> Self {
+        Self { kind, source: None }
     }
 
-    /// Creates a circular extend error
-    pub fn circular_extend(tpl: impl ToString, inheritance_chain: Vec<String>) -> Self {
+    /// Returns the kind of error
+    pub fn kind(&self) -> &ErrorKind {
+        &self.kind
+    }
+
+    /// Creates generic error with a source
+    pub fn chain(value: impl ToString, source: impl Into<Box<dyn StdError + Send + Sync>>) -> Self {
         Self {
-            kind: ErrorKind::CircularExtend { tpl: tpl.to_string(), inheritance_chain },
+            kind: ErrorKind::Msg(value.to_string()),
+            source: Some(source.into()),
+        }
+    }
+
+    /// Creates generic error with a message and no source.
+    pub fn message(message: impl ToString) -> Self {
+        Self {
+            kind: ErrorKind::Msg(message.to_string()),
             source: None,
         }
     }
 
-    /// Creates a missing parent error
-    pub fn missing_parent(current: impl ToString, parent: impl ToString) -> Self {
+    pub(crate) fn syntax_error(message: String, span: &Span) -> Self {
+        Self {
+            kind: ErrorKind::SyntaxError(Box::new(ReportError::new_without_source(message, span))),
+            source: None,
+        }
+    }
+
+    pub(crate) fn circular_extend(tpl: impl ToString, inheritance_chain: Vec<String>) -> Self {
+        Self {
+            kind: ErrorKind::CircularExtend {
+                tpl: tpl.to_string(),
+                inheritance_chain,
+            },
+            source: None,
+        }
+    }
+
+    pub(crate) fn circular_include(tpl: impl ToString, include_chain: Vec<String>) -> Self {
+        Self {
+            kind: ErrorKind::CircularInclude {
+                tpl: tpl.to_string(),
+                include_chain,
+            },
+            source: None,
+        }
+    }
+
+    pub(crate) fn missing_parent(current: impl ToString, parent: impl ToString) -> Self {
         Self {
             kind: ErrorKind::MissingParent {
                 current: current.to_string(),
@@ -131,73 +277,70 @@ impl Error {
         }
     }
 
-    /// Creates a template not found error
-    pub fn template_not_found(tpl: impl ToString) -> Self {
-        Self { kind: ErrorKind::TemplateNotFound(tpl.to_string()), source: None }
+    pub(crate) fn io_error(error: std::io::Error) -> Self {
+        Self {
+            kind: ErrorKind::Io(error.kind()),
+            source: Some(Box::new(error)),
+        }
     }
 
-    /// Creates a filter not found error
-    pub fn filter_not_found(name: impl ToString) -> Self {
-        Self { kind: ErrorKind::FilterNotFound(name.to_string()), source: None }
+    pub(crate) fn template_not_found(tpl: impl ToString) -> Self {
+        Self {
+            kind: ErrorKind::TemplateNotFound(tpl.to_string()),
+            source: None,
+        }
     }
 
-    /// Creates a test not found error
-    pub fn test_not_found(name: impl ToString) -> Self {
-        Self { kind: ErrorKind::TestNotFound(name.to_string()), source: None }
+    pub(crate) fn component_not_found(name: impl ToString) -> Self {
+        Self {
+            kind: ErrorKind::ComponentNotFound(name.to_string()),
+            source: None,
+        }
     }
 
-    /// Creates a function not found error
-    pub fn function_not_found(name: impl ToString) -> Self {
-        Self { kind: ErrorKind::FunctionNotFound(name.to_string()), source: None }
-    }
-
-    /// Creates generic error with a source
-    pub fn chain(value: impl ToString, source: impl Into<Box<dyn StdError + Send + Sync>>) -> Self {
-        Self { kind: ErrorKind::Msg(value.to_string()), source: Some(source.into()) }
-    }
-
-    /// Creates an error wrapping a failed function call.
-    pub fn call_function(
-        name: impl ToString,
-        source: impl Into<Box<dyn StdError + Send + Sync>>,
+    pub(crate) fn invalid_arg_type(
+        expected_type: impl ToString,
+        actual_type: impl ToString,
     ) -> Self {
-        Self { kind: ErrorKind::CallFunction(name.to_string()), source: Some(source.into()) }
+        Self {
+            kind: ErrorKind::InvalidArgument {
+                expected_type: expected_type.to_string(),
+                actual_type: actual_type.to_string(),
+            },
+            source: None,
+        }
     }
 
-    /// Creates an error wrapping a failed filter call.
-    pub fn call_filter(
-        name: impl ToString,
-        source: impl Into<Box<dyn StdError + Send + Sync>>,
-    ) -> Self {
-        Self { kind: ErrorKind::CallFilter(name.to_string()), source: Some(source.into()) }
+    pub(crate) fn out_of_range_arg(value: impl ToString, target_type: impl ToString) -> Self {
+        Self {
+            kind: ErrorKind::OutOfRangeArgument {
+                value: value.to_string(),
+                target_type: target_type.to_string(),
+            },
+            source: None,
+        }
     }
 
-    /// Creates an error wrapping a failed test call.
-    pub fn call_test(
-        name: impl ToString,
-        source: impl Into<Box<dyn StdError + Send + Sync>>,
-    ) -> Self {
-        Self { kind: ErrorKind::CallTest(name.to_string()), source: Some(source.into()) }
+    pub(crate) fn missing_arg(arg_name: impl ToString) -> Self {
+        Self {
+            kind: ErrorKind::MissingArgument {
+                arg_name: arg_name.to_string(),
+            },
+            source: None,
+        }
     }
 
-    /// Creates JSON error
-    pub fn json(value: serde_json::Error) -> Self {
-        Self { kind: ErrorKind::Json(value), source: None }
+    pub(crate) fn invalid_utf8(error: std::string::FromUtf8Error) -> Self {
+        Self {
+            kind: ErrorKind::Utf8Conversion,
+            source: Some(Box::new(error)),
+        }
     }
+}
 
-    /// Creates an invalid macro definition error
-    pub fn invalid_macro_def(name: impl ToString) -> Self {
-        Self { kind: ErrorKind::InvalidMacroDefinition(name.to_string()), source: None }
-    }
-
-    /// Creates an IO error
-    pub fn io_error(error: std::io::Error) -> Self {
-        Self { kind: ErrorKind::Io(error.kind()), source: Some(Box::new(error)) }
-    }
-
-    /// Creates an utf8 conversion error
-    pub fn utf8_conversion_error(error: std::string::FromUtf8Error, context: String) -> Self {
-        Self { kind: ErrorKind::Utf8Conversion { context }, source: Some(Box::new(error)) }
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(|e| e.as_ref() as _)
     }
 }
 
@@ -206,23 +349,15 @@ impl From<std::io::Error> for Error {
         Self::io_error(error)
     }
 }
-impl From<&str> for Error {
-    fn from(e: &str) -> Self {
-        Self::msg(e)
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(error: std::string::FromUtf8Error) -> Self {
+        Self::invalid_utf8(error)
     }
 }
-impl From<String> for Error {
-    fn from(e: String) -> Self {
-        Self::msg(e)
-    }
-}
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self {
-        Self::json(e)
-    }
-}
-/// Convenient wrapper around std::Result.
-pub type Result<T> = ::std::result::Result<T, Error>;
+
+/// A custom Result type for this library
+pub type TeraResult<T> = Result<T, Error>;
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,93 @@
-use crate::errors::Error;
+use std::fmt;
+use std::ops::{Deref, Range};
+
+#[derive(Clone, PartialEq)]
+pub struct Spanned<T: fmt::Debug> {
+    node: Box<T>,
+    span: Span,
+}
+
+impl<T: fmt::Debug> Spanned<T> {
+    pub fn new(node: T, span: Span) -> Self {
+        Self {
+            node: Box::new(node),
+            span,
+        }
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
+
+    pub fn span_mut(&mut self) -> &mut Span {
+        &mut self.span
+    }
+
+    pub(crate) fn node(&self) -> &T {
+        &self.node
+    }
+
+    pub fn into_parts(self) -> (T, Span) {
+        (*self.node, self.span)
+    }
+}
+
+impl<T: fmt::Debug> Deref for Spanned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.node, f)?;
+        write!(f, "{:?}", self.span)
+    }
+}
+
+/// The position of a node in the template source
+#[derive(Clone, PartialEq, Eq, Default)]
+pub struct Span {
+    /// Line the span starts on, 1-based
+    pub start_line: usize,
+    /// Column the span starts on, 0-based
+    pub start_col: usize,
+    /// Line the span ends on, 1-based
+    pub end_line: usize,
+    /// Column the span ends on, 0-based
+    pub end_col: usize,
+    /// Byte range of the span in the template source
+    pub range: Range<usize>,
+}
+
+impl fmt::Debug for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            " @ {}:{}-{}:{} ({:?})",
+            self.start_line, self.start_col, self.end_line, self.end_col, self.range,
+        )
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            " @ {}:{}-{}:{}",
+            self.start_line, self.start_col, self.end_line, self.end_col,
+        )
+    }
+}
+impl Span {
+    pub(crate) fn expand(&mut self, other: &Span) {
+        self.end_line = other.end_line;
+        self.end_col = other.end_col;
+        self.range = self.range.start..other.range.end;
+    }
+}
 
 /// Escape HTML following [OWASP](https://www.owasp.org/index.php/XSS_(Cross_Site_Scripting)_Prevention_Cheat_Sheet)
 ///
@@ -13,73 +102,29 @@ use crate::errors::Error;
 /// < --> &lt;
 /// > --> &gt;
 /// " --> &quot;
-/// ' --> &#x27;     &apos; is not recommended
-/// / --> &#x2F;     forward slash is included as it helps end an HTML entity
+/// ' --> &#39;
 /// ```
 #[inline]
-pub fn escape_html(input: &str) -> String {
-    let mut output = String::with_capacity(input.len() * 2);
-    for c in input.chars() {
-        match c {
-            '&' => output.push_str("&amp;"),
-            '<' => output.push_str("&lt;"),
-            '>' => output.push_str("&gt;"),
-            '"' => output.push_str("&quot;"),
-            '\'' => output.push_str("&#x27;"),
-            '/' => output.push_str("&#x2F;"),
-            _ => output.push(c),
-        }
+pub fn escape_html(input: &str, buf: &mut dyn std::io::Write) -> std::io::Result<()> {
+    #[cfg(feature = "fast_escape")]
+    {
+        use pulldown_cmark_escape::IoWriter;
+        pulldown_cmark_escape::escape_html(IoWriter(buf), input)?;
+        Ok(())
     }
 
-    // Not using shrink_to_fit() on purpose
-    output
-}
-
-pub(crate) fn render_to_string<C, F, E>(context: C, render: F) -> Result<String, Error>
-where
-    C: FnOnce() -> String,
-    F: FnOnce(&mut Vec<u8>) -> Result<(), E>,
-    Error: From<E>,
-{
-    let mut buffer = Vec::new();
-    render(&mut buffer).map_err(Error::from)?;
-    buffer_to_string(context, buffer)
-}
-
-pub(crate) fn buffer_to_string<F>(context: F, buffer: Vec<u8>) -> Result<String, Error>
-where
-    F: FnOnce() -> String,
-{
-    String::from_utf8(buffer).map_err(|error| Error::utf8_conversion_error(error, context()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::escape_html;
-    use super::render_to_string;
-
-    #[test]
-    fn test_escape_html() {
-        let tests = vec![
-            (r"", ""),
-            (r"a&b", "a&amp;b"),
-            (r"<a", "&lt;a"),
-            (r">a", "&gt;a"),
-            (r#"""#, "&quot;"),
-            (r#"'"#, "&#x27;"),
-            (r#"大阪"#, "大阪"),
-        ];
-        for (input, expected) in tests {
-            assert_eq!(escape_html(input), expected);
+    #[cfg(not(feature = "fast_escape"))]
+    {
+        for c in input.as_bytes() {
+            match c {
+                b'&' => buf.write_all(b"&amp;")?,
+                b'<' => buf.write_all(b"&lt;")?,
+                b'>' => buf.write_all(b"&gt;")?,
+                b'"' => buf.write_all(b"&quot;")?,
+                b'\'' => buf.write_all(b"&#39;")?,
+                _ => buf.write_all(&[*c])?,
+            };
         }
-        let empty = String::new();
-        assert_eq!(escape_html(&empty), empty);
-    }
-
-    #[test]
-    fn test_render_to_string() {
-        use std::io::Write;
-        let string = render_to_string(|| panic!(), |w| write!(w, "test")).unwrap();
-        assert_eq!(string, "test".to_owned());
+        Ok(())
     }
 }
