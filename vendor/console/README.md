@@ -1,8 +1,8 @@
 # `console`
 
-[![Build Status](https://github.com/console-rs/console/workflows/CI/badge.svg?branch=master)](https://github.com/console-rs/console/actions?query=workflow%3ACI)
-[![Crates.io](https://img.shields.io/crates/d/console.svg)](https://crates.io/crates/console)
-[![License](https://img.shields.io/github/license/console-rs/console)](https://github.com/console-rs/console/blob/master/LICENSE)
+[![Build Status](https://github.com/console-rs/console/actions/workflows/ci.yml/badge.svg)](https://github.com/console-rs/console/actions?query=workflow%3ACI)
+[![crates.io](https://img.shields.io/crates/d/console.svg)](https://crates.io/crates/console)
+[![License](https://img.shields.io/github/license/console-rs/console)](https://github.com/console-rs/console/blob/main/LICENSE)
 [![Documentation](https://docs.rs/console/badge.svg)](https://docs.rs/console)
 
 **console** is a library for Rust that provides access to various terminal
@@ -38,7 +38,8 @@ term.clear_line()?;
 
 ## Colors and Styles
 
-`console` automatically detects when to use colors based on the tty flag.  It also
+`console` automatically detects when to use colors based on the tty flag, following the
+[clicolors standard](https://bixense.com/clicolors/) for color enabling/disabling. It also
 provides higher level wrappers for styling text and other things that can be
 displayed with the `style` function and utility types.
 

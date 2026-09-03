@@ -18,11 +18,11 @@ comfy-table = "8.0.0"
 env_logger = "0.11.2"
 file-lock = "2.1.10"
 futures-util = "0.3.30"
-indicatif = "0.17.9"
+indicatif = "0.18.6"
 infer = "0.22.0"
 json = "0.12.4"
 log = { version = "0.4.20", features = ["serde"] }
-procfs = "0.16.0"
+procfs = "0.18.0"
 rand = "0.10.2"
 reqwest = { version = "0.13.4", default-features = false, features = ["stream"] }
 rust-embed = "8.5.0"
@@ -30,9 +30,9 @@ serde = { version = "1.0.145", features = ["derive"] }
 shellexpand = "3.1.0"
 tempfile = "3.3.0"
 tera = "1.17.1"
-thiserror = "1.0.37"
+thiserror = "2.0.20"
 tokio = { version = "1.13.0", features = ["full"] }
-toml = "0.8.15"
+toml = "1.1.5"
 urlencoding = "2.1.2"
 walkdir = "2.3.2"
 

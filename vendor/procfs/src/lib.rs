@@ -1,6 +1,4 @@
 #![allow(unknown_lints)]
-// The suggested fix with `str::parse` removes support for Rust 1.48
-#![allow(clippy::from_str_radix_10)]
 #![deny(rustdoc::broken_intra_doc_links, rustdoc::invalid_html_tags)]
 //! This crate provides to an interface into the linux `procfs` filesystem, usually mounted at
 //! `/proc`.
@@ -43,15 +41,15 @@
 //! # Examples
 //!
 //! Examples can be found in the various modules shown below, or in the
-//! [examples](https://github.com/eminence/procfs/tree/master/examples) folder of the code repository.
+//! [examples](https://github.com/eminence/procfs/tree/master/procfs/examples) folder of the code repository.
 //!
 
 pub use procfs_core::*;
 
 use bitflags::bitflags;
-use lazy_static::lazy_static;
 
 use rustix::fd::AsFd;
+use rustix::fs::{Mode, OFlags};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
@@ -182,6 +180,9 @@ pub(crate) fn write_value<P: AsRef<Path>, T: fmt::Display>(path: P, value: T) ->
 mod cgroups;
 pub use crate::cgroups::*;
 
+mod crypto;
+pub use crate::crypto::*;
+
 pub mod keyring;
 
 mod iomem;
@@ -202,28 +203,6 @@ pub use crate::sys::kernel::BuildInfo as KernelBuildInfo;
 pub use crate::sys::kernel::Type as KernelType;
 pub use crate::sys::kernel::Version as KernelVersion;
 
-lazy_static! {
-    /// The number of clock ticks per second.
-    ///
-    /// This is calculated from `sysconf(_SC_CLK_TCK)`.
-    static ref TICKS_PER_SECOND: u64 = {
-        ticks_per_second()
-    };
-    /// The version of the currently running kernel.
-    ///
-    /// This is a lazily constructed static.  You can also get this information via
-    /// [KernelVersion::new()].
-    static ref KERNEL: ProcResult<KernelVersion> = {
-        KernelVersion::current()
-    };
-    /// Memory page size, in bytes.
-    ///
-    /// This is calculated from `sysconf(_SC_PAGESIZE)`.
-    static ref PAGESIZE: u64 = {
-        page_size()
-    };
-}
-
 /// A wrapper around a `File` that remembers the name of the path
 struct FileWrapper {
     inner: File,
@@ -239,22 +218,25 @@ impl FileWrapper {
             path: p.to_owned(),
         })
     }
+    fn open_at_flags<P, Q, Fd: AsFd>(root: P, dirfd: Fd, path: Q, flags: OFlags) -> Result<FileWrapper, io::Error>
+    where
+        P: AsRef<Path>,
+        Q: AsRef<Path>,
+    {
+        let p = root.as_ref().join(path.as_ref());
+        let fd = wrap_io_error!(p, rustix::fs::openat(dirfd, path.as_ref(), flags, Mode::empty()))?;
+        Ok(FileWrapper {
+            inner: File::from(fd),
+            path: p,
+        })
+    }
+
     fn open_at<P, Q, Fd: AsFd>(root: P, dirfd: Fd, path: Q) -> Result<FileWrapper, io::Error>
     where
         P: AsRef<Path>,
         Q: AsRef<Path>,
     {
-        use rustix::fs::{Mode, OFlags};
-
-        let p = root.as_ref().join(path.as_ref());
-        let fd = wrap_io_error!(
-            p,
-            rustix::fs::openat(dirfd, path.as_ref(), OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty())
-        )?;
-        Ok(FileWrapper {
-            inner: File::from(fd),
-            path: p,
-        })
+        Self::open_at_flags(root, dirfd, path, OFlags::RDONLY | OFlags::CLOEXEC)
     }
 
     /// Returns the inner file
@@ -454,6 +436,10 @@ impl Current for CpuInfo {
     const PATH: &'static str = "/proc/cpuinfo";
 }
 
+impl Current for Devices {
+    const PATH: &'static str = "/proc/devices";
+}
+
 impl Current for DiskStats {
     const PATH: &'static str = "/proc/diskstats";
 }
@@ -524,9 +510,7 @@ mod tests {
 
     #[test]
     fn test_statics() {
-        println!("{:?}", *TICKS_PER_SECOND);
-        println!("{:?}", *KERNEL);
-        println!("{:?}", *PAGESIZE);
+        println!("{:?}", crate::sys::kernel::Version::cached());
     }
 
     #[test]
@@ -705,6 +689,12 @@ mod tests {
         }
 
         //assert_eq!(info.num_cores(), 8);
+    }
+
+    #[test]
+    fn test_devices() {
+        let devices = Devices::current().unwrap();
+        println!("{:#?}", devices);
     }
 
     #[test]

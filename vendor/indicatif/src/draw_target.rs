@@ -7,8 +7,12 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use console::Term;
-#[cfg(target_arch = "wasm32")]
+#[cfg(feature = "unicode-width")]
+use console::AnsiCodeIterator;
+use console::{is_dumb, Term, TermTarget};
+#[cfg(feature = "unicode-width")]
+use unicode_width::UnicodeWidthChar;
+#[cfg(all(target_arch = "wasm32", feature = "wasmbind"))]
 use web_time::Instant;
 
 use crate::multi::{MultiProgressAlignment, MultiState};
@@ -69,8 +73,13 @@ impl ProgressDrawTarget {
     /// hidden.  This is done so that piping to a file will not produce
     /// useless escape codes in that file.
     ///
+    /// Progress bars will also be hidden if `TERM` is unset/`dumb`.
+    ///
     /// Will panic if `refresh_rate` is `0`.
     pub fn term(term: Term, refresh_rate: u8) -> Self {
+        if !term.is_term() || is_dumb() {
+            return Self::hidden();
+        }
         Self {
             kind: TargetKind::Term {
                 term,
@@ -82,6 +91,11 @@ impl ProgressDrawTarget {
     }
 
     /// Draw to a boxed object that implements the [`TermLike`] trait.
+    ///
+    /// Warning: unlike `stdout()`, `stderr()` and `term()`, this method does not set a default
+    /// refresh rate. For most uses, consider using `term_like_with_hz()` instead.
+    ///
+    /// (indicatif defaults to a refresh rate of 20 times per second in other methods.)
     pub fn term_like(term_like: Box<dyn TermLike>) -> Self {
         Self {
             kind: TargetKind::TermLike {
@@ -123,7 +137,17 @@ impl ProgressDrawTarget {
         match self.kind {
             TargetKind::Hidden => true,
             TargetKind::Term { ref term, .. } => !term.is_term(),
-            TargetKind::Multi { ref state, .. } => state.read().unwrap().is_hidden(),
+            TargetKind::Multi { ref state, .. } => state.read().unwrap().draw_target.is_hidden(),
+            _ => false,
+        }
+    }
+
+    /// This is used in progress bars to determine whether to use stdout or stderr
+    /// for detecting color support.
+    pub(crate) fn is_stderr(&self) -> bool {
+        match &self.kind {
+            TargetKind::Term { term, .. } => matches!(term.target(), TermTarget::Stderr),
+            TargetKind::Multi { state, .. } => state.read().unwrap().draw_target.is_stderr(),
             _ => false,
         }
     }
@@ -132,7 +156,7 @@ impl ProgressDrawTarget {
     pub(crate) fn width(&self) -> Option<u16> {
         match self.kind {
             TargetKind::Term { ref term, .. } => Some(term.size().1),
-            TargetKind::Multi { ref state, .. } => state.read().unwrap().width(),
+            TargetKind::Multi { ref state, .. } => state.read().unwrap().draw_target.width(),
             TargetKind::TermLike { ref inner, .. } => Some(inner.width()),
             TargetKind::Hidden => None,
         }
@@ -164,10 +188,6 @@ impl ProgressDrawTarget {
                 rate_limiter,
                 draw_state,
             } => {
-                if !term.is_term() {
-                    return None;
-                }
-
                 match force_draw || rate_limiter.allow(now) {
                     true => Some(Drawable::Term {
                         term,
@@ -191,7 +211,7 @@ impl ProgressDrawTarget {
                 last_line_count,
                 rate_limiter,
                 draw_state,
-            } => match force_draw || rate_limiter.as_mut().map_or(true, |r| r.allow(now)) {
+            } => match force_draw || rate_limiter.as_mut().is_none_or(|r| r.allow(now)) {
                 true => Some(Drawable::TermLike {
                     term_like: &**inner,
                     last_line_count,
@@ -355,7 +375,7 @@ impl Drawable<'_> {
     pub(crate) fn width(&self) -> Option<u16> {
         match self {
             Self::Term { term, .. } => Some(term.size().1),
-            Self::Multi { state, .. } => state.width(),
+            Self::Multi { state, .. } => state.draw_target.width(),
             Self::TermLike { term_like, .. } => Some(term_like.width()),
         }
     }
@@ -539,33 +559,25 @@ impl DrawState {
         // full height exceeds the terminal height.
         let mut real_height = VisualLines::default();
 
-        for (idx, line) in self.lines.iter().enumerate() {
-            let line_height = line.wrapped_height(term_width);
+        for line in self.lines.iter() {
+            let metrics = line.wrapped_metrics(term_width);
 
             // Check here for bar lines that exceed the terminal height
             if matches!(line, LineType::Bar(_)) {
                 // Stop here if printing this bar would exceed the terminal height
-                if real_height + line_height > term.height().into() {
+                if real_height + metrics.height > term.height().into() {
                     break;
                 }
 
-                real_height += line_height;
-            }
-
-            // Print a new line if this is not the first line printed this tick
-            // the first line will automatically wrap due to the filler below
-            if idx != 0 {
-                term.write_line("")?;
+                real_height += metrics.height;
             }
 
             term.write_str(line.as_ref())?;
 
-            if idx + 1 == self.lines.len() {
-                // For the last line of the output, keep the cursor on the right terminal
-                // side so that next user writes/prints will happen on the next line
-                let last_line_filler = line_height.as_usize() * term_width - line.console_width();
-                term.write_str(&" ".repeat(last_line_filler))?;
-            }
+            // clear the line and keep the cursor on the right terminal side so that
+            // future writes/prints will happen on the next line
+            let line_filler = term_width - metrics.last_line_width;
+            term.write_str(&" ".repeat(line_filler))?;
         }
 
         term.flush()?;
@@ -649,17 +661,58 @@ pub(crate) enum LineType {
 
 impl LineType {
     fn wrapped_height(&self, width: usize) -> VisualLines {
+        self.wrapped_metrics(width).height
+    }
+
+    #[cfg(feature = "unicode-width")]
+    fn wrapped_metrics(&self, width: usize) -> Metrics {
+        // When a wide character such as CJK appears at the end of wrap with
+        // only 1 column available, the line wraps before the character, leaving
+        // an empty column.
+        // The `effective_width` takes such empty columns into account.
+        let str = self.as_ref();
+        let mut num_lines: usize = 1;
+        let mut column: usize = 0;
+        for (substr, is_ansi) in AnsiCodeIterator::new(str) {
+            if is_ansi {
+                continue;
+            }
+            for ch in substr.chars() {
+                let Some(ch_width) = UnicodeWidthChar::width(ch) else {
+                    continue; // Skip control characters.
+                };
+                column += ch_width;
+                if column > width {
+                    num_lines += 1;
+                    column = ch_width;
+                }
+            }
+        }
+        Metrics {
+            height: num_lines.into(),
+            last_line_width: column,
+        }
+    }
+
+    #[cfg(not(feature = "unicode-width"))]
+    fn wrapped_metrics(&self, width: usize) -> Metrics {
         // Calculate real length based on terminal width
         // This take in account linewrap from terminal
-        let terminal_len = (self.console_width() as f64 / width as f64).ceil() as usize;
+        let unwrapped_width = self.console_width();
+        let terminal_len = (unwrapped_width as f64 / width as f64).ceil() as usize;
 
         // If the line is effectively empty (for example when it consists
         // solely of ANSI color code sequences, count it the same as a
         // new line. If the line is measured to be len = 0, we will
         // subtract with overflow later.
-        usize::max(terminal_len, 1).into()
+        let height = usize::max(terminal_len, 1);
+        Metrics {
+            height: height.into(),
+            last_line_width: unwrapped_width - width * (height - 1),
+        }
     }
 
+    #[cfg(not(feature = "unicode-width"))]
     fn console_width(&self) -> usize {
         console::measure_text_width(self.as_ref())
     }
@@ -680,10 +733,20 @@ impl PartialEq<str> for LineType {
     }
 }
 
+/// Metrics of wrapped lines.
+#[derive(Debug)]
+struct Metrics {
+    /// The number of lines.
+    height: VisualLines,
+    /// The width of the last line.
+    last_line_width: usize,
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::draw_target::LineType;
+    use crate::draw_target::{LineType, TargetKind};
     use crate::{MultiProgress, ProgressBar, ProgressDrawTarget};
+    use console::Term;
 
     #[test]
     fn multi_is_hidden() {
@@ -784,7 +847,50 @@ mod tests {
                     .collect::<Vec<_>>(),
                 case.width,
             );
-            assert_eq!(result, case.expectation.into(), "case: {:?}", case);
+            assert_eq!(result, case.expectation.into(), "case: {case:?}");
+        }
+    }
+
+    #[test]
+    fn is_stderr_for_multi() {
+        let term = Term::buffered_stderr();
+        let draw_target = ProgressDrawTarget {
+            kind: TargetKind::Term {
+                term,
+                last_line_count: Default::default(),
+                rate_limiter: super::RateLimiter::new(20),
+                draw_state: Default::default(),
+            },
+        };
+        assert!(draw_target.is_stderr());
+
+        let mp = MultiProgress::with_draw_target(draw_target);
+        let multi_draw_target = ProgressDrawTarget {
+            kind: TargetKind::Multi {
+                state: mp.state.clone(),
+                idx: 0,
+            },
+        };
+        assert!(multi_draw_target.is_stderr());
+    }
+
+    #[test]
+    fn wrapped_height_cjk_at_the_end_wrap() {
+        // Although the text is 20 columns (18 ASCII and 1 wide), when the width
+        // is 10, its height should be 3 because the wide character can't be
+        // broken in the middle.
+        let text = "123456789国123456789";
+        let line_type = LineType::Text(text.to_string());
+        let metrics = line_type.wrapped_metrics(10);
+        #[cfg(feature = "unicode-width")]
+        {
+            assert_eq!(metrics.height.as_usize(), 3);
+            assert_eq!(metrics.last_line_width, 1);
+        }
+        #[cfg(not(feature = "unicode-width"))]
+        {
+            assert_eq!(metrics.height.as_usize(), 2);
+            assert_eq!(metrics.last_line_width, 9);
         }
     }
 }

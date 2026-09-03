@@ -1,6 +1,8 @@
 use super::*;
 use rustix::process::Resource;
+use std::convert::TryInto;
 
+#[track_caller]
 fn check_unwrap<T>(prc: &Process, val: ProcResult<T>) -> Option<T> {
     match val {
         Ok(t) => Some(t),
@@ -174,6 +176,10 @@ fn test_all() {
         check_unwrap(&prc, prc.mountinfo());
         check_unwrap(&prc, prc.mountstats());
         check_unwrap(&prc, prc.oom_score());
+        if let Some(oom_score_adj) = check_unwrap(&prc, prc.oom_score_adj()) {
+            assert!(oom_score_adj >= -1000 && oom_score_adj <= 1000);
+            check_unwrap(&prc, prc.set_oom_score_adj(oom_score_adj));
+        }
 
         if let Some(tasks) = check_unwrap(&prc, prc.tasks()) {
             for task in tasks {
@@ -454,7 +460,7 @@ fn test_proc_auxv() {
         if k != 16 {
             // for reasons i do not understand, getauxval(AT_HWCAP) doesn't return the expected
             // value
-            assert_eq!(v, unsafe { libc::getauxval(k) });
+            assert_eq!(v, unsafe { libc::getauxval(k.try_into().unwrap()).into() });
         }
     }
 }
@@ -529,7 +535,11 @@ fn test_schedstat() {
 
 #[test]
 fn test_fdtarget() {
-    // none of these values are valid, but were found by a fuzzer to crash procfs.  this
+    // https://github.com/eminence/procfs/issues/352
+    let x = FDTarget::from_str("onload:[udp:1:2032]").unwrap();
+    assert!(matches!(x, FDTarget::Unknown(..)));
+
+    // none of these below values are valid, but were found by a fuzzer to crash procfs.  this
     // test ensures that the crashes have been fixed
 
     let _ = FDTarget::from_str(":");
@@ -704,6 +714,11 @@ fn test_proc_status_for_kthreadd() {
     };
     let status = kthreadd.status().unwrap();
     println!("{:?}", status);
+
+    // actually check that pid2 is kthreadd
+    if status.name != "kthreadd" {
+        return; // ok we can still ignore
+    }
 
     assert_eq!(status.pid, 2);
     assert_eq!(status.vmpeak, None);

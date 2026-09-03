@@ -1,14 +1,15 @@
+#[cfg(target_os = "macos")]
+use core::ptr;
+use core::{fmt::Display, mem, str};
 use std::env;
-use std::fmt::Display;
 use std::fs;
 use std::io::{self, BufRead, BufReader};
-use std::mem;
 use std::os::fd::{AsRawFd, RawFd};
-use std::str;
 
 #[cfg(not(target_os = "macos"))]
-use once_cell::sync::Lazy;
+use std::sync::OnceLock;
 
+use crate::is_dumb;
 use crate::kb::Key;
 use crate::term::Term;
 
@@ -30,10 +31,14 @@ pub(crate) fn is_a_color_terminal(out: &Term) -> bool {
         return false;
     }
 
-    match env::var("TERM") {
-        Ok(term) => term != "dumb",
-        Err(_) => false,
+    !is_dumb()
+}
+
+pub(crate) fn is_a_true_color_terminal(out: &Term) -> bool {
+    if !is_a_color_terminal(out) {
+        return false;
     }
+    env::var("COLORTERM").is_ok_and(|term| term == "truecolor" || term == "24bit")
 }
 
 fn c_result<F: FnOnce() -> libc::c_int>(f: F) -> io::Result<()> {
@@ -59,7 +64,7 @@ pub(crate) fn terminal_size(out: &Term) -> Option<(u16, u16)> {
         winsize
     };
     if winsize.ws_row > 0 && winsize.ws_col > 0 {
-        Some((winsize.ws_row as u16, winsize.ws_col as u16))
+        Some((winsize.ws_row, winsize.ws_col))
     } else {
         None
     }
@@ -165,7 +170,7 @@ fn select_fd(fd: RawFd, timeout: i32) -> io::Result<bool> {
 
         let mut timeout_val;
         let timeout = if timeout < 0 {
-            std::ptr::null_mut()
+            ptr::null_mut()
         } else {
             timeout_val = libc::timeval {
                 tv_sec: (timeout / 1000) as _,
@@ -179,8 +184,8 @@ fn select_fd(fd: RawFd, timeout: i32) -> io::Result<bool> {
         let ret = libc::select(
             fd + 1,
             &mut read_fd_set,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
             timeout,
         );
         if ret < 0 {
@@ -342,7 +347,7 @@ pub(crate) fn read_single_key(ctrlc_key: bool) -> io::Result<Key> {
     c_result(|| unsafe { libc::tcgetattr(input.as_raw_fd(), termios.as_mut_ptr()) })?;
     let mut termios = unsafe { termios.assume_init() };
     let original = termios;
-    unsafe { libc::cfmakeraw(&mut termios) };
+    make_raw(&mut termios);
     termios.c_oflag = original.c_oflag;
     c_result(|| unsafe { libc::tcsetattr(input.as_raw_fd(), libc::TCSADRAIN, &termios) })?;
     let rv = read_single_key_impl(input.as_raw_fd());
@@ -373,12 +378,6 @@ fn key_from_utf8(buf: &[u8]) -> Key {
     Key::Unknown
 }
 
-#[cfg(not(target_os = "macos"))]
-static IS_LANG_UTF8: Lazy<bool> = Lazy::new(|| match std::env::var("LANG") {
-    Ok(lang) => lang.to_uppercase().ends_with("UTF-8"),
-    _ => false,
-});
-
 #[cfg(target_os = "macos")]
 pub(crate) fn wants_emoji() -> bool {
     true
@@ -386,9 +385,38 @@ pub(crate) fn wants_emoji() -> bool {
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn wants_emoji() -> bool {
-    *IS_LANG_UTF8
+    static IS_LANG_UTF8: OnceLock<bool> = OnceLock::new();
+
+    *IS_LANG_UTF8.get_or_init(|| match std::env::var("LANG") {
+        Ok(lang) => lang.to_uppercase().ends_with("UTF-8"),
+        _ => false,
+    })
 }
 
 pub(crate) fn set_title<T: Display>(title: T) {
-    print!("\x1b]0;{}\x07", title);
+    print!("\x1b]0;{title}\x07");
+}
+
+#[cfg(target_os = "nto")]
+fn make_raw(termios: &mut libc::termios) {
+    // This is the manual implementation for QNX, which does not have cfmakeraw.
+    termios.c_iflag &= !(libc::IGNBRK
+        | libc::BRKINT
+        | libc::PARMRK
+        | libc::ISTRIP
+        | libc::INLCR
+        | libc::IGNCR
+        | libc::ICRNL
+        | libc::IXON);
+    termios.c_oflag &= !libc::OPOST;
+    termios.c_lflag &= !(libc::ECHO | libc::ECHONL | libc::ICANON | libc::ISIG | libc::IEXTEN);
+    termios.c_cflag &= !(libc::CSIZE | libc::PARENB);
+    termios.c_cflag |= libc::CS8;
+}
+
+// This version will be compiled for all targets that are NOT QNX.
+#[cfg(not(target_os = "nto"))]
+fn make_raw(termios: &mut libc::termios) {
+    // For other systems (Linux, macOS, BSD, etc.), use the standard libc call.
+    unsafe { libc::cfmakeraw(termios) };
 }

@@ -22,7 +22,7 @@ use crate::Result;
 /// a function that applies the operator to its operand, and the
 /// operator's associativity (infix only).
 ///
-/// For a more full-featured example, look at the [C-style Expression][crate::_topic::arithmetic#c-style-expression]
+/// For a more full-featured example, look at the [C-style Expressions][crate::_topic::language#c-style-expressions]
 /// topic.
 ///
 /// # Example
@@ -30,6 +30,7 @@ use crate::Result;
 /// Parsing a simple arithmetic expression without parenthesis.
 ///
 /// ```rust
+/// # #[cfg(feature = "ascii")] {
 /// # use winnow::prelude::*;
 /// # use winnow::error::ContextError;
 /// # use winnow::ascii::digit1;
@@ -64,6 +65,7 @@ use crate::Result;
 /// assert_eq!(parser().parse("1+1"), Ok(2));
 /// assert_eq!(parser().parse("0!"), Ok(1));
 /// assert_eq!(parser().parse("-1*5*2*10+30/3!"), Ok(-95));
+/// # }
 /// ```
 #[doc(alias = "pratt")]
 #[doc(alias = "separated")]
@@ -93,9 +95,7 @@ where
         parse_prefix: fail,
         parse_postfix: fail,
         parse_infix: fail,
-        i: Default::default(),
-        o: Default::default(),
-        e: Default::default(),
+        marker: Default::default(),
     }
 }
 
@@ -119,9 +119,7 @@ where
     parse_prefix: Pre,
     parse_postfix: Post,
     parse_infix: Pix,
-    i: core::marker::PhantomData<I>,
-    o: core::marker::PhantomData<O>,
-    e: core::marker::PhantomData<E>,
+    marker: core::marker::PhantomData<(I, O, E)>,
 }
 
 impl<I, O, ParseOperand, Pre, Post, Pix, E> Expression<I, O, ParseOperand, Pre, Post, Pix, E>
@@ -150,9 +148,7 @@ where
             parse_prefix: parser,
             parse_postfix: self.parse_postfix,
             parse_infix: self.parse_infix,
-            i: Default::default(),
-            o: Default::default(),
-            e: Default::default(),
+            marker: Default::default(),
         }
     }
 
@@ -176,9 +172,7 @@ where
             parse_prefix: self.parse_prefix,
             parse_postfix: parser,
             parse_infix: self.parse_infix,
-            i: Default::default(),
-            o: Default::default(),
-            e: Default::default(),
+            marker: Default::default(),
         }
     }
 
@@ -202,9 +196,7 @@ where
             parse_prefix: self.parse_prefix,
             parse_postfix: self.parse_postfix,
             parse_infix: parser,
-            i: Default::default(),
-            o: Default::default(),
-            e: Default::default(),
+            marker: Default::default(),
         }
     }
 
@@ -527,7 +519,7 @@ impl<I: Stream, O, E: ParserError<I>> Parser<I, Infix<I, O, E>, E> for Infix<I, 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ascii"))]
 mod tests {
     use crate::ascii::digit1;
     use crate::combinator::fail;

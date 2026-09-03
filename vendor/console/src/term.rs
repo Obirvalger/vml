@@ -1,11 +1,12 @@
-use std::fmt::{Debug, Display};
+use alloc::sync::Arc;
+use core::fmt::{Debug, Display};
+use std::env;
 use std::io::{self, Read, Write};
-use std::sync::{Arc, Mutex, RwLock};
-
 #[cfg(any(unix, all(target_os = "wasi", target_env = "p1")))]
 use std::os::fd::{AsRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, RawHandle};
+use std::sync::{Mutex, RwLock};
 
 use crate::{kb::Key, utils::Style};
 
@@ -45,6 +46,25 @@ struct TermInner {
     prompt_guard: Mutex<()>,
 }
 
+impl TermInner {
+    fn new(target: TermTarget) -> Self {
+        Self::with_buffer(target, None)
+    }
+
+    fn new_buffered(target: TermTarget) -> Self {
+        Self::with_buffer(target, Some(vec![]))
+    }
+
+    fn with_buffer(target: TermTarget, buffer: Option<Vec<u8>>) -> Self {
+        Self {
+            target,
+            buffer: buffer.map(Mutex::new),
+            prompt: RwLock::new(String::new()),
+            prompt_guard: Mutex::new(()),
+        }
+    }
+}
+
 /// The family of the terminal.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TermFamily {
@@ -76,6 +96,11 @@ impl TermFeatures<'_> {
     #[inline]
     pub fn colors_supported(&self) -> bool {
         is_a_color_terminal(self.0)
+    }
+
+    /// Check if true colors are supported by this terminal.
+    pub fn true_colors_supported(&self) -> bool {
+        is_a_true_color_terminal(self.0)
     }
 
     /// Check if this terminal is an msys terminal.
@@ -148,43 +173,23 @@ impl Term {
     /// Return a new unbuffered terminal.
     #[inline]
     pub fn stdout() -> Term {
-        Term::with_inner(TermInner {
-            target: TermTarget::Stdout,
-            buffer: None,
-            prompt: RwLock::new(String::new()),
-            prompt_guard: Mutex::new(()),
-        })
+        Term::with_inner(TermInner::new(TermTarget::Stdout))
     }
 
     /// Return a new unbuffered terminal to stderr.
     #[inline]
     pub fn stderr() -> Term {
-        Term::with_inner(TermInner {
-            target: TermTarget::Stderr,
-            buffer: None,
-            prompt: RwLock::new(String::new()),
-            prompt_guard: Mutex::new(()),
-        })
+        Term::with_inner(TermInner::new(TermTarget::Stderr))
     }
 
     /// Return a new buffered terminal.
     pub fn buffered_stdout() -> Term {
-        Term::with_inner(TermInner {
-            target: TermTarget::Stdout,
-            buffer: Some(Mutex::new(vec![])),
-            prompt: RwLock::new(String::new()),
-            prompt_guard: Mutex::new(()),
-        })
+        Term::with_inner(TermInner::new_buffered(TermTarget::Stdout))
     }
 
     /// Return a new buffered terminal to stderr.
     pub fn buffered_stderr() -> Term {
-        Term::with_inner(TermInner {
-            target: TermTarget::Stderr,
-            buffer: Some(Mutex::new(vec![])),
-            prompt: RwLock::new(String::new()),
-            prompt_guard: Mutex::new(()),
-        })
+        Term::with_inner(TermInner::new_buffered(TermTarget::Stderr))
     }
 
     /// Return a terminal for the given Read/Write pair styled like stderr.
@@ -204,16 +209,11 @@ impl Term {
         R: Read + Debug + AsRawFd + Send + 'static,
         W: Write + Debug + AsRawFd + Send + 'static,
     {
-        Term::with_inner(TermInner {
-            target: TermTarget::ReadWritePair(ReadWritePair {
-                read: Arc::new(Mutex::new(read)),
-                write: Arc::new(Mutex::new(write)),
-                style,
-            }),
-            buffer: None,
-            prompt: RwLock::new(String::new()),
-            prompt_guard: Mutex::new(()),
-        })
+        Term::with_inner(TermInner::new(TermTarget::ReadWritePair(ReadWritePair {
+            read: Arc::new(Mutex::new(read)),
+            write: Arc::new(Mutex::new(write)),
+            style,
+        })))
     }
 
     /// Return the style for this terminal.
@@ -284,7 +284,7 @@ impl Term {
         }
     }
 
-    /// Read a single key form the terminal.
+    /// Read a single key from the terminal.
     ///
     /// This does not echo anything.  If the terminal is not user attended
     /// the return value will always be the unknown key.
@@ -351,7 +351,7 @@ impl Term {
                         slf.flush()?;
                     }
                     Key::Enter => {
-                        slf.write_through(format!("\n{}", initial).as_bytes())?;
+                        slf.write_through(format!("\n{initial}").as_bytes())?;
                         break;
                     }
                     _ => (),
@@ -566,6 +566,26 @@ impl Term {
             }
         }
         Ok(())
+    }
+}
+
+/// A fast way to check if the application has a dumb terminal.
+///
+/// On Unix: `TERM` environment variable is not set or set to `dumb`.
+///
+/// On Windows: `TERM` environment variable is explicitly set to `dumb`.
+/// Native windows terminals typically do not set the `TERM` environment variable.
+#[inline]
+pub fn is_dumb() -> bool {
+    #[cfg(windows)]
+    let default = false;
+
+    #[cfg(not(windows))]
+    let default = true;
+
+    match env::var("TERM") {
+        Ok(term) => term == "dumb",
+        Err(_) => default,
     }
 }
 

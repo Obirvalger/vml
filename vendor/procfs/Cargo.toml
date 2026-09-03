@@ -11,10 +11,16 @@
 
 [package]
 edition = "2018"
-rust-version = "1.48"
+rust-version = "1.70"
 name = "procfs"
-version = "0.16.0"
+version = "0.18.0"
 authors = ["Andrew Chin <achin@eminence32.net>"]
+build = "build.rs"
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Interface to the linux procfs pseudo-filesystem"
 documentation = "https://docs.rs/procfs/"
 readme = "README.md"
@@ -33,9 +39,106 @@ repository = "https://github.com/eminence/procfs"
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[features]
+backtrace = [
+    "dep:backtrace",
+    "procfs-core/backtrace",
+]
+default = [
+    "chrono",
+    "flate2",
+    "procfs-core/default",
+]
+serde1 = [
+    "serde",
+    "procfs-core/serde1",
+]
+
+[lib]
+name = "procfs"
+path = "src/lib.rs"
+
+[[example]]
+name = "crypto"
+path = "examples/crypto.rs"
+
+[[example]]
+name = "diskstat"
+path = "examples/diskstat.rs"
+
+[[example]]
+name = "dump"
+path = "examples/dump.rs"
+
+[[example]]
+name = "interface_stats"
+path = "examples/interface_stats.rs"
+
+[[example]]
+name = "iomem"
+path = "examples/iomem.rs"
+
+[[example]]
+name = "kpagecount"
+path = "examples/kpagecount.rs"
+
+[[example]]
+name = "lslocks"
+path = "examples/lslocks.rs"
+
+[[example]]
+name = "lsmod"
+path = "examples/lsmod.rs"
+
+[[example]]
+name = "mountinfo"
+path = "examples/mountinfo.rs"
+
+[[example]]
+name = "mounts"
+path = "examples/mounts.rs"
+
+[[example]]
+name = "netstat"
+path = "examples/netstat.rs"
+
+[[example]]
+name = "partitions"
+path = "examples/partitions.rs"
+
+[[example]]
+name = "pfn"
+path = "examples/pfn.rs"
+
+[[example]]
+name = "pressure"
+path = "examples/pressure.rs"
+
+[[example]]
+name = "process_hierarchy"
+path = "examples/process_hierarchy.rs"
+
+[[example]]
+name = "process_kpageflags"
+path = "examples/process_kpageflags.rs"
+
+[[example]]
+name = "ps"
+path = "examples/ps.rs"
+
+[[example]]
+name = "self_memory"
+path = "examples/self_memory.rs"
+
+[[example]]
+name = "shm"
+path = "examples/shm.rs"
 
 [[bench]]
 name = "cpuinfo"
+path = "benches/cpuinfo.rs"
 harness = false
 
 [dependencies.backtrace]
@@ -56,18 +159,12 @@ default-features = false
 version = "1.0.3"
 optional = true
 
-[dependencies.hex]
-version = "0.4"
-
-[dependencies.lazy_static]
-version = "1.0.2"
-
 [dependencies.procfs-core]
-version = "0.16.0-RC1"
+version = "0.18.0"
 default-features = false
 
 [dependencies.rustix]
-version = "0.38.19"
+version = "1.0.1"
 features = [
     "fs",
     "process",
@@ -92,14 +189,3 @@ version = "0.2.139"
 
 [dev-dependencies.procinfo]
 version = "0.4.2"
-
-[features]
-default = [
-    "chrono",
-    "flate2",
-    "procfs-core/default",
-]
-serde1 = [
-    "serde",
-    "procfs-core/serde1",
-]

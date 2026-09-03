@@ -1,14 +1,13 @@
-use std::cmp;
+use core::fmt::Display;
+use core::iter::once;
+use core::mem::{self, MaybeUninit};
+use core::{char, cmp};
 use std::env;
 use std::ffi::OsStr;
-use std::fmt::Display;
 use std::io;
-use std::iter::once;
-use std::mem;
 use std::os::raw::c_void;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::AsRawHandle;
-use std::{char, mem::MaybeUninit};
 
 use encode_unicode::error::Utf16TupleError;
 use encode_unicode::CharExt;
@@ -25,9 +24,9 @@ use windows_sys::Win32::System::Console::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
 
-use crate::common_term;
 use crate::kb::Key;
 use crate::term::{Term, TermTarget};
+use crate::{common_term, is_dumb};
 
 #[cfg(feature = "windows-console-colors")]
 mod colors;
@@ -36,11 +35,6 @@ mod colors;
 pub(crate) use self::colors::*;
 
 pub(crate) const DEFAULT_WIDTH: u16 = 79;
-
-pub(crate) fn as_handle(term: &Term) -> HANDLE {
-    // convert between windows_sys::Win32::Foundation::HANDLE and std::os::windows::raw::HANDLE
-    term.as_raw_handle() as HANDLE
-}
 
 pub(crate) fn is_a_terminal(out: &Term) -> bool {
     let (fd, others) = match out.target() {
@@ -69,13 +63,28 @@ pub(crate) fn is_a_color_terminal(out: &Term) -> bool {
     if !is_a_terminal(out) {
         return false;
     }
+    if env::var("NO_COLOR").is_ok() {
+        return false;
+    }
     if msys_tty_on(out) {
-        return match env::var("TERM") {
-            Ok(term) => term != "dumb",
+        return !is_dumb();
+    }
+    enable_ansi_on(out)
+}
+
+pub(crate) fn is_a_true_color_terminal(out: &Term) -> bool {
+    if !is_a_color_terminal(out) {
+        return false;
+    }
+    // Powershell does not respect the COLORTERM var despite supporting true colors
+    // but other shells may respect it
+    if msys_tty_on(out) {
+        return match env::var("COLORTERM") {
+            Ok(term) => term == "truecolor" || term == "24bit",
             Err(_) => true,
         };
     }
-    enable_ansi_on(out)
+    false
 }
 
 /// Enables or disables the `mode` flag on the given `HANDLE` and yields the previous mode.
@@ -179,7 +188,7 @@ pub(crate) fn move_cursor_to(out: &Term, x: usize, y: usize) -> io::Result<()> {
     if out.is_msys_tty {
         return common_term::move_cursor_to(out, x, y);
     }
-    if let Some((hand, _)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((hand, _)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         unsafe {
             SetConsoleCursorPosition(
                 hand,
@@ -198,7 +207,7 @@ pub(crate) fn move_cursor_up(out: &Term, n: usize) -> io::Result<()> {
         return common_term::move_cursor_up(out, n);
     }
 
-    if let Some((_, csbi)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((_, csbi)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         move_cursor_to(out, 0, csbi.dwCursorPosition.Y as usize - n)?;
     }
     Ok(())
@@ -209,7 +218,7 @@ pub(crate) fn move_cursor_down(out: &Term, n: usize) -> io::Result<()> {
         return common_term::move_cursor_down(out, n);
     }
 
-    if let Some((_, csbi)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((_, csbi)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         move_cursor_to(out, 0, csbi.dwCursorPosition.Y as usize + n)?;
     }
     Ok(())
@@ -220,7 +229,7 @@ pub(crate) fn move_cursor_left(out: &Term, n: usize) -> io::Result<()> {
         return common_term::move_cursor_left(out, n);
     }
 
-    if let Some((_, csbi)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((_, csbi)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         move_cursor_to(
             out,
             csbi.dwCursorPosition.X as usize - n,
@@ -235,7 +244,7 @@ pub(crate) fn move_cursor_right(out: &Term, n: usize) -> io::Result<()> {
         return common_term::move_cursor_right(out, n);
     }
 
-    if let Some((_, csbi)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((_, csbi)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         move_cursor_to(
             out,
             csbi.dwCursorPosition.X as usize + n,
@@ -249,7 +258,7 @@ pub(crate) fn clear_line(out: &Term) -> io::Result<()> {
     if out.is_msys_tty {
         return common_term::clear_line(out);
     }
-    if let Some((hand, csbi)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((hand, csbi)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         unsafe {
             let width = csbi.srWindow.Right - csbi.srWindow.Left;
             let pos = COORD {
@@ -269,7 +278,7 @@ pub(crate) fn clear_chars(out: &Term, n: usize) -> io::Result<()> {
     if out.is_msys_tty {
         return common_term::clear_chars(out, n);
     }
-    if let Some((hand, csbi)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((hand, csbi)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         unsafe {
             let width = cmp::min(csbi.dwCursorPosition.X, n as i16);
             let pos = COORD {
@@ -289,7 +298,7 @@ pub(crate) fn clear_screen(out: &Term) -> io::Result<()> {
     if out.is_msys_tty {
         return common_term::clear_screen(out);
     }
-    if let Some((hand, csbi)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((hand, csbi)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         unsafe {
             let cells = csbi.dwSize.X as u32 * csbi.dwSize.Y as u32; // as u32, or else this causes stack overflows.
             let pos = COORD { X: 0, Y: 0 };
@@ -306,7 +315,7 @@ pub(crate) fn clear_to_end_of_screen(out: &Term) -> io::Result<()> {
     if out.is_msys_tty {
         return common_term::clear_to_end_of_screen(out);
     }
-    if let Some((hand, csbi)) = get_console_screen_buffer_info(as_handle(out)) {
+    if let Some((hand, csbi)) = get_console_screen_buffer_info(out.as_raw_handle()) {
         unsafe {
             let bottom = csbi.srWindow.Right as u32 * csbi.srWindow.Bottom as u32;
             let cells = bottom - (csbi.dwCursorPosition.X as u32 * csbi.dwCursorPosition.Y as u32); // as u32, or else this causes stack overflows.
@@ -327,7 +336,7 @@ pub(crate) fn show_cursor(out: &Term) -> io::Result<()> {
     if out.is_msys_tty {
         return common_term::show_cursor(out);
     }
-    if let Some((hand, mut cci)) = get_console_cursor_info(as_handle(out)) {
+    if let Some((hand, mut cci)) = get_console_cursor_info(out.as_raw_handle()) {
         unsafe {
             cci.bVisible = 1;
             SetConsoleCursorInfo(hand, &cci);
@@ -340,7 +349,7 @@ pub(crate) fn hide_cursor(out: &Term) -> io::Result<()> {
     if out.is_msys_tty {
         return common_term::hide_cursor(out);
     }
-    if let Some((hand, mut cci)) = get_console_cursor_info(as_handle(out)) {
+    if let Some((hand, mut cci)) = get_console_cursor_info(out.as_raw_handle()) {
         unsafe {
             cci.bVisible = 0;
             SetConsoleCursorInfo(hand, &cci);
@@ -393,11 +402,9 @@ pub(crate) fn read_secure() -> io::Result<String> {
             Key::Enter => {
                 break;
             }
-            Key::Char('\x08') => {
-                if !rv.is_empty() {
-                    let new_len = rv.len() - 1;
-                    rv.truncate(new_len);
-                }
+            Key::Char('\x08') if !rv.is_empty() => {
+                let new_len = rv.len() - 1;
+                rv.truncate(new_len);
             }
             Key::Char(c) => {
                 rv.push(c);
@@ -467,8 +474,7 @@ pub(crate) fn read_single_key(ctrlc_key: bool) -> io::Result<Key> {
                     // (This error is given when reading a non-UTF8 file into a String, for example.)
                     Err(e) => {
                         let message = format!(
-                            "Read invalid surrogate pair ({}, {}): {}",
-                            unicode_char, next_surrogate, e
+                            "Read invalid surrogate pair ({unicode_char}, {next_surrogate}): {e}",
                         );
                         Err(io::Error::new(io::ErrorKind::InvalidData, message))
                     }
@@ -478,7 +484,7 @@ pub(crate) fn read_single_key(ctrlc_key: bool) -> io::Result<Key> {
             // Return an InvalidData error. This is the recommended value for UTF-related I/O errors.
             // (This error is given when reading a non-UTF8 file into a String, for example.)
             Err(e) => {
-                let message = format!("Read invalid utf16 {}: {}", unicode_char, e);
+                let message = format!("Read invalid utf16 {unicode_char}: {e}");
                 Err(io::Error::new(io::ErrorKind::InvalidData, message))
             }
         }
@@ -548,7 +554,7 @@ fn read_key_event() -> io::Result<KEY_EVENT_RECORD> {
 }
 
 pub(crate) fn wants_emoji() -> bool {
-    // If WT_SESSION is set, we can assume we're running in the nne
+    // If WT_SESSION is set, we can assume we're running in the new
     // Windows Terminal.  The correct way to detect this is not available
     // yet.  See https://github.com/microsoft/terminal/issues/1040
     env::var("WT_SESSION").is_ok()
@@ -587,7 +593,7 @@ pub(crate) fn msys_tty_on(term: &Term) -> bool {
             handle as HANDLE,
             FileNameInfo,
             &mut name_info as *mut _ as *mut c_void,
-            std::mem::size_of::<FILE_NAME_INFO>() as u32,
+            mem::size_of::<FILE_NAME_INFO>() as u32,
         );
         if res == 0 {
             return false;
@@ -613,7 +619,7 @@ pub(crate) fn msys_tty_on(term: &Term) -> bool {
 }
 
 pub(crate) fn set_title<T: Display>(title: T) {
-    let buffer: Vec<u16> = OsStr::new(&format!("{}", title))
+    let buffer: Vec<u16> = OsStr::new(&format!("{title}"))
         .encode_wide()
         .chain(once(0))
         .collect();

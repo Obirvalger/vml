@@ -25,7 +25,15 @@
 //!
 //! let tty = format!("pty/{}", me_stat.tty_nr().1);
 //! for prc in procfs::process::all_processes().unwrap() {
-//!     if let Ok(stat) = prc.unwrap().stat() {
+//!     let Ok(prc) = prc else {
+//!         // process vanished
+//!         continue;
+//!     };
+//!     let Ok(stat) = prc.stat() else {
+//!         // process vanished
+//!         continue;
+//!     };
+//!     if let Ok(stat) = prc.stat() {
 //!         if stat.tty_nr == me_stat.tty_nr {
 //!             // total_time is in seconds
 //!             let total_time =
@@ -58,6 +66,7 @@
 
 use super::*;
 use crate::net::{TcpNetEntry, UdpNetEntry};
+use crate::sys::kernel::Version;
 
 pub use procfs_core::process::*;
 use rustix::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
@@ -74,7 +83,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 mod namespaces;
-pub use namespaces::*;
 
 mod task;
 pub use task::*;
@@ -146,7 +154,7 @@ impl FDInfo {
         let p = path.as_ref();
         let root = base.as_ref().join(p);
         // for 2.6.39 <= kernel < 3.6 fstat doesn't support O_PATH see https://github.com/eminence/procfs/issues/265
-        let flags = match *crate::KERNEL {
+        let flags = match Version::cached() {
             Ok(v) if v < KernelVersion::new(3, 6, 0) => OFlags::NOFOLLOW | OFlags::CLOEXEC,
             Ok(_) => OFlags::NOFOLLOW | OFlags::PATH | OFlags::CLOEXEC,
             Err(_) => OFlags::NOFOLLOW | OFlags::PATH | OFlags::CLOEXEC,
@@ -216,7 +224,7 @@ impl Process {
     /// Returns a `Process` based on a specified `/proc/<pid>` path.
     pub fn new_with_root(root: PathBuf) -> ProcResult<Process> {
         // for 2.6.39 <= kernel < 3.6 fstat doesn't support O_PATH see https://github.com/eminence/procfs/issues/265
-        let flags = match *crate::KERNEL {
+        let flags = match Version::cached() {
             Ok(v) if v < KernelVersion::new(3, 6, 0) => OFlags::DIRECTORY | OFlags::CLOEXEC,
             Ok(_) => OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
             Err(_) => OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
@@ -587,12 +595,29 @@ impl Process {
     /// A higher score means that the process is more likely to be selected by the OOM-killer.
     /// The basis for this score is the amount of memory used by the process, plus other factors.
     ///
+    /// Values range from 0 (never kill) to 1000 (always kill) inclusive.
+    ///
     /// (Since linux 2.6.11)
-    pub fn oom_score(&self) -> ProcResult<u32> {
+    pub fn oom_score(&self) -> ProcResult<u16> {
         let mut file = FileWrapper::open_at(&self.root, &self.fd, "oom_score")?;
         let mut oom = String::new();
         file.read_to_string(&mut oom)?;
-        Ok(from_str!(u32, oom.trim()))
+        Ok(from_str!(u16, oom.trim()))
+    }
+
+    /// Adjust score value is added to the oom score before choosing processes to kill.
+    ///
+    /// Values range from -1000 (never kill) to 1000 (always kill) inclusive.
+    pub fn oom_score_adj(&self) -> ProcResult<i16> {
+        let mut file = FileWrapper::open_at(&self.root, &self.fd, "oom_score_adj")?;
+        let mut oom = String::new();
+        file.read_to_string(&mut oom)?;
+        Ok(from_str!(i16, oom.trim()))
+    }
+
+    pub fn set_oom_score_adj(&self, new_oom_score_adj: i16) -> ProcResult<()> {
+        let path = self.root.join("oom_score_adj");
+        write_value(path, new_oom_score_adj)
     }
 
     /// Set process memory information
@@ -607,7 +632,7 @@ impl Process {
         self.task_from_tid(self.pid)
     }
 
-    /// Return a task for the main thread of this process
+    /// Return a task for the thread based on a specified TID
     pub fn task_from_tid(&self, tid: i32) -> ProcResult<Task> {
         let path = PathBuf::from("task").join(tid.to_string());
         Task::from_process_at(&self.root, self.fd.as_fd(), path, self.pid, tid)
@@ -618,6 +643,11 @@ impl Process {
     /// (Requires CONFIG_SCHED_INFO)
     pub fn schedstat(&self) -> ProcResult<Schedstat> {
         self.read("schedstat")
+    }
+
+    /// Returns the status info from `/proc/[pid]/syscall`.
+    pub fn syscall(&self) -> ProcResult<Syscall> {
+        self.read("syscall")
     }
 
     /// Iterate over all the [`Task`]s (aka Threads) in this process
@@ -836,18 +866,38 @@ impl Process {
     }
 
     /// Returns a file which is part of the process proc structure
-    pub fn open_relative(&self, path: &str) -> ProcResult<File> {
+    pub fn open_relative<P>(&self, path: P) -> ProcResult<File>
+    where
+        P: AsRef<Path>,
+    {
         let file = FileWrapper::open_at(&self.root, &self.fd, path)?;
         Ok(file.inner())
     }
 
+    /// Returns a file which is part of the process proc structure
+    pub fn open_relative_flags<P>(&self, path: P, flags: OFlags) -> ProcResult<File>
+    where
+        P: AsRef<Path>,
+    {
+        let file = FileWrapper::open_at_flags(&self.root, &self.fd, path, flags)?;
+        Ok(file.inner())
+    }
+
     /// Parse a file relative to the process proc structure.
-    pub fn read<T: FromRead>(&self, path: &str) -> ProcResult<T> {
+    pub fn read<P, T>(&self, path: P) -> ProcResult<T>
+    where
+        P: AsRef<Path>,
+        T: FromRead,
+    {
         FromRead::from_read(FileWrapper::open_at(&self.root, &self.fd, path)?)
     }
 
     /// Parse a file relative to the process proc structure.
-    pub fn read_si<T: FromReadSI>(&self, path: &str) -> ProcResult<T> {
+    pub fn read_si<P, T>(&self, path: P) -> ProcResult<T>
+    where
+        P: AsRef<Path>,
+        T: FromReadSI,
+    {
         FromReadSI::from_read(
             FileWrapper::open_at(&self.root, &self.fd, path)?,
             crate::current_system_info(),

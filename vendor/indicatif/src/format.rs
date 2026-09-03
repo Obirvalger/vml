@@ -1,7 +1,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use number_prefix::NumberPrefix;
+use unit_prefix::NumberPrefix;
 
 const SECOND: Duration = Duration::from_secs(1);
 const MINUTE: Duration = Duration::from_secs(60);
@@ -116,8 +116,7 @@ impl fmt::Display for HumanDuration {
         }
 
         let (unit, name, alt) = UNITS[idx];
-        // FIXME when `div_duration_f64` is stable
-        let mut t = (self.0.as_secs_f64() / unit.as_secs_f64()).round() as usize;
+        let mut t = self.0.div_duration_f64(unit).round() as usize;
         if idx < UNITS.len() - 1 {
             t = Ord::max(t, 2);
         }
@@ -187,13 +186,28 @@ impl fmt::Display for HumanFloatCount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use fmt::Write;
 
-        let num = format!("{:.4}", self.0);
+        // Use formatter's precision if provided, otherwise default to 4
+        let precision = f.precision().unwrap_or(4);
+        let num = format!("{:.*}", precision, self.0);
+
         let (int_part, frac_part) = match num.split_once('.') {
-            Some((int_str, fract_str)) => (int_str.to_string(), fract_str),
-            None => (self.0.trunc().to_string(), ""),
+            Some((int_str, fract_str)) => (int_str, fract_str),
+            // No decimal point (e.g. precision 0, or non-finite values like
+            // "inf"): `num` is already the rounded integer string, so use it
+            // directly. Using `self.0.trunc()` here would drop the rounding
+            // and turn e.g. `{:.0}` of 1234.9 into "1,234" instead of "1,235".
+            None => (num.as_str(), ""),
         };
-        let len = int_part.len();
-        for (idx, c) in int_part.chars().enumerate() {
+        // Keep the optional sign out of the digit grouping, otherwise the '-'
+        // is counted as a digit and a stray comma lands right after it
+        // (e.g. -100 would render as "-,100").
+        let (sign, digits) = match int_part.strip_prefix('-') {
+            Some(digits) => ("-", digits),
+            None => ("", int_part),
+        };
+        f.write_str(sign)?;
+        let len = digits.len();
+        for (idx, c) in digits.chars().enumerate() {
             let pos = len - idx - 1;
             f.write_char(c)?;
             if pos > 0 && pos % 3 == 0 {
@@ -366,5 +380,37 @@ mod tests {
             "1,234,567,890.1234",
             format!("{}", HumanFloatCount(1234567890.1234321))
         );
+        assert_eq!("1,234", format!("{:.0}", HumanFloatCount(1234.1234321)));
+        assert_eq!("1,234.1", format!("{:.1}", HumanFloatCount(1234.1234321)));
+        assert_eq!("1,234.12", format!("{:.2}", HumanFloatCount(1234.1234321)));
+        assert_eq!("1,234.123", format!("{:.3}", HumanFloatCount(1234.1234321)));
+        assert_eq!(
+            "1,234.1234320999999454215867445",
+            format!("{:.25}", HumanFloatCount(1234.1234321))
+        );
+    }
+
+    #[test]
+    fn human_float_count_negative() {
+        // The sign must stay out of the digit grouping; otherwise a stray
+        // comma lands right after the '-' for sign-aligned lengths.
+        assert_eq!("-100", format!("{}", HumanFloatCount(-100.0)));
+        assert_eq!("-100,000", format!("{}", HumanFloatCount(-100000.0)));
+        assert_eq!("-1,000", format!("{}", HumanFloatCount(-1000.0)));
+        assert_eq!("-42.5", format!("{}", HumanFloatCount(-42.5)));
+        assert_eq!("-inf", format!("{}", HumanFloatCount(f64::NEG_INFINITY)));
+    }
+
+    #[test]
+    fn human_float_count_zero_precision_rounds() {
+        // With precision 0 the integer part must reflect the *rounded* value,
+        // not a truncated one: format!("{:.0}", 1234.9) is "1235", so the
+        // human-grouped output must be "1,235" and never the truncated "1,234".
+        assert_eq!("1,235", format!("{:.0}", HumanFloatCount(1234.9)));
+        assert_eq!("2,000", format!("{:.0}", HumanFloatCount(1999.6)));
+        assert_eq!("1,000", format!("{:.0}", HumanFloatCount(999.5)));
+        assert_eq!("-1,235", format!("{:.0}", HumanFloatCount(-1234.9)));
+        // Values that round down are unaffected.
+        assert_eq!("1,234", format!("{:.0}", HumanFloatCount(1234.4)));
     }
 }

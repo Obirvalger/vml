@@ -1,11 +1,11 @@
 use core::num::NonZeroUsize;
 
-use crate::error::Needed;
 use crate::stream::AsBytes;
 use crate::stream::Checkpoint;
 use crate::stream::Compare;
 use crate::stream::CompareResult;
 use crate::stream::FindSlice;
+use crate::stream::Needed;
 use crate::stream::Offset;
 #[cfg(feature = "unstable-recover")]
 #[cfg(feature = "std")]
@@ -142,9 +142,8 @@ impl<'i> Stream for &'i Bytes {
         *self = checkpoint.inner;
     }
 
-    #[inline(always)]
-    fn raw(&self) -> &dyn core::fmt::Debug {
-        self
+    fn trace(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self:#?}")
     }
 }
 

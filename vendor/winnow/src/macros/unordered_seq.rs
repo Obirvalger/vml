@@ -14,11 +14,11 @@
 /// # Example
 ///
 /// ```rust
+/// # #[cfg(feature = "ascii")] {
 /// # use winnow::{error::ErrMode, error::Needed};
 /// # use winnow::prelude::*;
 /// use winnow::ascii::{alpha1, digit1};
 /// use winnow::combinator::unordered_seq;
-/// # fn main() {
 /// fn parser<'i>(input: &mut &'i str) -> ModalResult<(&'i str, &'i str)> {
 ///   unordered_seq!((alpha1, digit1)).parse_next(input)
 /// }
@@ -37,6 +37,7 @@
 /// The parsers are applied greedily: if there are multiple unapplied parsers
 /// that could parse the next slice of input, the first one is used.
 /// ```rust
+/// # #[cfg(feature = "parser")] {
 /// # use winnow::error::ErrMode;
 /// # use winnow::prelude::*;
 /// use winnow::combinator::unordered_seq;
@@ -52,6 +53,7 @@
 /// // any parses 'a', then char('a') fails on 'b',
 /// // even though char('a') followed by any would succeed
 /// assert!(parser.parse_peek("ab").is_err());
+/// # }
 /// ```
 #[macro_export]
 #[doc(alias = "permutation")]

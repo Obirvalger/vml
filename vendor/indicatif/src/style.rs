@@ -1,13 +1,16 @@
 use std::collections::HashMap;
-use std::fmt::{self, Write};
+use std::fmt::{self, Formatter, Write};
 use std::mem;
+use std::str::FromStr;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(feature = "unicode-width")]
+use unicode_width::UnicodeWidthChar;
 
-use console::{measure_text_width, Style};
+use console::{measure_text_width, AnsiCodeIterator, Style};
 #[cfg(feature = "unicode-segmentation")]
 use unicode_segmentation::UnicodeSegmentation;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "wasmbind"))]
 use web_time::Instant;
 
 use crate::draw_target::LineType;
@@ -26,43 +29,6 @@ pub struct ProgressStyle {
     char_width: usize,
     tab_width: usize,
     pub(crate) format_map: HashMap<&'static str, Box<dyn ProgressTracker>>,
-}
-
-#[cfg(feature = "unicode-segmentation")]
-fn segment(s: &str) -> Vec<Box<str>> {
-    UnicodeSegmentation::graphemes(s, true)
-        .map(|s| s.into())
-        .collect()
-}
-
-#[cfg(not(feature = "unicode-segmentation"))]
-fn segment(s: &str) -> Vec<Box<str>> {
-    s.chars().map(|x| x.to_string().into()).collect()
-}
-
-#[cfg(feature = "unicode-width")]
-fn measure(s: &str) -> usize {
-    unicode_width::UnicodeWidthStr::width(s)
-}
-
-#[cfg(not(feature = "unicode-width"))]
-fn measure(s: &str) -> usize {
-    s.chars().count()
-}
-
-/// finds the unicode-aware width of the passed grapheme cluters
-/// panics on an empty parameter, or if the characters are not equal-width
-fn width(c: &[Box<str>]) -> usize {
-    c.iter()
-        .map(|s| measure(s.as_ref()))
-        .fold(None, |acc, new| {
-            match acc {
-                None => return Some(new),
-                Some(old) => assert_eq!(old, new, "got passed un-equal width progress characters"),
-            }
-            acc
-        })
-        .unwrap()
 }
 
 impl ProgressStyle {
@@ -86,6 +52,27 @@ impl ProgressStyle {
     pub(crate) fn set_tab_width(&mut self, new_tab_width: usize) {
         self.tab_width = new_tab_width;
         self.template.set_tab_width(new_tab_width);
+    }
+
+    /// Specifies that the progress bar is intended to be printed to stderr
+    ///
+    /// The progress bar will determine whether to enable/disable colors based on stderr
+    /// instead of stdout. Under the hood, this uses [`console::colors_enabled_stderr`].
+    pub(crate) fn set_for_stderr(&mut self) {
+        for part in &mut self.template.parts {
+            let (style, alt_style) = match part {
+                TemplatePart::Placeholder {
+                    style, alt_style, ..
+                } => (style, alt_style),
+                _ => continue,
+            };
+            if let Some(s) = style.take() {
+                *style = Some(s.for_stderr())
+            }
+            if let Some(s) = alt_style.take() {
+                *alt_style = Some(s.for_stderr())
+            }
+        }
     }
 
     fn new(template: Template) -> Self {
@@ -188,29 +175,29 @@ impl ProgressStyle {
         let fill = fract * width as f32;
         // The number of entirely full clusters (by truncating `fill`).
         let entirely_filled = fill as usize;
-        // 1 if the bar is not entirely empty or full (meaning we need to draw the "current"
-        // character between the filled and "to do" segment), 0 otherwise.
-        let head = usize::from(fill > 0.0 && entirely_filled < width);
 
-        let cur = if head == 1 {
+        // if the bar is not entirely empty or full (meaning we need to draw the "current"
+        // character between the filled and "to do" segment)
+        let cur = if fill > 0.0 && entirely_filled < width {
             // Number of fine-grained progress entries in progress_chars.
             let n = self.progress_chars.len().saturating_sub(2);
-            let cur_char = if n <= 1 {
-                // No fine-grained entries. 1 is the single "current" entry if we have one, the "to
-                // do" entry if not.
-                1
-            } else {
+            match n {
+                // We have no "current" entries, so simply skip drawing it
+                0 => None,
+                // We only have a single "current" entry, so choose this one
+                1 => Some(1),
                 // Pick a fine-grained entry, ranging from the last one (n) if the fractional part
                 // of fill is 0 to the first one (1) if the fractional part of fill is almost 1.
-                n.saturating_sub((fill.fract() * n as f32) as usize)
-            };
-            Some(cur_char)
+                _ => Some(n.saturating_sub((fill.fract() * n as f32) as usize)),
+            }
         } else {
             None
         };
 
         // Number of entirely empty clusters needed to fill the bar up to `width`.
-        let bg = width.saturating_sub(entirely_filled).saturating_sub(head);
+        let bg = width
+            .saturating_sub(entirely_filled)
+            .saturating_sub(cur.is_some() as usize);
         let rest = RepeatedStringDisplay {
             str: &self.progress_chars[self.progress_chars.len() - 1],
             num: bg,
@@ -308,9 +295,22 @@ impl ProgressStyle {
                             "elapsed" => buf
                                 .write_fmt(format_args!("{:#}", HumanDuration(state.elapsed())))
                                 .unwrap(),
-                            "per_sec" => buf
-                                .write_fmt(format_args!("{}/s", HumanFloatCount(state.per_sec())))
-                                .unwrap(),
+                            "per_sec" => {
+                                if let Some(width) = width {
+                                    buf.write_fmt(format_args!(
+                                        "{:.1$}/s",
+                                        HumanFloatCount(state.per_sec()),
+                                        *width as usize
+                                    ))
+                                    .unwrap();
+                                } else {
+                                    buf.write_fmt(format_args!(
+                                        "{}/s",
+                                        HumanFloatCount(state.per_sec())
+                                    ))
+                                    .unwrap();
+                                }
+                            }
                             "bytes_per_sec" => buf
                                 .write_fmt(format_args!("{}/s", HumanBytes(state.per_sec() as u64)))
                                 .unwrap(),
@@ -429,7 +429,11 @@ impl WideElement<'_> {
         buf: &mut String,
         width: u16,
     ) -> String {
-        let left = (width as usize).saturating_sub(measure_text_width(&cur.replace('\x00', "")));
+        let left =
+            (width as usize).saturating_sub(match cur.lines().find(|line| line.contains('\x00')) {
+                Some(line) => measure_text_width(&line.replace('\x00', "")),
+                None => measure_text_width(&cur),
+            });
         match self {
             Self::Bar { alt_style } => cur.replace(
                 '\x00',
@@ -468,7 +472,21 @@ struct Template {
 }
 
 impl Template {
-    fn from_str_with_tab_width(s: &str, tab_width: usize) -> Result<Self, TemplateError> {
+    fn set_tab_width(&mut self, new_tab_width: usize) {
+        for part in &mut self.parts {
+            if let TemplatePart::Literal(s) = part {
+                s.set_tab_width(new_tab_width);
+            }
+        }
+    }
+}
+
+impl FromStr for Template {
+    type Err = TemplateError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let tab_width = DEFAULT_TAB_WIDTH;
+
         use State::*;
         let (mut state, mut parts, mut buf) = (Literal, vec![], String::new());
         for c in s.chars() {
@@ -598,18 +616,6 @@ impl Template {
 
         Ok(Self { parts })
     }
-
-    fn from_str(s: &str) -> Result<Self, TemplateError> {
-        Self::from_str_with_tab_width(s, DEFAULT_TAB_WIDTH)
-    }
-
-    fn set_tab_width(&mut self, new_tab_width: usize) {
-        for part in &mut self.parts {
-            if let TemplatePart::Literal(s) = part {
-                s.set_tab_width(new_tab_width);
-            }
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -704,15 +710,11 @@ impl fmt::Display for PaddedStringDisplay<'_> {
             return f.write_str(self.str);
         } else if excess > 0 {
             let (start, end) = match self.align {
-                Alignment::Left => (0, self.str.len() - excess),
-                Alignment::Right => (excess, self.str.len()),
-                Alignment::Center => (
-                    excess / 2,
-                    self.str.len() - excess.saturating_sub(excess / 2),
-                ),
+                Alignment::Left => (0, cols - excess),
+                Alignment::Right => (excess, cols),
+                Alignment::Center => (excess / 2, cols - excess.saturating_sub(excess / 2)),
             };
-
-            return f.write_str(self.str.get(start..end).unwrap_or(self.str));
+            return write_ansi_range(f, self.str, start, end);
         }
 
         let diff = self.width.saturating_sub(cols);
@@ -731,6 +733,41 @@ impl fmt::Display for PaddedStringDisplay<'_> {
         }
         Ok(())
     }
+}
+
+/// Write the visible text between start and end. The ansi escape
+/// sequences are written unchanged.
+pub fn write_ansi_range(
+    formatter: &mut Formatter,
+    text: &str,
+    start: usize,
+    end: usize,
+) -> fmt::Result {
+    let mut pos = 0;
+    for (s, is_ansi) in AnsiCodeIterator::new(text) {
+        if is_ansi {
+            formatter.write_str(s)?;
+            continue;
+        } else if pos >= end {
+            continue;
+        }
+
+        for c in s.chars() {
+            #[cfg(feature = "unicode-width")]
+            let c_width = c.width().unwrap_or(0);
+            #[cfg(not(feature = "unicode-width"))]
+            let c_width = 1;
+            if start <= pos && pos + c_width <= end {
+                formatter.write_char(c)?;
+            }
+            pos += c_width;
+            if pos > end {
+                // no need to iterate over the rest of s
+                break;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
@@ -775,6 +812,43 @@ where
     }
 }
 
+#[cfg(feature = "unicode-segmentation")]
+fn segment(s: &str) -> Vec<Box<str>> {
+    UnicodeSegmentation::graphemes(s, true)
+        .map(|s| s.into())
+        .collect()
+}
+
+#[cfg(not(feature = "unicode-segmentation"))]
+fn segment(s: &str) -> Vec<Box<str>> {
+    s.chars().map(|x| x.to_string().into()).collect()
+}
+
+#[cfg(feature = "unicode-width")]
+fn measure(s: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(s)
+}
+
+#[cfg(not(feature = "unicode-width"))]
+fn measure(s: &str) -> usize {
+    s.chars().count()
+}
+
+/// finds the unicode-aware width of the passed grapheme cluters
+/// panics on an empty parameter, or if the characters are not equal-width
+fn width(c: &[Box<str>]) -> usize {
+    c.iter()
+        .map(|s| measure(s.as_ref()))
+        .fold(None, |acc, new| {
+            match acc {
+                None => return Some(new),
+                Some(old) => assert_eq!(old, new, "got passed un-equal width progress characters"),
+            }
+            acc
+        })
+        .unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -782,7 +856,7 @@ mod tests {
     use super::*;
     use crate::state::{AtomicPosition, ProgressState};
 
-    use console::set_colors_enabled;
+    use console::{set_colors_enabled, set_colors_enabled_stderr};
     use std::sync::Mutex;
 
     #[test]
@@ -902,6 +976,29 @@ mod tests {
     }
 
     #[test]
+    fn test_stderr_colors() {
+        set_colors_enabled(true);
+        set_colors_enabled_stderr(false);
+
+        const WIDTH: u16 = 80;
+        let pos = Arc::new(AtomicPosition::new());
+        let state = ProgressState::new(Some(10), pos);
+        let mut buf = Vec::new();
+
+        let mut style = ProgressStyle::default_bar();
+        style.format_map.insert(
+            "foo",
+            Box::new(|_: &ProgressState, w: &mut dyn Write| write!(w, "XXX").unwrap()),
+        );
+
+        style.template = Template::from_str("{foo:.red.on_blue}").unwrap();
+        style.set_for_stderr();
+
+        style.format_state(&state, &mut buf, WIDTH);
+        assert_eq!(&buf[0], "XXX", "colors should be disabled");
+    }
+
+    #[test]
     fn align_truncation() {
         const WIDTH: u16 = 10;
         let pos = Arc::new(AtomicPosition::new());
@@ -924,6 +1021,92 @@ mod tests {
         state.message = TabExpandedString::NoTabs("abcdefghijklmnopqrst".into());
         style.format_state(&state, &mut buf, WIDTH);
         assert_eq!(&buf[0], "fghijklmno");
+    }
+
+    #[cfg(feature = "unicode-width")]
+    #[test]
+    fn combining_diacritical_truncation() {
+        const WIDTH: u16 = 10;
+        let pos = Arc::new(AtomicPosition::new());
+        let mut state = ProgressState::new(Some(10), pos);
+        let mut buf = Vec::new();
+
+        let style = ProgressStyle::with_template("{wide_msg}").unwrap();
+        state.message = TabExpandedString::NoTabs("abcdefghij\u{0308}klmnopqrst".into());
+        style.format_state(&state, &mut buf, WIDTH);
+        assert_eq!(&buf[0], "abcdefghij\u{0308}");
+    }
+
+    #[test]
+    fn color_align_truncation() {
+        let red = "\x1b[31m";
+        let green = "\x1b[32m";
+        let blue = "\x1b[34m";
+        let yellow = "\x1b[33m";
+        let magenta = "\x1b[35m";
+        let cyan = "\x1b[36m";
+        let white = "\x1b[37m";
+
+        let bold = "\x1b[1m";
+        let underline = "\x1b[4m";
+        let reset = "\x1b[0m";
+        let message = format!(
+            "{bold}{red}Hello,{reset} {green}{underline}Rustacean!{reset} {yellow}This {blue}is {magenta}a {cyan}multi-colored {white}string.{reset}"
+        );
+
+        const WIDTH: u16 = 10;
+        let pos = Arc::new(AtomicPosition::new());
+        let mut state = ProgressState::new(Some(10), pos);
+        let mut buf = Vec::new();
+
+        let style = ProgressStyle::with_template("{wide_msg}").unwrap();
+        state.message = TabExpandedString::NoTabs(message.clone().into());
+        style.format_state(&state, &mut buf, WIDTH);
+        assert_eq!(
+            &buf[0],
+            format!("{bold}{red}Hello,{reset} {green}{underline}Rus{reset}{yellow}{blue}{magenta}{cyan}{white}{reset}").as_str()
+        );
+
+        buf.clear();
+        let style = ProgressStyle::with_template("{wide_msg:>}").unwrap();
+        state.message = TabExpandedString::NoTabs(message.clone().into());
+        style.format_state(&state, &mut buf, WIDTH);
+        assert_eq!(&buf[0], format!("{bold}{red}{reset}{green}{underline}{reset}{yellow}{blue}{magenta}{cyan}ed {white}string.{reset}").as_str());
+
+        buf.clear();
+        let style = ProgressStyle::with_template("{wide_msg:^}").unwrap();
+        state.message = TabExpandedString::NoTabs(message.clone().into());
+        style.format_state(&state, &mut buf, WIDTH);
+        assert_eq!(&buf[0], format!("{bold}{red}{reset}{green}{underline}{reset}{yellow}his {blue}is {magenta}a {cyan}m{white}{reset}").as_str());
+    }
+
+    #[test]
+    fn multicolor_without_current_style() {
+        set_colors_enabled(true);
+
+        const CHARS: &str = "=-";
+        const WIDTH: u16 = 8;
+        let pos = Arc::new(AtomicPosition::new());
+        // half finished
+        pos.set(2);
+        let state = ProgressState::new(Some(4), pos);
+        let mut buf = Vec::new();
+
+        let style = ProgressStyle::with_template("{wide_bar}")
+            .unwrap()
+            .progress_chars(CHARS);
+        style.format_state(&state, &mut buf, WIDTH);
+        assert_eq!(&buf[0], "====----");
+
+        buf.clear();
+        let style = ProgressStyle::with_template("{wide_bar:.red.on_blue/green.on_cyan}")
+            .unwrap()
+            .progress_chars(CHARS);
+        style.format_state(&state, &mut buf, WIDTH);
+        assert_eq!(
+            &buf[0],
+            "\u{1b}[31m\u{1b}[44m====\u{1b}[32m\u{1b}[46m----\u{1b}[0m\u{1b}[0m"
+        );
     }
 
     #[test]

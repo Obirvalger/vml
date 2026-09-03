@@ -28,6 +28,7 @@ unused_macro_rules = "warn"
 [workspace.lints.clippy]
 bool_assert_comparison = "allow"
 branches_sharing_code = "allow"
+byte_char_slices = "allow"  # want explicit arrays
 checked_conversions = "warn"
 collapsible_else_if = "allow"
 create_dir = "warn"
@@ -82,7 +83,7 @@ todo = "warn"
 trait_duplication_in_bounds = "warn"
 uninlined_format_args = "warn"
 verbose_file_reads = "warn"
-wildcard_imports = "allow"
+wildcard_imports = "warn"
 zero_sized_map_values = "warn"
 
 [profile.dev]
@@ -96,7 +97,7 @@ lto = true
 
 [package]
 name = "winnow"
-version = "0.7.15"
+version = "1.0.4"
 description = "A byte-oriented, zero-copy, parser combinators library"
 categories = ["parsing"]
 keywords = ["parser", "parser-combinators", "parsing", "streaming", "bit"]
@@ -122,14 +123,17 @@ pre-release-replacements = [
 ]
 
 [features]
-default = ["std"]
+default = ["std", "ascii", "binary"]
 alloc = []
+parser = []
+ascii = ["parser"]
+binary = ["parser"]
 std = ["alloc", "memchr?/std"]
 simd = ["dep:memchr"]
 debug = ["std", "dep:anstream", "dep:anstyle", "dep:is_terminal_polyfill", "dep:terminal_size"]
-unstable-recover = []
+unstable-recover = ["parser"]
 
-unstable-doc = ["alloc", "std", "simd", "unstable-recover"]
+unstable-doc = ["alloc", "std", "ascii", "binary", "simd", "unstable-recover"]
 
 [dependencies]
 anstream = { version = "0.6.15", optional = true }
@@ -158,105 +162,111 @@ codegen-units = 1
 [[example]]
 name = "arithmetic"
 test = true
-required-features = ["alloc"]
+required-features = ["alloc", "ascii"]
 
 [[example]]
 name = "c_expression"
-required-features = ["std"]
+required-features = ["std", "ascii"]
 
 [[example]]
 name = "css"
 test = true
-required-features = ["alloc"]
+required-features = ["alloc", "parser"]
 
 [[example]]
 name = "custom_error"
 test = true
-required-features = ["alloc"]
+required-features = ["alloc", "parser"]
 
 [[example]]
 name = "http"
-required-features = ["alloc"]
+required-features = ["alloc", "ascii"]
 
 [[example]]
 name = "ini"
 test = true
-required-features = ["std"]
+required-features = ["std", "ascii"]
 
 [[example]]
 name = "json"
 test = true
-required-features = ["std"]
+required-features = ["std", "ascii"]
 
 [[example]]
 name = "ndjson"
 test = true
-required-features = ["std"]
+required-features = ["std", "ascii"]
 
 [[example]]
 name = "json_iterator"
-required-features = ["std"]
+required-features = ["std", "ascii"]
 
 [[example]]
 name = "iterator"
+required-features = ["ascii"]
 
 [[example]]
 name = "s_expression"
-required-features = ["alloc"]
+required-features = ["alloc", "ascii"]
 
 [[example]]
 name = "string"
-required-features = ["alloc"]
+required-features = ["alloc", "ascii"]
 
 [[bench]]
 name = "arithmetic"
 path = "examples/arithmetic/bench.rs"
 harness = false
-required-features = ["alloc"]
+required-features = ["alloc", "ascii"]
 
 [[bench]]
 name = "c_expression"
 path = "examples/c_expression/bench.rs"
 harness = false
-required-features = ["std"]
+required-features = ["std", "ascii"]
 
 [[bench]]
 name = "contains_token"
 harness = false
+required-features = ["parser"]
 
 [[bench]]
 name = "find_slice"
 harness = false
+required-features = ["parser"]
 
 [[bench]]
 name = "iter"
 harness = false
+required-features = ["parser"]
 
 [[bench]]
 name = "next_slice"
 harness = false
+required-features = ["parser"]
 
 [[bench]]
 name = "number"
 harness = false
+required-features = ["ascii", "binary"]
 
 [[bench]]
 name = "http"
 path = "examples/http/bench.rs"
 harness = false
-required-features = ["alloc"]
+required-features = ["alloc", "ascii"]
 
 [[bench]]
 name = "ini"
 path = "examples/ini/bench.rs"
 harness = false
-required-features = ["std"]
+required-features = ["std", "ascii"]
 
 [[bench]]
 name = "json"
 path = "examples/json/bench.rs"
 harness = false
-required-features = ["std"]
+required-features = ["std", "ascii"]
 
 [lints]
 workspace = true

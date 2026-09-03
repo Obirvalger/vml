@@ -22,12 +22,15 @@
 #[cfg(feature = "alloc")]
 use alloc::borrow::ToOwned;
 use core::fmt;
-use core::num::NonZeroUsize;
 
+#[cfg(feature = "binary")]
+use crate::binary::bits::Bits;
 use crate::stream::AsBStr;
 use crate::stream::Stream;
 #[allow(unused_imports)] // Here for intra-doc links
 use crate::Parser;
+
+pub use crate::stream::Needed;
 
 /// By default, the error type (`E`) is [`ContextError`].
 ///
@@ -50,48 +53,6 @@ pub type ModalResult<O, E = ContextError> = Result<O, ErrMode<E>>;
 
 #[cfg(test)]
 pub(crate) type TestResult<I, O> = ModalResult<O, InputError<I>>;
-
-/// Contains information on needed data if a parser returned `Incomplete`
-///
-/// <div class="warning">
-///
-/// **Note:** This is only possible for `Stream` that are [partial][`crate::stream::StreamIsPartial`],
-/// like [`Partial`][crate::Partial].
-///
-/// </div>
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Needed {
-    /// Needs more data, but we do not know how much
-    Unknown,
-    /// Contains a lower bound on the buffer offset needed to finish parsing
-    ///
-    /// For byte/`&str` streams, this translates to bytes
-    Size(NonZeroUsize),
-}
-
-impl Needed {
-    /// Creates `Needed` instance, returns `Needed::Unknown` if the argument is zero
-    pub fn new(s: usize) -> Self {
-        match NonZeroUsize::new(s) {
-            Some(sz) => Needed::Size(sz),
-            None => Needed::Unknown,
-        }
-    }
-
-    /// Indicates if we know how many bytes we need
-    pub fn is_known(&self) -> bool {
-        *self != Needed::Unknown
-    }
-
-    /// Maps a `Needed` to `Needed` by applying a function to a contained `Size` value.
-    #[inline]
-    pub fn map<F: Fn(NonZeroUsize) -> usize>(self, f: F) -> Needed {
-        match self {
-            Needed::Unknown => Needed::Unknown,
-            Needed::Size(n) => Needed::new(f(n)),
-        }
-    }
-}
 
 /// Add parse error state to [`ParserError`]s
 ///
@@ -552,20 +513,6 @@ impl<I: Clone, E> FromExternalError<I, E> for InputError<I> {
         Self {
             input: input.clone(),
         }
-    }
-}
-
-impl<I: Clone> ErrorConvert<InputError<(I, usize)>> for InputError<I> {
-    #[inline]
-    fn convert(self) -> InputError<(I, usize)> {
-        self.map_input(|i| (i, 0))
-    }
-}
-
-impl<I: Clone> ErrorConvert<InputError<I>> for InputError<(I, usize)> {
-    #[inline]
-    fn convert(self) -> InputError<I> {
-        self.map_input(|(i, _o)| i)
     }
 }
 
@@ -1140,6 +1087,25 @@ where
 }
 
 #[cfg(feature = "std")]
+#[cfg(feature = "binary")]
+impl<I, C> ErrorConvert<TreeError<Bits<I>, C>> for TreeError<I, C> {
+    #[inline]
+    fn convert(self) -> TreeError<Bits<I>, C> {
+        self.map_input(|i| Bits(i, 0))
+    }
+}
+
+#[cfg(feature = "std")]
+#[cfg(feature = "binary")]
+impl<I, C> ErrorConvert<TreeError<I, C>> for TreeError<Bits<I>, C> {
+    #[inline]
+    fn convert(self) -> TreeError<I, C> {
+        self.map_input(|Bits(i, _o)| i)
+    }
+}
+
+/// deprecated since 1.0.2
+#[cfg(feature = "std")]
 impl<I, C> ErrorConvert<TreeError<(I, usize), C>> for TreeError<I, C> {
     #[inline]
     fn convert(self) -> TreeError<(I, usize), C> {
@@ -1147,6 +1113,7 @@ impl<I, C> ErrorConvert<TreeError<(I, usize), C>> for TreeError<I, C> {
     }
 }
 
+/// deprecated since 1.0.2
 #[cfg(feature = "std")]
 impl<I, C> ErrorConvert<TreeError<I, C>> for TreeError<(I, usize), C> {
     #[inline]
