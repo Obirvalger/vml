@@ -14,7 +14,7 @@ clap = { version = "<4", features = ["unstable-replace", "cargo"] }
 clap_complete = "<4"
 cmd_lib.git = "https://github.com/rust-shell-script/rust_cmd_lib"
 cmd_lib.rev = "5a87af574a694fbfd0d4ade0c9b3dadc7cd463f6"
-comfy-table = "7.2.2"
+comfy-table = "8.0.0"
 env_logger = "0.11.2"
 file-lock = "2.1.10"
 futures-util = "0.3.30"

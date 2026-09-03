@@ -30,8 +30,10 @@ As far as I'm aware, there're no lingering bugs and the project has a lot of tes
 "Finished" means:
 
 - Comfy-table still receives regular version bumps for its few dependencies.
-- Pull requests for wished for and approved features will be reviewed and eventually merged.
-- New releases are pushed when new features are added or when requested.
+- Any lingering bugs are fixed.
+- New releases are pushed when requested or once bug fixes are merged.
+
+There's a [search for a new maintainer](https://github.com/Nukesor/comfy-table/issues/202), until then the project is in a feature freeze.
 
 ## Features
 
@@ -42,7 +44,7 @@ As far as I'm aware, there're no lingering bugs and the project has a lot of tes
 - Constraints on columns that allow some additional control over how to arrange content.
 - Cross platform (Linux, macOS, Windows).
 - It's fast enough.
-  - Benchmarks show that a pretty big table with complex constraints is build in `470μs` or `~0.5ms`.
+  - Benchmarks show that a pretty big table with complex constraints is built in `470μs` or `~0.5ms`.
   - The table seen at the top of the readme takes `~30μs`.
   - These numbers are from a overclocked `i7-8700K` with a max single-core performance of 4.9GHz.
   - To run the benchmarks yourselves, install criterion via `cargo install cargo-criterion` and run `cargo criterion` afterwards.
@@ -92,15 +94,13 @@ This table will become as wide as your content. Nothing fancy happening here.
 ### More Features
 
 ```rust
-use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::*;
 
 fn main() {
     let mut table = Table::new();
     table
-        .load_preset(UTF8_FULL)
-        .apply_modifier(UTF8_ROUND_CORNERS)
+        .load_style(UTF8_FULL.with_rounded_corners())
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_width(40)
         .set_header(vec!["Header1", "Header2", "Header3"])
@@ -152,7 +152,7 @@ use comfy_table::*;
 
 fn main() {
     let mut table = Table::new();
-    table.load_preset(UTF8_FULL)
+    table.load_style(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_width(80)
         .set_header(vec![

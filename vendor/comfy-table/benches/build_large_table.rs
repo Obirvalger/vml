@@ -1,6 +1,6 @@
 use comfy_table::{presets::UTF8_FULL, *};
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::{Rng, distr::Alphanumeric};
+use rand::{RngExt, distr::Alphanumeric};
 
 /// Create a dynamic 10x500 Table with width 300 and unevenly distributed content.
 /// There are no constraint, the content simply has to be formatted to fit as good as possible into
@@ -8,7 +8,7 @@ use rand::{Rng, distr::Alphanumeric};
 fn build_huge_table() {
     let mut table = Table::new();
     table
-        .load_preset(UTF8_FULL)
+        .load_style(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
         .set_width(300)
         .set_header(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);

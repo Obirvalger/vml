@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::utils::ColumnDisplayInfo;
 
 #[cfg(feature = "custom_styling")]
@@ -25,16 +27,20 @@ pub fn split_line(line: &str, info: &ColumnDisplayInfo, delimiter: char) -> Vec<
     let content_width = usize::from(info.content_width);
 
     // Split the line by the given deliminator and turn the content into a stack.
-    // Also clone it and convert it into a Vec<String>. Otherwise, we get some burrowing problems
-    // due to early drops of borrowed values that need to be inserted into `Vec<&str>`
     let mut elements = split_line_by_delimiter(line, delimiter);
 
     // Reverse it, since we want to push/pop without reversing the text.
     elements.reverse();
 
+    // Get the length for the delimiter once.
+    // UTF-8 chars are 4-bytes at max, so this encode_utf8 cannot panic.
+    let delimiter_width = measure_text_width(delimiter.encode_utf8(&mut [0; 4]));
+
     let mut current_line = String::new();
+    // Keep track of the display width of current_line.
+    // We primarily do it this way so we don't have to re-measure the line over and over again.
+    let mut current_length = 0;
     while let Some(next) = elements.pop() {
-        let current_length = measure_text_width(&current_line);
         let next_length = measure_text_width(&next);
 
         // Some helper variables
@@ -56,11 +62,14 @@ pub fn split_line(line: &str, info: &ColumnDisplayInfo, delimiter: char) -> Vec<
             // Only add delimiter, if we're not on a fresh line
             if !current_line.is_empty() {
                 current_line.push(delimiter);
+                current_length += delimiter_width;
             }
-            current_line += &next;
+            current_line.push_str(&next);
+            current_length += next_length;
 
             // Already complete the current line, if there isn't space for more than two chars
-            current_line = check_if_full(&mut lines, content_width, current_line);
+            (current_line, current_length) =
+                check_if_full(&mut lines, content_width, current_line, current_length);
             continue;
         }
 
@@ -74,6 +83,7 @@ pub fn split_line(line: &str, info: &ColumnDisplayInfo, delimiter: char) -> Vec<
             elements.push(next);
             lines.push(current_line);
             current_line = String::new();
+            current_length = 0;
 
             continue;
         }
@@ -98,7 +108,16 @@ pub fn split_line(line: &str, info: &ColumnDisplayInfo, delimiter: char) -> Vec<
                 current_line.push(delimiter);
             }
 
-            let (mut next, mut remaining) = split_long_word(remaining_width, &next);
+            // Split the word.
+            // Since we're handling Cows, we need to differentiate between borrowed and owned state.
+            // I.e. ANSII aware splitting uses owned slices, normal splitting uses borrows.
+            let (head, tail) = match next {
+                Cow::Borrowed(word) => split_long_word(remaining_width, word),
+                Cow::Owned(word) => {
+                    let (head, tail) = split_long_word(remaining_width, &word);
+                    (Cow::Owned(head.into_owned()), Cow::Owned(tail.into_owned()))
+                }
+            };
 
             // This is an ugly hack, but it's needed for now.
             //
@@ -109,18 +128,19 @@ pub fn split_line(line: &str, info: &ColumnDisplayInfo, delimiter: char) -> Vec<
             // this code would loop endlessly. (There's no legitimate way to split that character.)
             // Hence, we have to live with the fact, that this line will look broken, as we put a
             // two-character wide symbol into it, despite the line being formatted for 1 character.
-            if new_line && next.is_empty() {
-                let mut chars = remaining.chars();
-                next.push(chars.next().unwrap());
-                remaining = chars.collect();
+            if new_line && head.is_empty() {
+                let mut chars = tail.chars();
+                current_line.push(chars.next().unwrap());
+                elements.push(Cow::Owned(chars.collect()));
+            } else {
+                current_line.push_str(&head);
+                elements.push(tail);
             }
-
-            current_line += &next;
-            elements.push(remaining);
 
             // Push the finished line, and start a new one
             lines.push(current_line);
             current_line = String::new();
+            current_length = 0;
 
             continue;
         }
@@ -130,7 +150,9 @@ pub fn split_line(line: &str, info: &ColumnDisplayInfo, delimiter: char) -> Vec<
         // Push the current line and initialize the next line with the element.
         lines.push(current_line);
         current_line = next.to_string();
-        current_line = check_if_full(&mut lines, content_width, current_line);
+        current_length = next_length;
+        (current_line, current_length) =
+            check_if_full(&mut lines, content_width, current_line, current_length);
     }
 
     if !current_line.is_empty() {
@@ -150,14 +172,19 @@ const MIN_FREE_CHARS: usize = 2;
 /// Check if the current line is too long and whether we should start a new one
 /// If it's too long, we add the current line to the list of lines and return a new [String].
 /// Otherwise, we simply return the current line and basically don't do anything.
-fn check_if_full(lines: &mut Vec<String>, content_width: usize, current_line: String) -> String {
+fn check_if_full(
+    lines: &mut Vec<String>,
+    content_width: usize,
+    current_line: String,
+    current_length: usize,
+) -> (String, usize) {
     // Already complete the current line, if there isn't space for more than two chars
-    if measure_text_width(&current_line) > content_width.saturating_sub(MIN_FREE_CHARS) {
+    if current_length > content_width.saturating_sub(MIN_FREE_CHARS) {
         lines.push(current_line);
-        return String::new();
+        return (String::new(), 0);
     }
 
-    current_line
+    (current_line, current_length)
 }
 
 #[cfg(test)]

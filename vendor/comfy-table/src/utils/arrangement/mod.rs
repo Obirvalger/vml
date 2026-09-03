@@ -10,8 +10,7 @@ pub mod helper;
 
 type DisplayInfos = BTreeMap<usize, ColumnDisplayInfo>;
 
-/// Determine the width of each column depending on the content of the given table.
-/// The results uses Option<usize>, since users can choose to hide columns.
+/// Top level entry point for content arrangement.
 pub fn arrange_content(table: &Table) -> Vec<ColumnDisplayInfo> {
     let table_width = table.width().map(usize::from);
     let mut infos = BTreeMap::new();
@@ -49,7 +48,13 @@ pub fn arrange_content(table: &Table) -> Vec<ColumnDisplayInfo> {
             disabled::arrange(table, &mut infos, visible_columns, &max_content_widths)
         }
         ContentArrangement::Dynamic | ContentArrangement::DynamicFullWidth => {
-            dynamic::arrange(table, &mut infos, table_width, &max_content_widths);
+            dynamic::arrange(
+                table,
+                &mut infos,
+                visible_columns,
+                table_width,
+                &max_content_widths,
+            );
         }
     }
 

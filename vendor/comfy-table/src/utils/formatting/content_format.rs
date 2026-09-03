@@ -1,3 +1,5 @@
+use std::iter::repeat_n;
+
 #[cfg(feature = "tty")]
 use crossterm::style::{Stylize, style};
 use unicode_segmentation::UnicodeSegmentation;
@@ -96,7 +98,7 @@ pub fn format_row(
 
         // Remove all unneeded lines of this cell, if the row's height is capped to a certain
         // amount of lines and there're too many lines in this cell.
-        // This then truncates and inserts a '...' string at the end of the last line to indicate
+        // This then truncates and inserts a '…' string at the end of the last line to indicate
         // that the cell has been truncated.
         if let Some(lines) = row.max_height
             && cell_lines.len() > lines
@@ -105,6 +107,7 @@ pub fn format_row(
             let _ = cell_lines.split_off(lines);
 
             // Directly access the last line.
+            // `max_height` is guaranteed to be `>= 1`, so this cannot underflow.
             let last_line = cell_lines
                 .get_mut(lines - 1)
                 .expect("We know it's this long.");
@@ -118,7 +121,15 @@ pub fn format_row(
             }
 
             let max_width: usize = info.content_width.into();
-            let indicator_width = table.truncation_indicator.width();
+
+            // The indicator itself might be wider than the column, in which case we opt to simply
+            // not show it. Otherwise, we would overflow the column and break the table layout.
+            let indicator = if table.truncation_indicator.width() > max_width {
+                ""
+            } else {
+                table.truncation_indicator.as_str()
+            };
+            let indicator_width = indicator.width();
 
             let mut truncate_at = 0;
             // Start the accumulated_width with the indicator_width, which is the minimum width
@@ -205,13 +216,13 @@ pub fn format_row(
             }
 
             // Push the truncation indicator.
-            last_line.push_str(&table.truncation_indicator);
+            last_line.push_str(indicator);
         }
 
         // Iterate over all generated lines of this cell and align them
         let cell_lines = cell_lines
-            .iter()
-            .map(|line| align_line(table, info, cell, line.to_string()));
+            .into_iter()
+            .map(|line| align_line(table, info, cell, line));
 
         temp_row_content.push(cell_lines.collect());
     }
@@ -236,9 +247,10 @@ pub fn format_row(
 
     // Each column should have `max_lines` for this row.
     // Cells content with fewer lines will simply be topped up with empty strings.
-    for index in 0..max_lines {
+    let mut cell_line_iters: Vec<_> = temp_row_content.into_iter().map(Vec::into_iter).collect();
+    for _ in 0..max_lines {
         let mut line = Vec::with_capacity(display_infos.len());
-        let mut cell_iter = temp_row_content.iter();
+        let mut cell_iter = cell_line_iters.iter_mut();
 
         for info in display_infos.iter() {
             if info.is_hidden {
@@ -246,9 +258,9 @@ pub fn format_row(
             }
 
             let cell = cell_iter.next().unwrap();
-            match cell.get(index) {
+            match cell.next() {
                 // The current cell has content for this line. Append it
-                Some(content) => line.push(content.clone()),
+                Some(content) => line.push(content),
                 // The current cell doesn't have content for this line.
                 // Fill with a placeholder (empty spaces)
                 None => line.push(" ".repeat(info.width().into())),
@@ -288,21 +300,24 @@ fn align_line(table: &Table, info: &ColumnDisplayInfo, cell: &Cell, mut line: St
     };
 
     // Apply left/right/both side padding depending on the alignment of the column
-    match alignment {
-        CellAlignment::Left => {
-            line += &" ".repeat(remaining);
-        }
-        CellAlignment::Right => {
-            line = " ".repeat(remaining) + &line;
-        }
-        CellAlignment::Center => {
-            let left_padding = (remaining as f32 / 2f32).ceil() as usize;
-            let right_padding = (remaining as f32 / 2f32).floor() as usize;
-            line = " ".repeat(left_padding) + &line + &" ".repeat(right_padding);
-        }
-    }
+    let (left_pad, right_pad) = match alignment {
+        CellAlignment::Left => (0, remaining),
+        CellAlignment::Right => (remaining, 0),
+        CellAlignment::Center => (remaining.div_ceil(2), remaining / 2),
+    };
 
-    line = pad_line(&line, info);
+    // Now that we got all the formatting info, build the final line with a
+    // single string allocation.
+    //
+    // `column padding + alignment spaces + content + alignment spaces + column padding`
+    let left_spaces = usize::from(info.padding.0) + left_pad;
+    let right_spaces = right_pad + usize::from(info.padding.1);
+    let mut padded_line = String::with_capacity(left_spaces + line.len() + right_spaces);
+
+    padded_line.extend(repeat_n(' ', left_spaces));
+    padded_line.push_str(&line);
+    padded_line.extend(repeat_n(' ', right_spaces));
+    line = padded_line;
 
     #[cfg(feature = "tty")]
     if table.should_style() && !table.style_text_only {
@@ -310,17 +325,6 @@ fn align_line(table: &Table, info: &ColumnDisplayInfo, cell: &Cell, mut line: St
     }
 
     line
-}
-
-/// Apply the column's padding to this line
-fn pad_line(line: &str, info: &ColumnDisplayInfo) -> String {
-    let mut padded_line = String::new();
-
-    padded_line += &" ".repeat(info.padding.0.into());
-    padded_line += line;
-    padded_line += &" ".repeat(info.padding.1.into());
-
-    padded_line
 }
 
 #[cfg(feature = "tty")]

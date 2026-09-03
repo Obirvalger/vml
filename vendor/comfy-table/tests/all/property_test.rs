@@ -1,5 +1,6 @@
 use ::proptest::prelude::*;
 use comfy_table::{ColumnConstraint::*, Width::*, *};
+use unicode_width::UnicodeWidthStr;
 
 /// Pick any of the three existing ContentArrangement types for the table.
 fn content_arrangement() -> impl Strategy<Value = ContentArrangement> {
@@ -32,6 +33,39 @@ fn column_constraint() -> impl Strategy<Value = Option<ColumnConstraint>> {
         (0u16..200u16).prop_map(|percentage| { Some(Absolute(Percentage(percentage))) }),
         (0u16..200u16).prop_map(|percentage| { Some(LowerBoundary(Percentage(percentage))) }),
         (0u16..200u16).prop_map(|percentage| { Some(UpperBoundary(Percentage(percentage))) }),
+        (any::<u16>(), any::<u16>()).prop_map(|(a, b)| {
+            Some(Boundaries {
+                lower: Fixed(a.min(b)),
+                upper: Fixed(a.max(b)),
+            })
+        }),
+        (0u16..200u16, 0u16..200u16).prop_map(|(a, b)| {
+            Some(Boundaries {
+                lower: Percentage(a.min(b)),
+                upper: Percentage(a.max(b)),
+            })
+        }),
+    ]
+}
+
+/// Cell content made up of ASCII and some narrow (1-width) multi-byte characters.
+/// These must never affect table alignment.
+const NARROW_CONTENT: &str = "[A-Za-z_À-öø-ÿЀ-ӿ]*";
+
+/// Cell content that additionally contains wide (2-width) characters
+/// (CJK ideographs, emojis).
+/// Columns with such characters may overflow by one char in narrow-column edge-cases.
+/// See [wide_columns] for more info.
+const WIDE_CONTENT: &str = "[A-Za-z_À-öø-ÿ一-鿕😀-🙏]*";
+
+/// Generate random cell content.
+///
+/// The `|` char, newlines and control chars are explicitly not included.
+/// Those would break the delimiter-based column checks of the test suite.
+fn cell_content() -> impl Strategy<Value = String> {
+    prop_oneof![
+        3 => NARROW_CONTENT,
+        1 => WIDE_CONTENT,
     ]
 }
 
@@ -55,13 +89,15 @@ prop_compose! {
 }
 
 /// Returns all data needed to build the final table.
-/// 1. A matrix of cells Row[Column[Cell]].
-/// 2. Constraints for all columns.
-/// 3. The alignment for each cell.
-/// 3. The alignment for each column.
+/// 1. An optional header row.
+/// 2. A matrix of cells Row[Column[Cell]].
+/// 3. Constraints for all columns.
+/// 4. The alignment for each cell.
+/// 5. The alignment for each column.
 #[allow(clippy::type_complexity)]
 fn columns_and_rows() -> impl Strategy<
     Value = (
+        Option<Vec<String>>,
         Vec<Vec<String>>,
         Vec<Option<ColumnConstraint>>,
         Vec<Option<CellAlignment>>,
@@ -76,18 +112,16 @@ fn columns_and_rows() -> impl Strategy<
             for _j in 0..column_count {
                 cell_alignments.push(cell_alignment());
             }
-            // Add a strategy that creates random cell content with a length of 0 to column_count
-            //
-            // UTF-8 characters completely break table alignment in edge-case situations (e.g. 1
-            // space columns). UTF-8 characters can be multiple characters wide, which
-            // conflicts with the 1 space column fallback, as well as fixed-width-,
-            // percental- and max-column-constraints. As a result, we cannot check this
-            // with proptest, as this is inherently broken.
+            // Add a strategy that creates random cell content for 0 to column_count cells.
             rows.push(::proptest::collection::vec(
-                "[A-Za-z_]*",
-                0..column_count as usize,
+                cell_content(),
+                0..=column_count as usize,
             ));
         }
+        let header = ::proptest::option::of(::proptest::collection::vec(
+            cell_content(),
+            0..=column_count as usize,
+        ));
         let mut constraints = Vec::new();
         let mut column_alignments = Vec::new();
         for _i in 0..column_count {
@@ -95,11 +129,17 @@ fn columns_and_rows() -> impl Strategy<
             column_alignments.push(cell_alignment());
         }
 
-        (rows, constraints, cell_alignments, column_alignments)
+        (
+            header,
+            rows,
+            constraints,
+            cell_alignments,
+            column_alignments,
+        )
     })
 }
 
-/// We test the Row::max_height with a few values.
+/// The overall table width in the range of 0 to 1000.
 fn table_width() -> impl Strategy<Value = u16> {
     0..1000u16
 }
@@ -110,13 +150,13 @@ prop_compose! {
     fn table()
         (arrangement in content_arrangement(),
         max_height in max_height(),
-        (rows, constraints, cell_alignments, column_alignments) in columns_and_rows()) -> Table {
+        (header, rows, constraints, cell_alignments, column_alignments) in columns_and_rows()) -> Table {
 
         let mut table = Table::new();
-        if let Some(height) = max_height {
-            for row in table.row_iter_mut() {
-                row.max_height(height);
-            }
+
+        // Set an optional header row.
+        if let Some(header) = header {
+            table.set_header(header);
         }
 
         let mut cell_alignments = cell_alignments.iter();
@@ -133,6 +173,14 @@ prop_compose! {
 
             // Add the row to the table
             table.add_row(row);
+        }
+
+        // Set the max_height on all rows.
+        // This has to happen after the rows have been added to the table.
+        if let Some(height) = max_height {
+            for row in table.row_iter_mut() {
+                row.max_height(height);
+            }
         }
 
         for (column_index, column) in table.column_iter_mut().enumerate() {
@@ -157,7 +205,11 @@ prop_compose! {
 
 proptest! {
     #![proptest_config({
-        let mut config = ProptestConfig::with_cases(512);
+        // Allow overrule of testcases to run via PROPTEST_CASES environment variable.
+        let mut config = ProptestConfig::default();
+        if std::env::var("PROPTEST_CASES").is_err() {
+            config.cases = 512;
+        }
         config.max_shrink_iters = 5000;
         config
     })]
@@ -174,18 +226,30 @@ proptest! {
 
         // ----- Table width check ------
 
-        // Get the length of the very first line.
-        // We're lateron going to ensure, that all lines have the same length.
+        // Get the display width of the very first line.
+        // The first line is always a border line, which never contains cell content and
+        // thereby always has the exact arranged table width.
+        // Later on going to ensure, that all lines have this very same width.
         let line_length = if let Some(line) = line_iter.next() {
-            line.trim().len()
+            line.width()
         } else {
             0
         };
 
-        // Make sure all lines have the same length
+        // Wide characters cannot be broken apart to fit into a column with a content width
+        // of 1. Instead they would overflow the column by exactly one char.
+        // Allow one extra char of line width per affected column. See [wide_columns].
+        let max_line_length = line_length + visible_wide_columns(&table);
+
+        // Make sure all lines have the same width.
+        // Lines may only be wider, if wide characters overflow their columns.
         for line in line_iter {
-            if line.len() != line_length {
-                return build_error(&formatted, "Each line of a printed table has to have the same length!");
+            let width = line.width();
+            if width < line_length || width > max_line_length {
+                return build_error(
+                    &formatted,
+                    &format!("Each line of a printed table has to have a width between {line_length} and {max_line_length}!")
+                );
             }
         }
 
@@ -226,6 +290,37 @@ fn build_error(table: &str, context: &str) -> Result<(), TestCaseError> {
     Err(TestCaseError::Fail(
         format!("\n{context}:\n{table}\n").into(),
     ))
+}
+
+/// Determine which columns contain wide (display width 2) characters.
+///
+/// Wide characters cannot be broken apart to fit into a column with a content width of 1.
+/// In that case, comfy-table force-pushes a single character onto the line, which overflows
+/// the column by exactly one char of display width.
+/// Each column containing wide characters may thereby be rendered one char wider than its
+/// allowed width.
+fn wide_columns(table: &Table) -> Vec<bool> {
+    let column_count = table.column_iter().count();
+    let mut wide = vec![false; column_count];
+    for row in table.header().into_iter().chain(table.row_iter()) {
+        for (index, cell) in row.cell_iter().enumerate() {
+            if cell.content().chars().any(|character| {
+                unicode_width::UnicodeWidthChar::width(character).unwrap_or(0) >= 2
+            }) {
+                wide[index] = true;
+            }
+        }
+    }
+    wide
+}
+
+/// The amount of visible columns that contain wide characters. See [wide_columns].
+fn visible_wide_columns(table: &Table) -> usize {
+    table
+        .column_iter()
+        .zip(wide_columns(table))
+        .filter(|(column, wide)| *wide && !column.is_hidden())
+        .count()
 }
 
 /// The user can actually force a table to be longer than the specified `table.width()`
@@ -274,7 +369,7 @@ fn determine_max_table_width(table: &Table) -> u16 {
                         .saturating_add(column.padding_width());
                 }
                 ColumnConstraint::Hidden => {}
-                _ => {
+                ColumnConstraint::UpperBoundary(_) => {
                     // Add the padding and the min-width of `1` for this column
                     constraint_min_width = constraint_min_width
                         .saturating_add(column.padding_width())
@@ -308,13 +403,18 @@ fn enforce_constraints(
         _ => return Ok(()),
     }
 
-    // Extract the constraints for each table
-    // Also remove hidden columns
-    let constraints: Vec<Option<ColumnConstraint>> = table
+    // Extract the constraints for each table, along with the original column index.
+    // Hidden columns aren't rendered, so they're removed.
+    let constraints: Vec<(usize, Option<ColumnConstraint>)> = table
         .column_iter()
-        .map(|col| col.constraint().cloned())
-        .filter(|constraint| !matches!(constraint, Some(ColumnConstraint::Hidden)))
+        .enumerate()
+        .map(|(index, col)| (index, col.constraint().cloned()))
+        .filter(|(_, constraint)| !matches!(constraint, Some(ColumnConstraint::Hidden)))
         .collect();
+
+    // Columns with wide characters may overflow in narrow-column edge-cases.
+    // See [wide_columns].
+    let wide = wide_columns(table);
 
     let line_iter = lines.iter();
 
@@ -335,17 +435,24 @@ fn enforce_constraints(
             .filter(|part| !part.is_empty())
             .collect();
 
-        for (index, (part, constraint)) in line_parts.iter().zip(constraints.iter()).enumerate() {
+        for (part, (index, constraint)) in line_parts.iter().zip(constraints.iter()) {
             let constraint = match constraint {
                 Some(constraint) => constraint,
                 // No constraint, we're good to go.
                 None => continue,
             };
-            // Get the actual length of the part.
-            let actual = part.len();
+            // Get the actual display width of the part.
+            let actual = part.width();
+
+            // A wide character may overflow a column with a content width of 1
+            // (i.e. a total width of 3 with default padding) by exactly one char.
+            // In that case, the rendered part is one char wider than the expected 3 chars.
+            let wide_overflow = |expected: u16| wide[*index] && expected == 3 && actual == 4;
 
             match constraint {
-                ColumnConstraint::Hidden => panic!("This shouldn't happen"),
+                ColumnConstraint::Hidden => {
+                    return build_error(&formatted, "Hidden columns shouldn't be rendered");
+                }
                 // No need to check, if the column can be as wide as the content.
                 ColumnConstraint::ContentWidth => continue,
                 // Absolute width is defined.
@@ -356,7 +463,7 @@ fn enforce_constraints(
                     if expected < 3 {
                         expected = 3;
                     }
-                    if actual != expected.into() {
+                    if actual != usize::from(expected) && !wide_overflow(expected) {
                         return build_error(
                             &formatted,
                             &format!(
@@ -388,7 +495,7 @@ fn enforce_constraints(
                         expected_upper = 3;
                     }
 
-                    if actual > expected_upper.into() {
+                    if actual > usize::from(expected_upper) && !wide_overflow(expected_upper) {
                         return build_error(
                             &formatted,
                             &format!(
@@ -419,7 +526,7 @@ fn enforce_constraints(
                         );
                     }
 
-                    if actual > expected_upper.into() {
+                    if actual > usize::from(expected_upper) && !wide_overflow(expected_upper) {
                         return build_error(
                             &formatted,
                             &format!(
