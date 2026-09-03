@@ -1,19 +1,23 @@
 use crate::builtins::*;
 use crate::child::{CmdChild, CmdChildHandle, CmdChildren, FunChildren};
 use crate::io::{CmdIn, CmdOut};
-use crate::{debug, warn};
 use crate::{CmdResult, FunResult};
+use crate::{debug, warn};
 use faccess::{AccessMode, PathExt};
-use lazy_static::lazy_static;
 use os_pipe::{self, PipeReader, PipeWriter};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::{File, OpenOptions};
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, Result};
+use std::marker::PhantomData;
+use std::mem::take;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::SeqCst;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 
 const CD_CMD: &str = "cd";
@@ -67,47 +71,164 @@ impl CmdEnv {
 
 type FnFun = fn(&mut CmdEnv) -> CmdResult;
 
-lazy_static! {
-    static ref CMD_MAP: Mutex<HashMap<OsString, FnFun>> = {
-        // needs explicit type, or it won't compile
-        let mut m: HashMap<OsString, FnFun> = HashMap::new();
-        m.insert("echo".into(), builtin_echo);
-        m.insert("trace".into(), builtin_trace);
-        m.insert("debug".into(), builtin_debug);
-        m.insert("info".into(), builtin_info);
-        m.insert("warn".into(), builtin_warn);
-        m.insert("error".into(), builtin_error);
-        m.insert("".into(), builtin_empty);
+static CMD_MAP: LazyLock<Mutex<HashMap<OsString, FnFun>>> = LazyLock::new(|| {
+    let mut m: HashMap<OsString, FnFun> = HashMap::new();
+    m.insert("echo".into(), builtin_echo);
+    m.insert("trace".into(), builtin_trace);
+    m.insert("debug".into(), builtin_debug);
+    m.insert("info".into(), builtin_info);
+    m.insert("warn".into(), builtin_warn);
+    m.insert("error".into(), builtin_error);
+    m.insert("".into(), builtin_empty);
 
-        Mutex::new(m)
-    };
-}
+    Mutex::new(m)
+});
 
 #[doc(hidden)]
 pub fn register_cmd(cmd: &'static str, func: FnFun) {
     CMD_MAP.lock().unwrap().insert(OsString::from(cmd), func);
 }
 
+/// Whether debug mode is enabled globally.
+/// Can be overridden by the thread-local setting in [`DEBUG_OVERRIDE`].
+static DEBUG_ENABLED: LazyLock<AtomicBool> =
+    LazyLock::new(|| AtomicBool::new(std::env::var("CMD_LIB_DEBUG") == Ok("1".into())));
+
+/// Whether debug mode is enabled globally.
+/// Can be overridden by the thread-local setting in [`PIPEFAIL_OVERRIDE`].
+static PIPEFAIL_ENABLED: LazyLock<AtomicBool> =
+    LazyLock::new(|| AtomicBool::new(std::env::var("CMD_LIB_PIPEFAIL") != Ok("0".into())));
+
 /// Set debug mode or not, false by default.
 ///
-/// Setting environment variable CMD_LIB_DEBUG=0|1 has the same effect
+/// This is **global**, and affects all threads. To set it for the current thread only, use [`ScopedDebug`].
+///
+/// Setting environment variable CMD_LIB_DEBUG=0|1 has the same effect, but the environment variable is only
+/// checked once at an unspecified time, so the only reliable way to do that is when the program is first started.
+///
+/// ## Example
+/// ```console
+/// λ  test_cmd_lib git:(master) ✗ cat src/main.rs
+/// use cmd_lib::*;
+///
+/// #[cmd_lib::main]
+/// fn main() -> CmdResult {
+///     run_cmd!(cat src/main.rs | wc -l)
+/// }
+/// λ  test_cmd_lib git:(master) ✗ RUST_LOG=debug CMD_LIB_DEBUG=1 cargo r
+///     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+///      Running `target/debug/test_cmd_lib`
+/// [DEBUG] Running ["cat" "src/main.rs" | "wc" "-l"] at src/main.rs:5 ...
+/// 6
+/// ```
 pub fn set_debug(enable: bool) {
-    std::env::set_var("CMD_LIB_DEBUG", if enable { "1" } else { "0" });
+    DEBUG_ENABLED.store(enable, SeqCst);
 }
 
 /// Set pipefail or not, true by default.
 ///
-/// Setting environment variable CMD_LIB_PIPEFAIL=0|1 has the same effect
+/// This is **global**, and affects all threads. To set it for the current thread only, use [`ScopedPipefail`].
+///
+/// Setting environment variable CMD_LIB_PIPEFAIL=0|1 has the same effect, but the environment variable is only
+/// checked once at an unspecified time, so the only reliable way to do that is when the program is first started.
 pub fn set_pipefail(enable: bool) {
-    std::env::set_var("CMD_LIB_PIPEFAIL", if enable { "1" } else { "0" });
+    PIPEFAIL_ENABLED.store(enable, SeqCst);
 }
 
 pub(crate) fn debug_enabled() -> bool {
-    std::env::var("CMD_LIB_DEBUG") == Ok("1".into())
+    DEBUG_OVERRIDE
+        .get()
+        .unwrap_or_else(|| DEBUG_ENABLED.load(SeqCst))
 }
 
 pub(crate) fn pipefail_enabled() -> bool {
-    std::env::var("CMD_LIB_PIPEFAIL") != Ok("0".into())
+    PIPEFAIL_OVERRIDE
+        .get()
+        .unwrap_or_else(|| PIPEFAIL_ENABLED.load(SeqCst))
+}
+
+thread_local! {
+    /// Whether debug mode is enabled in the current thread.
+    /// None means to use the global setting in [`DEBUG_ENABLED`].
+    static DEBUG_OVERRIDE: Cell<Option<bool>> = const { Cell::new(None) };
+
+    /// Whether pipefail mode is enabled in the current thread.
+    /// None means to use the global setting in [`PIPEFAIL_ENABLED`].
+    static PIPEFAIL_OVERRIDE: Cell<Option<bool>> = const { Cell::new(None) };
+}
+
+/// Overrides the debug mode in the current thread, while the value is in scope.
+///
+/// Each override restores the previous value when dropped, so they can be nested.
+/// Since overrides are thread-local, these values can’t be sent across threads.
+///
+/// ```
+/// # use cmd_lib::{ScopedDebug, run_cmd};
+/// // Must give the variable a name, not just `_`
+/// let _debug = ScopedDebug::set(true);
+/// run_cmd!(echo hello world)?; // Will have debug on
+/// # Ok::<(), std::io::Error>(())
+/// ```
+// PhantomData field is equivalent to `impl !Send for Self {}`
+pub struct ScopedDebug(Option<bool>, PhantomData<*const ()>);
+
+/// Overrides the pipefail mode in the current thread, while the value is in scope.
+///
+/// Each override restores the previous value when dropped, so they can be nested.
+/// Since overrides are thread-local, these values can’t be sent across threads.
+// PhantomData field is equivalent to `impl !Send for Self {}`
+///
+/// ```
+/// # use cmd_lib::{ScopedPipefail, run_cmd};
+/// // Must give the variable a name, not just `_`
+/// let _debug = ScopedPipefail::set(false);
+/// run_cmd!(false | true)?; // Will have pipefail off
+/// # Ok::<(), std::io::Error>(())
+/// ```
+pub struct ScopedPipefail(Option<bool>, PhantomData<*const ()>);
+
+impl ScopedDebug {
+    /// ```compile_fail
+    /// let _: Box<dyn Send> = Box::new(cmd_lib::ScopedDebug::set(true));
+    /// ```
+    /// ```compile_fail
+    /// let _: Box<dyn Sync> = Box::new(cmd_lib::ScopedDebug::set(true));
+    /// ```
+    #[doc(hidden)]
+    pub fn test_not_send_not_sync() {}
+
+    pub fn set(enabled: bool) -> Self {
+        let result = Self(DEBUG_OVERRIDE.get(), PhantomData);
+        DEBUG_OVERRIDE.set(Some(enabled));
+        result
+    }
+}
+impl Drop for ScopedDebug {
+    fn drop(&mut self) {
+        DEBUG_OVERRIDE.set(self.0)
+    }
+}
+
+impl ScopedPipefail {
+    /// ```compile_fail
+    /// let _: Box<dyn Send> = Box::new(cmd_lib::ScopedPipefail::set(true));
+    /// ```
+    /// ```compile_fail
+    /// let _: Box<dyn Sync> = Box::new(cmd_lib::ScopedPipefail::set(true));
+    /// ```
+    #[doc(hidden)]
+    pub fn test_not_send_not_sync() {}
+
+    pub fn set(enabled: bool) -> Self {
+        let result = Self(PIPEFAIL_OVERRIDE.get(), PhantomData);
+        PIPEFAIL_OVERRIDE.set(Some(enabled));
+        result
+    }
+}
+impl Drop for ScopedPipefail {
+    fn drop(&mut self) {
+        PIPEFAIL_OVERRIDE.set(self.0)
+    }
 }
 
 #[doc(hidden)]
@@ -125,10 +246,10 @@ impl GroupCmds {
 
     pub fn run_cmd(&mut self) -> CmdResult {
         for cmds in self.group_cmds.iter_mut() {
-            if let Err(e) = cmds.run_cmd(&mut self.current_dir) {
-                if !cmds.ignore_error {
-                    return Err(e);
-                }
+            if let Err(e) = cmds.run_cmd(&mut self.current_dir)
+                && !cmds.ignore_error
+            {
+                return Err(e);
             }
         }
         Ok(())
@@ -160,7 +281,7 @@ impl GroupCmds {
 #[doc(hidden)]
 #[derive(Default)]
 pub struct Cmds {
-    cmds: Vec<Option<Cmd>>,
+    cmds: Vec<Cmd>,
     full_cmds: String,
     ignore_error: bool,
     file: String,
@@ -188,7 +309,7 @@ impl Cmds {
                 );
             }
         }
-        self.cmds.push(Some(cmd));
+        self.cmds.push(cmd);
         self
     }
 
@@ -204,8 +325,7 @@ impl Cmds {
         let mut children: Vec<CmdChild> = Vec::new();
         let len = self.cmds.len();
         let mut prev_pipe_in = None;
-        for (i, cmd_opt) in self.cmds.iter_mut().enumerate() {
-            let mut cmd = cmd_opt.take().unwrap();
+        for (i, mut cmd) in take(&mut self.cmds).into_iter().enumerate() {
             if i != len - 1 {
                 // not the last, update redirects
                 let (pipe_reader, pipe_writer) =
@@ -218,7 +338,7 @@ impl Cmds {
                     .map_err(|e| new_cmd_io_error(&e, &full_cmds, &file, line))?;
             }
             let child = cmd
-                .spawn(current_dir, with_output)
+                .spawn(full_cmds.clone(), current_dir, with_output)
                 .map_err(|e| new_cmd_io_error(&e, &full_cmds, &file, line))?;
             children.push(child);
         }
@@ -329,9 +449,10 @@ impl Cmd {
 
         let arg_str = arg.to_string_lossy().to_string();
         if arg_str != IGNORE_CMD && !self.args.iter().any(|cmd| *cmd != IGNORE_CMD) {
-            let v: Vec<&str> = arg_str.split('=').collect();
-            if v.len() == 2 && v[0].chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                self.vars.insert(v[0].into(), v[1].into());
+            if let Some((key, value)) = arg_str.split_once('=')
+                && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                self.vars.insert(key.into(), value.into());
                 return self;
             }
             self.in_cmd_map = CMD_MAP.lock().unwrap().contains_key(arg);
@@ -392,20 +513,24 @@ impl Cmd {
         (self.args.len() > args.len(), self)
     }
 
-    fn spawn(mut self, current_dir: &mut PathBuf, with_output: bool) -> Result<CmdChild> {
+    fn spawn(
+        mut self,
+        full_cmds: String,
+        current_dir: &mut PathBuf,
+        with_output: bool,
+    ) -> Result<CmdChild> {
         let arg0 = self.arg0();
         if arg0 == CD_CMD {
             self.run_cd_cmd(current_dir, &self.file, self.line)?;
             Ok(CmdChild::new(
                 CmdChildHandle::SyncFn,
-                self.cmd_str(),
+                full_cmds,
                 self.file,
                 self.line,
                 self.stdout_logging,
                 self.stderr_logging,
             ))
         } else if self.in_cmd_map {
-            let cmd_str = self.cmd_str();
             let pipe_out = self.stdout_logging.is_none();
             let mut env = CmdEnv {
                 args: self
@@ -441,8 +566,8 @@ impl Cmd {
             if pipe_out || with_output {
                 let handle = thread::Builder::new().spawn(move || internal_cmd(&mut env))?;
                 Ok(CmdChild::new(
-                    CmdChildHandle::Thread(handle),
-                    cmd_str,
+                    CmdChildHandle::Thread(Some(handle)),
+                    full_cmds,
                     self.file,
                     self.line,
                     self.stdout_logging,
@@ -452,7 +577,7 @@ impl Cmd {
                 internal_cmd(&mut env)?;
                 Ok(CmdChild::new(
                     CmdChildHandle::SyncFn,
-                    cmd_str,
+                    full_cmds,
                     self.file,
                     self.line,
                     self.stdout_logging,
@@ -486,7 +611,7 @@ impl Cmd {
             let child = cmd.spawn()?;
             Ok(CmdChild::new(
                 CmdChildHandle::Proc(child),
-                self.cmd_str(),
+                full_cmds,
                 self.file,
                 self.line,
                 self.stdout_logging,
@@ -497,19 +622,16 @@ impl Cmd {
 
     fn run_cd_cmd(&self, current_dir: &mut PathBuf, file: &str, line: u32) -> CmdResult {
         if self.args.len() == 1 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "{CD_CMD}: missing directory at {file}:{line}",
-            ));
+            return Err(Error::other("{CD_CMD}: missing directory at {file}:{line}"));
         } else if self.args.len() > 2 {
             let err_msg = format!("{CD_CMD}: too many arguments at {file}:{line}");
-            return Err(Error::new(ErrorKind::Other, err_msg));
+            return Err(Error::other(err_msg));
         }
 
         let dir = current_dir.join(&self.args[1]);
         if !dir.is_dir() {
             let err_msg = format!("{CD_CMD}: No such file or directory at {file}:{line}");
-            return Err(Error::new(ErrorKind::Other, err_msg));
+            return Err(Error::other(err_msg));
         }
 
         dir.access(AccessMode::EXECUTE)?;
@@ -657,11 +779,13 @@ mod tests {
     #[test]
     fn test_run_piped_cmds() {
         let mut current_dir = PathBuf::new();
-        assert!(Cmds::default()
-            .pipe(Cmd::default().add_args(["echo", "rust"]))
-            .pipe(Cmd::default().add_args(["wc"]))
-            .run_cmd(&mut current_dir)
-            .is_ok());
+        assert!(
+            Cmds::default()
+                .pipe(Cmd::default().add_args(["echo", "rust"]))
+                .pipe(Cmd::default().add_args(["wc"]))
+                .run_cmd(&mut current_dir)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -692,10 +816,12 @@ mod tests {
         let tmp_file = "/tmp/file_echo_rust";
         let mut write_cmd = Cmd::default().add_args(["echo", "rust"]);
         write_cmd = write_cmd.add_redirect(Redirect::StdoutToFile(PathBuf::from(tmp_file), false));
-        assert!(Cmds::default()
-            .pipe(write_cmd)
-            .run_cmd(&mut current_dir)
-            .is_ok());
+        assert!(
+            Cmds::default()
+                .pipe(write_cmd)
+                .run_cmd(&mut current_dir)
+                .is_ok()
+        );
 
         let read_cmd = Cmd::default().add_args(["cat", tmp_file]);
         assert_eq!(
@@ -707,9 +833,11 @@ mod tests {
         );
 
         let cleanup_cmd = Cmd::default().add_args(["rm", tmp_file]);
-        assert!(Cmds::default()
-            .pipe(cleanup_cmd)
-            .run_cmd(&mut current_dir)
-            .is_ok());
+        assert!(
+            Cmds::default()
+                .pipe(cleanup_cmd)
+                .run_cmd(&mut current_dir)
+                .is_ok()
+        );
     }
 }

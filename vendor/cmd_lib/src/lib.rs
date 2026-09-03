@@ -30,56 +30,6 @@
 //! [examples/rust_cookbook.rs](https://github.com/rust-shell-script/rust_cmd_lib/blob/master/examples/rust_cookbook.rs).
 //! Since they are rust code, you can always rewrite them in rust natively in the future, if necessary without spawning external commands.
 //!
-//! ## What this library looks like
-//!
-//! To get a first impression, here is an example from
-//! [examples/dd_test.rs](https://github.com/rust-shell-script/rust_cmd_lib/blob/master/examples/dd_test.rs):
-//!
-//! ```no_run
-//! # use byte_unit::Byte;
-//! # use cmd_lib::*;
-//! # use rayon::prelude::*;
-//! # use std::time::Instant;
-//! # const DATA_SIZE: u64 = 10 * 1024 * 1024 * 1024; // 10GB data
-//! # let mut file = String::new();
-//! # let mut block_size: u64 = 4096;
-//! # let mut thread_num: u64 = 1;
-//! run_cmd! (
-//!     info "Dropping caches at first";
-//!     sudo bash -c "echo 3 > /proc/sys/vm/drop_caches";
-//!     info "Running with thread_num: $thread_num, block_size: $block_size";
-//! )?;
-//! let cnt = DATA_SIZE / thread_num / block_size;
-//! let now = Instant::now();
-//! (0..thread_num).into_par_iter().for_each(|i| {
-//!     let off = cnt * i;
-//!     let bandwidth = run_fun!(
-//!         sudo bash -c "dd if=$file of=/dev/null bs=$block_size skip=$off count=$cnt 2>&1"
-//!         | awk r#"/copied/{print $(NF-1) " " $NF}"#
-//!     )
-//!     .unwrap_or_else(|_| cmd_die!("thread $i failed"));
-//!     info!("thread {i} bandwidth: {bandwidth}");
-//! });
-//! let total_bandwidth = Byte::from_bytes((DATA_SIZE / now.elapsed().as_secs()) as u128).get_appropriate_unit(true);
-//! info!("Total bandwidth: {total_bandwidth}/s");
-//! # Ok::<(), std::io::Error>(())
-//! ```
-//!
-//! Output will be like this:
-//!
-//! ```console
-//! ➜  rust_cmd_lib git:(master) ✗ cargo run --example dd_test -- -b 4096 -f /dev/nvme0n1 -t 4
-//!     Finished dev [unoptimized + debuginfo] target(s) in 0.04s
-//!      Running `target/debug/examples/dd_test -b 4096 -f /dev/nvme0n1 -t 4`
-//! [INFO ] Dropping caches at first
-//! [INFO ] Running with thread_num: 4, block_size: 4096
-//! [INFO ] thread 3 bandwidth: 317 MB/s
-//! [INFO ] thread 1 bandwidth: 289 MB/s
-//! [INFO ] thread 0 bandwidth: 281 MB/s
-//! [INFO ] thread 2 bandwidth: 279 MB/s
-//! [INFO ] Total bandwidth: 1.11 GiB/s
-//! ```
-//!
 //! ## What this library provides
 //!
 //! ### Macros to run external commands
@@ -96,7 +46,7 @@
 //! run_cmd!(du -ah $dir | sort -hr | head -n 10)?;
 //!
 //! // or a group of commands
-//! // if any command fails, just return Err(...)
+//! // if any command fails, just return Err(...), which is similar to bash's `set -euo pipefail`
 //! let file = "/tmp/f";
 //! let keyword = "rust";
 //! run_cmd! {
@@ -112,14 +62,10 @@
 //!
 //! - [`run_fun!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.run_fun.html) -> [`FunResult`](https://docs.rs/cmd_lib/latest/cmd_lib/type.FunResult.html)
 //!
-//! ```
-//! # use cmd_lib::run_fun;
-//! let version = run_fun!(rustc --version)?;
-//! eprintln!("Your rust version is {}", version);
-//!
-//! // with pipes
-//! let n = run_fun!(echo "the quick brown fox jumped over the lazy dog" | wc -w)?;
-//! eprintln!("There are {} words in above sentence", n);
+//! ```no_run
+//! # use cmd_lib::{info, run_fun};
+//! let version = run_fun!(rustc --version | awk r"{print $2}")?;
+//! info!("Your rust version is {version}");
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
@@ -293,7 +239,7 @@
 //! ### Macro to register your own commands
 //! Declare your function with the right signature, and register it with [`use_custom_cmd!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.use_custom_cmd.html) macro:
 //!
-//! ```
+//! ```no_run
 //! # use cmd_lib::*;
 //! # use std::io::Write;
 //! fn my_cmd(env: &mut CmdEnv) -> CmdResult {
@@ -317,7 +263,7 @@
 //! - [`tls_init!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_init.html) to define thread local global variable
 //! - [`tls_get!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_get.html) to get the value
 //! - [`tls_set!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_set.html) to set the value
-//! ```
+//! ```no_run
 //! # use cmd_lib::{ tls_init, tls_get, tls_set };
 //! tls_init!(DELAY, f64, 1.0);
 //! const DELAY_FACTOR: f64 = 0.8;
@@ -328,17 +274,20 @@
 //!
 //! ## Other Notes
 //!
+//! ### Minimum supported Rust version
+//!
+//! cmd_lib(2.0)'s MSRV is 1.88.
+//!
 //! ### Environment Variables
 //!
 //! You can use [std::env::var](https://doc.rust-lang.org/std/env/fn.var.html) to fetch the environment variable
 //! key from the current process. It will report error if the environment variable is not present, and it also
 //! includes other checks to avoid silent failures.
 //!
-//! To set environment variables, you can use [std::env::set_var](https://doc.rust-lang.org/std/env/fn.set_var.html).
-//! There are also other related APIs in the [std::env](https://doc.rust-lang.org/std/env/index.html) module.
+//! To set environment variables in **single-threaded programs**, you can use [std::env::set_var] and
+//! [std::env::remove_var]. While those functions **[must not be called]** if any other threads might be running, you can
+//! always set environment variables for one command at a time, by putting the assignments before the command:
 //!
-//! To set environment variables for the command only, you can put the assignments before the command.
-//! Like this:
 //! ```no_run
 //! # use cmd_lib::run_cmd;
 //! run_cmd!(FOO=100 /tmp/test_run_cmd_lib.sh)?;
@@ -348,7 +297,7 @@
 //! ### Security Notes
 //! Using macros can actually avoid command injection, since we do parsing before variable substitution.
 //! For example, below code is fine even without any quotes:
-//! ```
+//! ```no_run
 //! # use cmd_lib::{run_cmd, CmdResult};
 //! # use std::path::Path;
 //! fn cleanup_uploaded_file(file: &Path) -> CmdResult {
@@ -364,10 +313,23 @@
 //!
 //! ### Thread Safety
 //!
-//! This library tries very hard to not set global states, so parallel `cargo test` can be executed just fine.
-//! The only known APIs not supported in multi-thread environment are the
-//! [`tls_init!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_init.html)/[`tls_get!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_get.html)/[`tls_set!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_set.html) macros, and you should only use them for *thread local* variables.
+//! This library tries very hard to not set global state, so parallel `cargo test` can be executed just fine.
+//! That said, there are some limitations to be aware of:
 //!
+//! - [std::env::set_var] and [std::env::remove_var] **[must not be called]** in a multi-threaded program
+//! - [`tls_init!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_init.html),
+//!   [`tls_get!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_get.html), and
+//!   [`tls_set!`](https://docs.rs/cmd_lib/latest/cmd_lib/macro.tls_set.html) create *thread-local* variables, which means
+//!   each thread will have its own independent version of the variable
+//! - [`set_debug`](https://docs.rs/cmd_lib/latest/cmd_lib/fn.set_debug.html) and
+//!   [`set_pipefail`](https://docs.rs/cmd_lib/latest/cmd_lib/fn.set_pipefail.html) are *global* and affect all threads;
+//!   to change those settings without affecting other threads, use
+//!   [`ScopedDebug`](https://docs.rs/cmd_lib/latest/cmd_lib/struct.ScopedDebug.html) and
+//!   [`ScopedPipefail`](https://docs.rs/cmd_lib/latest/cmd_lib/struct.ScopedPipefail.html)
+//!
+//! [std::env::set_var]: https://doc.rust-lang.org/std/env/fn.set_var.html
+//! [std::env::remove_var]: https://doc.rust-lang.org/std/env/fn.remove_var.html
+//! [must not be called]: https://doc.rust-lang.org/nightly/edition-guide/rust-2024/newly-unsafe-functions.html#stdenvset_var-remove_var
 
 pub use cmd_lib_macros::{
     cmd_die, main, run_cmd, run_fun, spawn, spawn_with_output, use_custom_cmd,
@@ -376,15 +338,19 @@ pub use cmd_lib_macros::{
 pub type FunResult = std::io::Result<String>;
 /// Return type for [`run_cmd!()`] macro.
 pub type CmdResult = std::io::Result<()>;
+#[cfg(feature = "build-print")]
+#[doc(hidden)]
+pub use build_print as inner_log;
 pub use child::{CmdChildren, FunChildren};
 pub use io::{CmdIn, CmdOut};
+#[cfg(not(feature = "build-print"))]
 #[doc(hidden)]
 pub use log as inner_log;
 #[doc(hidden)]
 pub use logger::try_init_default_logger;
 #[doc(hidden)]
-pub use process::{register_cmd, AsOsStr, Cmd, CmdString, Cmds, GroupCmds, Redirect};
-pub use process::{set_debug, set_pipefail, CmdEnv};
+pub use process::{AsOsStr, Cmd, CmdString, Cmds, GroupCmds, Redirect, register_cmd};
+pub use process::{CmdEnv, ScopedDebug, ScopedPipefail, set_debug, set_pipefail};
 
 mod builtins;
 mod child;

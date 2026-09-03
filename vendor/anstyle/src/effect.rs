@@ -323,8 +323,7 @@ impl core::fmt::Display for EffectsDisplay {
     #[inline]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for index in self.0.index_iter() {
-            let escape = METADATA[index].escape;
-            write!(f, "{escape}")?;
+            f.write_str(METADATA[index].escape)?;
         }
         Ok(())
     }
@@ -386,7 +385,7 @@ mod test {
 
     #[test]
     fn print_size_of() {
-        use std::mem::size_of;
+        use core::mem::size_of;
         dbg!(size_of::<Effects>());
         dbg!(size_of::<EffectsDisplay>());
     }

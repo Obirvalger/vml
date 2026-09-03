@@ -10,7 +10,7 @@ fn table() {
 
     let content = String::from_utf8(content).unwrap();
     let content = codegenrs::rustfmt(&content, None).unwrap();
-    snapbox::assert_eq(file!["table.rs"], content);
+    snapbox::assert_data_eq!(content, file!["table.rs"].raw());
 }
 
 #[allow(clippy::write_literal)]
@@ -36,10 +36,10 @@ pub(crate) const STATE_CHANGES: [[u8; 256]; 16] = ["#
             let (next_state, action) = unpack(*packed);
             if last_entry != Some(packed) {
                 writeln!(file)?;
-                writeln!(file, "        // {:?} {:?}", next_state, action)?;
+                writeln!(file, "        // {next_state:?} {action:?}")?;
                 write!(file, "        ")?;
             }
-            write!(file, "0x{:0>2x}, ", packed)?;
+            write!(file, "0x{packed:0>2x}, ")?;
             last_entry = Some(packed);
         }
         writeln!(file)?;

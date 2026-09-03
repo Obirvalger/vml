@@ -12,10 +12,10 @@
 //! Currently this library is geared toward use in Rust procedural macros, but
 //! contains some APIs that may be useful more generally.
 //!
-//! - **Data structures** — Syn provides a complete syntax tree that can
-//!   represent any valid Rust source code. The syntax tree is rooted at
-//!   [`syn::File`] which represents a full source file, but there are other
-//!   entry points that may be useful to procedural macros including
+//! - **Data structures** — Syn provides a syntax tree that can represent most
+//!   stable Rust source code and some unstable syntax. The syntax tree is
+//!   rooted at [`syn::File`] which represents a full source file, but there are
+//!   other entry points that may be useful to procedural macros including
 //!   [`syn::Item`], [`syn::Expr`] and [`syn::Type`].
 //!
 //! - **Derives** — Of particular interest to derive macros is
@@ -61,12 +61,16 @@
 //! [`TokenStream`]: proc_macro::TokenStream
 //!
 //! ```toml
-//! [dependencies]
-//! syn = "2.0"
-//! quote = "1.0"
+//! # Cargo.toml
+//! [package]
+//! ...
 //!
 //! [lib]
 //! proc-macro = true
+//!
+//! [dependencies]
+//! syn = "3"
+//! quote = "1"
 //! ```
 //!
 //! ```
@@ -145,11 +149,22 @@
 //! problem.
 //!
 //! ```text
-//! error[E0277]: the trait bound `std::thread::Thread: HeapSize` is not satisfied
-//!  --> src/main.rs:7:5
+//! error[E0277]: the trait bound `Thread: HeapSize` is not satisfied
+//!  --> src/main.rs:9:5
 //!   |
-//! 7 |     bad: std::thread::Thread,
+//! 3 | #[derive(HeapSize)]
+//!   |          -------- required by a bound introduced by this call
+//! ...
+//! 9 |     bad: std::thread::Thread,
 //!   |     ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `HeapSize` is not implemented for `Thread`
+//!   |
+//!   = help: the following other types implement trait `HeapSize`:
+//!             &'a T
+//!             Box<T>
+//!             Demo<'a, T>
+//!             String
+//!             [T]
+//!             u8
 //! ```
 //!
 //! <br>
@@ -207,7 +222,7 @@
 //!
 //! When developing a procedural macro it can be helpful to look at what the
 //! generated code looks like. Use `cargo rustc -- -Zunstable-options
-//! --pretty=expanded` or the [`cargo expand`] subcommand.
+//! -Zunpretty=expanded` or the [`cargo expand`] subcommand.
 //!
 //! [`cargo expand`]: https://github.com/dtolnay/cargo-expand
 //!
@@ -247,10 +262,110 @@
 //!   types.
 //! - **`proc-macro`** *(enabled by default)* — Runtime dependency on the
 //!   dynamic library libproc_macro from rustc toolchain.
+//!
+//! <br>
+//!
+//! # Compatibility notes
+//!
+//! Syn is able to accommodate most kinds of Rust grammar changes without a new
+//! major release through the following mechanisms.
+//!
+//! #### Modifiers
+//!
+//! Syntax tree structs which are expected to grow over the course of future
+//! releases of the Rust language, such as [`ItemTrait`], contain a `modifiers`
+//! field of one of several "Modifiers" types, in that case [`TraitModifiers`].
+//!
+//! All modifiers structs have the following commonalities:
+//!
+//! - Type name ending with "Modifiers".
+//!
+//! - Implements [`Default`]. The default value is guaranteed to comprise no
+//!   tokens.
+//!
+//! - Non-exhaustive. Can only be instantiated by Syn's parser or by creating
+//!   and then mutating an empty default value.
+//!
+//! - Does not implement [`Parse`][parse::Parse]. When parsing, they are parsed
+//!   by the enclosing syntax tree node.
+//!
+//! - Does not implement [`ToTokens`][quote::ToTokens]. In some cases the syntax
+//!   that might be held in modifiers in the future is not necessarily
+//!   contiguous tokens.
+//!
+//! - Provides `.require_empty() -> Result<()>` which returns a meaningfully
+//!   spanned error if the modifiers are different from the empty default. This
+//!   enables a caller to reject syntax it does not recognize without knowing
+//!   what that syntax may be.
+//!
+//! Across major versions, fields may be promoted out of a "Modifiers" struct
+//! into the enclosing syntax tree node(s), typically for syntax that has
+//! already been incorporated into a stable release of Rust or is deemed
+//! sufficiently on track for stabilization.
+//!
+//! #### Verbatim variants
+//!
+//! Syntax tree enums which are expected to grow over the course of future
+//! releases of the Rust language are declared non-exhaustive and may contain a
+//! variant named `Verbatim` that holds [`TokenStream`]. For example
+//! [`Expr::Verbatim`].
+//!
+//! Unstable language syntax for which a dedicated syntax tree node does not yet
+//! exist will get parsed to `Verbatim`, thus allowing unstable syntax to
+//! round-trip through parsing and printing of a syntax tree. For example you
+//! might parse token input to [`ItemTrait`] (a trait definition) in order to
+//! read or modify its method signatures, or insert associated types, or insert
+//! default function bodies. All of this would work even if there is some
+//! `Expr::Verbatim` syntax somewhere in one of the function bodies in the macro
+//! input.
+//!
+//! Verbatim variants are not intended to be constructed other than by Syn's
+//! parser. Do not rely on passing one containing arbitrary tokens through Syn's
+//! `ToTokens` implementations or through any other library, as it may panic or
+//! otherwise misbehave, such as failing to accurately parenthesize
+//! subexpressions to preserve precedence.
+//!
+//! It is important not to write code that expects Syn's parser to continue to
+//! produce `Verbatim` when parsing some particular syntax construct, as that
+//! behavior changes across patch releases of Syn. Patch releases can promote
+//! something that used to be parsed as `Verbatim` into a new dedicated syntax
+//! tree node. Verbatim variants are specifically only for round-tripping code
+//! not acted on by the caller.
+//!
+//! #### Non-exhaustive enums
+//!
+//! Some enums in the syntax tree are declared #\[non_exhaustive\] and cannot
+//! be pattern-matched using an exhaustive match; a default case (`_ => ...`) is
+//! required. New variants of these enums will be added over time corresponding
+//! to new Rust syntax.
+//!
+//! For testing the exhaustiveness of a match on such an enum in downstream
+//! code, it is recommended to use the following idiom.
+//!
+//! ```
+//! # use syn::Expr;
+//! #
+//! # fn example(expr: Expr) {
+//! match expr {
+//!     #![cfg_attr(test, deny(non_exhaustive_omitted_patterns))]
+//!
+//!     Expr::Array(expr) => { /*...*/ }
+//!     Expr::Assign(expr) => { /*...*/ }
+#![cfg_attr(not(doctest), doc = "     ...")]
+//!     Expr::Yield(expr) => { /*...*/ }
+//!
+//!     _ => { /* some sane fallback */ }
+//! }
+//! # }
+//! ```
+//!
+//! This way you will be notified by a test failure when a variant is added, so
+//! that you can add code to handle it, but your library will continue to
+//! compile and work for downstream users in the interim.
 
-// Syn types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/syn/2.0.72")]
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![no_std]
+#![doc(html_root_url = "https://docs.rs/syn/3.0.4")]
+#![cfg_attr(docsrs, feature(doc_cfg), doc(auto_cfg = false))]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(non_camel_case_types)]
 #![cfg_attr(not(check_cfg), allow(unexpected_cfgs))]
@@ -264,8 +379,11 @@
     clippy::derivable_impls,
     clippy::diverging_sub_expression,
     clippy::doc_markdown,
+    clippy::elidable_lifetime_names,
+    clippy::enum_glob_use,
     clippy::expl_impl_clone_on_copy,
     clippy::explicit_auto_deref,
+    clippy::fn_params_excessive_bools,
     clippy::if_not_else,
     clippy::inherent_to_string,
     clippy::into_iter_without_iter,
@@ -276,7 +394,6 @@
     clippy::manual_let_else,
     clippy::manual_map,
     clippy::match_like_matches_macro,
-    clippy::match_on_vec_items,
     clippy::match_same_arms,
     clippy::match_wildcard_for_single_variants, // clippy bug: https://github.com/rust-lang/rust-clippy/issues/6984
     clippy::missing_errors_doc,
@@ -284,11 +401,13 @@
     clippy::module_name_repetitions,
     clippy::must_use_candidate,
     clippy::needless_doctest_main,
+    clippy::needless_lifetimes,
     clippy::needless_pass_by_value,
     clippy::needless_update,
     clippy::never_loop,
     clippy::range_plus_one,
     clippy::redundant_else,
+    clippy::ref_option,
     clippy::return_self_not_must_use,
     clippy::similar_names,
     clippy::single_match_else,
@@ -296,6 +415,7 @@
     clippy::too_many_arguments,
     clippy::too_many_lines,
     clippy::trivially_copy_pass_by_ref,
+    clippy::type_complexity,
     clippy::unconditional_recursion, // https://github.com/rust-lang/rust-clippy/issues/12133
     clippy::uninhabited_references,
     clippy::uninlined_format_args,
@@ -304,6 +424,12 @@
     clippy::used_underscore_binding,
     clippy::wildcard_imports,
 )]
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
+
+extern crate alloc;
+extern crate std;
+
+extern crate self as syn;
 
 #[cfg(feature = "proc-macro")]
 extern crate proc_macro;
@@ -344,7 +470,7 @@ mod custom_punctuation;
 mod data;
 #[cfg(any(feature = "full", feature = "derive"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "full", feature = "derive"))))]
-pub use crate::data::{Field, Fields, FieldsNamed, FieldsUnnamed, Variant};
+pub use crate::data::{Field, FieldModifiers, Fields, FieldsNamed, FieldsUnnamed, Variant};
 
 #[cfg(any(feature = "full", feature = "derive"))]
 mod derive;
@@ -361,7 +487,7 @@ pub use crate::error::{Error, Result};
 mod expr;
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
-pub use crate::expr::{Arm, Label, RangeLimits};
+pub use crate::expr::{Arm, BlockModifiers, ClosureModifiers, Label, RangeLimits};
 #[cfg(any(feature = "full", feature = "derive"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "full", feature = "derive"))))]
 pub use crate::expr::{
@@ -373,19 +499,17 @@ pub use crate::expr::{
 pub use crate::expr::{
     ExprArray, ExprAssign, ExprAsync, ExprAwait, ExprBlock, ExprBreak, ExprClosure, ExprConst,
     ExprContinue, ExprForLoop, ExprGroup, ExprIf, ExprInfer, ExprLet, ExprLoop, ExprMatch,
-    ExprRange, ExprRepeat, ExprReturn, ExprTry, ExprTryBlock, ExprTuple, ExprUnsafe, ExprWhile,
-    ExprYield,
+    ExprRange, ExprRawAddr, ExprRepeat, ExprReturn, ExprTry, ExprTryBlock, ExprTuple, ExprUnsafe,
+    ExprWhile, ExprYield,
 };
 
-#[cfg(feature = "parsing")]
-#[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
 pub mod ext;
 
 #[cfg(feature = "full")]
 mod file;
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
-pub use crate::file::File;
+pub use crate::file::{File, Frontmatter};
 
 #[cfg(all(any(feature = "full", feature = "derive"), feature = "printing"))]
 mod fixup;
@@ -396,9 +520,12 @@ mod generics;
 #[cfg_attr(docsrs, doc(cfg(any(feature = "full", feature = "derive"))))]
 pub use crate::generics::{
     BoundLifetimes, ConstParam, GenericParam, Generics, LifetimeParam, PredicateLifetime,
-    PredicateType, TraitBound, TraitBoundModifier, TypeParam, TypeParamBound, WhereClause,
+    PredicateType, TraitBound, TraitBoundModifiers, TypeParam, TypeParamBound, WhereClause,
     WherePredicate,
 };
+#[cfg(feature = "full")]
+#[cfg_attr(docsrs, doc(cfg(feature = "full")))]
+pub use crate::generics::{CapturedParam, PreciseCapture};
 #[cfg(all(any(feature = "full", feature = "derive"), feature = "printing"))]
 #[cfg_attr(
     docsrs,
@@ -415,12 +542,14 @@ mod item;
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
 pub use crate::item::{
-    FnArg, ForeignItem, ForeignItemFn, ForeignItemMacro, ForeignItemStatic, ForeignItemType,
-    ImplItem, ImplItemConst, ImplItemFn, ImplItemMacro, ImplItemType, ImplRestriction, Item,
-    ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl, ItemMacro, ItemMod,
-    ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUnion, ItemUse, Receiver,
-    Signature, StaticMutability, TraitItem, TraitItemConst, TraitItemFn, TraitItemMacro,
-    TraitItemType, UseGlob, UseGroup, UseName, UsePath, UseRename, UseTree, Variadic,
+    ConstModifiers, FnArg, FnModifiers, ForeignItem, ForeignItemFn, ForeignItemMacro,
+    ForeignItemStatic, ForeignItemType, ImplItem, ImplItemConst, ImplItemFn, ImplItemMacro,
+    ImplItemType, ImplModifiers, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn,
+    ItemForeignMod, ItemImpl, ItemMacro, ItemMod, ItemStatic, ItemStruct, ItemTrait,
+    ItemTraitAlias, ItemType, ItemUnion, ItemUse, Receiver, ReceiverKind, Safety, Signature,
+    StaticMutability, TraitItem, TraitItemConst, TraitItemFn, TraitItemMacro, TraitItemType,
+    TraitModifiers, TypeModifiers, UseGlob, UseGroup, UseName, UsePath, UseRename, UseTree,
+    Variadic, WhereClausePlacement,
 };
 
 mod lifetime;
@@ -428,8 +557,6 @@ mod lifetime;
 pub use crate::lifetime::Lifetime;
 
 mod lit;
-#[doc(hidden)] // https://github.com/dtolnay/syn/issues/1566
-pub use crate::lit::StrStyle;
 #[doc(inline)]
 pub use crate::lit::{
     Lit, LitBool, LitByte, LitByteStr, LitCStr, LitChar, LitFloat, LitInt, LitStr,
@@ -472,8 +599,9 @@ mod pat;
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
 pub use crate::pat::{
-    FieldPat, Pat, PatConst, PatIdent, PatLit, PatMacro, PatOr, PatParen, PatPath, PatRange,
-    PatReference, PatRest, PatSlice, PatStruct, PatTuple, PatTupleStruct, PatType, PatWild,
+    FieldPat, Pat, PatConst, PatGuard, PatIdent, PatLit, PatMacro, PatOr, PatParen, PatPath,
+    PatRange, PatReference, PatRest, PatSlice, PatStruct, PatTuple, PatTupleStruct, PatType,
+    PatWild,
 };
 
 #[cfg(any(feature = "full", feature = "derive"))]
@@ -500,9 +628,12 @@ pub mod punctuated;
 mod restriction;
 #[cfg(any(feature = "full", feature = "derive"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "full", feature = "derive"))))]
-pub use crate::restriction::{FieldMutability, VisRestricted, Visibility};
+pub use crate::restriction::{VisRestricted, Visibility};
 
 mod sealed;
+
+#[cfg(all(feature = "parsing", feature = "derive", not(feature = "full")))]
+mod scan_expr;
 
 mod span;
 
@@ -514,7 +645,7 @@ pub mod spanned;
 mod stmt;
 #[cfg(feature = "full")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
-pub use crate::stmt::{Block, Local, LocalInit, Stmt, StmtMacro};
+pub use crate::stmt::{Block, Local, LocalInit, LocalModifiers, Stmt, StmtMacro};
 
 mod thread;
 
@@ -526,9 +657,9 @@ mod ty;
 #[cfg(any(feature = "full", feature = "derive"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "full", feature = "derive"))))]
 pub use crate::ty::{
-    Abi, BareFnArg, BareVariadic, ReturnType, Type, TypeArray, TypeBareFn, TypeGroup,
-    TypeImplTrait, TypeInfer, TypeMacro, TypeNever, TypeParen, TypePath, TypePtr, TypeReference,
-    TypeSlice, TypeTraitObject, TypeTuple,
+    Abi, FnPtrVariadic, NamedArg, PointerMutability, ReturnType, Type, TypeArray, TypeFnPtr,
+    TypeGroup, TypeImplTrait, TypeInfer, TypeMacro, TypeNever, TypeParen, TypePath, TypePtr,
+    TypeReference, TypeSlice, TypeTraitObject, TypeTuple,
 };
 
 #[cfg(all(any(feature = "full", feature = "derive"), feature = "parsing"))]
@@ -591,8 +722,8 @@ mod gen {
     ///
     /// ```
     /// // [dependencies]
-    /// // quote = "1.0"
-    /// // syn = { version = "2.0", features = ["fold", "full"] }
+    /// // quote = "1"
+    /// // syn = { version = "3", features = ["fold", "full"] }
     ///
     /// use quote::quote;
     /// use syn::fold::{fold_expr, Fold};
@@ -673,8 +804,8 @@ mod gen {
     ///
     /// ```
     /// // [dependencies]
-    /// // quote = "1.0"
-    /// // syn = { version = "2.0", features = ["full", "visit"] }
+    /// // quote = "1"
+    /// // syn = { version = "3", features = ["full", "visit"] }
     ///
     /// use quote::quote;
     /// use syn::visit::{self, Visit};
@@ -793,8 +924,8 @@ mod gen {
     ///
     /// ```
     /// // [dependencies]
-    /// // quote = "1.0"
-    /// // syn = { version = "2.0", features = ["full", "visit-mut"] }
+    /// // quote = "1"
+    /// // syn = { version = "3", features = ["full", "visit-mut"] }
     ///
     /// use quote::quote;
     /// use syn::visit_mut::{self, VisitMut};
@@ -871,6 +1002,9 @@ pub use crate::gen::visit_mut;
 #[path = "export.rs"]
 pub mod __private;
 
+#[cfg(all(feature = "parsing", feature = "full"))]
+use alloc::string::ToString;
+
 /// Parse tokens of source code into the chosen syntax tree node.
 ///
 /// This is preferred over parsing a string because tokens are able to preserve
@@ -884,31 +1018,8 @@ pub mod __private;
 ///
 /// [`syn::parse2`]: parse2
 ///
-/// # Examples
-///
-/// ```
-/// # extern crate proc_macro;
-/// #
-/// use proc_macro::TokenStream;
-/// use quote::quote;
-/// use syn::DeriveInput;
-///
-/// # const IGNORE_TOKENS: &str = stringify! {
-/// #[proc_macro_derive(MyMacro)]
-/// # };
-/// pub fn my_macro(input: TokenStream) -> TokenStream {
-///     // Parse the tokens into a syntax tree
-///     let ast: DeriveInput = syn::parse(input).unwrap();
-///
-///     // Build the output, possibly using quasi-quotation
-///     let expanded = quote! {
-///         /* ... */
-///     };
-///
-///     // Convert into a token stream and return it
-///     expanded.into()
-/// }
-/// ```
+/// This function enforces that the input is fully parsed. If there are any
+/// unparsed tokens at the end of the stream, an error is returned.
 #[cfg(all(feature = "parsing", feature = "proc-macro"))]
 #[cfg_attr(docsrs, doc(cfg(all(feature = "parsing", feature = "proc-macro"))))]
 pub fn parse<T: parse::Parse>(tokens: proc_macro::TokenStream) -> Result<T> {
@@ -917,9 +1028,6 @@ pub fn parse<T: parse::Parse>(tokens: proc_macro::TokenStream) -> Result<T> {
 
 /// Parse a proc-macro2 token stream into the chosen syntax tree node.
 ///
-/// This function will check that the input is fully parsed. If there are
-/// any unparsed tokens at the end of the stream, an error is returned.
-///
 /// This function parses a `proc_macro2::TokenStream` which is commonly useful
 /// when the input comes from a node of the Syn syntax tree, for example the
 /// body tokens of a [`Macro`] node. When in a procedural macro parsing the
@@ -927,6 +1035,9 @@ pub fn parse<T: parse::Parse>(tokens: proc_macro::TokenStream) -> Result<T> {
 /// instead.
 ///
 /// [`syn::parse`]: parse()
+///
+/// This function enforces that the input is fully parsed. If there are any
+/// unparsed tokens at the end of the stream, an error is returned.
 #[cfg(feature = "parsing")]
 #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
 pub fn parse2<T: parse::Parse>(tokens: proc_macro2::TokenStream) -> Result<T> {
@@ -934,6 +1045,9 @@ pub fn parse2<T: parse::Parse>(tokens: proc_macro2::TokenStream) -> Result<T> {
 }
 
 /// Parse a string of Rust code into the chosen syntax tree node.
+///
+/// This function enforces that the input is fully parsed. If there are any
+/// unparsed tokens at the end of the stream, an error is returned.
 ///
 /// # Hygiene
 ///
@@ -973,14 +1087,11 @@ pub fn parse_str<T: parse::Parse>(s: &str) -> Result<T> {
 ///
 /// ```no_run
 /// use std::error::Error;
-/// use std::fs::File;
+/// use std::fs;
 /// use std::io::Read;
 ///
 /// fn run() -> Result<(), Box<dyn Error>> {
-///     let mut file = File::open("path/to/code.rs")?;
-///     let mut content = String::new();
-///     file.read_to_string(&mut content)?;
-///
+///     let content = fs::read_to_string("path/to/code.rs")?;
 ///     let ast = syn::parse_file(&content)?;
 ///     if let Some(shebang) = ast.shebang {
 ///         println!("{}", shebang);

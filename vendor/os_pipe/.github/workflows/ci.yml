@@ -27,3 +27,7 @@ jobs:
       with:
         toolchain: ${{ matrix.rust_channel }}
     - run: cargo test
+    # Our Cargo.toml claims compatibility with some very old versions of
+    # `windows-sys`. Test that.
+    - run: cargo +nightly update -Zminimal-versions
+    - run: cargo test

@@ -8,10 +8,10 @@ use crate::path::{Path, PathArguments};
 use crate::punctuated::Punctuated;
 #[cfg(any(feature = "printing", feature = "full"))]
 use crate::ty::{ReturnType, Type};
+#[cfg(any(feature = "printing", feature = "full"))]
+use core::ops::ControlFlow;
 #[cfg(feature = "full")]
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
-#[cfg(any(feature = "printing", feature = "full"))]
-use std::ops::ControlFlow;
 
 #[cfg(feature = "full")]
 pub(crate) fn requires_semi_to_be_stmt(expr: &Expr) -> bool {
@@ -54,6 +54,7 @@ pub(crate) fn requires_comma_to_be_match_arm(expr: &Expr) -> bool {
         | Expr::Paren(_)
         | Expr::Path(_)
         | Expr::Range(_)
+        | Expr::RawAddr(_)
         | Expr::Reference(_)
         | Expr::Repeat(_)
         | Expr::Return(_)
@@ -62,100 +63,15 @@ pub(crate) fn requires_comma_to_be_match_arm(expr: &Expr) -> bool {
         | Expr::Tuple(_)
         | Expr::Unary(_)
         | Expr::Yield(_)
-        | Expr::Verbatim(_) => true
+        | Expr::Verbatim(_) => true,
     }
-}
-
-#[cfg(all(feature = "printing", feature = "full"))]
-pub(crate) fn confusable_with_adjacent_block(mut expr: &Expr) -> bool {
-    let mut stack = Vec::new();
-
-    while let Some(next) = match expr {
-        Expr::Assign(e) => {
-            stack.push(&e.right);
-            Some(&e.left)
-        }
-        Expr::Await(e) => Some(&e.base),
-        Expr::Binary(e) => {
-            stack.push(&e.right);
-            Some(&e.left)
-        }
-        Expr::Break(e) => {
-            if let Some(Expr::Block(_)) = e.expr.as_deref() {
-                return true;
-            }
-            stack.pop()
-        }
-        Expr::Call(e) => Some(&e.func),
-        Expr::Cast(e) => Some(&e.expr),
-        Expr::Closure(e) => Some(&e.body),
-        Expr::Field(e) => Some(&e.base),
-        Expr::Index(e) => Some(&e.expr),
-        Expr::MethodCall(e) => Some(&e.receiver),
-        Expr::Range(e) => {
-            if let Some(Expr::Block(_)) = e.end.as_deref() {
-                return true;
-            }
-            match (&e.start, &e.end) {
-                (Some(start), end) => {
-                    stack.extend(end);
-                    Some(start)
-                }
-                (None, Some(end)) => Some(end),
-                (None, None) => stack.pop(),
-            }
-        }
-        Expr::Reference(e) => Some(&e.expr),
-        Expr::Return(e) => {
-            if e.expr.is_none() && stack.is_empty() {
-                return true;
-            }
-            stack.pop()
-        }
-        Expr::Struct(_) => return true,
-        Expr::Try(e) => Some(&e.expr),
-        Expr::Unary(e) => Some(&e.expr),
-        Expr::Yield(e) => {
-            if e.expr.is_none() && stack.is_empty() {
-                return true;
-            }
-            stack.pop()
-        }
-
-        Expr::Array(_)
-        | Expr::Async(_)
-        | Expr::Block(_)
-        | Expr::Const(_)
-        | Expr::Continue(_)
-        | Expr::ForLoop(_)
-        | Expr::Group(_)
-        | Expr::If(_)
-        | Expr::Infer(_)
-        | Expr::Let(_)
-        | Expr::Lit(_)
-        | Expr::Loop(_)
-        | Expr::Macro(_)
-        | Expr::Match(_)
-        | Expr::Paren(_)
-        | Expr::Path(_)
-        | Expr::Repeat(_)
-        | Expr::TryBlock(_)
-        | Expr::Tuple(_)
-        | Expr::Unsafe(_)
-        | Expr::Verbatim(_)
-        | Expr::While(_) => stack.pop(),
-    } {
-        expr = next;
-    }
-
-    false
 }
 
 #[cfg(feature = "printing")]
 pub(crate) fn trailing_unparameterized_path(mut ty: &Type) -> bool {
     loop {
         match ty {
-            Type::BareFn(t) => match &t.output {
+            Type::FnPtr(t) => match &t.output {
                 ReturnType::Default => return false,
                 ReturnType::Type(_, ret) => ty = ret,
             },
@@ -202,7 +118,9 @@ pub(crate) fn trailing_unparameterized_path(mut ty: &Type) -> bool {
     ) -> ControlFlow<bool, &Type> {
         match bounds.last().unwrap() {
             TypeParamBound::Trait(t) => last_type_in_path(&t.path),
-            TypeParamBound::Lifetime(_) | TypeParamBound::Verbatim(_) => ControlFlow::Break(false),
+            TypeParamBound::Lifetime(_)
+            | TypeParamBound::PreciseCapture(_)
+            | TypeParamBound::Verbatim(_) => ControlFlow::Break(false),
         }
     }
 }
@@ -246,6 +164,7 @@ pub(crate) fn expr_leading_label(mut expr: &Expr) -> bool {
             | Expr::Match(_)
             | Expr::Paren(_)
             | Expr::Path(_)
+            | Expr::RawAddr(_)
             | Expr::Reference(_)
             | Expr::Repeat(_)
             | Expr::Return(_)
@@ -291,6 +210,7 @@ pub(crate) fn expr_trailing_brace(mut expr: &Expr) -> bool {
                 Some(end) => expr = end,
                 None => return false,
             },
+            Expr::RawAddr(e) => expr = &e.expr,
             Expr::Reference(e) => expr = &e.expr,
             Expr::Return(e) => match &e.expr {
                 Some(e) => expr = e,
@@ -324,7 +244,7 @@ pub(crate) fn expr_trailing_brace(mut expr: &Expr) -> bool {
     fn type_trailing_brace(mut ty: &Type) -> bool {
         loop {
             match ty {
-                Type::BareFn(t) => match &t.output {
+                Type::FnPtr(t) => match &t.output {
                     ReturnType::Default => return false,
                     ReturnType::Type(_, ret) => ty = ret,
                 },
@@ -374,7 +294,9 @@ pub(crate) fn expr_trailing_brace(mut expr: &Expr) -> bool {
                 Some(t) => ControlFlow::Continue(t),
                 None => ControlFlow::Break(false),
             },
-            TypeParamBound::Lifetime(_) => ControlFlow::Break(false),
+            TypeParamBound::Lifetime(_) | TypeParamBound::PreciseCapture(_) => {
+                ControlFlow::Break(false)
+            }
             TypeParamBound::Verbatim(t) => ControlFlow::Break(tokens_trailing_brace(t)),
         }
     }

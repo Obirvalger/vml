@@ -1,13 +1,14 @@
-use std::env;
-use std::fmt;
-use std::mem;
+use alloc::{borrow::ToOwned, string::ToString, vec::Vec};
+use core::{fmt, mem};
 
 use log::{LevelFilter, Metadata, Record};
 
 use crate::enabled;
 use crate::parse_spec;
+use crate::parser::ParseResult;
 use crate::Directive;
 use crate::FilterOp;
+use crate::ParseError;
 
 /// A builder for a log filter.
 ///
@@ -17,6 +18,7 @@ use crate::FilterOp;
 /// ## Example
 ///
 /// ```
+/// # #[cfg(feature = "std")] {
 /// # use std::env;
 /// use env_filter::Builder;
 ///
@@ -28,6 +30,7 @@ use crate::FilterOp;
 /// }
 ///
 /// let filter = builder.build();
+/// # }
 /// ```
 pub struct Builder {
     directives: Vec<Directive>,
@@ -46,10 +49,11 @@ impl Builder {
     }
 
     /// Initializes the filter builder from an environment.
+    #[cfg(feature = "std")]
     pub fn from_env(env: &str) -> Builder {
         let mut builder = Builder::new();
 
-        if let Ok(s) = env::var(env) {
+        if let Ok(s) = std::env::var(env) {
             builder.parse(&s);
         }
 
@@ -85,7 +89,7 @@ impl Builder {
     /// If no module is provided then the filter will apply to all log messages.
     pub fn filter(&mut self, module: Option<&str>, level: LevelFilter) -> &mut Self {
         self.insert_directive(Directive {
-            name: module.map(|s| s.to_string()),
+            name: module.map(|s| s.to_owned()),
             level,
         });
         self
@@ -96,8 +100,19 @@ impl Builder {
     /// See the [Enabling Logging] section for more details.
     ///
     /// [Enabling Logging]: ../index.html#enabling-logging
+    #[cfg(feature = "std")]
     pub fn parse(&mut self, filters: &str) -> &mut Self {
-        let (directives, filter) = parse_spec(filters);
+        #![allow(clippy::print_stderr)] // compatibility
+
+        let ParseResult {
+            directives,
+            filter,
+            errors,
+        } = parse_spec(filters);
+
+        for error in errors {
+            eprintln!("warning: {error}, ignoring it");
+        }
 
         self.filter = filter;
 
@@ -105,6 +120,22 @@ impl Builder {
             self.insert_directive(directive);
         }
         self
+    }
+
+    /// Parses the directive string, returning an error if the given directive string is invalid.
+    ///
+    /// See the [Enabling Logging] section for more details.
+    ///
+    /// [Enabling Logging]: ../index.html#enabling-logging
+    pub fn try_parse(&mut self, filters: &str) -> Result<&mut Self, ParseError> {
+        let (directives, filter) = parse_spec(filters).ok()?;
+
+        self.filter = filter;
+
+        for directive in directives {
+            self.insert_directive(directive);
+        }
+        Ok(self)
     }
 
     /// Build a log filter.
@@ -145,7 +176,7 @@ impl Default for Builder {
 }
 
 impl fmt::Debug for Builder {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.built {
             f.debug_struct("Filter").field("built", &true).finish()
         } else {
@@ -164,6 +195,7 @@ impl fmt::Debug for Builder {
 /// Use the [`Builder`] type to parse and construct a `Filter`.
 ///
 /// [`Builder`]: struct.Builder.html
+#[derive(Clone)]
 pub struct Filter {
     directives: Vec<Directive>,
     filter: Option<FilterOp>,
@@ -195,7 +227,7 @@ impl Filter {
     }
 
     /// Checks if this record matches the configured filter.
-    pub fn matches(&self, record: &Record) -> bool {
+    pub fn matches(&self, record: &Record<'_>) -> bool {
         if !self.enabled(record.metadata()) {
             return false;
         }
@@ -210,7 +242,7 @@ impl Filter {
     }
 
     /// Determines if a log message with the specified metadata would be logged.
-    pub fn enabled(&self, metadata: &Metadata) -> bool {
+    pub fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         let level = metadata.level();
         let target = metadata.target();
 
@@ -219,7 +251,7 @@ impl Filter {
 }
 
 impl fmt::Debug for Filter {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Filter")
             .field("filter", &self.filter)
             .field("directives", &self.directives)
@@ -230,6 +262,7 @@ impl fmt::Debug for Filter {
 #[cfg(test)]
 mod tests {
     use log::{Level, LevelFilter};
+    use snapbox::{assert_data_eq, str};
 
     use super::{enabled, Builder, Directive, Filter};
 
@@ -279,14 +312,17 @@ mod tests {
 
     #[test]
     fn parse_default() {
-        let logger = Builder::new().parse("info,crate1::mod1=warn").build();
+        let logger = Builder::new()
+            .try_parse("info,crate1::mod1=warn")
+            .unwrap()
+            .build();
         assert!(enabled(&logger.directives, Level::Warn, "crate1::mod1"));
         assert!(enabled(&logger.directives, Level::Info, "crate2::mod2"));
     }
 
     #[test]
     fn parse_default_bare_level_off_lc() {
-        let logger = Builder::new().parse("off").build();
+        let logger = Builder::new().try_parse("off").unwrap().build();
         assert!(!enabled(&logger.directives, Level::Error, ""));
         assert!(!enabled(&logger.directives, Level::Warn, ""));
         assert!(!enabled(&logger.directives, Level::Info, ""));
@@ -296,7 +332,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_off_uc() {
-        let logger = Builder::new().parse("OFF").build();
+        let logger = Builder::new().try_parse("OFF").unwrap().build();
         assert!(!enabled(&logger.directives, Level::Error, ""));
         assert!(!enabled(&logger.directives, Level::Warn, ""));
         assert!(!enabled(&logger.directives, Level::Info, ""));
@@ -306,7 +342,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_error_lc() {
-        let logger = Builder::new().parse("error").build();
+        let logger = Builder::new().try_parse("error").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(!enabled(&logger.directives, Level::Warn, ""));
         assert!(!enabled(&logger.directives, Level::Info, ""));
@@ -316,7 +352,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_error_uc() {
-        let logger = Builder::new().parse("ERROR").build();
+        let logger = Builder::new().try_parse("ERROR").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(!enabled(&logger.directives, Level::Warn, ""));
         assert!(!enabled(&logger.directives, Level::Info, ""));
@@ -326,7 +362,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_warn_lc() {
-        let logger = Builder::new().parse("warn").build();
+        let logger = Builder::new().try_parse("warn").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(enabled(&logger.directives, Level::Warn, ""));
         assert!(!enabled(&logger.directives, Level::Info, ""));
@@ -336,7 +372,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_warn_uc() {
-        let logger = Builder::new().parse("WARN").build();
+        let logger = Builder::new().try_parse("WARN").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(enabled(&logger.directives, Level::Warn, ""));
         assert!(!enabled(&logger.directives, Level::Info, ""));
@@ -346,7 +382,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_info_lc() {
-        let logger = Builder::new().parse("info").build();
+        let logger = Builder::new().try_parse("info").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(enabled(&logger.directives, Level::Warn, ""));
         assert!(enabled(&logger.directives, Level::Info, ""));
@@ -356,7 +392,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_info_uc() {
-        let logger = Builder::new().parse("INFO").build();
+        let logger = Builder::new().try_parse("INFO").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(enabled(&logger.directives, Level::Warn, ""));
         assert!(enabled(&logger.directives, Level::Info, ""));
@@ -366,7 +402,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_debug_lc() {
-        let logger = Builder::new().parse("debug").build();
+        let logger = Builder::new().try_parse("debug").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(enabled(&logger.directives, Level::Warn, ""));
         assert!(enabled(&logger.directives, Level::Info, ""));
@@ -376,7 +412,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_debug_uc() {
-        let logger = Builder::new().parse("DEBUG").build();
+        let logger = Builder::new().try_parse("DEBUG").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(enabled(&logger.directives, Level::Warn, ""));
         assert!(enabled(&logger.directives, Level::Info, ""));
@@ -386,7 +422,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_trace_lc() {
-        let logger = Builder::new().parse("trace").build();
+        let logger = Builder::new().try_parse("trace").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(enabled(&logger.directives, Level::Warn, ""));
         assert!(enabled(&logger.directives, Level::Info, ""));
@@ -396,7 +432,7 @@ mod tests {
 
     #[test]
     fn parse_default_bare_level_trace_uc() {
-        let logger = Builder::new().parse("TRACE").build();
+        let logger = Builder::new().try_parse("TRACE").unwrap().build();
         assert!(enabled(&logger.directives, Level::Error, ""));
         assert!(enabled(&logger.directives, Level::Warn, ""));
         assert!(enabled(&logger.directives, Level::Info, ""));
@@ -411,7 +447,7 @@ mod tests {
     #[test]
     fn parse_default_bare_level_debug_mixed() {
         {
-            let logger = Builder::new().parse("Debug").build();
+            let logger = Builder::new().try_parse("Debug").unwrap().build();
             assert!(enabled(&logger.directives, Level::Error, ""));
             assert!(enabled(&logger.directives, Level::Warn, ""));
             assert!(enabled(&logger.directives, Level::Info, ""));
@@ -419,7 +455,7 @@ mod tests {
             assert!(!enabled(&logger.directives, Level::Trace, ""));
         }
         {
-            let logger = Builder::new().parse("debuG").build();
+            let logger = Builder::new().try_parse("debuG").unwrap().build();
             assert!(enabled(&logger.directives, Level::Error, ""));
             assert!(enabled(&logger.directives, Level::Warn, ""));
             assert!(enabled(&logger.directives, Level::Info, ""));
@@ -427,7 +463,7 @@ mod tests {
             assert!(!enabled(&logger.directives, Level::Trace, ""));
         }
         {
-            let logger = Builder::new().parse("deBug").build();
+            let logger = Builder::new().try_parse("deBug").unwrap().build();
             assert!(enabled(&logger.directives, Level::Error, ""));
             assert!(enabled(&logger.directives, Level::Warn, ""));
             assert!(enabled(&logger.directives, Level::Info, ""));
@@ -435,7 +471,7 @@ mod tests {
             assert!(!enabled(&logger.directives, Level::Trace, ""));
         }
         {
-            let logger = Builder::new().parse("DeBuG").build(); // LaTeX flavor!
+            let logger = Builder::new().try_parse("DeBuG").unwrap().build(); // LaTeX flavor!
             assert!(enabled(&logger.directives, Level::Error, ""));
             assert!(enabled(&logger.directives, Level::Warn, ""));
             assert!(enabled(&logger.directives, Level::Info, ""));
@@ -445,14 +481,33 @@ mod tests {
     }
 
     #[test]
+    fn try_parse_valid_filter() {
+        let logger = Builder::new()
+            .try_parse("info,crate1::mod1=warn")
+            .expect("valid filter returned error")
+            .build();
+        assert!(enabled(&logger.directives, Level::Warn, "crate1::mod1"));
+        assert!(enabled(&logger.directives, Level::Info, "crate2::mod2"));
+    }
+
+    #[test]
+    fn try_parse_invalid_filter() {
+        let error = Builder::new().try_parse("info,crate1=invalid").unwrap_err();
+        assert_data_eq!(
+            error,
+            str!["error parsing logger filter: invalid logging spec 'invalid'"]
+        );
+    }
+
+    #[test]
     fn match_full_path() {
         let logger = make_logger_filter(vec![
             Directive {
-                name: Some("crate2".to_string()),
+                name: Some("crate2".to_owned()),
                 level: LevelFilter::Info,
             },
             Directive {
-                name: Some("crate1::mod1".to_string()),
+                name: Some("crate1::mod1".to_owned()),
                 level: LevelFilter::Warn,
             },
         ]);
@@ -466,11 +521,11 @@ mod tests {
     fn no_match() {
         let logger = make_logger_filter(vec![
             Directive {
-                name: Some("crate2".to_string()),
+                name: Some("crate2".to_owned()),
                 level: LevelFilter::Info,
             },
             Directive {
-                name: Some("crate1::mod1".to_string()),
+                name: Some("crate1::mod1".to_owned()),
                 level: LevelFilter::Warn,
             },
         ]);
@@ -481,11 +536,11 @@ mod tests {
     fn match_beginning() {
         let logger = make_logger_filter(vec![
             Directive {
-                name: Some("crate2".to_string()),
+                name: Some("crate2".to_owned()),
                 level: LevelFilter::Info,
             },
             Directive {
-                name: Some("crate1::mod1".to_string()),
+                name: Some("crate1::mod1".to_owned()),
                 level: LevelFilter::Warn,
             },
         ]);
@@ -496,15 +551,15 @@ mod tests {
     fn match_beginning_longest_match() {
         let logger = make_logger_filter(vec![
             Directive {
-                name: Some("crate2".to_string()),
+                name: Some("crate2".to_owned()),
                 level: LevelFilter::Info,
             },
             Directive {
-                name: Some("crate2::mod".to_string()),
+                name: Some("crate2::mod".to_owned()),
                 level: LevelFilter::Debug,
             },
             Directive {
-                name: Some("crate1::mod1".to_string()),
+                name: Some("crate1::mod1".to_owned()),
                 level: LevelFilter::Warn,
             },
         ]);
@@ -520,7 +575,7 @@ mod tests {
                 level: LevelFilter::Info,
             },
             Directive {
-                name: Some("crate1::mod1".to_string()),
+                name: Some("crate1::mod1".to_owned()),
                 level: LevelFilter::Warn,
             },
         ]);
@@ -536,7 +591,7 @@ mod tests {
                 level: LevelFilter::Info,
             },
             Directive {
-                name: Some("crate1::mod1".to_string()),
+                name: Some("crate1::mod1".to_owned()),
                 level: LevelFilter::Off,
             },
         ]);

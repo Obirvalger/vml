@@ -1,11 +1,12 @@
 //! A cross-platform library for opening OS pipes, like those from
-//! [`pipe`](https://man7.org/linux/man-pages/man2/pipe.2.html) on Linux
-//! or
+//! [`pipe`](https://man7.org/linux/man-pages/man2/pipe.2.html) on Linux or
 //! [`CreatePipe`](https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-createpipe)
 //! on Windows. The Rust standard library provides
-//! [`Stdio::piped`](https://doc.rust-lang.org/std/process/struct.Stdio.html#method.piped)
-//! for simple use cases involving child processes, but it doesn't
-//! support creating pipes directly. This crate fills that gap.
+//! [`Stdio::piped`](https://doc.rust-lang.org/std/process/struct.Stdio.html#method.piped) for
+//! simple use cases involving child processes, ~~but it doesn't support creating pipes directly.
+//! This crate fills that gap.~~ **Update:** Rust 1.87 added
+//! [`std::io::pipe`](https://doc.rust-lang.org/std/io/fn.pipe.html), so this crate is no longer
+//! needed except to support older compiler versions.
 //!
 //! - [Docs](https://docs.rs/os_pipe)
 //! - [Crate](https://crates.io/crates/os_pipe)
@@ -17,24 +18,26 @@
 //! some point. These can be confusing if you don't know why they
 //! happen. Here are two things you need to know:
 //!
-//! 1. Pipe reads will block waiting for input as long as there's at
-//!    least one writer still open. **If you forget to close a writer,
-//!    reads will block forever.** This includes writers that you give
-//!    to child processes.
+//! 1. Pipe reads block until some bytes are written or all writers are
+//!    closed. **If you forget to close a writer, reads can block
+//!    forever.** This includes writers inside a
+//!    [`std::process::Command`](https://doc.rust-lang.org/std/process/struct.Command.html)
+//!    object or writers given to child processes.
 //! 2. Pipes have an internal buffer of some fixed size. On Linux for
-//!    example, pipe buffers are 64 KiB by default. When the buffer is
-//!    full, writes will block waiting for space. **If the buffer is
-//!    full and there aren't any readers, writes will block forever.**
+//!    example, pipe buffers are 64 KiB by default. Pipe writes block
+//!    until buffer space is available or all readers are closed. **If
+//!    you have readers open but not reading, writes can block
+//!    forever.**
 //!
-//! Deadlocks caused by a forgotten writer usually show up immediately,
-//! which makes them relatively easy to fix once you know what to look
-//! for. (See "Avoid a deadlock!" in the example code below.) However,
-//! deadlocks caused by full pipe buffers are trickier. These might only
-//! show up for larger inputs, and they might be timing-dependent or
-//! platform-dependent. If you find that writing to a pipe deadlocks
-//! sometimes, think about who's supposed to be reading from that pipe,
-//! and whether that thread or process might be blocked on something
-//! else. For more on this, see the [Gotchas
+//! Deadlocked reads caused by a forgotten writer usually show up
+//! immediately, which makes them relatively easy to fix once you know
+//! what to look for. (See "Avoid a deadlock!" in the example code
+//! below.) However, deadlocked writes caused by full pipe buffers are
+//! trickier. These might only show up for larger inputs, and they might
+//! be timing-dependent or platform-dependent. If you find that writing
+//! to a pipe deadlocks sometimes, think about who's supposed to be
+//! reading from that pipe and whether that thread or process might be
+//! blocked on something else. For more on this, see the [Gotchas
 //! Doc](https://github.com/oconnor663/duct.py/blob/master/gotchas.md#using-io-threads-to-avoid-blocking-children)
 //! from the [`duct`](https://github.com/oconnor663/duct.rs) crate. (And
 //! consider whether [`duct`](https://github.com/oconnor663/duct.rs)
@@ -151,7 +154,7 @@ impl io::Read for PipeReader {
     }
 }
 
-impl<'a> io::Read for &'a PipeReader {
+impl io::Read for &PipeReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         (&self.0).read(buf)
     }
@@ -187,7 +190,7 @@ impl io::Write for PipeWriter {
     }
 }
 
-impl<'a> io::Write for &'a PipeWriter {
+impl io::Write for &PipeWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         (&self.0).write(buf)
     }
@@ -485,6 +488,6 @@ mod tests {
     #[test]
     fn test_debug() {
         let (reader, writer) = crate::pipe().unwrap();
-        format!("{:?} {:?}", reader, writer);
+        _ = format!("{:?} {:?}", reader, writer);
     }
 }

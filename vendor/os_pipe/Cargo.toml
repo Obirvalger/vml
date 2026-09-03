@@ -13,8 +13,14 @@
 edition = "2021"
 rust-version = "1.63"
 name = "os_pipe"
-version = "1.2.0"
+version = "1.2.3"
 authors = ["Jack O'Connor"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "a cross-platform library for opening OS pipes"
 documentation = "https://docs.rs/os_pipe"
 readme = "README.md"
@@ -30,11 +36,27 @@ repository = "https://github.com/oconnor663/os_pipe.rs"
 [features]
 io_safety = []
 
+[lib]
+name = "os_pipe"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cat"
+path = "src/bin/cat.rs"
+
+[[bin]]
+name = "cat_both"
+path = "src/bin/cat_both.rs"
+
+[[bin]]
+name = "swap"
+path = "src/bin/swap.rs"
+
 [target."cfg(not(windows))".dependencies.libc]
 version = "0.2.62"
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.52.0"
+version = ">=0.28, <=0.61"
 features = [
     "Win32_Foundation",
     "Win32_System_Pipes",

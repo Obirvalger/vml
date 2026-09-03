@@ -10,12 +10,7 @@ use std::os::unix::prelude::*;
 // we can do is call pipe() followed by fcntl(), and hope that no other threads
 // fork() in between. The following code is copied from the nix crate, where it
 // works but is deprecated.
-#[cfg(not(any(
-    target_os = "ios",
-    target_os = "visionos",
-    target_os = "macos",
-    target_os = "haiku"
-)))]
+#[cfg(not(any(target_os = "aix", target_vendor = "apple", target_os = "haiku")))]
 fn pipe2_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
     let mut fds: [c_int; 2] = [0; 2];
     let res = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
@@ -25,12 +20,7 @@ fn pipe2_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
     unsafe { Ok((OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1]))) }
 }
 
-#[cfg(any(
-    target_os = "ios",
-    target_os = "visionos",
-    target_os = "macos",
-    target_os = "haiku"
-))]
+#[cfg(any(target_os = "aix", target_vendor = "apple", target_os = "haiku"))]
 fn pipe2_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
     let mut fds: [c_int; 2] = [0; 2];
     let res = unsafe { libc::pipe(fds.as_mut_ptr()) };
@@ -74,7 +64,7 @@ impl AsRawFd for PipeReader {
 
 impl FromRawFd for PipeReader {
     unsafe fn from_raw_fd(fd: RawFd) -> PipeReader {
-        PipeReader(File::from_raw_fd(fd))
+        unsafe { PipeReader(File::from_raw_fd(fd)) }
     }
 }
 
@@ -110,7 +100,7 @@ impl AsRawFd for PipeWriter {
 
 impl FromRawFd for PipeWriter {
     unsafe fn from_raw_fd(fd: RawFd) -> PipeWriter {
-        PipeWriter(File::from_raw_fd(fd))
+        unsafe { PipeWriter(File::from_raw_fd(fd)) }
     }
 }
 

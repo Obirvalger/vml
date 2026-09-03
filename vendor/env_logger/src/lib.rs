@@ -32,18 +32,18 @@
 //!
 //! Assumes the binary is `main`:
 //!
-//! ```{.bash}
+//! ```console
 //! $ RUST_LOG=error ./main
 //! [2017-11-09T02:12:24Z ERROR main] this is printed by default
 //! ```
 //!
-//! ```{.bash}
+//! ```console
 //! $ RUST_LOG=info ./main
 //! [2017-11-09T02:12:24Z ERROR main] this is printed by default
 //! [2017-11-09T02:12:24Z INFO main] the answer was: 12
 //! ```
 //!
-//! ```{.bash}
+//! ```console
 //! $ RUST_LOG=debug ./main
 //! [2017-11-09T02:12:24Z DEBUG main] this is a debug message
 //! [2017-11-09T02:12:24Z ERROR main] this is printed by default
@@ -52,7 +52,7 @@
 //!
 //! You can also set the log level on a per module basis:
 //!
-//! ```{.bash}
+//! ```console
 //! $ RUST_LOG=main=info ./main
 //! [2017-11-09T02:12:24Z ERROR main] this is printed by default
 //! [2017-11-09T02:12:24Z INFO main] the answer was: 12
@@ -60,7 +60,7 @@
 //!
 //! And enable all logging:
 //!
-//! ```{.bash}
+//! ```console
 //! $ RUST_LOG=main ./main
 //! [2017-11-09T02:12:24Z DEBUG main] this is a debug message
 //! [2017-11-09T02:12:24Z ERROR main] this is printed by default
@@ -70,7 +70,7 @@
 //! If the binary name contains hyphens, you will need to replace
 //! them with underscores:
 //!
-//! ```{.bash}
+//! ```console
 //! $ RUST_LOG=my_app ./my-app
 //! [2017-11-09T02:12:24Z DEBUG my_app] this is a debug message
 //! [2017-11-09T02:12:24Z ERROR my_app] this is printed by default
@@ -88,14 +88,14 @@
 //! **By default all logging is disabled except for the `error` level**
 //!
 //! The **`RUST_LOG`** environment variable controls logging with the syntax:
-//! ```text
+//! ```console
 //! RUST_LOG=[target][=][level][,...]
 //! ```
 //! Or in other words, its a comma-separated list of directives.
 //! Directives can filter by **target**, by **level**, or both (using `=`).
 //!
 //! For example,
-//! ```text
+//! ```console
 //! RUST_LOG=data=debug,hardware=debug
 //! ```
 //!
@@ -172,7 +172,7 @@
 //! Records logged during `cargo test` will not be captured by the test harness by default.
 //! The [`Builder::is_test`] method can be used in unit tests to ensure logs will be captured:
 //!
-//! ```
+//! ```test_harness
 //! #[cfg(test)]
 //! mod tests {
 //!     use log::info;
@@ -195,16 +195,34 @@
 //! Enabling test capturing comes at the expense of color and other style support
 //! and may have performance implications.
 //!
-//! ## Disabling colors
+//! ## Colors
 //!
-//! Colors and other styles can be configured with the `RUST_LOG_STYLE`
-//! environment variable. It accepts the following values:
+//! Outputting of colors and other styles can be controlled by the `RUST_LOG_STYLE`
+//! environment variable. It accepts the following [values][fmt::WriteStyle]:
 //!
 //! * `auto` (default) will attempt to print style characters, but don't force the issue.
-//! If the console isn't available on Windows, or if TERM=dumb, for example, then don't print colors.
+//!   If the console isn't available on Windows, or if TERM=dumb, for example, then don't print colors.
 //! * `always` will always print style characters even if they aren't supported by the terminal.
-//! This includes emitting ANSI colors on Windows if the console API is unavailable.
+//!   This includes emitting ANSI colors on Windows if the console API is unavailable.
 //! * `never` will never print style characters.
+//!
+//! Color may be applied in the logged message or a [custom formatter][fmt].
+//!
+//! <div class="warning">
+//!
+//! Logging of untrusted inputs can cause unexpected behavior as they may include ANSI escape codes which
+//! will be forwarded to the users terminal as part of "Weaponizing ANSI Escape Sequences".
+//!
+//! Mitigations include:
+//! - Setting `RUST_LOG_STYLE=never` to have all ANSI escape codes stripped
+//! - In the application, calling [`Builder::write_style(Never)`][Builder::write_style] to have all ANSI escape codes stripped
+//! - In the application, [stripping ANSI escape codes](https://docs.rs/anstream/latest/anstream/adapter/fn.strip_str.html)
+//!   from user inputs
+//!
+//! Note: deactivating the build-time feature `color` is not a mitigation as that removes all ANSI escape code
+//! stripping from `env_logger`.
+//!
+//! </div>
 //!
 //! ## Tweaking the default format
 //!
@@ -260,16 +278,19 @@
 //! [level-enum]: https://docs.rs/log/latest/log/enum.Level.html
 //! [log-crate-url]: https://docs.rs/log
 
-#![doc(
-    html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
-    html_favicon_url = "https://www.rust-lang.org/static/images/favicon.ico"
-)]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
-#![deny(missing_debug_implementations, missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
+#![allow(clippy::test_attr_in_doctest)]
 
 mod logger;
+mod writer;
 
 pub mod fmt;
 
 pub use self::fmt::{Target, TimestampPrecision, WriteStyle};
 pub use self::logger::*;
+
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;

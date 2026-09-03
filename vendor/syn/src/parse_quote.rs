@@ -36,13 +36,12 @@
 /// use syn::{parse_quote, Generics, GenericParam};
 ///
 /// // Add a bound `T: HeapSize` to every type parameter T.
-/// fn add_trait_bounds(mut generics: Generics) -> Generics {
+/// fn add_trait_bounds(generics: &mut Generics) {
 ///     for param in &mut generics.params {
 ///         if let GenericParam::Type(type_param) = param {
-///             type_param.bounds.push(parse_quote!(HeapSize));
+///             type_param.bounds.push(parse_quote!(::heapsize::HeapSize));
 ///         }
 ///     }
-///     generics
 /// }
 /// ```
 ///
@@ -53,11 +52,24 @@
 ///
 /// - [`Attribute`] — parses one attribute, allowing either outer like `#[...]`
 ///   or inner like `#![...]`
+/// - [`Vec<Attribute>`] — parses multiple attributes, including mixed kinds in
+///   any order
 /// - [`Punctuated<T, P>`] — parses zero or more `T` separated by punctuation
 ///   `P` with optional trailing punctuation
+/// - [`Vec<Arm>`] — parses arms separated by optional commas according to the
+///   same grammar as the inside of a `match` expression
 /// - [`Vec<Stmt>`] — parses the same as `Block::parse_within`
+/// - [`Pat`], [`Box<Pat>`] — parses the same as
+///   `Pat::parse_multi_with_leading_vert`
+/// - [`Field`] — parses a named or unnamed struct field
+/// - [`Safety`] — parses the same as `Safety::parse_safe_or_unsafe`
 ///
+/// [`Vec<Attribute>`]: Attribute
+/// [`Vec<Arm>`]: Arm
 /// [`Vec<Stmt>`]: Block::parse_within
+/// [`Pat`]: Pat::parse_multi_with_leading_vert
+/// [`Box<Pat>`]: Pat::parse_multi_with_leading_vert
+/// [`Safety`]: Safety::parse_safe_or_unsafe
 ///
 /// # Panics
 ///
@@ -92,7 +104,7 @@ macro_rules! parse_quote {
 ///         ReturnType::Type(_, ret) => quote!(#ret),
 ///     };
 ///     sig.output = parse_quote_spanned! {ret.span()=>
-///         -> ::std::pin::Pin<::std::boxed::Box<dyn ::std::future::Future<Output = #ret>>>
+///         -> ::core::pin::Pin<::alloc::boxed::Box<dyn ::core::future::Future<Output = #ret>>>
 ///     };
 /// }
 /// ```
@@ -109,6 +121,10 @@ macro_rules! parse_quote_spanned {
 
 use crate::error::Result;
 use crate::parse::{Parse, ParseStream, Parser};
+#[cfg(feature = "full")]
+use alloc::boxed::Box;
+#[cfg(any(feature = "full", feature = "derive"))]
+use alloc::vec::Vec;
 use proc_macro2::TokenStream;
 
 // Not public API.
@@ -138,9 +154,9 @@ impl<T: Parse> ParseQuote for T {
 
 use crate::punctuated::Punctuated;
 #[cfg(any(feature = "full", feature = "derive"))]
-use crate::{attr, Attribute, Field, FieldMutability, Ident, Type, Visibility};
+use crate::{attr, Attribute, Expr, Field, FieldModifiers, Ident, Type, Visibility};
 #[cfg(feature = "full")]
-use crate::{Block, Pat, Stmt};
+use crate::{Arm, Block, Pat, Safety, Stmt};
 
 #[cfg(any(feature = "full", feature = "derive"))]
 impl ParseQuote for Attribute {
@@ -150,6 +166,17 @@ impl ParseQuote for Attribute {
         } else {
             attr::parsing::single_parse_outer(input)
         }
+    }
+}
+
+#[cfg(any(feature = "full", feature = "derive"))]
+impl ParseQuote for Vec<Attribute> {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut attrs = Vec::new();
+        while !input.is_empty() {
+            attrs.push(ParseQuote::parse(input)?);
+        }
+        Ok(attrs)
     }
 }
 
@@ -172,13 +199,22 @@ impl ParseQuote for Field {
 
         let ty: Type = input.parse()?;
 
+        let default = if is_named && input.peek(Token![=]) {
+            let eq_token: Token![=] = input.parse()?;
+            let expr: Expr = input.parse()?;
+            Some((eq_token, expr))
+        } else {
+            None
+        };
+
         Ok(Field {
             attrs,
             vis,
-            mutability: FieldMutability::None,
+            modifiers: FieldModifiers {},
             ident,
             colon_token,
             ty,
+            default,
         })
     }
 }
@@ -186,7 +222,7 @@ impl ParseQuote for Field {
 #[cfg(feature = "full")]
 impl ParseQuote for Pat {
     fn parse(input: ParseStream) -> Result<Self> {
-        Pat::parse_multi_with_leading_vert(input)
+        Pat::parse_multi_with_leading_vert_and_guard(input)
     }
 }
 
@@ -204,8 +240,22 @@ impl<T: Parse, P: Parse> ParseQuote for Punctuated<T, P> {
 }
 
 #[cfg(feature = "full")]
+impl ParseQuote for Safety {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Safety::parse_safe_or_unsafe(input)
+    }
+}
+
+#[cfg(feature = "full")]
 impl ParseQuote for Vec<Stmt> {
     fn parse(input: ParseStream) -> Result<Self> {
         Block::parse_within(input)
+    }
+}
+
+#[cfg(feature = "full")]
+impl ParseQuote for Vec<Arm> {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Arm::parse_multiple(input)
     }
 }

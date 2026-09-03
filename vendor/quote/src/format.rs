@@ -4,19 +4,19 @@
 ///
 /// # Syntax
 ///
-/// Syntax is copied from the [`format!`] macro, supporting both positional and
-/// named arguments.
+/// Syntax is copied from the [`format!`][alloc::format!] macro, supporting both
+/// positional and named arguments.
 ///
 /// Only a limited set of formatting traits are supported. The current mapping
 /// of format types to traits is:
 ///
 /// * `{}` ⇒ [`IdentFragment`]
-/// * `{:o}` ⇒ [`Octal`](std::fmt::Octal)
-/// * `{:x}` ⇒ [`LowerHex`](std::fmt::LowerHex)
-/// * `{:X}` ⇒ [`UpperHex`](std::fmt::UpperHex)
-/// * `{:b}` ⇒ [`Binary`](std::fmt::Binary)
+/// * `{:o}` ⇒ [`Octal`](core::fmt::Octal)
+/// * `{:x}` ⇒ [`LowerHex`](core::fmt::LowerHex)
+/// * `{:X}` ⇒ [`UpperHex`](core::fmt::UpperHex)
+/// * `{:b}` ⇒ [`Binary`](core::fmt::Binary)
 ///
-/// See [`std::fmt`] for more information.
+/// See [`core::fmt`] for more information.
 ///
 /// <br>
 ///
@@ -26,7 +26,7 @@
 /// default. This trait is like `Display`, with a few differences:
 ///
 /// * `IdentFragment` is only implemented for a limited set of types, such as
-///    unsigned integers and strings.
+///   unsigned integers and strings.
 /// * [`Ident`] arguments will have their `r#` prefixes stripped, if present.
 ///
 /// [`IdentFragment`]: crate::IdentFragment

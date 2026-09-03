@@ -5,11 +5,15 @@
 // Syn, and caution should be used when editing it. The public-facing interface
 // is 100% safe but the implementation is fragile internally.
 
+use crate::ext::TokenStreamExt as _;
 use crate::Lifetime;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+use core::marker::PhantomData;
+use core::ptr;
 use proc_macro2::extra::DelimSpan;
 use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
-use std::cmp::Ordering;
-use std::marker::PhantomData;
 
 /// Internal type which is used instead of `TokenTree` to represent a token tree
 /// within a `TokenBuffer`.
@@ -133,7 +137,7 @@ impl<'a> Cursor<'a> {
         // our cursor's scope. We should only have `ptr != scope` at the exit
         // from None-delimited groups entered with `ignore_none`.
         while let Entry::End(..) = unsafe { &*ptr } {
-            if ptr == scope {
+            if ptr::eq(ptr, scope) {
                 break;
             }
             ptr = unsafe { ptr.add(1) };
@@ -158,7 +162,7 @@ impl<'a> Cursor<'a> {
     /// If the cursor is looking at an `Entry::Group`, the bumped cursor will
     /// point at the first token in the group (with the same scope end).
     unsafe fn bump_ignore_group(self) -> Cursor<'a> {
-        unsafe { Cursor::create(self.ptr.offset(1), self.scope) }
+        unsafe { Cursor::create(self.ptr.add(1), self.scope) }
     }
 
     /// While the cursor is looking at a `None`-delimited group, move it to look
@@ -180,53 +184,7 @@ impl<'a> Cursor<'a> {
     /// scope.
     pub fn eof(self) -> bool {
         // We're at eof if we're at the end of our scope.
-        self.ptr == self.scope
-    }
-
-    /// If the cursor is pointing at a `Group` with the given delimiter, returns
-    /// a cursor into that group and one pointing to the next `TokenTree`.
-    pub fn group(mut self, delim: Delimiter) -> Option<(Cursor<'a>, DelimSpan, Cursor<'a>)> {
-        // If we're not trying to enter a none-delimited group, we want to
-        // ignore them. We have to make sure to _not_ ignore them when we want
-        // to enter them, of course. For obvious reasons.
-        if delim != Delimiter::None {
-            self.ignore_none();
-        }
-
-        if let Entry::Group(group, end_offset) = self.entry() {
-            if group.delimiter() == delim {
-                let span = group.delim_span();
-                let end_of_group = unsafe { self.ptr.add(*end_offset) };
-                let inside_of_group = unsafe { Cursor::create(self.ptr.add(1), end_of_group) };
-                let after_group = unsafe { Cursor::create(end_of_group, self.scope) };
-                return Some((inside_of_group, span, after_group));
-            }
-        }
-
-        None
-    }
-
-    pub(crate) fn any_group(self) -> Option<(Cursor<'a>, Delimiter, DelimSpan, Cursor<'a>)> {
-        if let Entry::Group(group, end_offset) = self.entry() {
-            let delimiter = group.delimiter();
-            let span = group.delim_span();
-            let end_of_group = unsafe { self.ptr.add(*end_offset) };
-            let inside_of_group = unsafe { Cursor::create(self.ptr.add(1), end_of_group) };
-            let after_group = unsafe { Cursor::create(end_of_group, self.scope) };
-            return Some((inside_of_group, delimiter, span, after_group));
-        }
-
-        None
-    }
-
-    pub(crate) fn any_group_token(self) -> Option<(Group, Cursor<'a>)> {
-        if let Entry::Group(group, end_offset) = self.entry() {
-            let end_of_group = unsafe { self.ptr.add(*end_offset) };
-            let after_group = unsafe { Cursor::create(end_of_group, self.scope) };
-            return Some((group.clone(), after_group));
-        }
-
-        None
+        ptr::eq(self.ptr, self.scope)
     }
 
     /// If the cursor is pointing at a `Ident`, returns it along with a cursor
@@ -236,6 +194,14 @@ impl<'a> Cursor<'a> {
         match self.entry() {
             Entry::Ident(ident) => Some((ident.clone(), unsafe { self.bump_ignore_group() })),
             _ => None,
+        }
+    }
+
+    pub(crate) fn peek_keyword(mut self, token: &str) -> bool {
+        self.ignore_none();
+        match self.entry() {
+            Entry::Ident(ident) => ident == token,
+            _ => false,
         }
     }
 
@@ -249,6 +215,24 @@ impl<'a> Cursor<'a> {
             }
             _ => None,
         }
+    }
+
+    pub(crate) fn peek_punct(mut self, token: &str) -> bool {
+        for (i, ch) in token.chars().enumerate() {
+            self.ignore_none();
+            match self.entry() {
+                Entry::Punct(punct) if punct.as_char() == ch => {
+                    if i == token.len() - 1 {
+                        return true;
+                    } else if punct.spacing() != Spacing::Joint {
+                        break;
+                    }
+                    self = unsafe { self.bump_ignore_group() };
+                }
+                _ => break,
+            }
+        }
+        false
     }
 
     /// If the cursor is pointing at a `Literal`, return it along with a cursor
@@ -279,16 +263,64 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    /// If the cursor is pointing at a `Group` with the given delimiter, returns
+    /// a cursor into that group and one pointing to the next `TokenTree`.
+    pub fn group(mut self, delim: Delimiter) -> Option<(Cursor<'a>, DelimSpan, Cursor<'a>)> {
+        // If we're not trying to enter a none-delimited group, we want to
+        // ignore them. We have to make sure to _not_ ignore them when we want
+        // to enter them, of course. For obvious reasons.
+        if delim != Delimiter::None {
+            self.ignore_none();
+        }
+
+        if let Entry::Group(group, end_offset) = self.entry() {
+            if group.delimiter() == delim {
+                let span = group.delim_span();
+                let end_of_group = unsafe { self.ptr.add(*end_offset) };
+                let inside_of_group = unsafe { Cursor::create(self.ptr.add(1), end_of_group) };
+                let after_group = unsafe { Cursor::create(end_of_group, self.scope) };
+                return Some((inside_of_group, span, after_group));
+            }
+        }
+
+        None
+    }
+
+    /// If the cursor is pointing at a `Group`, returns a cursor into the group
+    /// and one pointing to the next `TokenTree`.
+    pub fn any_group(self) -> Option<(Cursor<'a>, Delimiter, DelimSpan, Cursor<'a>)> {
+        if let Entry::Group(group, end_offset) = self.entry() {
+            let delimiter = group.delimiter();
+            let span = group.delim_span();
+            let end_of_group = unsafe { self.ptr.add(*end_offset) };
+            let inside_of_group = unsafe { Cursor::create(self.ptr.add(1), end_of_group) };
+            let after_group = unsafe { Cursor::create(end_of_group, self.scope) };
+            return Some((inside_of_group, delimiter, span, after_group));
+        }
+
+        None
+    }
+
+    pub(crate) fn any_group_token(self) -> Option<(Group, Cursor<'a>)> {
+        if let Entry::Group(group, end_offset) = self.entry() {
+            let end_of_group = unsafe { self.ptr.add(*end_offset) };
+            let after_group = unsafe { Cursor::create(end_of_group, self.scope) };
+            return Some((group.clone(), after_group));
+        }
+
+        None
+    }
+
     /// Copies all remaining tokens visible from this cursor into a
     /// `TokenStream`.
     pub fn token_stream(self) -> TokenStream {
-        let mut tts = Vec::new();
+        let mut tokens = TokenStream::new();
         let mut cursor = self;
         while let Some((tt, rest)) = cursor.token_tree() {
-            tts.push(tt);
+            tokens.append(tt);
             cursor = rest;
         }
-        tts.into_iter().collect()
+        tokens
     }
 
     /// If the cursor is pointing at a `TokenTree`, returns it along with a
@@ -332,10 +364,9 @@ impl<'a> Cursor<'a> {
 
     /// Returns the `Span` of the token immediately prior to the position of
     /// this cursor, or of the current token if there is no previous one.
-    #[cfg(any(feature = "full", feature = "derive"))]
-    pub(crate) fn prev_span(mut self) -> Span {
+    pub fn prev_span(mut self) -> Span {
         if start_of_buffer(self) < self.ptr {
-            self.ptr = unsafe { self.ptr.offset(-1) };
+            self.ptr = unsafe { self.ptr.sub(1) };
         }
         self.span()
     }
@@ -364,6 +395,16 @@ impl<'a> Cursor<'a> {
 
         Some(unsafe { Cursor::create(self.ptr.add(len), self.scope) })
     }
+
+    pub(crate) fn scope_delimiter(self) -> Delimiter {
+        match unsafe { &*self.scope } {
+            Entry::End(_, offset) => match unsafe { &*self.scope.offset(*offset) } {
+                Entry::Group(group, _) => group.delimiter(),
+                _ => Delimiter::None,
+            },
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl<'a> Copy for Cursor<'a> {}
@@ -378,7 +419,7 @@ impl<'a> Eq for Cursor<'a> {}
 
 impl<'a> PartialEq for Cursor<'a> {
     fn eq(&self, other: &Self) -> bool {
-        self.ptr == other.ptr
+        ptr::eq(self.ptr, other.ptr)
     }
 }
 
@@ -393,11 +434,11 @@ impl<'a> PartialOrd for Cursor<'a> {
 }
 
 pub(crate) fn same_scope(a: Cursor, b: Cursor) -> bool {
-    a.scope == b.scope
+    ptr::eq(a.scope, b.scope)
 }
 
 pub(crate) fn same_buffer(a: Cursor, b: Cursor) -> bool {
-    start_of_buffer(a) == start_of_buffer(b)
+    ptr::eq(start_of_buffer(a), start_of_buffer(b))
 }
 
 fn start_of_buffer(cursor: Cursor) -> *const Entry {

@@ -10,12 +10,20 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2024"
+rust-version = "1.88"
 name = "cmd_lib_macros"
-version = "1.9.4"
+version = "2.0.0"
 authors = ["Tao Guo <tao.guo.code@gmail.com>"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Common rust commandline macros and utils, to write shell script like tasks easily"
 homepage = "https://github.com/rust-shell-script/rust_cmd_lib"
+readme = false
 keywords = [
     "shell",
     "script",
@@ -27,19 +35,20 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/rust-shell-script/rust_cmd_lib"
 
 [lib]
+name = "cmd_lib_macros"
+path = "src/lib.rs"
 proc-macro = true
 
-[dependencies.proc-macro-error]
-version = "1.0"
+[dependencies]
+quote = "1"
 
 [dependencies.proc-macro2]
-version = "1.0"
-
-[dependencies.quote]
-version = "1.0"
+version = "1.0.86"
+features = ["span-locations"]
 
 [dependencies.syn]
-version = "1.0"
+version = "2"
 features = ["full"]
 
-[dev-dependencies]
+[dev-dependencies.cmd_lib]
+path = ".."

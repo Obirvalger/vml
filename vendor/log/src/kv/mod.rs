@@ -29,7 +29,7 @@
 //! info!(a = 1; "Something of interest");
 //! ```
 //!
-//! Key-values support the same shorthand identifer syntax as `format_args`:
+//! Key-values support the same shorthand identifier syntax as `format_args`:
 //!
 //! ```
 //! # use log::info;
@@ -191,7 +191,7 @@
 //!
 //! ```
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! # #[cfg(feature = "serde")]
+//! # #[cfg(feature = "kv_serde")]
 //! # {
 //! # use log::kv::Key;
 //! #[derive(serde::Serialize)]
@@ -225,7 +225,7 @@
 //!
 //! ```
 //! # use log::kv::Key;
-//! # #[derive(Debug)]
+//! #[derive(Debug)]
 //! struct Data {
 //!     a: i32,
 //!     b: bool,

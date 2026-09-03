@@ -1,18 +1,18 @@
 [package]
 name = "windows-sys"
-version = "0.59.0"
-authors = ["Microsoft"]
+version = "0.61.2"
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.71"
 license = "MIT OR Apache-2.0"
 description = "Rust for Windows"
 repository = "https://github.com/microsoft/windows-rs"
-readme = "readme.md"
 categories = ["os::windows-apis"]
-exclude = ["features.json"]
+readme = "readme.md"
+
+[dependencies]
+windows-link = { workspace = true }
 
 [lib]
-# This crate does not contain tests. All tests are in separate crates.
 test = false
 doctest = false
 
@@ -23,10 +23,6 @@ workspace = true
 default-target = "x86_64-pc-windows-msvc"
 targets = []
 all-features = true
-
-[dependencies.windows-targets]
-version = "0.52.6"
-path = "../targets"
 
 [features]
 default = []
@@ -59,16 +55,21 @@ Win32_Data_HtmlHelp = ["Win32_Data"]
 Win32_Data_RightsManagement = ["Win32_Data"]
 Win32_Devices = ["Win32"]
 Win32_Devices_AllJoyn = ["Win32_Devices"]
+Win32_Devices_Beep = ["Win32_Devices"]
 Win32_Devices_BiometricFramework = ["Win32_Devices"]
 Win32_Devices_Bluetooth = ["Win32_Devices"]
+Win32_Devices_Cdrom = ["Win32_Devices"]
 Win32_Devices_Communication = ["Win32_Devices"]
 Win32_Devices_DeviceAndDriverInstallation = ["Win32_Devices"]
 Win32_Devices_DeviceQuery = ["Win32_Devices"]
 Win32_Devices_Display = ["Win32_Devices"]
+Win32_Devices_Dvd = ["Win32_Devices"]
 Win32_Devices_Enumeration = ["Win32_Devices"]
 Win32_Devices_Enumeration_Pnp = ["Win32_Devices_Enumeration"]
 Win32_Devices_Fax = ["Win32_Devices"]
 Win32_Devices_HumanInterfaceDevice = ["Win32_Devices"]
+Win32_Devices_Nfc = ["Win32_Devices"]
+Win32_Devices_Nfp = ["Win32_Devices"]
 Win32_Devices_PortableDevices = ["Win32_Devices"]
 Win32_Devices_Properties = ["Win32_Devices"]
 Win32_Devices_Pwm = ["Win32_Devices"]

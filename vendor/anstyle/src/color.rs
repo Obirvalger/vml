@@ -4,7 +4,7 @@
 pub enum Color {
     /// Available 4-bit ANSI color palette codes
     ///
-    /// The user's terminal defines the meaning of the each palette code.
+    /// The user's terminal defines the meaning of each palette code.
     Ansi(AnsiColor),
     /// 256 (8-bit) color support
     ///
@@ -131,7 +131,7 @@ impl From<(u8, u8, u8)> for Color {
 
 /// Available 4-bit ANSI color palette codes
 ///
-/// The user's terminal defines the meaning of the each palette code.
+/// The user's terminal defines the meaning of each palette code.
 #[allow(clippy::exhaustive_enums)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
@@ -591,7 +591,7 @@ impl DisplayBuffer {
         let c2: u8 = (code / 10) % 10;
         let c3: u8 = code % 10;
 
-        let mut printed = true;
+        let mut printed = false;
         if c1 != 0 {
             printed = true;
             self.buffer[self.len] = b'0' + c1;
@@ -627,19 +627,17 @@ impl DisplayBuffer {
 impl core::fmt::Display for DisplayBuffer {
     #[inline]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let s = self.as_str();
-        write!(f, "{s}")
+        f.write_str(self.as_str())
     }
 }
 
 #[derive(Copy, Clone, Default, Debug)]
-struct NullFormatter<D: core::fmt::Display>(D);
+struct NullFormatter(&'static str);
 
-impl<D: core::fmt::Display> core::fmt::Display for NullFormatter<D> {
+impl core::fmt::Display for NullFormatter {
     #[inline]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let d = &self.0;
-        write!(f, "{d}")
+        f.write_str(self.0)
     }
 }
 
@@ -658,7 +656,7 @@ mod test {
 
     #[test]
     fn print_size_of() {
-        use std::mem::size_of;
+        use core::mem::size_of;
         dbg!(size_of::<Color>());
         dbg!(size_of::<AnsiColor>());
         dbg!(size_of::<Ansi256Color>());

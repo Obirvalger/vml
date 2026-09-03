@@ -10,11 +10,15 @@ use crate::meta::{self, ParseNestedMeta};
 use crate::parse::{Parse, ParseStream, Parser};
 use crate::path::Path;
 use crate::token;
+#[cfg(feature = "parsing")]
+use alloc::format;
+#[cfg(feature = "parsing")]
+use alloc::vec::Vec;
+#[cfg(feature = "printing")]
+use core::iter;
+#[cfg(feature = "printing")]
+use core::slice;
 use proc_macro2::TokenStream;
-#[cfg(feature = "printing")]
-use std::iter;
-#[cfg(feature = "printing")]
-use std::slice;
 
 ast_struct! {
     /// An attribute, like `#[repr(transparent)]`.
@@ -448,7 +452,7 @@ ast_enum! {
     }
 }
 
-ast_enum_of_structs! {
+ast_enum! {
     /// Content of a compile-time structured attribute.
     ///
     /// ## Path
@@ -625,6 +629,24 @@ impl<'a> FilterAttrs<'a> for &'a [Attribute] {
     }
 }
 
+impl From<Path> for Meta {
+    fn from(meta: Path) -> Meta {
+        Meta::Path(meta)
+    }
+}
+
+impl From<MetaList> for Meta {
+    fn from(meta: MetaList) -> Meta {
+        Meta::List(meta)
+    }
+}
+
+impl From<MetaNameValue> for Meta {
+    fn from(meta: MetaNameValue) -> Meta {
+        Meta::NameValue(meta)
+    }
+}
+
 #[cfg(feature = "parsing")]
 pub(crate) mod parsing {
     use crate::attr::{AttrStyle, Attribute, Meta, MetaList, MetaNameValue};
@@ -635,7 +657,9 @@ pub(crate) mod parsing {
     use crate::parse::{Parse, ParseStream};
     use crate::path::Path;
     use crate::{mac, token};
-    use std::fmt::{self, Display};
+    use alloc::vec::Vec;
+    use core::fmt::{self, Display};
+    use proc_macro2::Ident;
 
     pub(crate) fn parse_inner(input: ParseStream, attrs: &mut Vec<Attribute>) -> Result<()> {
         while input.peek(Token![#]) && input.peek2(Token![!]) {
@@ -667,7 +691,7 @@ pub(crate) mod parsing {
     #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
     impl Parse for Meta {
         fn parse(input: ParseStream) -> Result<Self> {
-            let path = input.call(Path::parse_mod_style)?;
+            let path = parse_outermost_meta_path(input)?;
             parse_meta_after_path(path, input)
         }
     }
@@ -675,7 +699,7 @@ pub(crate) mod parsing {
     #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
     impl Parse for MetaList {
         fn parse(input: ParseStream) -> Result<Self> {
-            let path = input.call(Path::parse_mod_style)?;
+            let path = parse_outermost_meta_path(input)?;
             parse_meta_list_after_path(path, input)
         }
     }
@@ -683,15 +707,26 @@ pub(crate) mod parsing {
     #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
     impl Parse for MetaNameValue {
         fn parse(input: ParseStream) -> Result<Self> {
-            let path = input.call(Path::parse_mod_style)?;
+            let path = parse_outermost_meta_path(input)?;
             parse_meta_name_value_after_path(path, input)
+        }
+    }
+
+    // Unlike meta::parse_meta_path which accepts arbitrary keywords in the path,
+    // only the `unsafe` keyword is accepted as an attribute's outermost path.
+    fn parse_outermost_meta_path(input: ParseStream) -> Result<Path> {
+        if input.peek(Token![unsafe]) {
+            let unsafe_token: Token![unsafe] = input.parse()?;
+            Ok(Path::from(Ident::new("unsafe", unsafe_token.span)))
+        } else {
+            Path::parse_mod_style(input)
         }
     }
 
     pub(crate) fn parse_meta_after_path(path: Path, input: ParseStream) -> Result<Meta> {
         if input.peek(token::Paren) || input.peek(token::Bracket) || input.peek(token::Brace) {
             parse_meta_list_after_path(path, input).map(Meta::List)
-        } else if input.peek(Token![=]) {
+        } else if input.peek(Token![=]) && !input.peek(Token![==]) && !input.peek(Token![=>]) {
             parse_meta_name_value_after_path(path, input).map(Meta::NameValue)
         } else {
             Ok(Meta::Path(path))
@@ -757,7 +792,9 @@ pub(crate) mod parsing {
 
 #[cfg(feature = "printing")]
 mod printing {
-    use crate::attr::{AttrStyle, Attribute, MetaList, MetaNameValue};
+    use crate::attr::{AttrStyle, Attribute, Meta, MetaList, MetaNameValue};
+    use crate::path;
+    use crate::path::printing::PathStyle;
     use proc_macro2::TokenStream;
     use quote::ToTokens;
 
@@ -775,9 +812,20 @@ mod printing {
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "printing")))]
+    impl ToTokens for Meta {
+        fn to_tokens(&self, tokens: &mut TokenStream) {
+            match self {
+                Meta::Path(path) => path::printing::print_path(tokens, path, PathStyle::Mod),
+                Meta::List(meta_list) => meta_list.to_tokens(tokens),
+                Meta::NameValue(meta_name_value) => meta_name_value.to_tokens(tokens),
+            }
+        }
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "printing")))]
     impl ToTokens for MetaList {
         fn to_tokens(&self, tokens: &mut TokenStream) {
-            self.path.to_tokens(tokens);
+            path::printing::print_path(tokens, &self.path, PathStyle::Mod);
             self.delimiter.surround(tokens, self.tokens.clone());
         }
     }
@@ -785,7 +833,7 @@ mod printing {
     #[cfg_attr(docsrs, doc(cfg(feature = "printing")))]
     impl ToTokens for MetaNameValue {
         fn to_tokens(&self, tokens: &mut TokenStream) {
-            self.path.to_tokens(tokens);
+            path::printing::print_path(tokens, &self.path, PathStyle::Mod);
             self.eq_token.to_tokens(tokens);
             self.value.to_tokens(tokens);
         }

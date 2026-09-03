@@ -1,12 +1,12 @@
 [package]
 name = "env_filter"
-version = "0.1.0"
+version = "2.0.0"
 description = """
 Filter log events using environment variables
 """
-repository = "https://github.com/rust-cli/env_logger"
 categories = ["development-tools::debugging"]
 keywords = ["logging", "log", "logger"]
+repository.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,7 +14,7 @@ include.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--generate-link-to-definition"]
 
 [package.metadata.release]
 pre-release-replacements = [
@@ -26,9 +26,16 @@ pre-release-replacements = [
 ]
 
 [features]
-default = ["regex"]
+default = ["std", "regex"]
 regex = ["dep:regex"]
+std = ["log/std", "regex?/std"]
 
 [dependencies]
-log = { version = "0.4.8", features = ["std"] }
-regex = { version = "1.0.3", optional = true, default-features=false, features=["std", "perf"] }
+log = { version = "0.4.29" }
+regex = { version = "1.12.3", optional = true, default-features=false, features=["perf"] }
+
+[dev-dependencies]
+snapbox = "1.0"
+
+[lints]
+workspace = true

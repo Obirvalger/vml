@@ -1,5 +1,10 @@
 [source.crates-io]
 replace-with = "vendored-sources"
 
+[source."git+https://github.com/rust-shell-script/rust_cmd_lib?rev=5a87af574a694fbfd0d4ade0c9b3dadc7cd463f6"]
+git = "https://github.com/rust-shell-script/rust_cmd_lib"
+rev = "5a87af574a694fbfd0d4ade0c9b3dadc7cd463f6"
+replace-with = "vendored-sources"
+
 [source.vendored-sources]
 directory = "vendor"

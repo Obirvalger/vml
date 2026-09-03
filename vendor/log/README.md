@@ -18,7 +18,7 @@ implementation that is most suitable for its use case.
 
 ## Minimum supported `rustc`
 
-`1.60.0+`
+See the `rust-version` field in `Cargo.toml` for the current minimum Rust toolchain version.
 
 This version is explicitly tested in CI and may be bumped in any release as needed. Maintaining compatibility with older compilers is a priority though, so the bar for bumping the minimum supported version is set very high. Any changes to the supported minimum version will be called out in the release notes.
 
@@ -71,9 +71,13 @@ There are many available implementations to choose from, here are some options:
     * [`call_logger`](https://docs.rs/call_logger/*/call_logger/)
     * [`std-logger`](https://docs.rs/std-logger/*/std_logger/)
     * [`structured-logger`](https://docs.rs/structured-logger/latest/structured_logger/)
+    * [`clang_log`](https://docs.rs/clang_log/latest/clang_log)
+    * [`ftail`](https://docs.rs/ftail/latest/ftail/)
 * Complex configurable frameworks:
     * [`log4rs`](https://docs.rs/log4rs/*/log4rs/)
+    * [`logforth`](https://docs.rs/logforth/*/logforth/)
     * [`fern`](https://docs.rs/fern/*/fern/)
+    * [`spdlog-rs`](https://docs.rs/spdlog-rs/*/spdlog/)
 * Adaptors for other facilities:
     * [`syslog`](https://docs.rs/syslog/*/syslog/)
     * [`systemd-journal-logger`](https://docs.rs/systemd-journal-logger/*/systemd_journal_logger/)
@@ -91,6 +95,7 @@ There are many available implementations to choose from, here are some options:
     * [`log_err`](https://docs.rs/log_err/*/log_err/)
     * [`log-reload`](https://docs.rs/log-reload/*/log_reload/)
     * [`alterable_logger`](https://docs.rs/alterable_logger/*/alterable_logger)
+    * [`context-logger`](https://docs.rs/context-logger/*/context_logger)
 
 Executables should choose a logger implementation and initialize it early in the
 runtime of the program. Logger implementations will typically include a

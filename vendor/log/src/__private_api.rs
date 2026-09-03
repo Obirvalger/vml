@@ -1,44 +1,66 @@
 //! WARNING: this is not part of the crate's public API and is subject to change at any time
 
 use self::sealed::KVs;
-use crate::{Level, Metadata, Record};
+use crate::{logger, Level, Log, Metadata, Record};
 use std::fmt::Arguments;
 use std::panic::Location;
 pub use std::{format_args, module_path, stringify};
 
+#[cfg(not(feature = "kv"))]
+pub type Key<'a> = &'a str;
 #[cfg(not(feature = "kv"))]
 pub type Value<'a> = &'a str;
 
 mod sealed {
     /// Types for the `kv` argument.
     pub trait KVs<'a> {
-        fn into_kvs(self) -> Option<&'a [(&'a str, super::Value<'a>)]>;
+        fn into_kvs(self) -> Option<&'a [(super::Key<'a>, super::Value<'a>)]>;
     }
 }
 
 // Types for the `kv` argument.
 
-impl<'a> KVs<'a> for &'a [(&'a str, Value<'a>)] {
+impl<'a> KVs<'a> for &'a [(Key<'a>, Value<'a>)] {
     #[inline]
-    fn into_kvs(self) -> Option<&'a [(&'a str, Value<'a>)]> {
+    fn into_kvs(self) -> Option<&'a [(Key<'a>, Value<'a>)]> {
         Some(self)
     }
 }
 
 impl<'a> KVs<'a> for () {
     #[inline]
-    fn into_kvs(self) -> Option<&'a [(&'a str, Value<'a>)]> {
+    fn into_kvs(self) -> Option<&'a [(Key<'a>, Value<'a>)]> {
         None
     }
 }
 
 // Log implementation.
 
-fn log_impl(
+/// The global logger proxy.
+#[derive(Debug)]
+pub struct GlobalLogger;
+
+impl Log for GlobalLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        logger().enabled(metadata)
+    }
+
+    fn log(&self, record: &Record) {
+        logger().log(record)
+    }
+
+    fn flush(&self) {
+        logger().flush()
+    }
+}
+
+// Split from `log` to reduce generics and code size
+fn log_impl<L: Log>(
+    logger: L,
     args: Arguments,
     level: Level,
     &(target, module_path, loc): &(&str, &'static str, &'static Location),
-    kvs: Option<&[(&str, Value)]>,
+    kvs: Option<&[(Key, Value)]>,
 ) {
     #[cfg(not(feature = "kv"))]
     if kvs.is_some() {
@@ -58,22 +80,30 @@ fn log_impl(
     #[cfg(feature = "kv")]
     builder.key_values(&kvs);
 
-    crate::logger().log(&builder.build());
+    logger.log(&builder.build());
 }
 
-pub fn log<'a, K>(
+pub fn log<'a, K, L>(
+    logger: L,
     args: Arguments,
     level: Level,
     target_module_path_and_loc: &(&str, &'static str, &'static Location),
     kvs: K,
 ) where
     K: KVs<'a>,
+    L: Log,
 {
-    log_impl(args, level, target_module_path_and_loc, kvs.into_kvs())
+    log_impl(
+        logger,
+        args,
+        level,
+        target_module_path_and_loc,
+        kvs.into_kvs(),
+    )
 }
 
-pub fn enabled(level: Level, target: &str) -> bool {
-    crate::logger().enabled(&Metadata::builder().level(level).target(target).build())
+pub fn enabled<L: Log>(logger: L, level: Level, target: &str) -> bool {
+    logger.enabled(&Metadata::builder().level(level).target(target).build())
 }
 
 #[track_caller]
@@ -85,6 +115,7 @@ pub fn loc() -> &'static Location<'static> {
 mod kv_support {
     use crate::kv;
 
+    pub type Key<'a> = kv::Key<'a>;
     pub type Value<'a> = kv::Value<'a>;
 
     // NOTE: Many functions here accept a double reference &&V
@@ -114,7 +145,7 @@ mod kv_support {
     }
 
     #[cfg(feature = "kv_serde")]
-    pub fn capture_serde<'a, V: serde::Serialize + ?Sized>(v: &'a &'a V) -> Value<'a> {
+    pub fn capture_serde<'a, V: serde_core::Serialize + ?Sized>(v: &'a &'a V) -> Value<'a> {
         Value::from_serde(v)
     }
 }

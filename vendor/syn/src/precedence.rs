@@ -1,11 +1,18 @@
+#[cfg(all(feature = "printing", feature = "full"))]
+use crate::attr::{AttrStyle, Attribute};
 #[cfg(feature = "printing")]
 use crate::expr::Expr;
 #[cfg(all(feature = "printing", feature = "full"))]
-use crate::expr::{ExprBreak, ExprReturn, ExprYield};
+use crate::expr::{
+    ExprArray, ExprAsync, ExprAwait, ExprBlock, ExprBreak, ExprCall, ExprConst, ExprContinue,
+    ExprField, ExprForLoop, ExprGroup, ExprIf, ExprIndex, ExprInfer, ExprLit, ExprLoop, ExprMacro,
+    ExprMatch, ExprMethodCall, ExprParen, ExprPath, ExprRepeat, ExprReturn, ExprStruct, ExprTry,
+    ExprTryBlock, ExprTuple, ExprUnsafe, ExprWhile, ExprYield,
+};
 use crate::op::BinOp;
 #[cfg(all(feature = "printing", feature = "full"))]
 use crate::ty::ReturnType;
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
 // Reference: https://doc.rust-lang.org/reference/expressions.html#expression-precedence
 pub(crate) enum Precedence {
@@ -82,11 +89,21 @@ impl Precedence {
 
     #[cfg(feature = "printing")]
     pub(crate) fn of(e: &Expr) -> Self {
+        #[cfg(feature = "full")]
+        fn prefix_attrs(attrs: &[Attribute]) -> Precedence {
+            for attr in attrs {
+                if let AttrStyle::Outer = attr.style {
+                    return Precedence::Prefix;
+                }
+            }
+            Precedence::Unambiguous
+        }
+
         match e {
             #[cfg(feature = "full")]
             Expr::Closure(e) => match e.output {
                 ReturnType::Default => Precedence::Jump,
-                ReturnType::Type(..) => Precedence::Unambiguous,
+                ReturnType::Type(..) => prefix_attrs(&e.attrs),
             },
 
             #[cfg(feature = "full")]
@@ -102,8 +119,38 @@ impl Precedence {
             Expr::Binary(e) => Precedence::of_binop(&e.op),
             Expr::Let(_) => Precedence::Let,
             Expr::Cast(_) => Precedence::Cast,
-            Expr::Reference(_) | Expr::Unary(_) => Precedence::Prefix,
+            Expr::RawAddr(_) | Expr::Reference(_) | Expr::Unary(_) => Precedence::Prefix,
 
+            #[cfg(feature = "full")]
+            Expr::Array(ExprArray { attrs, .. })
+            | Expr::Async(ExprAsync { attrs, .. })
+            | Expr::Await(ExprAwait { attrs, .. })
+            | Expr::Block(ExprBlock { attrs, .. })
+            | Expr::Call(ExprCall { attrs, .. })
+            | Expr::Const(ExprConst { attrs, .. })
+            | Expr::Continue(ExprContinue { attrs, .. })
+            | Expr::Field(ExprField { attrs, .. })
+            | Expr::ForLoop(ExprForLoop { attrs, .. })
+            | Expr::Group(ExprGroup { attrs, .. })
+            | Expr::If(ExprIf { attrs, .. })
+            | Expr::Index(ExprIndex { attrs, .. })
+            | Expr::Infer(ExprInfer { attrs, .. })
+            | Expr::Lit(ExprLit { attrs, .. })
+            | Expr::Loop(ExprLoop { attrs, .. })
+            | Expr::Macro(ExprMacro { attrs, .. })
+            | Expr::Match(ExprMatch { attrs, .. })
+            | Expr::MethodCall(ExprMethodCall { attrs, .. })
+            | Expr::Paren(ExprParen { attrs, .. })
+            | Expr::Path(ExprPath { attrs, .. })
+            | Expr::Repeat(ExprRepeat { attrs, .. })
+            | Expr::Struct(ExprStruct { attrs, .. })
+            | Expr::Try(ExprTry { attrs, .. })
+            | Expr::TryBlock(ExprTryBlock { attrs, .. })
+            | Expr::Tuple(ExprTuple { attrs, .. })
+            | Expr::Unsafe(ExprUnsafe { attrs, .. })
+            | Expr::While(ExprWhile { attrs, .. }) => prefix_attrs(attrs),
+
+            #[cfg(not(feature = "full"))]
             Expr::Array(_)
             | Expr::Async(_)
             | Expr::Await(_)
@@ -130,8 +177,9 @@ impl Precedence {
             | Expr::TryBlock(_)
             | Expr::Tuple(_)
             | Expr::Unsafe(_)
-            | Expr::Verbatim(_)
             | Expr::While(_) => Precedence::Unambiguous,
+
+            Expr::Verbatim(_) => Precedence::Unambiguous,
 
             #[cfg(not(feature = "full"))]
             Expr::Break(_) | Expr::Closure(_) | Expr::Return(_) | Expr::Yield(_) => unreachable!(),

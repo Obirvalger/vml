@@ -45,12 +45,12 @@ impl<'s> StrippedStr<'s> {
     pub fn to_string(&self) -> String {
         use std::fmt::Write as _;
         let mut stripped = String::with_capacity(self.bytes.len());
-        let _ = write!(&mut stripped, "{}", self);
+        let _ = write!(&mut stripped, "{self}");
         stripped
     }
 }
 
-impl<'s> std::fmt::Display for StrippedStr<'s> {
+impl std::fmt::Display for StrippedStr<'_> {
     /// **Note:** this does *not* exhaust the [`Iterator`]
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -344,7 +344,7 @@ impl Utf8Parser {
 
 struct VtUtf8Receiver<'a>(&'a mut bool);
 
-impl<'a> utf8parse::Receiver for VtUtf8Receiver<'a> {
+impl utf8parse::Receiver for VtUtf8Receiver<'_> {
     fn codepoint(&mut self, _: char) {
         *self.0 = true;
     }

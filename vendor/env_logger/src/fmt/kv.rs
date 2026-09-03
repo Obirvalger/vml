@@ -41,8 +41,8 @@ pub fn default_kv_format(formatter: &mut Formatter, fields: &dyn Source) -> io::
 
 struct DefaultVisitSource<'a>(&'a mut Formatter);
 
-impl<'a, 'kvs> VisitSource<'kvs> for DefaultVisitSource<'a> {
-    fn visit_pair(&mut self, key: Key, value: Value<'kvs>) -> Result<(), Error> {
+impl<'kvs> VisitSource<'kvs> for DefaultVisitSource<'_> {
+    fn visit_pair(&mut self, key: Key<'_>, value: Value<'kvs>) -> Result<(), Error> {
         write!(self.0, " {}={}", self.style_key(key), value)?;
         Ok(())
     }

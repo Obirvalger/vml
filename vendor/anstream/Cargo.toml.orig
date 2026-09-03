@@ -1,11 +1,10 @@
 [package]
 name = "anstream"
-version = "0.6.14"
-description = "A simple cross platform library for writing colored text to a terminal."
-repository = "https://github.com/rust-cli/anstyle.git"
-homepage = "https://github.com/rust-cli/anstyle"
+version = "1.0.0"
+description = "IO stream adapters for writing colored text that will gracefully degrade according to your terminal's capabilities."
 categories = ["command-line-interface"]
 keywords = ["ansi", "terminal", "color", "strip", "wincon"]
+repository.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +12,7 @@ include.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [package.metadata.release]
 pre-release-replacements = [
@@ -33,21 +32,21 @@ test = []
 
 [dependencies]
 anstyle = { version = "1.0.0", path = "../anstyle" }
-anstyle-parse = { version = "0.2.0", path = "../anstyle-parse" }
+anstyle-parse = { version = "1.0.0", path = "../anstyle-parse" }
 colorchoice = { version = "1.0.0", path = "../colorchoice" }
 anstyle-query = { version = "1.0.0", path = "../anstyle-query", optional = true }
-utf8parse = "0.2.1"
+utf8parse = "0.2.2"
 is_terminal_polyfill = "1.48"
 
 [target.'cfg(windows)'.dependencies]
-anstyle-wincon = { version = "3.0.1", path = "../anstyle-wincon", optional = true }
+anstyle-wincon = { version = "3.0.5", path = "../anstyle-wincon", optional = true }
 
 [dev-dependencies]
-divan = "0.1.11"
-lexopt = "0.3.0"
+divan = "0.1.16"
+lexopt = "0.3.1"
 owo-colors = "4.0.0"
-proptest = "1.4.0"
-strip-ansi-escapes = "0.2.0"
+proptest = "1.7.0"
+strip-ansi-escapes = "0.2.1"
 
 [[example]]
 name = "dump-stream"

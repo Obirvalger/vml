@@ -482,6 +482,24 @@ impl SetMatches {
         !self.0.is_empty()
     }
 
+    /// Whether all patterns in this set matched.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use regex::bytes::RegexSet;
+    ///
+    /// let set = RegexSet::new(&[
+    ///     r"^foo",
+    ///     r"[a-z]+\.com",
+    /// ]).unwrap();
+    /// let matches = set.matches(b"foo.example.com");
+    /// assert!(matches.matched_all());
+    /// ```
+    pub fn matched_all(&self) -> bool {
+        self.0.is_full()
+    }
+
     /// Whether the regex at the given index matched.
     ///
     /// The index for a regex is determined by its insertion order upon the
@@ -563,7 +581,7 @@ impl SetMatches {
     /// assert_eq!(matches, vec![0, 1, 3]);
     /// ```
     ///
-    /// Note that `SetMatches` also implemnets the `IntoIterator` trait, so
+    /// Note that `SetMatches` also implements the `IntoIterator` trait, so
     /// this method is not always needed. For example:
     ///
     /// ```

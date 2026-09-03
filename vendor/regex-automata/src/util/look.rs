@@ -482,7 +482,7 @@ impl LookSet {
     /// assertions in this set that require tables that are not available, then
     /// this will return an error.
     ///
-    /// Specifically, this returns an error when the the
+    /// Specifically, this returns an error when the
     /// `unicode-word-boundary` feature is _not_ enabled _and_ this set
     /// contains a Unicode word boundary assertion.
     ///
@@ -734,8 +734,8 @@ impl LookMatcher {
         haystack: &[u8],
         at: usize,
     ) -> bool {
-        // This used to luse LookSet::iter with Look::matches on each element,
-        // but that proved to be quite diastrous for perf. The manual "if
+        // This used to use LookSet::iter with Look::matches on each element,
+        // but that proved to be quite disastrous for perf. The manual "if
         // the set has this assertion, check it" turns out to be quite a bit
         // faster.
         if set.contains(Look::Start) {
@@ -1060,7 +1060,7 @@ impl LookMatcher {
         // try and detect this in is_word_char::{fwd,rev}, but it's not clear
         // if it's worth it. \B is, after all, rarely used. Even worse,
         // is_word_char::{fwd,rev} could do its own UTF-8 decoding, and so this
-        // will wind up doing UTF-8 decoding twice. Owch. We could fix this
+        // will wind up doing UTF-8 decoding twice. Ouch. We could fix this
         // with more code complexity, but it just doesn't feel worth it for \B.
         //
         // And in particular, we do *not* have to do this with \b, because \b
@@ -1570,8 +1570,6 @@ mod is_word_char {
     feature = "unicode-perl",
 ))]
 mod is_word_char {
-    use regex_syntax::try_is_word_character;
-
     use crate::util::utf8;
 
     pub(super) fn check() -> Result<(), super::UnicodeWordBoundaryError> {
@@ -1585,11 +1583,7 @@ mod is_word_char {
     ) -> Result<bool, super::UnicodeWordBoundaryError> {
         Ok(match utf8::decode(&haystack[at..]) {
             None | Some(Err(_)) => false,
-            Some(Ok(ch)) => try_is_word_character(ch).expect(
-                "since unicode-word-boundary, syntax and unicode-perl \
-                 are all enabled, it is expected that \
-                 try_is_word_character succeeds",
-            ),
+            Some(Ok(ch)) => is_word_character(ch),
         })
     }
 
@@ -1600,12 +1594,17 @@ mod is_word_char {
     ) -> Result<bool, super::UnicodeWordBoundaryError> {
         Ok(match utf8::decode_last(&haystack[..at]) {
             None | Some(Err(_)) => false,
-            Some(Ok(ch)) => try_is_word_character(ch).expect(
-                "since unicode-word-boundary, syntax and unicode-perl \
-                 are all enabled, it is expected that \
-                 try_is_word_character succeeds",
-            ),
+            Some(Ok(ch)) => is_word_character(ch),
         })
+    }
+
+    #[cfg_attr(feature = "perf-inline", inline(always))]
+    fn is_word_character(ch: char) -> bool {
+        regex_syntax::try_is_word_character(ch).expect(
+            "since unicode-word-boundary, syntax and unicode-perl \
+             are all enabled, it is expected that \
+             try_is_word_character succeeds",
+        )
     }
 }
 

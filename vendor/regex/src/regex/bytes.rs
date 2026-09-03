@@ -4,6 +4,59 @@ use regex_automata::{meta, util::captures, Input, PatternID};
 
 use crate::{bytes::RegexBuilder, error::Error};
 
+/// A convenient way to construct regex patterns from string literals.
+///
+/// This macro can be used to construct reusable instances of [`Regex`] with
+/// reduced boilerplate. The constructed `Regex` is stored in a static so the
+/// pattern is compiled approximately once, even when called multiple times.
+///
+/// There is *no compile-time checking of patterns* with `regex!`. Instead,
+/// invalid patterns will panic the first time the regex is used. Invalid
+/// patterns should still not be used with `regex!`; if compile-time checking
+/// becomes feasible in the future, it may be added within a non-semver-breaking
+/// release. In the meantime, consider enabling [`clippy::invalid_regex`].
+///
+/// # Examples
+///
+/// ```
+/// use regex::bytes::{Regex, regex};
+///
+/// assert!(regex!("[a-z]").is_match(b"a"));
+/// assert!(regex!("(inconceivable!|classic blunder)").is_match(b"inconceivable!"));
+///
+/// let re: &Regex = regex!(r"(\d{3})-(\d{4})");
+/// assert_eq!(&re.captures(b"867-5309").unwrap()[1], b"867");
+/// ```
+///
+/// An invalid pattern will panic when it is first used:
+///
+/// ```should_panic
+/// use regex::bytes::regex;
+///
+/// let re = regex!("invalid -> ("); // no panic here
+/// re.is_match(b"invalid -> (");    // panic!
+/// ```
+///
+/// [`clippy::invalid_regex`]: https://rust-lang.github.io/rust-clippy/master/#invalid_regex
+// `macro_export` always makes the macro available at crate root. We hide
+// from documentation there and instead re-export it in `crate::bytes` to get
+// the desired behavior.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __bytes_regex {
+    ($re:literal) => {{
+        static REGEX: $crate::__private::Lazy<$crate::bytes::Regex> =
+            $crate::__private::Lazy::new(|| {
+                $crate::bytes::Regex::new($re).expect("invalid regex pattern")
+            });
+
+        // Coerce returned type from `&Lazy<Regex>` to `&Regex` to avoid making the
+        // inner type public.
+        let re: &$crate::bytes::Regex = &REGEX;
+        re
+    }};
+}
+
 /// A compiled regular expression for searching Unicode haystacks.
 ///
 /// A `Regex` can be used to search haystacks, split haystacks into substrings
@@ -336,7 +389,7 @@ impl Regex {
     /// The `0`th capture group is always unnamed, so it must always be
     /// accessed with `get(0)` or `[0]`.
     ///
-    /// Finally, one other way to to get the matched substrings is with the
+    /// Finally, one other way to get the matched substrings is with the
     /// [`Captures::extract`] API:
     ///
     /// ```
@@ -982,7 +1035,7 @@ impl Regex {
     /// Returns the end byte offset of the first match in the haystack given.
     ///
     /// This method may have the same performance characteristics as
-    /// `is_match`. Behaviorlly, it doesn't just report whether it match
+    /// `is_match`. Behaviorally, it doesn't just report whether it match
     /// occurs, but also the end offset for a match. In particular, the offset
     /// returned *may be shorter* than the proper end of the leftmost-first
     /// match that you would find via [`Regex::find`].
@@ -1665,6 +1718,26 @@ impl<'h> Captures<'h> {
             .map(|sp| Match::new(self.haystack, sp.start, sp.end))
     }
 
+    /// Return the overall match for the capture.
+    ///
+    /// This returns the match for index `0`. That is it is equivalent to
+    /// `m.get(0).unwrap()`
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use regex::bytes::Regex;
+    ///
+    /// let re = Regex::new(r"[a-z]+([0-9]+)").unwrap();
+    /// let caps = re.captures(b"   abc123-def").unwrap();
+    ///
+    /// assert_eq!(caps.get_match().as_bytes(), b"abc123");
+    /// ```
+    #[inline]
+    pub fn get_match(&self) -> Match<'h> {
+        self.get(0).unwrap()
+    }
+
     /// Returns the `Match` associated with the capture group named `name`. If
     /// `name` isn't a valid capture group or it refers to a group that didn't
     /// match, then `None` is returned.
@@ -1733,7 +1806,7 @@ impl<'h> Captures<'h> {
     /// use regex::bytes::Regex;
     ///
     /// let re = Regex::new(r"([0-9]{4})-([0-9]{2})-([0-9]{2})").unwrap();
-    /// let hay = b"On 2010-03-14, I became a Tenneessee lamb.";
+    /// let hay = b"On 2010-03-14, I became a Tennessee lamb.";
     /// let Some((full, [year, month, day])) =
     ///     re.captures(hay).map(|caps| caps.extract()) else { return };
     /// assert_eq!(b"2010-03-14", full);
@@ -1787,7 +1860,7 @@ impl<'h> Captures<'h> {
             .expect("number of capture groups can vary in a match")
             .checked_sub(1)
             .expect("number of groups is always greater than zero");
-        assert_eq!(N, len, "asked for {} groups, but must ask for {}", N, len);
+        assert_eq!(N, len, "asked for {N} groups, but must ask for {len}");
         // The regex-automata variant of extract is a bit more permissive.
         // It doesn't require the number of matching capturing groups to be
         // static, and you can even request fewer groups than what's there. So
@@ -1842,7 +1915,7 @@ impl<'h> Captures<'h> {
     /// let re = Regex::new(
     ///     r"(?<day>[0-9]{2})-(?<month>[0-9]{2})-(?<year>[0-9]{4})",
     /// ).unwrap();
-    /// let hay = b"On 14-03-2010, I became a Tenneessee lamb.";
+    /// let hay = b"On 14-03-2010, I became a Tennessee lamb.";
     /// let caps = re.captures(hay).unwrap();
     ///
     /// let mut dst = vec![];
@@ -1942,7 +2015,7 @@ impl<'h> core::fmt::Debug for Captures<'h> {
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 write!(f, "{}", self.0)?;
                 if let Some(name) = self.1 {
-                    write!(f, "/{:?}", name)?;
+                    write!(f, "/{name:?}")?;
                 }
                 Ok(())
             }
@@ -1992,7 +2065,7 @@ impl<'h> core::ops::Index<usize> for Captures<'h> {
     fn index<'a>(&'a self, i: usize) -> &'a [u8] {
         self.get(i)
             .map(|m| m.as_bytes())
-            .unwrap_or_else(|| panic!("no group at index '{}'", i))
+            .unwrap_or_else(|| panic!("no group at index '{i}'"))
     }
 }
 
@@ -2018,7 +2091,7 @@ impl<'h, 'n> core::ops::Index<&'n str> for Captures<'h> {
     fn index<'a>(&'a self, name: &'n str) -> &'a [u8] {
         self.name(name)
             .map(|m| m.as_bytes())
-            .unwrap_or_else(|| panic!("no group named '{}'", name))
+            .unwrap_or_else(|| panic!("no group named '{name}'"))
     }
 }
 
@@ -2606,7 +2679,7 @@ impl<'s> Replacer for NoExpand<'s> {
 /// no `$` anywhere, then interpolation definitely does not need to be done. In
 /// that case, the given string is returned as a borrowed `Cow`.
 ///
-/// This is meant to be used to implement the `Replacer::no_expandsion` method
+/// This is meant to be used to implement the `Replacer::no_expansion` method
 /// in its various trait impls.
 fn no_expansion<T: AsRef<[u8]>>(replacement: &T) -> Option<Cow<'_, [u8]>> {
     let replacement = replacement.as_ref();
@@ -2646,7 +2719,7 @@ mod tests {
     fn test_debug_output_valid_utf8() {
         let haystack = b"Hello, world!";
         let m = Match::new(haystack, 7, 12);
-        let debug_str = format!("{:?}", m);
+        let debug_str = format!("{m:?}");
 
         assert_eq!(
             debug_str,
@@ -2658,7 +2731,7 @@ mod tests {
     fn test_debug_output_invalid_utf8() {
         let haystack = b"Hello, \xFFworld!";
         let m = Match::new(haystack, 7, 13);
-        let debug_str = format!("{:?}", m);
+        let debug_str = format!("{m:?}");
 
         assert_eq!(
             debug_str,
@@ -2671,7 +2744,7 @@ mod tests {
         let haystack =
             "Hello, 😊 world! 안녕하세요? مرحبا بالعالم!".as_bytes();
         let m = Match::new(haystack, 0, haystack.len());
-        let debug_str = format!("{:?}", m);
+        let debug_str = format!("{m:?}");
 
         assert_eq!(
             debug_str,
@@ -2683,7 +2756,7 @@ mod tests {
     fn test_debug_output_ascii_escape() {
         let haystack = b"Hello,\tworld!\nThis is a \x1b[31mtest\x1b[0m.";
         let m = Match::new(haystack, 0, haystack.len());
-        let debug_str = format!("{:?}", m);
+        let debug_str = format!("{m:?}");
 
         assert_eq!(
             debug_str,
@@ -2695,7 +2768,7 @@ mod tests {
     fn test_debug_output_match_in_middle() {
         let haystack = b"The quick brown fox jumps over the lazy dog.";
         let m = Match::new(haystack, 16, 19);
-        let debug_str = format!("{:?}", m);
+        let debug_str = format!("{m:?}");
 
         assert_eq!(debug_str, r#"Match { start: 16, end: 19, bytes: "fox" }"#);
     }

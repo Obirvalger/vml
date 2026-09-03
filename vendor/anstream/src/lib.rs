@@ -12,7 +12,6 @@
 //!
 //! Available styling crates:
 //! - [anstyle](https://docs.rs/anstyle) for minimal runtime styling, designed to go in public APIs
-//!   (once it hits 1.0)
 //! - [owo-colors](https://docs.rs/owo-colors) for feature-rich runtime styling
 //! - [color-print](https://docs.rs/color-print) for feature-rich compile-time styling
 //!
@@ -32,18 +31,19 @@
 //!
 //! And this will correctly handle piping to a file, etc
 
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 #![warn(clippy::print_stderr)]
 #![warn(clippy::print_stdout)]
 
 pub mod adapter;
 pub mod stream;
-
-mod buffer;
+#[doc(hidden)]
 #[macro_use]
-mod macros;
+pub mod _macros;
+
 mod auto;
+mod buffer;
 mod fmt;
 mod strip;
 #[cfg(all(windows, feature = "wincon"))]
@@ -84,3 +84,7 @@ pub fn stderr() -> Stderr {
 
 /// Selection for overriding color output
 pub use colorchoice::ColorChoice;
+
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;

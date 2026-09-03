@@ -29,7 +29,7 @@
 //!
 //! [Paul Williams' ANSI parser state machine]: https://vt100.net/emu/dec_ansi_parser
 #![cfg_attr(not(test), no_std)]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(missing_docs)]
 #![warn(clippy::print_stderr)]
 #![warn(clippy::print_stdout)]
@@ -365,7 +365,7 @@ impl CharAccumulator for Utf8Parser {
 struct VtUtf8Receiver<'a>(&'a mut Option<char>);
 
 #[cfg(feature = "utf8")]
-impl<'a> utf8::Receiver for VtUtf8Receiver<'a> {
+impl utf8::Receiver for VtUtf8Receiver<'_> {
     fn codepoint(&mut self, c: char) {
         *self.0 = Some(c);
     }
@@ -436,3 +436,7 @@ pub trait Perform {
     /// subsequent characters were ignored.
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
 }
+
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;

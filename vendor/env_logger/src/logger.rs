@@ -3,8 +3,8 @@ use std::{borrow::Cow, cell::RefCell, env, io};
 use log::{LevelFilter, Log, Metadata, Record, SetLoggerError};
 
 use crate::fmt;
-use crate::fmt::writer::{self, Writer};
 use crate::fmt::{FormatFn, Formatter};
+use crate::writer::{self, Writer};
 
 /// The default name for the environment variable to read filters from.
 pub const DEFAULT_FILTER_ENV: &str = "RUST_LOG";
@@ -240,9 +240,9 @@ impl Builder {
     /// [`Formatter`]: fmt/struct.Formatter.html
     /// [`String`]: https://doc.rust-lang.org/stable/std/string/struct.String.html
     /// [`std::fmt`]: https://doc.rust-lang.org/std/fmt/index.html
-    pub fn format<F: 'static>(&mut self, format: F) -> &mut Self
+    pub fn format<F>(&mut self, format: F) -> &mut Self
     where
-        F: Fn(&mut Formatter, &Record) -> io::Result<()> + Sync + Send,
+        F: Fn(&mut Formatter, &Record<'_>) -> io::Result<()> + Sync + Send + 'static,
     {
         self.format.custom_format = Some(Box::new(format));
         self
@@ -258,32 +258,55 @@ impl Builder {
 
     /// Whether or not to write the level in the default format.
     pub fn format_level(&mut self, write: bool) -> &mut Self {
-        self.format.format_level = write;
+        self.format.default_format.level(write);
+        self
+    }
+
+    /// Whether or not to write the source file path in the default format.
+    pub fn format_file(&mut self, write: bool) -> &mut Self {
+        self.format.default_format.file(write);
+        self
+    }
+
+    /// Whether or not to write the source line number path in the default format.
+    ///
+    /// Only has effect if `format_file` is also enabled
+    pub fn format_line_number(&mut self, write: bool) -> &mut Self {
+        self.format.default_format.line_number(write);
+        self
+    }
+
+    /// Whether or not to write the source path and line number
+    ///
+    /// Equivalent to calling both `format_file` and `format_line_number`
+    /// with `true`
+    pub fn format_source_path(&mut self, write: bool) -> &mut Self {
+        self.format_file(write).format_line_number(write);
         self
     }
 
     /// Whether or not to write the module path in the default format.
     pub fn format_module_path(&mut self, write: bool) -> &mut Self {
-        self.format.format_module_path = write;
+        self.format.default_format.module_path(write);
         self
     }
 
     /// Whether or not to write the target in the default format.
     pub fn format_target(&mut self, write: bool) -> &mut Self {
-        self.format.format_target = write;
+        self.format.default_format.target(write);
         self
     }
 
     /// Configures the amount of spaces to use to indent multiline log records.
     /// A value of `None` disables any kind of indentation.
     pub fn format_indent(&mut self, indent: Option<usize>) -> &mut Self {
-        self.format.format_indent = indent;
+        self.format.default_format.indent(indent);
         self
     }
 
     /// Configures if timestamp should be included and in what precision.
     pub fn format_timestamp(&mut self, timestamp: Option<fmt::TimestampPrecision>) -> &mut Self {
-        self.format.format_timestamp = timestamp;
+        self.format.default_format.timestamp(timestamp);
         self
     }
 
@@ -309,7 +332,7 @@ impl Builder {
 
     /// Configures the end of line suffix.
     pub fn format_suffix(&mut self, suffix: &'static str) -> &mut Self {
-        self.format.format_suffix = suffix;
+        self.format.default_format.suffix(suffix);
         self
     }
 
@@ -323,12 +346,12 @@ impl Builder {
     ///
     /// The default format uses a space to separate each key-value pair, with an "=" between
     /// the key and value.
-    #[cfg(feature = "unstable-kv")]
-    pub fn format_key_values<F: 'static>(&mut self, format: F) -> &mut Self
+    #[cfg(feature = "kv")]
+    pub fn format_key_values<F>(&mut self, format: F) -> &mut Self
     where
-        F: Fn(&mut Formatter, &dyn log::kv::Source) -> io::Result<()> + Sync + Send,
+        F: Fn(&mut Formatter, &dyn log::kv::Source) -> io::Result<()> + Sync + Send + 'static,
     {
-        self.format.kv_format = Some(Box::new(format));
+        self.format.default_format.key_values(format);
         self
     }
 
@@ -516,7 +539,7 @@ impl Builder {
 }
 
 impl std::fmt::Debug for Builder {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.built {
             f.debug_struct("Logger").field("built", &true).finish()
         } else {
@@ -615,17 +638,17 @@ impl Logger {
     }
 
     /// Checks if this record matches the configured filter.
-    pub fn matches(&self, record: &Record) -> bool {
+    pub fn matches(&self, record: &Record<'_>) -> bool {
         self.filter.matches(record)
     }
 }
 
 impl Log for Logger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         self.filter.enabled(metadata)
     }
 
-    fn log(&self, record: &Record) {
+    fn log(&self, record: &Record<'_>) {
         if self.matches(record) {
             // Log records are written to a thread-local buffer before being printed
             // to the terminal. We clear these buffers afterwards, but they aren't shrunk
@@ -637,12 +660,14 @@ impl Log for Logger {
             // formatter and its buffer are discarded and recreated.
 
             thread_local! {
-                static FORMATTER: RefCell<Option<Formatter>> = RefCell::new(None);
+                static FORMATTER: RefCell<Option<Formatter>> = const { RefCell::new(None) };
             }
 
-            let print = |formatter: &mut Formatter, record: &Record| {
-                let _ =
-                    (self.format)(formatter, record).and_then(|_| formatter.print(&self.writer));
+            let print = |formatter: &mut Formatter, record: &Record<'_>| {
+                let _ = self
+                    .format
+                    .format(formatter, record)
+                    .and_then(|_| formatter.print(&self.writer));
 
                 // Always clear the buffer afterwards
                 formatter.clear();
@@ -650,31 +675,28 @@ impl Log for Logger {
 
             let printed = FORMATTER
                 .try_with(|tl_buf| {
-                    match tl_buf.try_borrow_mut() {
+                    if let Ok(mut tl_buf) = tl_buf.try_borrow_mut() {
                         // There are no active borrows of the buffer
-                        Ok(mut tl_buf) => match *tl_buf {
+                        if let Some(ref mut formatter) = *tl_buf {
                             // We have a previously set formatter
-                            Some(ref mut formatter) => {
-                                // Check the buffer style. If it's different from the logger's
-                                // style then drop the buffer and recreate it.
-                                if formatter.write_style() != self.writer.write_style() {
-                                    *formatter = Formatter::new(&self.writer);
-                                }
 
-                                print(formatter, record);
+                            // Check the buffer style. If it's different from the logger's
+                            // style then drop the buffer and recreate it.
+                            if formatter.write_style() != self.writer.write_style() {
+                                *formatter = Formatter::new(&self.writer);
                             }
+
+                            print(formatter, record);
+                        } else {
                             // We don't have a previously set formatter
-                            None => {
-                                let mut formatter = Formatter::new(&self.writer);
-                                print(&mut formatter, record);
+                            let mut formatter = Formatter::new(&self.writer);
+                            print(&mut formatter, record);
 
-                                *tl_buf = Some(formatter);
-                            }
-                        },
-                        // There's already an active borrow of the buffer (due to re-entrancy)
-                        Err(_) => {
-                            print(&mut Formatter::new(&self.writer), record);
+                            *tl_buf = Some(formatter);
                         }
+                    } else {
+                        // There's already an active borrow of the buffer (due to re-entrancy)
+                        print(&mut Formatter::new(&self.writer), record);
                     }
                 })
                 .is_ok();
@@ -692,7 +714,7 @@ impl Log for Logger {
 }
 
 impl std::fmt::Debug for Logger {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Logger")
             .field("filter", &self.filter)
             .finish()
@@ -809,7 +831,7 @@ where
     }
 }
 
-impl<'a> Default for Env<'a> {
+impl Default for Env<'_> {
     fn default() -> Self {
         Env {
             filter: Var::new(DEFAULT_FILTER_ENV),
@@ -849,7 +871,7 @@ impl<'a> Var<'a> {
     fn get(&self) -> Option<String> {
         env::var(&*self.name)
             .ok()
-            .or_else(|| self.default.to_owned().map(|v| v.into_owned()))
+            .or_else(|| self.default.clone().map(|v| v.into_owned()))
     }
 }
 
