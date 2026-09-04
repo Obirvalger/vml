@@ -63,8 +63,6 @@ impl VMConfig {
         r#"
         name = "{{name}}"
         disk = "{{disk}}"
-        [data]
-        net = "{{net}}"
         "#
         .to_owned()
     }
