@@ -136,7 +136,7 @@ impl VMConfig {
             None => other.net.clone_into(net),
             Some(net) => {
                 if let Some(other_net) = &other.net {
-                    *net = other_net.updated(net)
+                    *net = net.updated(other_net)
                 }
             }
         }
@@ -165,7 +165,7 @@ impl VMConfig {
             None => other.ssh.clone_into(ssh),
             Some(ssh) => {
                 if let Some(other_ssh) = &other.ssh {
-                    *ssh = other_ssh.updated(ssh)
+                    *ssh = ssh.updated(other_ssh)
                 }
             }
         }
