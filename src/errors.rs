@@ -50,7 +50,7 @@ pub enum Error {
     SshPublicKeyDoesNotExists(String),
     #[error("can't start vm `{0}`")]
     StartVmFailed(String),
-    #[error("trying to store running vm")]
+    #[error("trying to store running vm {0}")]
     StoreRunningVM(String),
     #[error("unset tap device for tap network")]
     TapNetworkTapUnset,
