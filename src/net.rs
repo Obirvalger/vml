@@ -24,7 +24,6 @@ pub enum ConfigNet {
 impl ConfigNet {
     pub fn updated(&self, other: &Self) -> ConfigNet {
         match (self, other) {
-            (ConfigNet::None, _) => other.to_owned(),
             (
                 ConfigNet::Tap {
                     address: self_address,
@@ -68,6 +67,7 @@ impl ConfigNet {
 
 #[derive(Debug, Clone)]
 pub enum Net {
+    None,
     Tap {
         address: Option<String>,
         gateway: Option<String>,
@@ -79,10 +79,9 @@ pub enum Net {
 }
 
 impl Net {
-    pub fn new(config: &ConfigNet) -> Result<Option<Net>> {
+    pub fn new(config: &Option<ConfigNet>) -> Result<Option<Net>> {
         match config {
-            ConfigNet::None => Ok(None),
-            ConfigNet::Tap { address, gateway, mac, nameservers, tap } => {
+            Some(ConfigNet::Tap { address, gateway, mac, nameservers, tap }) => {
                 let address = address.to_owned();
                 let gateway = gateway.to_owned();
                 let mac = mac.to_owned();
@@ -91,7 +90,9 @@ impl Net {
 
                 Ok(Some(Net::Tap { address, gateway, mac, nameservers, tap }))
             }
-            ConfigNet::User => Ok(Some(Net::User)),
+            Some(ConfigNet::None) => Ok(Some(Net::None)),
+            Some(ConfigNet::User) => Ok(Some(Net::User)),
+            None => Ok(None),
         }
     }
 

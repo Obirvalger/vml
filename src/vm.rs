@@ -232,11 +232,12 @@ impl VM {
         let nodaemonize = vm_config.nodaemonize.unwrap_or(config.default.nodaemonize);
         let tags = vm_config.tags.unwrap_or_default();
 
-        let mut net_config = match vm_config.net {
-            None => config.default.net.to_owned(),
-            Some(net) => net.updated(&config.default.net),
+        let mut net_config = match (&vm_config.net, &config.default.net) {
+            (None, Some(_)) => config.default.net.to_owned(),
+            (Some(vm_net), Some(default_net)) => Some(vm_net.to_owned().updated(default_net)),
+            _ => vm_config.net.to_owned(),
         };
-        if let ConfigNet::Tap { nameservers: ref mut nameservers @ None, .. } = net_config {
+        if let Some(ConfigNet::Tap { nameservers: ref mut nameservers @ None, .. }) = net_config {
             config.nameservers.clone_into(nameservers);
         }
         let net = Net::new(&net_config)?;
@@ -387,6 +388,9 @@ impl VM {
 
         if let Some(net) = &self.net {
             match net {
+                Net::None => {
+                    qemu.args(["-nic", "none"]);
+                }
                 Net::User => {
                     let hostfwd = if let Some(ssh) = &self.ssh {
                         let host = ssh.host().to_string();
@@ -901,6 +905,9 @@ impl VM {
 
         if let Some(net) = &self.net {
             match net {
+                Net::None => {
+                    info.insert("network", "none".to_string());
+                }
                 Net::User => {
                     info.insert("network", "user".to_string());
                 }

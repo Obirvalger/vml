@@ -84,7 +84,8 @@ pub struct Ssh {
 }
 
 impl Ssh {
-    pub fn new(config: &ConfigSsh, config_net: &ConfigNet) -> Option<Ssh> {
+    pub fn new(config: &ConfigSsh, config_net: &Option<ConfigNet>) -> Option<Ssh> {
+        let config_net = if let Some(cn) = &config_net { cn } else { return None };
         let host = match config_net {
             ConfigNet::Tap { address, .. } => address.as_ref().and_then(net::address)?,
             ConfigNet::User => {

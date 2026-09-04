@@ -23,7 +23,7 @@ pub struct VMsDefault {
     pub display: Option<String>,
     #[serde(default = "default_cpu_model")]
     pub cpu_model: String,
-    pub net: ConfigNet,
+    pub net: Option<ConfigNet>,
     #[serde(default = "default_nic_model")]
     pub nic_model: String,
     pub nproc: StringOrUint,
